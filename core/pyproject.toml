@@ -1,0 +1,134 @@
+# =============================================================================
+# core/pyproject.toml — `ascendo` package (Layer 4: Core domain)
+# =============================================================================
+#
+# OS-agnostic Python core. Imports ONLY from stdlib + ascendo.interfaces +
+# allowed third-party libs (Pydantic v2, FastAPI, Typer). NEVER imports from
+# `adapters/*`. The architectural firewall is enforced by import-linter in CI.
+#
+# Install in editable mode for development:
+#   pip install -e core/[dev]
+#
+# Build for distribution:
+#   cd core && python -m build
+# =============================================================================
+
+[build-system]
+requires      = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name            = "ascendo"
+dynamic         = ["version"]
+description     = "Cross-platform update orchestrator — core (OS-agnostic)."
+readme          = "README.md"
+license         = { text = "MIT" }
+requires-python = ">=3.11"
+authors         = [{ name = "KasprowiczM and Ascendo contributors" }]
+keywords        = ["update", "package-manager", "automation", "linux", "windows", "macos"]
+classifiers     = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Software Distribution",
+    "Topic :: System :: Systems Administration",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    # Core domain — minimal surface area
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.2",
+    "typer>=0.12",
+    "rich>=13.7",                # Typer prints with rich; nice CLI output
+    "tomli>=2.0; python_version<'3.11'",   # stdlib tomllib otherwise
+
+    # Layer 3 — backend HTTP (kept in core because it depends ONLY on interfaces)
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",               # for testing FastAPI clients
+
+    # JSON Schema validation for sidecar contract
+    "jsonschema>=4.22",
+
+    # Versioning
+    "packaging>=24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4.4",
+    "mypy>=1.10",
+    "import-linter>=2.0",
+]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.25",
+]
+
+[project.urls]
+Homepage      = "https://github.com/KasprowiczM/ascendo"
+Repository    = "https://github.com/KasprowiczM/ascendo"
+Issues        = "https://github.com/KasprowiczM/ascendo/issues"
+Documentation = "https://github.com/KasprowiczM/ascendo/tree/main/docs"
+
+[project.scripts]
+# Single Typer-based CLI entry point. Implementation lives in core/ascendo/cli/.
+ascendo = "ascendo.cli:app"
+
+[tool.hatch.version]
+path = "ascendo/__version__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ascendo"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/ascendo",
+    "/README.md",
+    "/pyproject.toml",
+    "/tests",
+]
+exclude = [
+    "**/__pycache__",
+    "**/.pytest_cache",
+    "**/.mypy_cache",
+    "**/.ruff_cache",
+    "**/*.pyc",
+]
+
+# ── Architectural firewall (enforced in CI) ──────────────────────────────────
+# Verified by `lint-imports` (import-linter). See docs/architecture/0005.
+[tool.importlinter]
+root_package = "ascendo"
+
+[[tool.importlinter.contracts]]
+name        = "Core MUST NOT import from any adapter"
+type        = "forbidden"
+source_modules = ["ascendo"]
+forbidden_modules = [
+    "ascendo_ubuntu",
+    "ascendo_windows",
+    "ascendo_macos",
+]
+
+[[tool.importlinter.contracts]]
+name        = "Layered architecture (Layer 4 → Layer 4 only)"
+type        = "layers"
+layers      = [
+    "ascendo.dashboard",        # Layer 3 (HTTP) — uses Layer 4
+    "ascendo.cli",              # Layer 4 — CLI entry point
+    "ascendo.orchestrator",     # Layer 4 — phase runner
+    "ascendo.adapter_factory",  # Layer 4 — adapter selection
+    "ascendo.models | ascendo.interfaces | ascendo.utils",  # Layer 4 base
+]

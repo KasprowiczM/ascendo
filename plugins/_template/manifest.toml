@@ -1,0 +1,91 @@
+# =============================================================================
+# Ascendo plugin manifest TEMPLATE
+# =============================================================================
+# Copy this directory: cp -r plugins/_template plugins/your-plugin-id/
+# Then edit this file and the per-OS phase scripts.
+# Validate: python tests/validate_plugin_manifests.py plugins/your-plugin-id/
+# =============================================================================
+
+# ── Schema (REQUIRED) ────────────────────────────────────────────────────────
+schema       = "ascendo-plugin/v1"
+
+# ── Identity (REQUIRED) ──────────────────────────────────────────────────────
+id           = "template"   # lowercase, [a-z0-9_-]{1,40}, must match folder name
+display_name = "Plugin Template"
+description  = "Replace this with a one-line description of what your plugin does."
+version      = "0.1.0"      # SemVer; bumped per release
+maintainer   = "Your Name <you@example.com>"
+license      = "MIT"        # SPDX identifier
+homepage     = "https://github.com/your-org/your-plugin"
+
+# ── Tier (REQUIRED) ──────────────────────────────────────────────────────────
+# "official" — first-party plugin (lives in plugins/, supported)
+# "contrib"  — community plugin (lives in contrib/plugins/, experimental)
+tier = "contrib"
+
+# ── Categorization (OPTIONAL) ────────────────────────────────────────────────
+category_label = "developer-tools"   # display group in dashboard
+icon           = "icon.svg"           # optional, relative to manifest
+tags           = ["example", "scaffold"]
+
+# ── Behavior (REQUIRED) ──────────────────────────────────────────────────────
+# privilege:     "user" | "sudo" | "admin"
+# risk:          "low" | "medium" | "high"
+# manual_confirm: bool — require user confirm before apply (auto-true if risk=high)
+# timeout_sec:   int — per-phase timeout (default 300)
+privilege      = "user"
+risk           = "low"
+manual_confirm = false
+timeout_sec    = 300
+
+# ── Phases (REQUIRED) ────────────────────────────────────────────────────────
+# Subset of canonical 5: check, plan, apply, verify, cleanup
+# Each phase MUST have a script in [scripts.<os>] for every supported OS.
+phases = ["check", "plan", "apply", "verify", "cleanup"]
+
+# ── OS Support (REQUIRED) ────────────────────────────────────────────────────
+# Declare which OSes this plugin supports + minimum versions tested.
+[supported_oses]
+linux   = { min_version = "20.04",     tested_on = ["ubuntu-22.04", "ubuntu-24.04"] }
+windows = { min_version = "10.0.19041", tested_on = ["windows-11"] }
+macos   = { min_version = "12.0",       tested_on = ["macos-13", "macos-14"] }
+
+# ── Dependencies (OPTIONAL) ──────────────────────────────────────────────────
+# Plugin loader checks these BEFORE running any phase.
+[dependencies]
+binaries       = []   # CLI tools required (checked via shutil.which)
+python_modules = []   # Python imports required
+plugins        = []   # other Ascendo plugins this depends on
+
+# ── Phase scripts (REQUIRED if phase listed in `phases`) ─────────────────────
+# Convention: <os>/<phase>.<ext> — script paths relative to manifest dir.
+# Core selects the correct script based on detected OS.
+[scripts]
+linux = { check = "linux/check.sh", plan = "linux/plan.sh",
+          apply = "linux/apply.sh", verify = "linux/verify.sh",
+          cleanup = "linux/cleanup.sh" }
+windows = { check = "windows/check.ps1", plan = "windows/plan.ps1",
+            apply = "windows/apply.ps1", verify = "windows/verify.ps1",
+            cleanup = "windows/cleanup.ps1" }
+macos = { check = "macos/check.sh", plan = "macos/plan.sh",
+          apply = "macos/apply.sh", verify = "macos/verify.sh",
+          cleanup = "macos/cleanup.sh" }
+
+# ── Permissions allowlist (OPTIONAL but recommended for risk=medium+) ───────
+# Defense in depth. Declares what this plugin needs.
+[permissions]
+network          = true     # plugin makes network calls (HTTPS only — verify_ssl always)
+filesystem_write = true     # plugin writes files (only inside its sandbox + system per `privilege`)
+registry         = false    # Windows registry read/write
+defaults         = false    # macOS defaults read/write
+sudo_commands    = []       # explicit allowlist of commands run with elevation
+
+# ── Configuration (OPTIONAL) ─────────────────────────────────────────────────
+# Plugin's own config files (besides manifest). Loaded by phase scripts.
+[config]
+files = ["tools.toml"]   # plugin-specific declarative config
+
+# ── Reporting (OPTIONAL) ─────────────────────────────────────────────────────
+[reporting]
+emits_sidecar       = true   # plugin emits JSON v1 sidecar (mandatory if phase apply mutates)
+contributes_to_summary = false  # whether items count toward global ok/warn/err

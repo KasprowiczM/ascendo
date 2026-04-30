@@ -1,0 +1,9 @@
+# Tier 2 (community) plugins — minimal contract, experimental.
+#
+# Examples that may land here:
+#   lenovo-driver-update/  — Lenovo Vantage CLI wrapper
+#   hp-driver-update/      — HP Image Assistant wrapper
+#   asus-driver-update/    — ASUS Armoury Crate (manual download — fallback)
+#   intel-driver-update/   — Intel Driver & Support Assistant
+#
+# Same plugin manifest schema as Tier 1, but `tier = "contrib"`.

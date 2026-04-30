@@ -1,0 +1,8 @@
+# Repo maintenance scripts (NOT update logic — that's in adapters/).
+#
+# Created on demand:
+#   bump-version.sh        — semver bump (updates __version__.py + Cargo.toml + pyproject.toml)
+#   generate-changelog.sh  — git log → CHANGELOG.md helper
+#   lint.sh                — run all linters (ruff, mypy, shellcheck, PSScriptAnalyzer)
+#   build-frontend.sh      — copy ui/frontend → core/ascendo/frontend_static (for Tauri)
+#   build-icons.sh         — branding/icon.svg → .ico + .icns + PNGs

@@ -1,0 +1,76 @@
+# =============================================================================
+# adapters/ubuntu/pyproject.toml — `ascendo-ubuntu` (Layer 5: Adapter)
+# =============================================================================
+#
+# Ubuntu/Debian adapter. Implements the interfaces defined in
+# `ascendo.interfaces` (apt, snap, flatpak, fwupd, NVIDIA, timeshift).
+#
+# Native logic lives in `scripts/<phase>.sh` and `lib/*.sh` — those are
+# Layer 6 (native scripts). The Python module (Layer 5) shells out to them
+# and parses JSON v1 sidecars they emit.
+#
+# Install in editable mode for development:
+#   pip install -e adapters/ubuntu/[dev]
+# =============================================================================
+
+[build-system]
+requires      = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name            = "ascendo-ubuntu"
+version         = "0.0.1-dev"
+description     = "Ascendo Ubuntu/Debian adapter (apt, snap, flatpak, NVIDIA, fwupd)."
+readme          = "README.md"
+license         = { text = "MIT" }
+requires-python = ">=3.11"
+authors         = [{ name = "KasprowiczM and Ascendo contributors" }]
+classifiers     = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Software Distribution",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "ascendo>=0.0.1",        # core (sibling package)
+    "pydantic>=2.7,<3",
+    # python-apt is system-installed (apt-get install python3-apt) — NOT a PyPI dep
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "ruff>=0.4.4",
+    "mypy>=1.10",
+]
+
+[project.urls]
+Homepage   = "https://github.com/KasprowiczM/ascendo"
+Repository = "https://github.com/KasprowiczM/ascendo"
+
+# Entry point that the adapter_factory in core picks up by OS detection.
+[project.entry-points."ascendo.adapters"]
+ubuntu = "ascendo_ubuntu:UbuntuAdapter"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ascendo_ubuntu"]
+include  = [
+    "ascendo_ubuntu/**/*.py",
+    "scripts/**/*.sh",        # native scripts shipped with the adapter
+    "lib/**/*.sh",            # bash helpers shipped with the adapter
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/ascendo_ubuntu",
+    "/scripts",
+    "/lib",
+    "/README.md",
+    "/pyproject.toml",
+    "/tests",
+]

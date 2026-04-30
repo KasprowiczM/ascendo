@@ -219,36 +219,45 @@ python_modules, plugins), `scripts` (per OS, per phase), `config`,
 ## Current State (UPDATE this section after each session)
 
 ### Last updated
-2026-04-30 — Sesja 1 (Cowork)
+2026-05-01 — Sesja 2 (Cowork) — M1 ukończone (poza M1.7 user-side validation)
 
 ### Branch & commits
 - **Branch:** `restructure/monorepo`
 - **Tag rollback:** `pre-monorepo-restructure` (commit 36bc6f0)
-- **Last commit on branch:** identyczny z `pre-monorepo-restructure` (nic jeszcze nie zacommitowane na branch)
-- **Origin:** `https://github.com/KasprowiczM/ascendo.git` (NEW, nie pushowane jeszcze)
+- **Last commit on branch:** identyczny z `pre-monorepo-restructure` — wszystkie M1.2-M1.6 zmiany są w working tree, jeszcze NIE zacommitowane (jeden duży commit do zrobienia przez user)
+- **Origin:** `https://github.com/KasprowiczM/ascendo.git`
 - **Backup origin (ojciec klonu):** `D:\Dev_Env\Ubuntu_Aktualizacje` (lokalny)
 
 ### Working tree
-- Clean, poza:
-  - `HANDOFF.md` (untracked — ten plik) — do dodania w pierwszym commit
-  - `.write-test` (untracked, leftover testowy) — do usunięcia (`Remove-Item .write-test`)
+- **Modified (tracked):** `.gitignore`, `README.md`
+- **New (untracked):** wszystkie nowe pliki z M1.2-M1.6:
+  - Top-level: `HANDOFF.md`, `LICENSE`, `CHANGELOG.md`, `CONTRIBUTING.md`,
+    `SECURITY.md`, `.gitattributes`, `.markdownlint.json`,
+    `.pre-commit-config.yaml`, `pyproject.toml`
+  - Foldery monorepo: `core/`, `adapters/{ubuntu,windows,macos}/`,
+    `contrib/{adapters,plugins}/`, `plugins/{_template,agent-clis,
+    dell-driver-update,nvidia-driver-update}/`, `ui/{frontend,desktop-tauri}/`,
+    `packaging/{deb,msi,pkg,homebrew-tap,winget-manifest,pyinstaller}/`,
+    `website/`, `tests/{contract,cross-cut,fixtures,integration}/`
+  - ADRs: `docs/architecture/{0001..0007}*.md` + `templates/adr-template.md` + `README.md`
+  - pyproject.toml na 4 lokalizacjach: root, `core/`, `adapters/{ubuntu,windows,macos}/`
 
 ### Konfiguracja repo
-- `core.autocrlf=false` (set w tym repo, naprawia CRLF/LF problem)
-- Brak `.gitattributes` jeszcze — będzie utworzony w M1.6 zanim ktokolwiek inny sklonuje
+- `core.autocrlf=false` ✅
+- `.gitattributes` ✅ (M1.6)
 
-### M1 Progress (Tasks #8-#14, #15)
+### M1 Progress
 
 | Task | Status | Notes |
 |---|---|---|
-| M1.0 — HANDOFF dokument | ✅ done | Ten plik |
-| M1.1 — git tree clean + tag + branch | ✅ done | Wykonane przez user w PowerShell |
-| M1.2 — Szkielet folderów monorepo | ⏳ pending | Następna sesja |
-| M1.3 — Top-level docs (README/LICENSE/CHANGELOG/SECURITY/CONTRIBUTING) | ⏳ pending | |
-| M1.4 — pyproject.toml workspace | ⏳ pending | |
-| M1.5 — 7 ADR-ów w docs/architecture/ | ⏳ pending | |
-| M1.6 — .gitattributes + .gitignore + pre-commit | ⏳ pending | **Priorytet — przed jakimkolwiek innym klonem** |
-| M1.7 — Walidacja `update-all.sh` | ⏳ pending | User-side test po M1.6 |
+| M1.0 — HANDOFF dokument | ✅ done | Sesja 1 |
+| M1.1 — git tree clean + tag + branch | ✅ done | Sesja 1, user (PowerShell) |
+| M1.2 — Szkielet folderów monorepo | ✅ done | Sesja 1 (przed crashem) |
+| M1.3 — Top-level docs (LICENSE/CHANGELOG/SECURITY/CONTRIBUTING) | ✅ done | Sesja 1 (przed crashem) |
+| M1.4 — pyproject.toml workspace | ✅ done | Sesja 2 (4 plików: root + core + 3 adaptery) |
+| M1.5 — 7 ADR-ów w docs/architecture/ | ✅ done | Sesja 2 (0001-0007) |
+| M1.6 — .gitattributes + .gitignore + pre-commit | ✅ done | Sesja 1 (`.gitattributes`, `.pre-commit-config.yaml`, `.markdownlint.json`, rozszerzony `.gitignore`) |
+| M1.7 — Walidacja `update-all.sh` | ⏳ pending | **User-side** test na linuksie po pierwszym commit + push |
 
 ### FAZ 1-4 (analiza)
 Wszystkie ✅ ukończone, decyzje zapisane wyżej w sekcji "Reference".
@@ -257,48 +266,78 @@ Wszystkie ✅ ukończone, decyzje zapisane wyżej w sekcji "Reference".
 
 ## Next Steps (do wykonania w następnej sesji)
 
-### Krok 1 — User: zaktualizuj remote do nowego GitHub repo
+### Krok 1 — User: pierwszy commit na branchu + push (WSZYSTKO M1.2-M1.6 razem)
 
 ```powershell
 cd D:\Dev_Env\ascendo
-git remote -v   # zobacz current (wskazuje na lokalny D:\Dev_Env\Ubuntu_Aktualizacje)
-git remote set-url origin https://github.com/KasprowiczM/ascendo.git
-git remote -v   # verify (powinien być GitHub URL)
-```
 
-### Krok 2 — User: pierwszy commit na branchu + push
+# Verify remote is GitHub:
+git remote -v
 
-```powershell
-# Posprzątaj test file:
-Remove-Item .write-test -ErrorAction SilentlyContinue
+# Stage everything new from M1.2-M1.6:
+git add .gitattributes .gitignore .markdownlint.json .pre-commit-config.yaml
+git add HANDOFF.md LICENSE CHANGELOG.md CONTRIBUTING.md SECURITY.md README.md
+git add pyproject.toml
+git add core/ adapters/ contrib/ plugins/_template/ plugins/agent-clis/ plugins/dell-driver-update/ plugins/nvidia-driver-update/ plugins/README.md
+git add ui/ packaging/ website/ tests/ docs/architecture/ docs/README.md
+git add scripts/.gitkeep
 
-# Dodaj handoff:
-git add HANDOFF.md
-git commit -m "docs(handoff): initial implementation plan + state snapshot
+# (Optional) clean up if any leftovers:
+git status   # review what's staged
 
-- Captures decisions from FAZ 1-4 (architecture, milestones, contracts)
-- Documents current branch state (restructure/monorepo)
-- Provides resume-from-crash capability
-- M1.0 task complete
+# Commit:
+git commit -m "feat(m1): foundation — monorepo restructure + scaffold + ADRs
 
-See HANDOFF.md for the full implementation plan."
+M1.0 — HANDOFF.md (Session 1)
+M1.1 — clean working tree + pre-monorepo-restructure tag + branch (Session 1)
+M1.2 — monorepo skeleton: core/, adapters/{ubuntu,windows,macos}/,
+       contrib/, plugins/, ui/, packaging/, website/, tests/
+M1.3 — top-level docs: LICENSE (MIT), CHANGELOG, CONTRIBUTING, SECURITY
+M1.4 — pyproject.toml workspace (root + core + 3 adapters with hatchling
+       build backend, ruff/mypy/pytest config, import-linter contracts)
+M1.5 — seven ADRs (0001-monorepo, 0002-tauri, 0003-json-v1-sidecar,
+       0004-python-core+native-scripts, 0005-six-layer-architecture,
+       0006-two-tier-adapter-system, 0007-plugin-manifest-v1)
+M1.6 — .gitattributes (LF/CRLF policy), .gitignore (rebrand+expansion),
+       .markdownlint.json, .pre-commit-config.yaml (ruff, mypy, shellcheck,
+       PSScriptAnalyzer, gitleaks, markdownlint, plugin-manifest validator)
 
-# Push do GitHub (pierwsze:
+Closes M1.0-M1.6. M1.7 (validate update-all.sh on Linux) is the
+user-side smoke test after this commit lands."
+
+# Push to GitHub:
 git push -u origin restructure/monorepo
 ```
 
-### Krok 3 — Następna sesja: ja kontynuuję od M1.6
+### Krok 2 — User: M1.7 walidacja na Linuksie
 
-Otwórz nową sesję Cowork, zamontuj `D:\Dev_Env\ascendo` (i opcjonalnie
-trzy stare repo dla reference), powiedz „kontynuuj M1 od M1.6". Przeczytam
-HANDOFF.md, zaktualizuję sekcję `Current State` na rozpoczęcie sesji,
-wykonam M1.6 → M1.2 → M1.3 → M1.4 → M1.5.
+Po pushu — przeklonuj na Linuksie (mk-uP5520) i odpal:
 
-**Kolejność M1.6 ZANIM M1.2-M1.5** jest świadoma:
-- `.gitattributes` musi być pierwsze, żeby zapobiec CRLF problemowi przy
-  jakimkolwiek nowym klonie (nawet moim w next session)
-- `.gitignore` rozszerzenie też pierwsze, żeby `.venv/`, `target/`,
-  `dist/` nie weszły do repo
+```bash
+git clone -b restructure/monorepo https://github.com/KasprowiczM/ascendo.git ~/ascendo-test
+cd ~/ascendo-test
+./update-all.sh --profile quick     # read-only, ~15s
+./update-all.sh --dry-run           # podgląd bez wykonania
+```
+
+Cel: potwierdzić że istniejący update-all.sh nadal działa po
+restrukturze (skrypty Linuksa są na razie nietknięte — będą przeniesione
+do `adapters/ubuntu/scripts/` w M3+).
+
+Jeśli coś się sypie — to nie M1, to M2 jeszcze nieskończone (ale powinno
+być clean: na branchu nic nie zmienialiśmy w `update-all.sh`/`scripts/`,
+tylko dodaliśmy nowe foldery + dokumenty).
+
+### Krok 3 — Następna sesja: M2 Core skeleton
+
+Po M1 zacommitowanym + zwalidowanym, otwórz nową sesję i powiedz
+„kontynuuj M2". W M2 będę:
+- Projektował interfaces w `core/ascendo/interfaces/` (IPackageManager,
+  IScheduler, ISnapshot, ISource, IInventory, IElevation)
+- Migrował Pydantic v2 modele z `app/backend/` do `core/ascendo/models/`
+- Pisał JSON Schema export dla `ascendo/v1` sidecar
+- Pisał contract tests w `tests/contract/` które przejdą po stronie
+  Linux i będą failować po stronie Windows/macOS dopóki M3/M5 nie skończone
 
 ---
 
@@ -433,6 +472,70 @@ Te wymagają decyzji w future sessions, ale teraz nie blokują:
 ---
 
 ## Session Log (UPDATE after each session)
+
+### Sesja 2 — 2026-05-01
+
+**Cel:** Dokończyć M1 (poprzednia sesja zawiesiła się w trakcie — wymagała
+recovery + dokończenia M1.4 + M1.5).
+
+**Zrobione:**
+- **Recovery:** Naprawione `.git/HEAD` które było skorumpowane przez
+  truncated write z hung session (zawierało `ref: refs/heads/restr` zamiast
+  `ref: refs/heads/restructure/monorepo`). Przywrócone do poprawnego stanu.
+- **Audit M1.2/M1.3/M1.6:** zweryfikowane że hung session zdążyła zapisać
+  poprawnie (i kompletnie) wszystkie pliki — `.gitattributes`,
+  `.pre-commit-config.yaml`, `.markdownlint.json`, rozszerzony `.gitignore`,
+  `LICENSE`, `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`, oraz cały
+  szkielet folderów `core/`, `adapters/{ubuntu,windows,macos}/`, `contrib/`,
+  `plugins/`, `ui/`, `packaging/`, `website/`, `tests/`,
+  `docs/architecture/{README,templates/adr-template}`.
+- **M1.4:** Napisany pyproject.toml workspace na 4 lokalizacjach:
+  - `pyproject.toml` (root) — workspace coordinator + shared tool config
+    (ruff, mypy, pytest, coverage)
+  - `core/pyproject.toml` — pakiet `ascendo` (Layer 4) z hatchling backend,
+    Pydantic v2 + FastAPI + Typer + jsonschema, importlinter contracts
+    (Core MUST NOT import from adapters)
+  - `adapters/ubuntu/pyproject.toml` — `ascendo-ubuntu`
+  - `adapters/windows/pyproject.toml` — `ascendo-windows` (z pywin32)
+  - `adapters/macos/pyproject.toml` — `ascendo-macos` (deferred do M5)
+- **M1.5:** Napisane 7 ADR-ów w `docs/architecture/`:
+  - `0001-monorepo-with-adapters.md` — uzasadnienie monorepo
+  - `0002-tauri-as-desktop-shell.md` — Tauri 2.x jako desktop UI
+  - `0003-json-v1-sidecar-contract.md` — JSON `ascendo/v1` schemat + reader
+  - `0004-python-core-with-native-script-adapters.md` — Wariant A
+  - `0005-six-layer-architecture.md` — 6 warstw + dependency rules
+  - `0006-two-tier-adapter-system.md` — Tier 1 / Tier 2 + promotion path
+  - `0007-plugin-manifest-v1.md` — manifest TOML + plugin SDK boundary
+
+**Co poszło źle:**
+- Poprzednia sesja (planowana jako Sesja 1 ciąg dalszy) zawiesiła się
+  w trakcie pracy — ostatni write na `.gitignore` lub `.git/HEAD` był
+  truncated. Recovery zajął ~2 minuty (zidentyfikowanie przez `cat -A
+  .git/HEAD` + przywrócenie poprawnej wartości).
+
+**Czego się nauczyliśmy (operational):**
+- Bash sandbox w tej sesji **nie** jest już read-only — udało się
+  wykonać `printf > .git/HEAD`. To rozszerza wachlarz operacji recovery,
+  ale nadal git commits/push/tag rezerwujemy dla user'a (intencja:
+  przegląd i intencjonalność zmian historii git po stronie człowieka).
+- HANDOFF.md jako single source of truth zadziałał — przyjście na nowo
+  do tematu i dokończenie M1 było mechaniczne, bez utraty kontekstu.
+
+**Decyzje podjęte:**
+- pyproject layout: per-package (root + 4 packages), nie single mega-toml.
+  Zgodne z `CONTRIBUTING.md` instrukcją `pip install -e core/[dev]`.
+- Build backend: hatchling (lekki, czysta konfiguracja, dobrze radzi
+  sobie z włączaniem native scripts do wheela jako data files).
+- import-linter zamiast manualnych testów: deklaratywny, w CI wystarczy
+  `lint-imports` żeby sprawdzić wszystkie kontrakty z ADR-0005.
+- ADR-y są **długie i opinionated** — celowo. Każdy zawiera Context +
+  Decision + (Positive/Negative/Neutral consequences) + Alternatives.
+  Open-source kontrybutorzy będą potrzebować zrozumieć "dlaczego",
+  nie tylko "co".
+
+**Następna sesja:** M2 Core skeleton (interfaces, models, contract tests).
+
+---
 
 ### Sesja 1 — 2026-04-30
 

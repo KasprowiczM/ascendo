@@ -1,0 +1,12 @@
+# Tier 2 (community) adapters — minimal contract, experimental.
+#
+# Examples that may land here:
+#   freebsd/      — FreeBSD pkg
+#   fedora/       — DNF / rpm-ostree
+#   alpine/       — apk (musl)
+#   chromeos/     — Crostini (Linux container in ChromeOS)
+#
+# Tier 2 contract: manifest.toml + scripts/<cat>/<phase>.sh + smoke test.
+# No Python package required.
+#
+# See docs/architecture/0006-two-tier-adapter-system.md for promotion path.

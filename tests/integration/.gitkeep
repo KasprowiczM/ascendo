@@ -1,0 +1,7 @@
+# End-to-end integration tests (slow, hit real OS).
+#
+# Implemented in M3 (Windows MVP) onwards. Examples:
+#   test_full_run_dry.py        — `ascendo run --dry-run` produces valid output
+#   test_dashboard_starts.py    — backend listens on 127.0.0.1:8765
+#   test_plugin_lifecycle.py    — install + run + uninstall test plugin
+#   test_scheduler_register.py  — systemd/launchd/Task Scheduler integration

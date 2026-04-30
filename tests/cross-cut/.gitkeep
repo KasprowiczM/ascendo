@@ -1,0 +1,7 @@
+# Cross-cutting tests that span multiple components.
+#
+# Examples:
+#   test_branding_consistency.py    — branding tokens used everywhere
+#   test_no_hardcoded_paths.py      — no DP5520WMK / mk-uP5520 anywhere
+#   test_imports_clean.py           — core never imports adapters
+#   test_i18n_keys_complete.py      — all 7 langs have same keys

@@ -1,0 +1,263 @@
+# =============================================================================
+# pyproject.toml — Ascendo workspace root
+# =============================================================================
+#
+# This root pyproject.toml is the workspace coordinator. It does NOT define
+# an installable package itself — each package has its own pyproject.toml:
+#
+#   core/pyproject.toml                     → ascendo
+#   adapters/ubuntu/pyproject.toml          → ascendo-ubuntu
+#   adapters/windows/pyproject.toml         → ascendo-windows
+#   adapters/macos/pyproject.toml           → ascendo-macos
+#
+# This file holds:
+#   - Shared tool configuration (ruff, mypy, pytest, coverage)
+#   - Workspace-level optional-dependencies for dev/test tooling
+#   - Editor-friendly defaults so any IDE rooted here finds the rules
+#
+# Install dev tooling from here:
+#   pip install -r requirements-dev.txt    # (generated from this file by CI)
+#   # or:
+#   pip install pre-commit ruff mypy pytest pytest-cov pydantic
+#
+# Install actual packages from their own folders:
+#   pip install -e core/[dev]
+#   pip install -e adapters/ubuntu/[dev]
+# =============================================================================
+
+[project]
+name            = "ascendo-workspace"
+version         = "0.0.1-dev"
+description     = "Workspace root for Ascendo (not an installable package)."
+readme          = "README.md"
+license         = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors         = [{ name = "KasprowiczM and Ascendo contributors" }]
+keywords        = ["update", "package-manager", "linux", "windows", "macos", "automation"]
+classifiers     = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Software Distribution",
+    "Topic :: System :: Systems Administration",
+    "Private :: Do Not Upload",
+]
+
+# Intentionally no [project.dependencies] — this isn't a buildable package.
+# The PEP 621 fields exist only so tooling (ruff/mypy/pytest) finds metadata.
+
+[project.urls]
+Homepage      = "https://github.com/KasprowiczM/ascendo"
+Repository    = "https://github.com/KasprowiczM/ascendo"
+Issues        = "https://github.com/KasprowiczM/ascendo/issues"
+Documentation = "https://github.com/KasprowiczM/ascendo/tree/main/docs"
+Changelog     = "https://github.com/KasprowiczM/ascendo/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit>=3.7",
+    "ruff>=0.4.4",
+    "mypy>=1.10",
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "pytest-asyncio>=0.23",
+    "pytest-xdist>=3.5",
+    "pydantic>=2.7",
+    "jsonschema>=4.22",
+    "tomli-w>=1.0",
+    "build>=1.2",
+    "twine>=5.0",
+]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.25",
+]
+
+# We do not declare a build-system here on purpose — this root is not built.
+# CI just installs the per-package pyprojects.
+
+# =============================================================================
+# Tool configuration — shared across all packages in the monorepo
+# =============================================================================
+
+# ── ruff (linter + formatter) ────────────────────────────────────────────────
+[tool.ruff]
+line-length    = 100
+target-version = "py311"
+src            = ["core", "adapters/ubuntu", "adapters/windows", "adapters/macos", "tests"]
+extend-exclude = [
+    ".venv",
+    "venv",
+    "build",
+    "dist",
+    "graphify-out",
+    "packaging/deb/opt",
+    "website/dist",
+    "**/src-tauri/target",
+    "**/__pycache__",
+    "**/.mypy_cache",
+    "**/.ruff_cache",
+    "**/.pytest_cache",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "N",    # pep8-naming
+    "SIM",  # flake8-simplify
+    "PT",   # flake8-pytest-style
+    "RET",  # flake8-return
+    "RUF",  # ruff-specific
+    "S",    # flake8-bandit (security)
+    "ANN",  # flake8-annotations
+    "PTH",  # flake8-use-pathlib
+]
+ignore = [
+    "E501",   # line-too-long — handled by formatter
+    "ANN101", # missing-type-self — deprecated rule
+    "ANN102", # missing-type-cls — deprecated rule
+    "S101",   # assert-used — pytest depends on assert
+    "S603",   # subprocess-without-shell-equals-true — adapters DO call subprocess
+    "S607",   # start-process-with-partial-path — adapters use absolute paths via PATH lookup
+]
+fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py"            = ["ANN", "S101", "PLR2004"]
+"core/ascendo/cli/**/*.py" = ["T20"]   # CLI prints to stdout — that's its job
+"adapters/**/scripts/**"    = ["ALL"]   # native scripts, not Python
+
+[tool.ruff.lint.isort]
+known-first-party = ["ascendo", "ascendo_ubuntu", "ascendo_windows", "ascendo_macos"]
+combine-as-imports = true
+
+[tool.ruff.format]
+quote-style              = "double"
+indent-style             = "space"
+docstring-code-format    = true
+docstring-code-line-length = 80
+
+# ── mypy (strict on core/, lenient on adapters initially) ────────────────────
+[tool.mypy]
+python_version           = "3.11"
+strict                   = true
+warn_unused_configs      = true
+warn_redundant_casts     = true
+warn_unused_ignores      = true
+disallow_untyped_defs    = true
+disallow_incomplete_defs = true
+no_implicit_optional     = true
+check_untyped_defs       = true
+files                    = ["core/ascendo", "adapters/ubuntu/ascendo_ubuntu",
+                            "adapters/windows/ascendo_windows", "adapters/macos/ascendo_macos"]
+plugins                  = ["pydantic.mypy"]
+exclude                  = [
+    "build/",
+    "dist/",
+    "graphify-out/",
+    "packaging/deb/opt/",
+    "tests/fixtures/",
+    "**/src-tauri/target/",
+]
+
+[[tool.mypy.overrides]]
+module                   = ["ascendo_ubuntu.*", "ascendo_windows.*", "ascendo_macos.*"]
+# Adapters can be slightly less strict than core during M1-M3 bring-up.
+disallow_untyped_decorators = false
+
+[[tool.mypy.overrides]]
+# Third-party libs without type stubs.
+module = [
+    "uvicorn.*",
+    "winreg.*",
+    "win32api.*",
+    "win32com.*",
+    "objc.*",
+    "Foundation.*",
+]
+ignore_missing_imports = true
+
+[tool.pydantic-mypy]
+init_forbid_extra        = true
+init_typed               = true
+warn_required_dynamic_aliases = true
+
+# ── pytest ───────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+minversion       = "8.0"
+testpaths        = [
+    "core/tests",
+    "adapters/ubuntu/tests",
+    "adapters/windows/tests",
+    "adapters/macos/tests",
+    "tests/cross-cut",
+    "tests/contract",
+    "tests/integration",
+]
+python_files     = ["test_*.py", "*_test.py"]
+python_classes   = ["Test*"]
+python_functions = ["test_*"]
+addopts          = [
+    "-ra",                       # show short test summary for everything except passing
+    "--strict-markers",
+    "--strict-config",
+    "--showlocals",
+    "--tb=short",
+    "-p", "no:cacheprovider",   # avoid clutter in CI
+]
+markers = [
+    "unit: fast tests with no IO (default)",
+    "contract: cross-OS adapter contract tests",
+    "integration: real subprocess / FS / network — opt-in only",
+    "linux_only: skip on non-Linux platforms",
+    "windows_only: skip on non-Windows platforms",
+    "macos_only: skip on non-macOS platforms",
+    "elevated: requires sudo / Administrator",
+    "slow: tests longer than 1 second",
+]
+asyncio_mode = "auto"
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:pydantic.*",
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+]
+
+# ── coverage ─────────────────────────────────────────────────────────────────
+[tool.coverage.run]
+branch  = true
+source  = ["core/ascendo", "adapters/ubuntu/ascendo_ubuntu",
+           "adapters/windows/ascendo_windows", "adapters/macos/ascendo_macos"]
+omit    = [
+    "*/__main__.py",
+    "*/tests/*",
+    "*/test_*.py",
+]
+parallel = true
+
+[tool.coverage.report]
+precision         = 2
+show_missing      = true
+skip_covered      = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@(abc\\.)?abstractmethod",
+]
+fail_under = 80   # raised over time; bring-up phase target is 60
+
+[tool.coverage.html]
+directory = "htmlcov"

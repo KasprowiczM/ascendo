@@ -1,0 +1,118 @@
+# =============================================================================
+# .pre-commit-config.yaml — Ascendo
+# =============================================================================
+# Activate locally:
+#   pip install --user pre-commit
+#   pre-commit install
+#
+# Run manually:
+#   pre-commit run --all-files
+# =============================================================================
+
+repos:
+  # ── Built-in basic hooks ───────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.(md|patch)$'
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=512']
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        args: ['--fix=no']  # do NOT auto-fix; .gitattributes governs
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-symlinks
+      - id: detect-private-key
+
+  # ── Python: ruff (lint + format) ───────────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  # ── Python: mypy (type checking on core/) ──────────────────────────────────
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.0
+    hooks:
+      - id: mypy
+        files: ^core/
+        additional_dependencies:
+          - pydantic>=2.0
+          - fastapi
+          - typer
+
+  # ── Bash / shell: shellcheck ───────────────────────────────────────────────
+  - repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.10.0
+    hooks:
+      - id: shellcheck
+        args: [-x, --severity=warning]
+        files: \.(sh|bash)$
+        exclude: ^contrib/
+
+  # ── PowerShell: PSScriptAnalyzer (run via system pwsh) ─────────────────────
+  # Note: requires `pwsh` and `Install-Module PSScriptAnalyzer` on the host.
+  # Skipped in CI matrix where Windows runner runs it natively.
+  - repo: local
+    hooks:
+      - id: psscriptanalyzer
+        name: PSScriptAnalyzer
+        entry: pwsh -NoProfile -Command "Invoke-ScriptAnalyzer -Path"
+        language: system
+        files: \.(ps1|psm1|psd1)$
+        pass_filenames: true
+        exclude: ^contrib/
+
+  # ── Secrets scanner: gitleaks ──────────────────────────────────────────────
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+
+  # ── Markdown: prose linting ────────────────────────────────────────────────
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.41.0
+    hooks:
+      - id: markdownlint
+        args: [--config, .markdownlint.json]
+        exclude: ^(CHANGELOG\.md|HANDOFF\.md|docs/architecture/templates/.*)$
+
+  # ── TOML formatting (consistency) ──────────────────────────────────────────
+  - repo: https://github.com/python-poetry/poetry
+    rev: 1.8.3
+    hooks:
+      - id: poetry-check
+        files: ^pyproject\.toml$
+
+  # ── Local custom checks ────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: validate-plugin-manifests
+        name: Validate plugin manifests
+        entry: python tests/validate_plugin_manifests.py
+        language: python
+        files: ^plugins/.*/manifest\.toml$
+        pass_filenames: false
+        additional_dependencies: [pydantic>=2.0]
+
+      - id: validate-phase-json-schema
+        name: Validate JSON v1 sidecar schema
+        entry: python tests/validate_phase_json.py --schema-only
+        language: python
+        files: ^(core/ascendo/models/sidecar\.py|tests/fixtures/sidecars/.*)$
+        pass_filenames: false
+        additional_dependencies: [jsonschema, pydantic>=2.0]
+
+      - id: no-hardcoded-personal-paths
+        name: No hardcoded personal paths (DP5520WMK, MK, mk-uP5520)
+        entry: bash -c 'grep -rEn "DP5520WMK|mk-uP5520" --include="*.py" --include="*.sh" --include="*.ps1" . && exit 1 || exit 0'
+        language: system
+        pass_filenames: false
+        exclude: ^(\.git/|HANDOFF\.md|docs/architecture/.*\.md|.*/CHANGELOG\.md)

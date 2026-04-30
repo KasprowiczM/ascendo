@@ -1,0 +1,8 @@
+# Shared test data.
+#
+# Subfolders to be created as tests are written:
+#   sidecars/          — golden ascendo/v1 JSON sidecars (parser tests)
+#   winget_outputs/    — sample winget output (with UTF-8 ellipsis edge cases)
+#   apt_outputs/       — sample apt output
+#   manifests/         — example plugin manifests (valid + invalid)
+#   logs/              — sample log files (with various encodings)

@@ -1,0 +1,8 @@
+# Adapter contract tests — every Tier 1 adapter MUST pass these.
+#
+# Will be implemented in M2 (Core skeleton). Examples:
+#   test_package_manager_returns_valid_packages.py
+#   test_scheduler_register_unregister_idempotent.py
+#   test_snapshot_create_returns_id_or_none.py
+#   test_elevation_is_elevated_no_side_effects.py
+#   test_emit_sidecars_validate_against_v1_schema.py

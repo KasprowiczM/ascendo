@@ -1,0 +1,8 @@
+# YAML manifests for `winget install Ascendo.Ascendo`.
+#
+# Created in M4 (Distribution).
+# Auto-submitted to microsoft/winget-pkgs on release tag via
+# `vedantmgoyal2009/winget-releaser` action in .github/workflows/release.yml
+#
+# Manifest schema: https://aka.ms/winget-manifests
+# Identifier: Ascendo.Ascendo (org.product format)

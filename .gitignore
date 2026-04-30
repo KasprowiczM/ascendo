@@ -1,67 +1,155 @@
 # =============================================================================
-# .gitignore — Ubuntu_Aktualizacje
+# .gitignore — Ascendo
+# =============================================================================
+# Excludes machine-specific generated files, runtime caches, build outputs,
+# secrets, and editor metadata. Keep .gitattributes for line-ending policy.
 # =============================================================================
 
-# ── Machine-specific inventory (generated per-machine, never committed) ───────
+# ── Machine-specific inventory (generated per-machine, never committed) ──────
 APPS.md
+APPLICATIONS.md
+PROGRAMS.md
+PROGRAMS.json
+UPDATES.md
 
-# ── Runtime logs ──────────────────────────────────────────────────────────────
-logs/*.log
-logs/runs/
+# ── Runtime logs ─────────────────────────────────────────────────────────────
+logs/
+*.log
+!**/example.log
+!**/sample.log
+**/Logs/
+dev_sync_logs/
 
-# ── Dashboard runtime ─────────────────────────────────────────────────────────
-app/tauri/src-tauri/target/
-app/tauri/src-tauri/Cargo.lock
-app/tauri/src-tauri/icons/
+# ── Build outputs ────────────────────────────────────────────────────────────
+dist/
+build/
+target/
+out/
+*.egg-info/
+*.egg
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+
+# ── Tauri / Rust build ───────────────────────────────────────────────────────
+**/src-tauri/target/
+**/src-tauri/Cargo.lock
+**/src-tauri/icons/
+**/src-tauri/gen/
+
+# ── PyInstaller ──────────────────────────────────────────────────────────────
+*.manifest
+*.spec.bak
+
+# ── Python virtualenvs ───────────────────────────────────────────────────────
+.venv/
+venv/
+ENV/
+env/
+**/app/.venv/
+core/.venv/
+adapters/*/.venv/
 
 # ── SQLite (per-user dashboard history) ──────────────────────────────────────
 *.db
 *.db-wal
 *.db-shm
+*.sqlite
+*.sqlite3
 
-# ── Config backups created by --discover mode ─────────────────────────────────
+# ── Config backups (auto-discovery mode) ─────────────────────────────────────
 config/*.bak_*
+**/config/hosts.toml
+**/config/hosts.local.toml
 
-# ── Dev sync private overlay runtime state ────────────────────────────────────
+# ── Dev sync private overlay runtime state ───────────────────────────────────
 .dev_sync_config.json
 .dev_sync_manifest.json
-dev_sync_logs/
 dev_sync_quarantine/
 dev_sync_cleanup_plan*.json
 .sync-state/
 config/dev-sync-*.local
 *.rclone.conf
 
-# ── Agent runtime caches ──────────────────────────────────────────────────────
+# ── Agent runtime caches ─────────────────────────────────────────────────────
 .codex.local/tmp/
-__pycache__/
-*.py[cod]
 
-# ── Graphify runtime internals (final report/html/json may be tracked) ────────
+# ── Graphify runtime internals (reports may be tracked separately) ───────────
 graphify-out/cache/
 graphify-out/converted/
 graphify-out/manifest.json
 graphify-out/cost.json
 graphify-out/.graphify_*
 
-# ── Editor / IDE ──────────────────────────────────────────────────────────────
+# ── Editor / IDE ─────────────────────────────────────────────────────────────
 .vscode/
+.idea/
 *.swp
 *.swo
 *~
-.idea/
-
-# ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# ── Claude Code internal settings (machine-local) ─────────────────────────────
+# ── Claude Code internal settings (machine-local) ────────────────────────────
 .claude/
+.cursor/
+.aider*
 
-.env*
+# ── Secrets — never commit ───────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+!.env.template
+*.env
+*.local.json
+*.local.yml
+*.local.yaml
+*.local.toml
+secrets/
+credentials/
+**/api_keys.json
+*.key
+*.pem
+!tests/fixtures/**/*.key
+!tests/fixtures/**/*.pem
 
-# SSH keys
+# ── SSH ──────────────────────────────────────────────────────────────────────
 github
 github.pub
-app/.venv/
-config/hosts.toml
+*.id_rsa
+*.id_ed25519
+
+# ── Node ─────────────────────────────────────────────────────────────────────
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+
+# ── Astro / website ──────────────────────────────────────────────────────────
+website/node_modules/
+website/.astro/
+website/dist/
+website/.cache/
+
+# ── macOS-specific (when developing on macOS) ────────────────────────────────
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# ── Windows-specific ─────────────────────────────────────────────────────────
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ── Cowork session leftovers ─────────────────────────────────────────────────
+.write-test
+.cowork-test

@@ -1,0 +1,78 @@
+# =============================================================================
+# adapters/windows/pyproject.toml — `ascendo-windows` (Layer 5: Adapter)
+# =============================================================================
+#
+# Windows adapter. Implements the interfaces defined in `ascendo.interfaces`
+# (winget, Microsoft Store via msstore, MSI/EXE via registry ARP, PSWindowsUpdate,
+# Dell Command Update via plugin, VSS for snapshots).
+#
+# Native logic lives in `scripts/<phase>.ps1` and `lib/*.ps1` — Layer 6.
+# The Python module (Layer 5) spawns PowerShell and parses JSON v1 sidecars.
+#
+# Install in editable mode for development:
+#   pip install -e adapters/windows/[dev]
+# =============================================================================
+
+[build-system]
+requires      = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name            = "ascendo-windows"
+version         = "0.0.1-dev"
+description     = "Ascendo Windows adapter (winget, Store, MSI/EXE, PSWindowsUpdate, VSS)."
+readme          = "README.md"
+license         = { text = "MIT" }
+requires-python = ">=3.11"
+authors         = [{ name = "KasprowiczM and Ascendo contributors" }]
+classifiers     = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Software Distribution",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "ascendo>=0.0.1",
+    "pydantic>=2.7,<3",
+    "pywin32>=306;        platform_system == 'Windows'",
+    "pywin32-ctypes>=0.2; platform_system == 'Windows'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "ruff>=0.4.4",
+    "mypy>=1.10",
+]
+
+[project.urls]
+Homepage   = "https://github.com/KasprowiczM/ascendo"
+Repository = "https://github.com/KasprowiczM/ascendo"
+
+[project.entry-points."ascendo.adapters"]
+windows = "ascendo_windows:WindowsAdapter"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ascendo_windows"]
+include  = [
+    "ascendo_windows/**/*.py",
+    "scripts/**/*.ps1",
+    "scripts/**/*.psm1",
+    "lib/**/*.ps1",
+    "lib/**/*.psm1",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/ascendo_windows",
+    "/scripts",
+    "/lib",
+    "/README.md",
+    "/pyproject.toml",
+    "/tests",
+]

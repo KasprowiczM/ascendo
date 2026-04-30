@@ -1,0 +1,10 @@
+# Homebrew formula for `brew install KasprowiczM/tap/ascendo`.
+#
+# Created in M5 (macOS) but published to a separate repo:
+#   github.com/KasprowiczM/homebrew-tap (repo name MUST start with "homebrew-")
+#
+# Auto-bumped on release by .github/workflows/release.yml using
+# `dawidd6/action-homebrew-bump-formula` action.
+#
+# This folder mirrors the formula source for review/CI; the actual tap
+# is its own repo per Homebrew convention.

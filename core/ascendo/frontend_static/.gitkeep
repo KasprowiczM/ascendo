@@ -1,0 +1,4 @@
+# SPA assets served by FastAPI at /.
+# Symlink target or copy of ui/frontend/ — built into Python package
+# at build time. Loaded by core/ascendo/dashboard/app.py via
+# StaticFiles mount.

@@ -1,0 +1,134 @@
+# =============================================================================
+# .gitattributes — Ascendo cross-OS line-ending policy
+# =============================================================================
+#
+# Why this file exists:
+#   Ascendo is a cross-OS project (Linux + Windows + macOS). Without explicit
+#   line-ending rules, every Windows clone of this repo would show ALL files
+#   as "modified" due to git for Windows' default core.autocrlf=true converting
+#   LF → CRLF on checkout. This file forces consistent EOL per file type
+#   regardless of user's git config.
+#
+# Rule of thumb:
+#   - Shell scripts (.sh), Python (.py), JSON, YAML, TOML, Markdown    → LF
+#   - PowerShell scripts (.ps1, .psm1, .psd1)                          → CRLF
+#   - Windows batch (.bat, .cmd)                                       → CRLF
+#   - Binary files                                                     → no transform
+#   - Generated/text files of unspecified type                         → text=auto
+# =============================================================================
+
+# ── Default: autodetect text/binary, normalize text to LF in repo ────────────
+* text=auto eol=lf
+
+# ── Explicit: source code that MUST be LF ────────────────────────────────────
+*.sh         text eol=lf
+*.bash       text eol=lf
+*.zsh        text eol=lf
+*.fish       text eol=lf
+*.py         text eol=lf
+*.pyx        text eol=lf
+*.pyi        text eol=lf
+*.rs         text eol=lf
+*.go         text eol=lf
+*.js         text eol=lf
+*.mjs        text eol=lf
+*.cjs        text eol=lf
+*.ts         text eol=lf
+*.tsx        text eol=lf
+*.jsx        text eol=lf
+*.html       text eol=lf
+*.css        text eol=lf
+*.scss       text eol=lf
+*.svg        text eol=lf
+
+# ── Config files: LF (cross-platform tools generally OK with both) ───────────
+*.json       text eol=lf
+*.yml        text eol=lf
+*.yaml       text eol=lf
+*.toml       text eol=lf
+*.ini        text eol=lf
+*.cfg        text eol=lf
+*.conf       text eol=lf
+*.list       text eol=lf
+*.env        text eol=lf
+
+# ── Documentation: LF ────────────────────────────────────────────────────────
+*.md         text eol=lf
+*.rst        text eol=lf
+*.txt        text eol=lf
+*.adoc       text eol=lf
+
+# ── Locks / generated text: LF ───────────────────────────────────────────────
+*.lock       text eol=lf
+poetry.lock  text eol=lf
+package-lock.json text eol=lf
+yarn.lock    text eol=lf
+Cargo.lock   text eol=lf
+
+# ── Windows-specific: MUST be CRLF (PowerShell parser preferences) ───────────
+*.ps1        text eol=crlf
+*.psm1       text eol=crlf
+*.psd1       text eol=crlf
+*.ps1xml     text eol=crlf
+*.bat        text eol=crlf
+*.cmd        text eol=crlf
+
+# ── Special files (no EOL conversion, preserve source-of-truth) ──────────────
+*.spec       text eol=lf
+*.gitattributes text eol=lf
+*.gitignore  text eol=lf
+*.editorconfig text eol=lf
+LICENSE      text eol=lf
+CHANGELOG.md text eol=lf
+README.md    text eol=lf
+HANDOFF.md   text eol=lf
+
+# ── Binary: never transform ──────────────────────────────────────────────────
+*.png        binary
+*.jpg        binary
+*.jpeg       binary
+*.gif        binary
+*.ico        binary
+*.icns       binary
+*.bmp        binary
+*.webp       binary
+*.pdf        binary
+*.zip        binary
+*.tar        binary
+*.tar.gz     binary
+*.tgz        binary
+*.7z         binary
+*.deb        binary
+*.rpm        binary
+*.msi        binary
+*.exe        binary
+*.dmg        binary
+*.pkg        binary
+*.AppImage   binary
+*.dll        binary
+*.so         binary
+*.dylib      binary
+*.woff       binary
+*.woff2      binary
+*.ttf        binary
+*.otf        binary
+*.eot        binary
+
+# ── Linguist hints (GitHub language detection) ───────────────────────────────
+# Generated/vendored — exclude from language stats
+docs/architecture/templates/* linguist-generated=true
+**/__pycache__/**            linguist-generated=true
+**/node_modules/**           linguist-vendored=true
+**/target/**                 linguist-generated=true
+**/dist/**                   linguist-generated=true
+graphify-out/**              linguist-generated=true
+
+# Mark documentation correctly
+docs/**                      linguist-documentation=true
+*.md                         linguist-documentation=false
+
+# ── Diff hints ───────────────────────────────────────────────────────────────
+*.lockb                      binary
+package-lock.json            -diff
+poetry.lock                  -diff
+Cargo.lock                   -diff

@@ -1,0 +1,10 @@
+# Windows MSI packaging via WiX.
+#
+# Created in M4 (Distribution & UI milestone).
+# Tauri's bundle.targets=["msi"] generates the MSI; this folder holds:
+#   - WiX fragment files for non-default behavior
+#   - Postinstall scripts (registry entries, PATH addition)
+#   - License file (LICENSE.rtf for the EULA dialog)
+#   - Banner/dialog images (optional branded UI)
+#
+# See docs/architecture/0008-distribution-strategy.md

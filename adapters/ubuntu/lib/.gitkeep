@@ -1,0 +1,3 @@
+# Bash shared libraries land here in M1.B (mass migration).
+# Migrated from D:\Dev_Env\Ubuntu_Aktualizacje\lib\
+# Includes: common.sh, detect.sh, json_emit.sh, orchestrator.sh, etc.

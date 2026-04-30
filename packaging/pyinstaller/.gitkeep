@@ -1,0 +1,12 @@
+# PyInstaller spec files for bundling Python backend on Windows + macOS.
+#
+# Created in M4. One-folder mode (faster startup, lower antivirus FP rate).
+#
+# Files:
+#   windows.spec  — Windows MSI bundle (no console, ascendo-backend.exe)
+#   macos.spec    — universal2 (arm64 + x86_64), .app bundle
+#   linux.spec    — optional (Linux uses system Python via .deb dep)
+#   hooks/        — custom PyInstaller hooks for Pydantic dynamic imports
+#   version_info.txt — Windows .exe metadata
+#
+# See docs/architecture/0008-distribution-strategy.md

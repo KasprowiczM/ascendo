@@ -1,0 +1,7 @@
+# Bash 3.2 shared utilities land here in M5.
+#
+# Migrated from D:\Dev_Env\Aktualizacje_MAC:
+#   common.sh         — logging, color, session dir + cleanup trap
+#   detect.sh         — OS version, arch, Homebrew prefix
+#   json_emit.sh      — JSON v1 sidecar emitter (port from Linux lib/json.sh)
+#   dmg_verify.sh     — hdiutil + spctl + pkgutil chain (security gem from macOS repo)

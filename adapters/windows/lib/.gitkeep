@@ -1,0 +1,10 @@
+# PowerShell shared modules (.ps1 dot-source style) land here in M3.
+#
+# Hidden gems extracted from D:\Dev_Env\Aktualizacje-W11-Dell5520:
+#   Common.ps1            — Write-Log, UTF-8 helpers, log rotation
+#   Json-Emit.ps1         — JSON v1 sidecar emitter (PS port of lib/json.sh)
+#   Winget-Parser.ps1     — Get-ColValue with header-position detection
+#   Unknown-Version.ps1   — suppression with local registry/AppX/MSIX evidence
+#   Native-Installer.ps1  — NativeInstallPaths whitelist (Claude Code et al.)
+#   Process-Kill.ps1      — APP_PROCESS_MAP enforcement before upgrade
+#   Elevation.ps1         — Test-IsElevated, Invoke-Elevated (UAC)

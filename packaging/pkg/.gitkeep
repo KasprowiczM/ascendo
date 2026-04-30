@@ -1,0 +1,7 @@
+# macOS .pkg packaging.
+#
+# Created in M5 (macOS adapter milestone).
+# Tauri's bundle.targets=["dmg","app"] generates .app + .dmg; this folder holds:
+#   - postinstall scripts (LaunchAgent installation, command-line tool symlink)
+#   - entitlements.plist for code signing (when Apple Developer ID acquired)
+#   - distribution.xml for installer customization

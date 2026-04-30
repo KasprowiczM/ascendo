@@ -1,266 +1,166 @@
 # Ascendo
 
-> One-command Ubuntu update suite — CLI + local dashboard, multilingual,
-> snapshot-aware, audit-logged, and packageable as `.deb`.
+> Cross-platform update orchestrator for Linux, Windows, and macOS — with a
+> web dashboard, scheduler, snapshots, and a plugin system. **Open source, MIT.**
 
-Repo legacy name: `Ubuntu_Aktualizacje` (kept for git history).
-Product / brand: **Ascendo** (Latin *I ascend* — "things go up, never down").
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Status: pre-release](https://img.shields.io/badge/status-pre--release-orange)](HANDOFF.md)
+[![Made for: Linux | Windows | macOS](https://img.shields.io/badge/OS-Linux%20%7C%20Windows%20%7C%20macOS-blue)](README.md)
 
-User journeys: [English](docs/en/user-journey.md) · [Polski](docs/pl/user-journey.md)
+---
 
-[![Validate Config](https://github.com/KasprowiczM/Ubuntu_Aktualizacje/actions/workflows/validate.yml/badge.svg)](https://github.com/KasprowiczM/Ubuntu_Aktualizacje/actions/workflows/validate.yml)
+## What is Ascendo?
 
-## Overview
+Ascendo is **one tool to keep your machine up-to-date** — across operating
+systems, package managers, and software sources. Manage:
 
-This project is a Bash-based update suite focused on predictable, auditable updates across:
-- APT
-- Snap
-- Homebrew
-- npm
-- pip / pipx
-- Flatpak
-- NVIDIA drivers and `fwupd`
+- **OS updates** (Windows Update, `apt full-upgrade`, `softwareupdate -ia -R`)
+- **Native package managers** (`apt`, `winget`, `brew`, `snap`, `flatpak`)
+- **App stores** (Microsoft Store, Mac App Store)
+- **Cross-OS dev tools** (`npm`, `pip`, `pipx`)
+- **Drivers / firmware** (Dell Command Update, NVIDIA, fwupd) — via plugins
+- **AI agent CLIs** (Claude Code, Codex, Gemini, Qwen, OpenCode) — via plugin
 
-Core behavior:
-- one entrypoint: `./update-all.sh`
-- one master log per run: `logs/master_YYYYMMDD_HHMMSS.log`
-- inventory refresh at the end of master run: `APPS.md` (gitignored)
-- package configuration in `config/*.list` (single source of truth)
+Through one CLI (`ascendo run`) and one local dashboard
+(`http://127.0.0.1:8765/`).
 
-Technical details and agent docs:
-- [AGENTS.md](AGENTS.md)
-- [CLAUDE.md](CLAUDE.md)
-- [CODEX.md](CODEX.md)
-- [docs/last-run-review.md](docs/last-run-review.md)
-- [docs/agents/architecture.md](docs/agents/architecture.md)
-- [docs/agents/workflow.md](docs/agents/workflow.md)
+## Status
 
-## Quick Start
+Ascendo is currently **pre-release** — under active reorganization in branch
+`restructure/monorepo`. See [`HANDOFF.md`](HANDOFF.md) for the current
+implementation state and roadmap.
 
-### New machine (fresh clone, one-liner)
+Target releases:
 
-```bash
-git clone https://github.com/KasprowiczM/Ubuntu_Aktualizacje
-cd Ubuntu_Aktualizacje
-bash scripts/fresh-machine.sh           # preflight + overlay + setup + dashboard
-```
+- **v0.1.0** — Linux + Windows MVP (Tauri UI + winget + apt + plugins)
+- **v0.2.0** — macOS adapter (full 3-OS support)
+- **v1.0.0** — security audit + code signing + stable API
 
-`fresh-machine.sh` wraps:
-1. `scripts/preflight.sh` — read-only host audit
-2. `scripts/bootstrap.sh` — Proton/rclone overlay restore + `setup.sh` package reconciliation
-3. `app/install.sh` — dashboard Python venv (project-local, PEP-668 safe)
-4. `systemd/user/install-dashboard.sh` — autostart user-service on `127.0.0.1:8765`
-5. `scripts/verify-state.sh` — final consistency check
+## Install (when v0.1.0 ships)
 
-Flags: `--check-only` (audit, no mutations), `--dry-run`, `--no-dashboard`,
-`--no-service`, `--no-sync`. Re-running on an already-bootstrapped host is
-idempotent.
-
-### Daily run
-
-Run full update:
+### Linux
 
 ```bash
-./update-all.sh                         # one sudo prompt for the whole run
+# .deb (Debian / Ubuntu / Pop!_OS):
+wget https://github.com/KasprowiczM/ascendo/releases/latest/download/ascendo_amd64.deb
+sudo apt install ./ascendo_amd64.deb
+
+# Arch Linux (AUR):
+yay -S ascendo-bin
+
+# Power users (headless, no Tauri UI):
+pip install ascendo[ubuntu]
 ```
 
-Common options:
+### Windows
+
+```powershell
+# Recommended:
+winget install Ascendo.Ascendo
+
+# Or direct MSI from GitHub Releases.
+```
+
+### macOS
 
 ```bash
-./update-all.sh --dry-run
-./update-all.sh --only apt
-./update-all.sh --no-drivers
-./update-all.sh --nvidia
-./update-all.sh --no-notify
+# Recommended:
+brew install KasprowiczM/tap/ascendo
+
+# Or .dmg direct download from GitHub Releases.
 ```
 
-`--only` groups:
-- `apt`
-- `snap`
-- `brew`
-- `npm`
-- `pip`
-- `flatpak`
-- `drivers`
-- `inventory`
+## Quick start
 
-Validation after changes:
+After installing, launch the dashboard:
 
 ```bash
-bash -n update-all.sh && bash -n scripts/*.sh && bash -n lib/*.sh
-PYTHONDONTWRITEBYTECODE=1 python3 tests/test_dev_sync_safety.py -v
-bash scripts/verify-state.sh
+ascendo dashboard       # opens local web UI in your browser
 ```
 
-Fresh Ubuntu clone / recovery:
+Or run a one-shot update cycle from the CLI:
 
 ```bash
-git clone https://github.com/KasprowiczM/Ubuntu_Aktualizacje.git
-cd Ubuntu_Aktualizacje
-bash scripts/preflight.sh
-bash dev-sync/provider_setup.sh
-bash scripts/restore-from-proton.sh --dry-run --verbose
-bash scripts/restore-from-proton.sh --verbose
-bash scripts/bootstrap.sh --skip-sync
-bash scripts/verify-state.sh
+ascendo run --profile=safe       # check + plan + apply (no risky drivers)
+ascendo run --profile=quick      # read-only health check (~15s)
+ascendo run --profile=full       # everything including drivers
 ```
 
-## What Gets Updated
+## Architecture (high level)
 
-| Group | Script | What it does |
-|---|---|---|
-| APT | `scripts/update-apt.sh` | Ensures configured third-party repos, updates package lists, runs `upgrade` + `dist-upgrade`, cleanup, key package report. Holds NVIDIA packages by default unless `--nvidia`. |
-| Snap | `scripts/update-snap.sh` | Runs `snap refresh`, retries with `--ignore-running` when needed, reports configured snaps, removes disabled revisions. |
-| Homebrew | `scripts/update-brew.sh` | `brew update`, upgrades formulas/casks, cleanup, `brew doctor`, and configured package report. Runs brew as invoking user (not root). |
-| npm | `scripts/update-npm.sh` | Updates installed global packages, installs missing from config, and enforces latest versions for priority AI CLIs. |
-| pip/pipx | `scripts/update-pip.sh` | Updates `pip` user packages and `pipx` apps, installs missing from config. |
-| Flatpak | `scripts/update-flatpak.sh` | Updates metadata and apps, installs missing configured apps, removes unused runtimes. |
-| Drivers/Firmware | `scripts/update-drivers.sh` | NVIDIA status checks and optional NVIDIA APT upgrade (`--nvidia`), `ubuntu-drivers` recommendations, `fwupd` checks, kernel/reboot status. |
-| Inventory | `scripts/update-inventory.sh` | Rebuilds `APPS.md` from detected system state (APT/Snap/Brew/npm/Drivers/Firmware/Flatpak/Sources). |
-
-## Architecture
-
-Project layout:
-
-- `update-all.sh` — master orchestrator
-- `scripts/update-*.sh` — per-manager update units
-- `lib/common.sh` — logging, summary counters, sudo helpers, user-context helpers
-- `lib/detect.sh` — manager/package/system detection + config parsing helpers
-- `lib/repos.sh` — idempotent APT repo setup by repo ID
-- `config/*.list` — package/repo configuration
-- `setup.sh` — bootstrap, discovery, drift check, and rollback for config files
-- `systemd/` — weekly templated timer installation assets
-- `config/restore-manifest.json` — tracked contract for private overlay vs rebuildable files
-
-Important runtime rules:
-- `INVENTORY_SILENT=1` is set by master run to avoid repeated `APPS.md` regeneration by sub-scripts.
-- Master script authenticates sudo once at start, keeps sudo credentials alive during run, and uses a `flock` guard to avoid concurrent update/bootstrap runs.
-- Homebrew/npm/pipx operations use non-root user context via helper wrappers.
-- MEGA repository is maintained as `megaio.sources`; legacy `meganz.list` is removed automatically if present.
-
-## Migration
-
-`setup.sh` modes:
-
-```bash
-./setup.sh                  # migrate/install from config
-./setup.sh --discover       # scan machine -> rewrite config/*.list
-./setup.sh --update-config  # merge-style discovery update
-./setup.sh --check          # show config vs installed drift
-./setup.sh --rollback       # restore latest config backups
+```
+┌─────────────────────────────────────────────┐
+│ Frontend (vanilla JS SPA)                   │ ← same UI on all 3 OS
+└──────────────┬──────────────────────────────┘
+               │ HTTP/SSE
+┌──────────────▼──────────────────────────────┐
+│ Tauri shell (Rust) — native window per OS   │
+└──────────────┬──────────────────────────────┘
+               │ spawns
+┌──────────────▼──────────────────────────────┐
+│ FastAPI backend (Python) — REST + dashboard │
+└──────────────┬──────────────────────────────┘
+               │ delegates to
+┌──────────────▼──────────────────────────────┐
+│ Core domain (Python) — orchestrator + models│ ← OS-agnostic
+└──────────────┬──────────────────────────────┘
+               │ via interfaces
+┌──────────────▼──────────────────────────────┐
+│ Adapters (Python) — per-OS implementations  │
+│   ubuntu / windows / macos                  │
+└──────────────┬──────────────────────────────┘
+               │ subprocess
+┌──────────────▼──────────────────────────────┐
+│ Native scripts (Bash / PowerShell)          │
+│   apt / winget / brew / softwareupdate / ...│
+└─────────────────────────────────────────────┘
 ```
 
-Useful flags:
+See [`docs/architecture/`](docs/architecture/) for the full
+ADR-driven architecture.
 
-```bash
-./setup.sh --nvidia
-./setup.sh --no-brew --no-snaps --no-npm
-./setup.sh --non-interactive
+## Repository structure
+
+```
+ascendo/
+├── core/                   # Python core (OS-agnostic)
+├── adapters/               # Tier 1 official: ubuntu, windows, macos
+├── plugins/                # Tier 1 plugins (agent-clis, dell, nvidia, _template)
+├── contrib/                # Tier 2 community contributions
+├── ui/                     # frontend SPA + Tauri desktop shell
+├── packaging/              # .deb, MSI, .pkg, brew tap, winget manifest, PyInstaller
+├── website/                # landing page (GitHub Pages)
+├── docs/                   # architecture ADRs + author guides
+├── tests/                  # cross-cut + contract + fixtures + integration
+├── branding/               # icon.svg, logo.svg, palette
+└── HANDOFF.md              # current implementation state
 ```
 
-Automated weekly run (systemd):
+## Contributing
 
-```bash
-./systemd/install-timer.sh
-./systemd/install-timer.sh --status
-./systemd/install-timer.sh --remove
-```
+Ascendo is open to contributions — adapters, plugins, translations, docs,
+and bug reports. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first.
 
-Timer runs `update-all.sh --no-drivers` on schedule. This skips the explicit
-driver/firmware module; APT may still update normal OS packages such as kernels,
-microcode, Mesa, and firmware packages according to Ubuntu/APT policy.
+Quick paths:
 
-## Dev Sync
+- **Add a plugin** — copy `plugins/_template/`, see
+  [`docs/plugin-author-guide.md`](docs/plugin-author-guide.md)
+- **Add an OS** — start in `contrib/adapters/<os>/` (Tier 2), see
+  [`docs/adapter-author-guide.md`](docs/adapter-author-guide.md)
+- **Add a translation** — extend `core/ascendo/i18n/locales/`, see
+  [`docs/i18n-author-guide.md`](docs/i18n-author-guide.md)
 
-`dev-sync` is separate from `update-all.sh`. GitHub stores tracked project
-files; Proton Drive/rclone stores only the private ignored overlay such as
-`.env.local`, `.dev_sync_config.json`, local key files, and local agent
-settings.
+## License
 
-Configure provider:
+[MIT](LICENSE) — do whatever you want, just keep the copyright notice.
 
-```bash
-bash dev-sync/provider_setup.sh
-```
+## Acknowledgements
 
-Daily private-overlay export:
+Ascendo evolved from three sibling projects of the same author:
 
-```bash
-bash dev-sync-export.sh --dry-run --verbose
-bash dev-sync-export.sh
-bash dev-sync-verify-full.sh
-```
+- `Aktualizacje_MAC` — macOS shell scripts (foundation: i18n, DMG verification, session dir patterns)
+- `Aktualizacje-W11-Dell5520` — PowerShell on Windows (foundation: column parser, unknown-version suppression, exit-code mapping)
+- `Ubuntu_Aktualizacje` — Linux/Ubuntu (foundation: Python backend, JSON v1 contract, plugin manifest, scheduler, snapshots, dev-sync)
 
-Fresh-clone restore:
-
-```bash
-bash dev-sync/provider_setup.sh
-bash dev-sync-restore-preflight.sh
-bash dev-sync-import.sh --dry-run --verbose
-bash dev-sync-import.sh
-bash dev-sync-verify-full.sh
-```
-
-Top-level restore wrapper:
-
-```bash
-bash scripts/restore-from-proton.sh --dry-run --verbose
-bash scripts/restore-from-proton.sh --verbose
-```
-
-Verify GitHub coverage for tracked files:
-
-```bash
-bash dev-sync-verify-git.sh
-```
-
-Rebuildable/generated files are excluded from Proton sync, including
-`APPS.md`, `logs/`, `config/*.bak_*`, `.codex.local/tmp/`, dependency folders,
-build outputs, and caches. See [DEV_SCRIPTS_README.md](DEV_SCRIPTS_README.md)
-and [config/dev-sync-excludes.txt](config/dev-sync-excludes.txt). The restore
-scope is documented in [dev-sync/RESTORE_MANIFEST.md](dev-sync/RESTORE_MANIFEST.md).
-
-## Git & GitHub
-
-Manual workflow:
-
-```bash
-git status
-git add <files>
-git commit -m "message"
-git push origin main
-```
-
-Helper workflow (token from `.env.local`):
-
-```bash
-bash lib/git-push.sh status
-bash lib/git-push.sh push main
-bash lib/git-push.sh commit "Update configs" main
-```
-
-CI validation (`.github/workflows/validate.yml`) checks:
-- config syntax in `config/*.list`
-- shell syntax (`bash -n`)
-- required files presence
-- `APPS.md` is gitignored
-- broader secret/token/private-key pattern scan over tracked files
-
-## Troubleshooting
-
-- `apt-get update` fails on MEGA source conflict:
-  - keep `/etc/apt/sources.list.d/megaio.sources`
-  - remove legacy `/etc/apt/sources.list.d/meganz.list`
-  - current scripts do this automatically during APT repo ensure step
-- NVIDIA DKMS issues after kernel changes:
-  - run `./scripts/rebuild-dkms.sh`
-  - use `./update-all.sh --nvidia` only when you intend to upgrade NVIDIA packages
-- Homebrew cleanup permission warnings:
-  - when repeated, run `sudo chown -R "$USER:$USER" /home/linuxbrew/.linuxbrew/Cellar/pipx`
-  - then run `brew cleanup --prune=7`
-  - see [docs/last-run-review.md](docs/last-run-review.md)
-- `setup.sh --check` stalls on Snap:
-  - Snap checks use `SNAP_CMD_TIMEOUT` and skip with a warning if `snap list` is unresponsive
-  - if needed, inspect snapd with `systemctl status snapd`
-- inventory refresh only:
-  - run `./scripts/update-inventory.sh`
+Unifying them was an exercise in extracting common patterns and respecting
+hard-won OS-specific knowledge.
