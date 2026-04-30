@@ -219,7 +219,7 @@ python_modules, plugins), `scripts` (per OS, per phase), `config`,
 ## Current State (UPDATE this section after each session)
 
 ### Last updated
-2026-05-01 — Sesja 2 (Cowork) — M1 ukończone (poza M1.7 user-side validation)
+2026-05-01 — Sesja 3 (Cowork) — M2.1 + M2.2 ukończone
 
 ### Branch & commits
 - **Branch:** `restructure/monorepo`
@@ -258,6 +258,18 @@ python_modules, plugins), `scripts` (per OS, per phase), `config`,
 | M1.5 — 7 ADR-ów w docs/architecture/ | ✅ done | Sesja 2 (0001-0007) |
 | M1.6 — .gitattributes + .gitignore + pre-commit | ✅ done | Sesja 1 (`.gitattributes`, `.pre-commit-config.yaml`, `.markdownlint.json`, rozszerzony `.gitignore`) |
 | M1.7 — Walidacja `update-all.sh` | ⏳ pending | **User-side** test na linuksie po pierwszym commit + push |
+
+### M2 Progress (Core skeleton)
+
+| Task | Status | Notes |
+|---|---|---|
+| M2.1 — Sidecar Pydantic v2 modele (`ascendo/v1`) | ✅ done | Sesja 3 — `core/ascendo/models/{host,run,package,result,sidecar}.py` + `__init__.py`. Pełne pokrycie ADR-0003: enums (Phase, ItemStatus, SourceType, ElevationMethod, ...), validators (reverse-time, summary/items consistency), legacy schema acceptance |
+| M2.2 — 6 core interfaces + IAdapter | ✅ done | Sesja 3 — `core/ascendo/interfaces/{adapter,package_manager,inventory,snapshot,scheduler,source,elevation}.py`. abc.ABC + @abstractmethod, value types przy interfejsach (ScheduleSpec, SnapshotInfo, SourceMetadata, ElevationResult, AdapterCapability flag) |
+| M2.3 — adapter_factory + JSON Schema export | ⏳ pending | Następna sesja |
+| M2.4 — Sidecar reader (file I/O + locking + recovery) | ⏳ pending | |
+| M2.5 — i18n loader (port z macOS bash, 7 języków) | ⏳ pending | |
+| M2.6 — Contract tests w `tests/contract/` | ⏳ pending | |
+| M2.7 — Migracja `app/backend/*.py` → `core/ascendo/{dashboard,orchestrator,...}` | ⏳ pending | Mechanical refactor |
 
 ### FAZ 1-4 (analiza)
 Wszystkie ✅ ukończone, decyzje zapisane wyżej w sekcji "Reference".
@@ -328,16 +340,62 @@ Jeśli coś się sypie — to nie M1, to M2 jeszcze nieskończone (ale powinno
 być clean: na branchu nic nie zmienialiśmy w `update-all.sh`/`scripts/`,
 tylko dodaliśmy nowe foldery + dokumenty).
 
-### Krok 3 — Następna sesja: M2 Core skeleton
+### Krok 3 — User: commit M2.1 + M2.2
 
-Po M1 zacommitowanym + zwalidowanym, otwórz nową sesję i powiedz
-„kontynuuj M2". W M2 będę:
-- Projektował interfaces w `core/ascendo/interfaces/` (IPackageManager,
-  IScheduler, ISnapshot, ISource, IInventory, IElevation)
-- Migrował Pydantic v2 modele z `app/backend/` do `core/ascendo/models/`
-- Pisał JSON Schema export dla `ascendo/v1` sidecar
-- Pisał contract tests w `tests/contract/` które przejdą po stronie
-  Linux i będą failować po stronie Windows/macOS dopóki M3/M5 nie skończone
+```powershell
+cd D:\Dev_Env\ascendo
+
+git add core/ascendo/models/ core/ascendo/interfaces/
+git add HANDOFF.md
+
+git status   # weryfikacja: 14 nowych plików .py + HANDOFF.md modified
+
+git commit -m "feat(m2): core models + interfaces (M2.1 + M2.2)
+
+M2.1 — Pydantic v2 models for ascendo/v1 sidecar contract:
+  core/ascendo/models/{host,run,package,result,sidecar}.py
+  - HostInfo / RunInfo / Sidecar (frozen historical records)
+  - Item with version triplet (current/target/resolved)
+  - ItemEvidence for unknown-version suppression
+  - ItemRollback for 3-tier rollback (method/snapshot_id/instructions)
+  - SidecarSchema enum accepts both ascendo/v1 + ubuntu-aktualizacje/v1
+  - Validators: reverse-time, summary/items consistency
+
+M2.2 — Six core interfaces + IAdapter aggregate:
+  core/ascendo/interfaces/{package_manager,inventory,snapshot,
+                          scheduler,source,elevation,adapter}.py
+  - abc.ABC + @abstractmethod (explicit, runtime-checked)
+  - IPackageManager.run_phase returns parsed Sidecar
+  - IElevation enforces argv-only + allow-list (T4 mitigation)
+  - ISource.verify_signature centralizes T2/T3 mitigation
+  - AdapterCapability flag with TIER_1_FULL preset
+  - Value types (ScheduleSpec, SnapshotInfo, SourceMetadata) live
+    next to their interfaces, not in models/
+
+Smoke-tested live: imports work, sidecar round-trips, legacy schema
+accepted, validators reject malformed payloads, ABCs prevent direct
+instantiation.
+
+Refs ADR-0003, ADR-0005."
+
+git push
+```
+
+### Krok 4 — Następna sesja: M2.3 + M2.4 + M2.6
+
+Otwórz nową sesję i powiedz „kontynuuj M2 od M2.3". W kolejnej sesji
+zrobię:
+- **M2.3** — `adapter_factory` (OS detection + adapter selection przez
+  entry_points) + JSON Schema export do `docs/architecture/schemas/sidecar.v1.schema.json`
+- **M2.4** — Sidecar reader z file I/O + flock (Linux/macOS) +
+  LockFile (Windows) + recovery z partial sidecar
+- **M2.6** — Contract tests w `tests/contract/` — fixtures z prawdziwych
+  pre-merge sidecarów (Ubuntu_Aktualizacje `logs/runs/*`) + Pydantic
+  validation pass
+
+M2.5 (i18n loader, port macOS bash do Pythona) i M2.7 (migracja
+`app/backend/*.py` → `core/ascendo/{dashboard,orchestrator,...}`) idą
+w osobnych sesjach — to mechaniczny refactor, nie design.
 
 ---
 
@@ -472,6 +530,82 @@ Te wymagają decyzji w future sessions, ale teraz nie blokują:
 ---
 
 ## Session Log (UPDATE after each session)
+
+### Sesja 3 — 2026-05-01
+
+**Cel:** Po commit M1, ruszyć M2 — interfejsy + Pydantic modele.
+
+**Zrobione:**
+- **M2.1 Sidecar Pydantic v2 modele:** `core/ascendo/models/`
+  - `host.py` — `HostInfo`, `OperatingSystem` enum (Tier 1: linux_ubuntu/
+    windows/macos + 4 Linux distros + unknown), `ElevationMethod` enum.
+    Frozen, `extra='forbid'`.
+  - `run.py` — `RunInfo`, `Phase` enum (5 faz: check/plan/apply/verify/
+    cleanup), `PhaseStatus` enum, `Trigger` enum, `ProfileName` constrained string.
+  - `package.py` — `Package`, `ItemSource`, `ItemEvidence` (appx_version,
+    registry_version, dpkg_version, binary_version + path + sha256 — pełne
+    wsparcie unknown-version suppression), `ItemRollback` (3-poziomowy:
+    method per-item / snapshot_id / instructions_path), `SourceType` enum
+    (16 wariantów).
+  - `result.py` — `Item` (z triplet wersji: current/target/resolved), `ItemStatus`
+    (z `up_to_date`, `planned`, `partial` rozróżnionymi od `success`),
+    `Summary` z metodą `is_clean()`, `Message` + `MessageLevel`.
+  - `sidecar.py` — `Sidecar` top-level, `SidecarSchema` enum z literałami
+    `ascendo/v1` + `ubuntu-aktualizacje/v1` (backward-compat per ADR-0003),
+    `ToolInfo`, validatory (reverse-time, summary/items consistency,
+    schema recognized), `parse_sidecar()` helper.
+- **M2.2 Six core interfaces + IAdapter:** `core/ascendo/interfaces/`
+  - `package_manager.py` — `IPackageManager` (run_phase z item_filter),
+    `ManagerError`.
+  - `inventory.py` — `IInventory` (list_installed, emit_sidecar).
+  - `snapshot.py` — `ISnapshot` (backend slug, create/list/get) +
+    `SnapshotInfo` model + `SnapshotError`.
+  - `scheduler.py` — `IScheduler` (install/uninstall/list/get/trigger) +
+    `ScheduleSpec` model + `SchedulerError`.
+  - `source.py` — `ISource` (list_known_sources, verify_signature) +
+    `SourceMetadata` + `TrustTier` enum + `SourceVerificationError`. T2/T3
+    threat-model mitigation centralized.
+  - `elevation.py` — `IElevation` (register_allowlist + run argv-only),
+    `ElevationResult` + `ElevationDenied` + `ElevationTimeout`. T4 threat-
+    model mitigation: shell strings rejected, allow-list enforced.
+  - `adapter.py` — `IAdapter` aggregate root + `AdapterCapability` flag
+    (TIER_1_FULL preset). `health_check()` returns dict for `ascendo doctor`.
+- **Smoke test (live):** zaimportowane wszystkie modele + interfejsy,
+  zbudowany realny apply sidecar (winget upgrade PowerShell), sprawdzone:
+  legacy schema accepted, reverse-time rejected, summary/items mismatch
+  rejected, IAdapter not instantiable. Wszystko OK.
+
+**Co poszło źle:** nic — czysta sesja po Sesji 2 recovery.
+
+**Czego się nauczyliśmy:**
+- Pydantic v2 `ConfigDict(frozen=True, extra='forbid')` to dobry default
+  dla immutable historycznych rekordów. Mutable (`Item` w trakcie rozwiązywania)
+  tylko gdy konkretnie potrzebne.
+- `Annotated[str, StringConstraints(...)]` jest czystszy niż `Field(...,
+  pattern=...)` dla powtarzanych typów (ProfileName, ToolName, ScheduleExpr,
+  PackageId, VersionStr).
+- `enum.Flag` z bitwise OR (`AdapterCapability.TIER_1_FULL = PACKAGE_MANAGEMENT
+  | INVENTORY | ...`) eleganckie do "co adapter potrafi".
+- Trzymanie value types (ScheduleSpec, SnapshotInfo, SourceMetadata) razem
+  z interfejsem co je używa — lepsze niż wszystko w `models/`. Modele to
+  RUNTIME data; interface value types to KONFIGURACJA tych modeli.
+
+**Decyzje podjęte:**
+- abc.ABC + @abstractmethod (a NIE typing.Protocol) dla 6 interfejsów.
+  Powód: explicit inheritance + runtime safety + łatwiejszy grep.
+- Sidecar jest immutable (frozen=True) — historyczny zapis.
+- IElevation enforce'uje argv-only + allow-list jako twardy kontrakt
+  (T4 mitigation z threat modelu). Implementacje MUSZĄ odrzucić shell
+  strings — to nie jest soft guidance.
+- AdapterCapability.TIER_1_FULL jest preset — Tier 2 adapter może
+  zadeklarować `PACKAGE_MANAGEMENT | INVENTORY` only (no snapshots, no
+  scheduling), co odpowiada per-OS scaffold w `contrib/`.
+
+**Następna sesja:** M2.3 (adapter_factory + JSON Schema export) +
+M2.4 (sidecar reader z locking) + M2.6 (contract tests). M2.5 (i18n)
+i M2.7 (backend migration) mogą iść równolegle lub w osobnej sesji.
+
+---
 
 ### Sesja 2 — 2026-05-01
 
