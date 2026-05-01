@@ -221,6 +221,128 @@ python_modules, plugins), `scripts` (per OS, per phase), `config`,
 ### Last updated
 2026-05-01 — **v0.0.1-alpha SHIPPED.** End-to-end validated on real DP5520WMK. ALL CHECKS PASSED.
 
+### 🎉 v0.0.4-alpha — Windows Update + SPA dashboard parity
+
+**Last session shipped (2026-05-01, late):**
+
+- **M3.10 PSWindowsUpdate manager** — `python -m ascendo run --category windows_update --phase apply` installs pending Windows OS updates (KBs, security patches). Uses the `PSWindowsUpdate` PowerShell module. Wired into `WindowsAdapter.package_managers()` alongside winget. `health_check()` now reports `pswindowsupdate` component.
+- **SPA wired into FastAPI dashboard** — `app/frontend/` (the legacy Ubuntu SPA from the screenshot) now serves at `http://127.0.0.1:8765/` on Windows. 50 stub endpoints in `core/ascendo/dashboard/routes/spa_stubs.py` cover everything the SPA fetches; adapter-aware ones (`/categories`, `/inventory`, `/hosts`, `/about`) read live data via WindowsAdapter.
+- **`bin/launch-app.ps1`** opens browser at `/` (the SPA) instead of `/docs`.
+- **158/158 tests passing** (was 99). +9 PSWindowsUpdate tests, +59 SPA tests.
+
+### Krok 4r — User: commit M3.10 + SPA wiring (latest batch)
+
+```powershell
+cd D:\Dev_Env\ascendo
+
+# Stage M3.10 PSWindowsUpdate manager files:
+git add core/ascendo/models/package.py
+git add adapters/windows/lib/AscendoPSWindowsUpdate.psm1
+git add adapters/windows/lib/AscendoJson.psm1
+git add adapters/windows/scripts/windows_update/
+git add adapters/windows/ascendo_windows/managers/windows_update.py
+git add adapters/windows/ascendo_windows/adapter.py
+git add adapters/windows/tests/conftest.py
+git add adapters/windows/tests/test_windows_update_manager_smoke.py
+
+# Stage SPA-wiring + dashboard updates:
+git add core/ascendo/dashboard/app.py
+git add core/ascendo/dashboard/routes/spa_stubs.py
+git add tests/contract/test_dashboard_spa.py
+git add bin/launch-app.ps1
+
+# Stage M3.11 inventory (if not already committed):
+git add core/ascendo/dashboard/routes/spa_stubs.py  # (idempotent)
+git add adapters/windows/scripts/inventory/
+git add adapters/windows/ascendo_windows/inventory.py
+git add adapters/windows/ascendo_windows/__init__.py
+git add adapters/windows/tests/test_inventory_smoke.py
+
+# Stage HANDOFF + WINDOWS_TESTING docs:
+git add HANDOFF.md WINDOWS_TESTING.md
+git add bin/Ascendo.cmd bin/install-shortcut.ps1 bin/run-apply.ps1
+
+git status   # verify
+
+git commit -m "feat: v0.0.4-alpha — PSWindowsUpdate + SPA dashboard on Windows
+
+M3.10 — PSWindowsUpdate manager:
+  Adds SourceType.WINDOWS_UPDATE. AscendoPSWindowsUpdate.psm1 wraps
+  Get-WindowsUpdate / Install-WindowsUpdate. 5 phase scripts in
+  scripts/windows_update/ (check/plan/apply/verify/cleanup) with
+  [switch] \$DryRun + reboot=disable safety. Python WindowsUpdateManager
+  mirrors WingetManager pattern; is_available() probes the PSWindowsUpdate
+  module via pwsh. Wired into WindowsAdapter.package_managers() — both
+  winget and windows_update now run in the orchestrator's pipeline.
+
+M3.11 — IInventory implementation:
+  WindowsInventory(IInventory) wired into WindowsAdapter.inventory().
+  capabilities flag now includes INVENTORY. Read-only enumeration via
+  scripts/inventory/list.ps1.
+
+SPA dashboard parity with Linux:
+  app/frontend/ (legacy Ubuntu SPA) mounted at / on FastAPI.
+  spa_stubs.py adds 50 endpoints covering every SPA fetch URL —
+  adapter-aware where possible (categories, inventory, hosts, about),
+  empty-default stubs for not-yet-implemented features (apps, sync,
+  suggestions, settings, scheduler).
+
+DX:
+  bin/Ascendo.cmd + bin/install-shortcut.ps1 — click-to-launch desktop
+  + Start Menu shortcuts. Browser auto-opens at SPA root.
+  bin/run-apply.ps1 — guarded real-apply harness with confirmation.
+
+Tests: 99 → 158 (+9 PSWindowsUpdate, +59 SPA) all green.
+
+Refs ADR-0003, ADR-0005."
+git push
+```
+
+### Krok 4s — User: test the new SPA dashboard
+
+```powershell
+cd D:\Dev_Env\ascendo
+git pull
+
+# If you'd already done install + shortcuts, just relaunch:
+.\bin\Ascendo.cmd
+# OR double-click the Desktop shortcut
+
+# Browser should now open at http://127.0.0.1:8765/ showing the SPA
+# (sidebar with Overview/Categories/Run Center/History/Logs/Sync/Apps/etc.)
+# — NOT the Swagger UI as before.
+```
+
+If you see console errors in the browser dev tools (F12), paste them.
+The SPA expects ~25 endpoints; if any are missing, we add a stub.
+
+### Krok 4t — User: install PSWindowsUpdate (one-time, for Windows OS updates)
+
+```powershell
+# As Administrator (Win+X → Terminal (Admin)):
+Install-Module PSWindowsUpdate -Scope CurrentUser -Force -AcceptLicense
+
+# Confirm:
+Get-Module -ListAvailable PSWindowsUpdate
+
+# Then test:
+.\bin\validate-windows.ps1   # doctor will show pswindowsupdate ok
+python -m ascendo run --category windows_update --phase check
+# Lists pending KB updates without installing them.
+```
+
+To actually install pending Windows updates (CAREFUL — real OS mutation):
+```powershell
+python -m ascendo run --category windows_update --phase apply
+# Or via the SPA's "QUICK ACTIONS → Full update" button (once wired)
+```
+
+### 📖 Want to test on Windows? See [`WINDOWS_TESTING.md`](WINDOWS_TESTING.md)
+
+A self-contained one-page guide for testing Ascendo end-to-end on a real
+Windows box. TL;DR — six commands cover install, validate, real apply, and
+the browser-visible dashboard.
+
 ### 🎉 Milestone: v0.0.1-alpha — first working build on real Windows
 
 ```
@@ -243,6 +365,78 @@ Every layer of the 6-layer architecture works on real hardware:
 | 6 — Native scripts | `adapters/windows/{lib,scripts/winget/}` | ✅ **shipped** |
 
 **Tag this commit** with: `git tag -a v0.0.1-alpha -m "First end-to-end working build on real Windows"`
+
+### Krok 4q — Defensive parser fix landed in AscendoWinget.psm1
+
+```powershell
+cd D:\Dev_Env\ascendo
+git pull
+.\bin\validate-windows.ps1
+```
+
+Added a defensive heuristic to `Read-WingetTabularOutput` in
+`adapters/windows/lib/AscendoWinget.psm1`. After extracting columns,
+we now drop any row whose `id` either:
+
+1. Contains internal whitespace (real winget IDs use dots / hyphens /
+   underscores / alphanumerics — never spaces).
+2. Exceeds 256 characters (typical winget IDs are < 80 chars; anything
+   way over that is almost certainly a parser-merged super-row from
+   AppX/MSIX continuation-line behaviour).
+
+Suspect rows are skipped with a `Write-Verbose` log line. The rest of
+the run continues normally. This is the AutoHotkey-merged-row issue
+documented earlier — even without the raw winget output, this content
+heuristic catches the pathological case.
+
+Re-run validate to confirm — should still print `ALL CHECKS PASSED.`,
+and now the AutoHotkey super-row (if it would have been emitted) is
+silently dropped instead of leaking into items[].
+
+If you want to see what's being dropped, run:
+```powershell
+$VerbosePreference = 'Continue'
+python -m ascendo run --category winget --phase check `
+    --runs-dir $env:TEMP\ascendo-verbose 2>&1 | Select-String 'merged row'
+```
+
+### Krok 4p — Validate-windows.ps1 v2: now exercises ALL 5 phases
+
+```powershell
+cd D:\Dev_Env\ascendo
+git pull
+.\bin\validate-windows.ps1
+```
+
+The script now runs (in order):
+
+1. `python -m ascendo --help` / `version` / `doctor`
+2. `run --phase check` (read-only inventory)
+3. `run --phase plan` (planned upgrades; read-only)
+4. `run --phase apply --dry-run` (would-mutate emit; **NO real upgrades**)
+5. `run --phase verify` (post-apply re-check; read-only)
+6. `run --phase cleanup --dry-run` (would-prune emit; no actual deletes)
+7. Dashboard sync + async + SSE
+
+After this, every phase of the 5-phase contract is proven on real
+hardware. No actual mutations happen — the apply phase emits planned
+items only because of `--dry-run`.
+
+When you're ready to test a **real apply** (will actually upgrade
+packages), do it manually:
+
+```powershell
+# WARNING: this WILL upgrade winget packages on DP5520WMK!
+$rid = [guid]::NewGuid().ToString()
+$out = "$env:TEMP\ascendo-real-apply-$rid"
+mkdir $out -Force | Out-Null
+python -m ascendo run --category winget --phase apply --runs-dir $out
+Get-Content "$out\$rid\apply__winget.json" | ConvertFrom-Json |
+    Select-Object -ExpandProperty items |
+    Format-Table id, current_version, target_version, status
+```
+
+The first real apply is the v0.0.2-alpha milestone.
 
 ### Branch & commits
 - **Branch:** `restructure/monorepo`

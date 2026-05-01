@@ -1,8 +1,9 @@
 """Pytest fixtures for adapters/windows/tests/.
 
-Provides reusable HostInfo, RunInfo, and a Sidecar payload builder used
-by the smoke test for :class:`WingetManager`. Everything here is
-cross-platform - the unit suite must pass on the Linux CI runner.
+Provides reusable HostInfo, RunInfo, and Sidecar payload builders used by
+the smoke tests for :class:`WingetManager` and :class:`WindowsUpdateManager`.
+Everything here is cross-platform - the unit suite must pass on the Linux
+CI runner.
 """
 from __future__ import annotations
 
@@ -18,8 +19,6 @@ from ascendo.models.host import ElevationMethod, HostInfo, OperatingSystem
 from ascendo.models.run import Phase, RunInfo, Trigger
 
 
-# ── Static identities ─────────────────────────────────────────────────
-
 _FIXED_RUN_ID = UUID("12345678-1234-1234-1234-123456789abc")
 _FIXED_STARTED = datetime(2026, 5, 1, 12, 0, 0, tzinfo=timezone.utc)
 _FIXED_FINISHED = datetime(2026, 5, 1, 12, 0, 5, tzinfo=timezone.utc)
@@ -27,7 +26,6 @@ _FIXED_FINISHED = datetime(2026, 5, 1, 12, 0, 5, tzinfo=timezone.utc)
 
 @pytest.fixture
 def windows_host() -> HostInfo:
-    """A minimal valid HostInfo describing a Windows 11 machine."""
     return HostInfo(
         hostname="DP5520WMK",
         os=OperatingSystem.WINDOWS,
@@ -42,7 +40,6 @@ def windows_host() -> HostInfo:
 
 @pytest.fixture
 def linux_host() -> HostInfo:
-    """A non-Windows HostInfo for testing the negative is_available path."""
     return HostInfo(
         hostname="ubuntu-test",
         os=OperatingSystem.LINUX_UBUNTU,
@@ -57,7 +54,6 @@ def linux_host() -> HostInfo:
 
 @pytest.fixture
 def run_info() -> RunInfo:
-    """A deterministic RunInfo with a stable UUID and timestamp."""
     return RunInfo(
         id=_FIXED_RUN_ID,
         trigger=Trigger.CLI,
@@ -71,39 +67,27 @@ def run_info() -> RunInfo:
 
 @pytest.fixture
 def fake_scripts_dir(tmp_path: Path) -> Path:
-    """Synthetic ``scripts/`` directory with placeholders for all 5 phases.
-
-    The .ps1 contents are mocked away by the subprocess patch in each test;
-    the files exist only so the manager's existence check passes.
-    """
-    d = tmp_path / "scripts" / "winget"
-    d.mkdir(parents=True)
-    for phase_script in ("check.ps1", "plan.ps1", "apply.ps1", "verify.ps1", "cleanup.ps1"):
-        (d / phase_script).write_text(
-            f"# placeholder - mocked away by tests ({phase_script})\n",
-            encoding="utf-8",
-        )
+    phase_scripts = ("check.ps1", "plan.ps1", "apply.ps1", "verify.ps1", "cleanup.ps1")
+    for category in ("winget", "windows_update"):
+        d = tmp_path / "scripts" / category
+        d.mkdir(parents=True)
+        for phase_script in phase_scripts:
+            (d / phase_script).write_text(
+                f"# placeholder ({category}/{phase_script})\n",
+                encoding="utf-8",
+            )
     return tmp_path / "scripts"
 
 
 @pytest.fixture
 def fake_lib_dir(tmp_path: Path) -> Path:
-    """Synthetic ``lib/`` directory with one placeholder module."""
     d = tmp_path / "lib"
     d.mkdir(parents=True)
     (d / "Common.ps1").write_text("# placeholder\n", encoding="utf-8")
     return d
 
 
-def _build_check_sidecar_payload(
-    run: RunInfo,
-    host: HostInfo,
-) -> dict[str, Any]:
-    """Build a minimal but valid ``ascendo/v1`` sidecar dict.
-
-    Two items: one up-to-date, one success - exercises the parser end
-    to end without invoking any winget logic.
-    """
+def _build_check_sidecar_payload(run, host):
     return {
         "schema": "ascendo/v1",
         "run": json.loads(run.model_dump_json()),
@@ -166,6 +150,74 @@ def _build_check_sidecar_payload(
 
 
 @pytest.fixture
-def check_sidecar_payload(run_info: RunInfo, windows_host: HostInfo) -> dict[str, Any]:
-    """A valid ascendo/v1 ``check__winget.json`` payload."""
+def check_sidecar_payload(run_info, windows_host):
     return _build_check_sidecar_payload(run_info, windows_host)
+
+
+def _build_windows_update_sidecar_payload(run, host):
+    return {
+        "schema": "ascendo/v1",
+        "run": json.loads(run.model_dump_json()),
+        "host": json.loads(host.model_dump_json()),
+        "tool": {
+            "name": "pswindowsupdate",
+            "version": "2.2.1.5",
+            "binary_path": None,
+        },
+        "phase": Phase.CHECK.value,
+        "category": "windows_update",
+        "started_at": _FIXED_STARTED.isoformat(),
+        "finished_at": _FIXED_FINISHED.isoformat(),
+        "status": "success",
+        "items": [
+            {
+                "id": "KB5034441",
+                "name": "2024-01 Cumulative Update Preview for Windows 11",
+                "category": "windows_update",
+                "source": {"type": "windows_update", "feed": None, "url": None},
+                "current_version": None,
+                "target_version": None,
+                "resolved_version": None,
+                "status": "success",
+                "exit_code": 0,
+                "duration_ms": None,
+                "evidence": None,
+                "rollback": None,
+                "messages": [],
+            },
+            {
+                "id": "KB5037997",
+                "name": "Defender definition update",
+                "category": "windows_update",
+                "source": {"type": "windows_update", "feed": None, "url": None},
+                "current_version": None,
+                "target_version": None,
+                "resolved_version": None,
+                "status": "success",
+                "exit_code": 0,
+                "duration_ms": None,
+                "evidence": None,
+                "rollback": None,
+                "messages": [],
+            },
+        ],
+        "summary": {
+            "total": 2,
+            "success": 2,
+            "up_to_date": 0,
+            "failed": 0,
+            "skipped": 0,
+            "planned": 0,
+            "partial": 0,
+            "duration_ms": None,
+            "exit_code": 0,
+        },
+        "messages": [
+            {"level": "info", "text": "Found 2 pending Windows update(s).", "timestamp": None},
+        ],
+    }
+
+
+@pytest.fixture
+def windows_update_sidecar_payload(run_info, windows_host):
+    return _build_windows_update_sidecar_payload(run_info, windows_host)

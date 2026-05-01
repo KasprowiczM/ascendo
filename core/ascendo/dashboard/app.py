@@ -4,7 +4,7 @@ Use :func:`create_app` to build the application. The factory accepts an
 optional pre-built adapter + runs_dir override so tests can inject fakes
 without touching environment variables.
 
-The factory does NOT call ``uvicorn.run`` — that's the caller's job
+The factory does NOT call ``uvicorn.run`` -- that's the caller's job
 (``ascendo dashboard`` CLI command, or a production server like
 ``uvicorn ascendo.dashboard:create_app --factory``).
 """
@@ -18,9 +18,12 @@ from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .routes.health import router as health_router
 from .routes.runs import router as runs_router
+from .routes.spa_stubs import router as spa_stubs_router
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -38,6 +41,25 @@ def _default_runs_dir() -> Path:
     """
     override = os.environ.get("ASCENDO_RUNS_DIR")
     return Path(override) if override else Path.home() / ".ascendo" / "runs"
+
+
+def _resolve_frontend_dir() -> Path | None:
+    """Locate the legacy SPA bundle at ``app/frontend`` relative to the repo.
+
+    The dashboard package lives at ``core/ascendo/dashboard/`` and the
+    frontend at ``app/frontend/`` -- four ``parents`` up gets us to repo
+    root. ``ASCENDO_FRONTEND_DIR`` env var overrides.
+    """
+    override = os.environ.get("ASCENDO_FRONTEND_DIR")
+    if override:
+        candidate = Path(override)
+        return candidate if candidate.is_dir() else None
+
+    here = Path(__file__).resolve()
+    # core/ascendo/dashboard/app.py -> repo root
+    repo_root = here.parent.parent.parent.parent
+    candidate = repo_root / "app" / "frontend"
+    return candidate if candidate.is_dir() else None
 
 
 def create_app(
@@ -78,7 +100,7 @@ def create_app(
                 app.state.adapter = select_adapter(registry=registry)
                 _log.info("dashboard: adapter resolved as %s", app.state.adapter.name)
             except NoAdapterAvailableError as exc:
-                _log.warning("dashboard: no adapter — endpoints will return 503: %s", exc)
+                _log.warning("dashboard: no adapter -- endpoints will return 503: %s", exc)
                 app.state.adapter = None
 
         yield
@@ -86,12 +108,12 @@ def create_app(
 
     app = FastAPI(
         title="Ascendo",
-        description="Cross-platform update orchestrator — local HTTP backend.",
+        description="Cross-platform update orchestrator -- local HTTP backend.",
         version=_get_version(),
         lifespan=lifespan,
     )
 
-    # Pre-injection (tests) — set state before lifespan runs.
+    # Pre-injection (tests) -- set state before lifespan runs.
     if adapter is not None:
         app.state.adapter = adapter
     app.state.runs_dir = runs_dir or _default_runs_dir()
@@ -101,7 +123,7 @@ def create_app(
     from ..orchestrator import RunRegistry
     app.state.run_registry = RunRegistry()
 
-    # CORS — permissive default for local-only usage on 127.0.0.1.
+    # CORS -- permissive default for local-only usage on 127.0.0.1.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins or ["*"],
@@ -110,9 +132,70 @@ def create_app(
         allow_credentials=False,
     )
 
-    # Routes
+    # ── API routes (must come BEFORE the catch-all SPA static mount) ──────
+    # Order matters: spa_stubs is registered FIRST so its specific routes
+    # (e.g. /runs/active, /runs/active/stream,
+    # /runs/{run_id}/phase/...) win over the runs_router's UUID-typed
+    # /runs/{run_id} catch-pattern, which would otherwise reject
+    # active as uuid_parsing.
     app.include_router(health_router, prefix="")
+    # Legacy SPA stubs -- transient placeholders for endpoints the
+    # Ubuntu_Aktualizacje SPA expects but the new core hasn't ported yet.
+    # Delete the matching stub from routes/spa_stubs.py when each real
+    # implementation lands.
+    app.include_router(spa_stubs_router, prefix="")
     app.include_router(runs_router, prefix="/runs")
+
+    # ── SPA bundle -- serve at root, last so REST routes win ──────────────
+    frontend_dir = _resolve_frontend_dir()
+    if frontend_dir is not None:
+        app.state.frontend_dir = frontend_dir
+
+        @app.get("/", include_in_schema=False)
+        async def _spa_index() -> FileResponse:
+            return FileResponse(frontend_dir / "index.html")
+
+        # Each top-level asset gets an explicit handler so the SPA's
+        # absolute paths (``/style.css``, ``/app.js``...) resolve without
+        # shadowing API routes. ``StaticFiles(html=True)`` mounted at "/"
+        # would intercept *every* unmatched path including 404s from API
+        # callers, which we don't want.
+        _spa_assets: tuple[tuple[str, str], ...] = (
+            ("app.js", "application/javascript"),
+            ("style.css", "text/css"),
+            ("i18n.js", "application/javascript"),
+            ("icons.js", "application/javascript"),
+            ("favicon.svg", "image/svg+xml"),
+        )
+        for asset_name, media_type in _spa_assets:
+            asset_path = frontend_dir / asset_name
+            if not asset_path.exists():
+                continue
+            # Bind both ``asset_path`` and ``media_type`` per-iteration via
+            # default arguments to dodge the late-binding closure trap.
+            def _make_handler(
+                _path: Path = asset_path,
+                _media: str = media_type,
+            ):
+                async def _serve_asset() -> FileResponse:
+                    return FileResponse(_path, media_type=_media)
+                return _serve_asset
+
+            app.add_api_route(
+                f"/{asset_name}",
+                _make_handler(),
+                methods=["GET"],
+                include_in_schema=False,
+            )
+        # Also mount a /static/ subtree so any future relative imports
+        # (``/static/foo.js``) work without further plumbing.
+        app.mount(
+            "/static",
+            StaticFiles(directory=str(frontend_dir)),
+            name="frontend-static",
+        )
+    else:
+        _log.info("dashboard: SPA frontend not found -- serving API only")
 
     return app
 

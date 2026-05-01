@@ -32,7 +32,7 @@ $script:VALID_MSG_LEVELS  = @('debug','info','warn','error')
 $script:VALID_ELEVATION   = @('none','sudo','pkexec','doas','uac','launchd_root','unknown')
 $script:VALID_SOURCE_TYPE = @(
     'apt','snap','flatpak','brew_formula','brew_cask','winget','msstore',
-    'appx','registry_arp','mac_app_store','npm','pip','pipx','web',
+    'appx','registry_arp','windows_update','mac_app_store','npm','pip','pipx','web',
     'plugin','unknown'
 )
 

@@ -36,6 +36,7 @@ class SourceType(str, Enum):
     MSSTORE = "msstore"
     APPX = "appx"          # Windows AppX/MSIX installed but not via msstore
     REGISTRY_ARP = "registry_arp"   # Windows Add/Remove Programs entry
+    WINDOWS_UPDATE = "windows_update"   # OS patches via PSWindowsUpdate (KBs)
     MAC_APP_STORE = "mac_app_store"
     NPM = "npm"
     PIP = "pip"

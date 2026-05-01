@@ -146,6 +146,44 @@ try {
         }
     }
 
+    # ── 4b. plan + apply (dry-run) + verify + cleanup (dry-run) ──────────
+    # Walks the remaining phases without ever mutating the system. Apply
+    # runs in --dry-run so no real upgrades happen; the script emits
+    # status='planned' items describing what an apply WOULD do.
+    Write-Step "All 5 phases (apply runs --dry-run; no real mutations)"
+
+    $phasesToTest = @(
+        @{ Name = 'plan';    Args = @('--phase', 'plan')              ; ExpectedItemMin = 0 }
+        @{ Name = 'apply';   Args = @('--phase', 'apply', '--dry-run'); ExpectedItemMin = 0 }
+        @{ Name = 'verify';  Args = @('--phase', 'verify')            ; ExpectedItemMin = 0 }
+        @{ Name = 'cleanup'; Args = @('--phase', 'cleanup', '--dry-run'); ExpectedItemMin = 0 }
+    )
+
+    foreach ($p in $phasesToTest) {
+        $phaseRunsDir = Join-Path $env:TEMP "ascendo-validate-phase-$($p.Name)-$([guid]::NewGuid())"
+        New-Item -ItemType Directory -Force -Path $phaseRunsDir | Out-Null
+        $phaseArgv = @('-B', '-m', 'ascendo', 'run', '--category', 'winget') + $p.Args + @('--runs-dir', $phaseRunsDir)
+        $phaseOut = & python @phaseArgv 2>&1
+        $phaseExit = $LASTEXITCODE
+        $phaseSidecar = Get-ChildItem -Path $phaseRunsDir -Recurse -Filter "$($p.Name)__winget.json" -ErrorAction SilentlyContinue | Select-Object -First 1
+        Test-Result "phase=$($p.Name): exit 0/1 (not crashed)" ($phaseExit -in @(0, 1)) "exit=$phaseExit"
+        $phaseSidecarDetail = if ($phaseSidecar) {
+            "$($phaseSidecar.FullName)"
+        } else {
+            "no $($p.Name)__winget.json found in $phaseRunsDir"
+        }
+        Test-Result "phase=$($p.Name): produced sidecar" ($null -ne $phaseSidecar) $phaseSidecarDetail
+        if ($phaseSidecar) {
+            try {
+                $sc = Get-Content $phaseSidecar.FullName -Raw | ConvertFrom-Json
+                Test-Result "phase=$($p.Name): sidecar.phase matches" ($sc.phase -eq $p.Name) "phase=$($sc.phase)"
+                Write-Host "         status=$($sc.status) total=$($sc.summary.total)" -ForegroundColor DarkGray
+            } catch {
+                Test-Result "phase=$($p.Name): sidecar parses" $false $_.Exception.Message
+            }
+        }
+    }
+
     # ── 5. dashboard smoke ─────────────────────────────────────────────────
     if ($SkipDashboard) {
         Write-Host "  [SKIP] dashboard checks (--SkipDashboard)" -ForegroundColor DarkGray
@@ -176,13 +214,11 @@ try {
                 $h = Invoke-RestMethod "http://127.0.0.1:$DashboardPort/health"
                 Test-Result "GET /health" ($h.status -in @('ok','degraded','error')) "status=$($h.status)"
 
-                # Async run + SSE roundtrip
                 $body = @{ phases = @('check') } | ConvertTo-Json -Compress
                 $async = Invoke-RestMethod "http://127.0.0.1:$DashboardPort/runs/async" `
                     -Method Post -Body $body -ContentType 'application/json'
                 Test-Result "POST /runs/async returns run_id" ($async.run_id -match '^[0-9a-f-]{36}$') "run_id=$($async.run_id)"
 
-                # Poll status until completed
                 $pollOk = $false
                 for ($i = 0; $i -lt 40; $i++) {
                     Start-Sleep -Milliseconds 250

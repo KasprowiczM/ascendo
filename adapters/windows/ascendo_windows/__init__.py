@@ -11,6 +11,7 @@ will land in subsequent milestones.
 from __future__ import annotations
 
 from .adapter import WindowsAdapter
+from .inventory import WindowsInventory
 from .managers.winget import WingetManager
 
-__all__ = ["WindowsAdapter", "WingetManager"]
+__all__ = ["WindowsAdapter", "WindowsInventory", "WingetManager"]

@@ -284,6 +284,20 @@ function Read-WingetTabularOutput {
         $id   = Resolve-WingetId  -RawId   (Get-WingetColValue -Source $line -Positions $layout.Positions -Index 1)
         if (-not $name -or -not $id) { continue }
 
+        # Defensive sanity check — drop rows that look like parser-merged
+        # output. Real winget IDs are dot-separated tokens of alphanumerics,
+        # hyphens, and underscores; they never contain internal whitespace
+        # and rarely exceed 80 characters. Lengths over 256 or any internal
+        # whitespace indicate adjacent rows were collapsed into one (the
+        # AppX/MSIX continuation-line case observed on DP5520WMK with
+        # AutoHotkey). We skip these rows and emit a verbose-level warning
+        # rather than poisoning the items[] with a synthetic super-row.
+        if ($id.Length -gt 256 -or $id -match '\s') {
+            $preview = if ($id.Length -gt 80) { $id.Substring(0, 80) + '...' } else { $id }
+            Write-Verbose "Read-WingetTabularOutput: skipping suspected merged row (id length=$($id.Length), has-whitespace=$([bool]($id -match '\s'))): $preview"
+            continue
+        }
+
         switch ($layout.Layout) {
             'upgrade-5col' {
                 $rows.Add([pscustomobject]@{
