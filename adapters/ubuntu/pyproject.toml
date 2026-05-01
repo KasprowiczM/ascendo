@@ -35,8 +35,10 @@ classifiers     = [
     "Typing :: Typed",
 ]
 
+# NOTE: `ascendo` core dep intentionally unpinned during 0.x dev — see
+# adapters/windows/pyproject.toml for the full rationale.
 dependencies = [
-    "ascendo>=0.0.1",        # core (sibling package)
+    "ascendo",               # core (sibling package, locally editable-installed)
     "pydantic>=2.7,<3",
     # python-apt is system-installed (apt-get install python3-apt) — NOT a PyPI dep
 ]

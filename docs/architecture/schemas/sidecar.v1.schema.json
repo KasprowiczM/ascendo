@@ -1,0 +1,823 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/KasprowiczM/ascendo/schemas/sidecar.v1.schema.json",
+  "title": "Ascendo Sidecar v1",
+  "description": "Canonical JSON Schema for Ascendo's per-phase sidecar contract (``ascendo/v1``). Native emitters write one sidecar per phase to ``runs/<run-id>/<phase>__<category>.json``; Python readers in the core orchestrator validate against this schema before parsing. Generated from ``core/ascendo/models/sidecar.py`` via ``scripts/export-sidecar-schema.py`` — do not hand-edit. See ADR-0003 for the schema's role in the architecture.",
+  "$defs": {
+    "ElevationMethod": {
+      "description": "How the run process obtained elevated privileges (if at all).\n\n`none` means no elevation was used; the run executed as the invoking\nuser. `sudo`, `pkexec`, `doas`, and `uac` describe the actual mechanism\nwhen one was used.",
+      "enum": [
+        "none",
+        "sudo",
+        "pkexec",
+        "doas",
+        "uac",
+        "launchd_root",
+        "unknown"
+      ],
+      "title": "ElevationMethod",
+      "type": "string"
+    },
+    "HostInfo": {
+      "additionalProperties": false,
+      "description": "Snapshot of the machine state at run start.\n\nFrozen — once captured, never mutated.",
+      "properties": {
+        "hostname": {
+          "description": "Result of `hostname` (Linux/macOS) or `$env:COMPUTERNAME` (Windows).",
+          "minLength": 1,
+          "title": "Hostname",
+          "type": "string"
+        },
+        "os": {
+          "$ref": "#/$defs/OperatingSystem",
+          "description": "Detected operating system family. Drives adapter selection."
+        },
+        "os_version": {
+          "description": "Free-form OS version string. Examples: '24.04 LTS' (Ubuntu), '11 Pro 26200' (Windows), '14.5 (23F79)' (macOS Sonoma).",
+          "minLength": 1,
+          "title": "Os Version",
+          "type": "string"
+        },
+        "arch": {
+          "description": "Architecture string. 'x86_64' / 'arm64' / 'aarch64' / etc.",
+          "minLength": 1,
+          "title": "Arch",
+          "type": "string"
+        },
+        "user": {
+          "description": "Username under which the run is executing.",
+          "minLength": 1,
+          "title": "User",
+          "type": "string"
+        },
+        "is_elevated": {
+          "description": "True if the run process has effective elevated privileges (root on POSIX, Administrator on Windows).",
+          "title": "Is Elevated",
+          "type": "boolean"
+        },
+        "elevation_method": {
+          "$ref": "#/$defs/ElevationMethod",
+          "default": "none",
+          "description": "Mechanism used to obtain elevation, if any."
+        },
+        "locale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "BCP-47 locale tag of the user shell, if known. Used for i18n lookups in the orchestrator. Example: 'pl-PL', 'en-US'.",
+          "title": "Locale"
+        }
+      },
+      "required": [
+        "hostname",
+        "os",
+        "os_version",
+        "arch",
+        "user",
+        "is_elevated"
+      ],
+      "title": "HostInfo",
+      "type": "object"
+    },
+    "Item": {
+      "additionalProperties": false,
+      "description": "One package operation attempted (or skipped, or planned) in this phase.\n\nThe same `id` may appear once per phase per run. `current_version` is\npre-apply state; `resolved_version` is post-apply truth; `target_version`\nis what the planner intended.",
+      "properties": {
+        "id": {
+          "description": "Package identifier within its source.",
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "description": "Display name.",
+          "title": "Name",
+          "type": "string"
+        },
+        "category": {
+          "$ref": "#/$defs/SourceType",
+          "description": "Source category (mirrors Package.category)."
+        },
+        "source": {
+          "$ref": "#/$defs/ItemSource",
+          "description": "Specific source/feed instance."
+        },
+        "current_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Version installed before this phase (None if not installed).",
+          "title": "Current Version"
+        },
+        "target_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Version the planner intended to install.",
+          "title": "Target Version"
+        },
+        "resolved_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Version actually installed after apply (or what `verify` proved). Distinct from target_version when the source ships a different build than advertised.",
+          "title": "Resolved Version"
+        },
+        "status": {
+          "$ref": "#/$defs/ItemStatus"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Underlying tool's exit code. e.g. winget's -1978335190.",
+          "title": "Exit Code"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Wall-clock duration of this item operation, in milliseconds.",
+          "title": "Duration Ms"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ItemEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Local-version evidence. Set by adapters that need unknown-version suppression (PowerShell-style)."
+        },
+        "rollback": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ItemRollback"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rollback method for a successful apply. None on check/plan/verify; expected to be set on successful apply."
+        },
+        "messages": {
+          "description": "Per-item log lines from the native tool.",
+          "items": {
+            "$ref": "#/$defs/Message"
+          },
+          "title": "Messages",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "category",
+        "source",
+        "status"
+      ],
+      "title": "Item",
+      "type": "object"
+    },
+    "ItemEvidence": {
+      "additionalProperties": false,
+      "description": "Local-version evidence for unknown-version suppression.\n\nSome package managers (notably winget on certain MSIX packages)\nreturn `Version = Unknown` even though the local install has a\nparseable version. The PowerShell adapter records what it can find\nvia AppX manifest, registry ARP, dpkg, etc. — and the orchestrator\nsuppresses repeat upgrade offers until the source actually advertises\na newer `Available` version.\n\nAll fields are optional; presence indicates the corresponding evidence\nwas actually gathered.",
+      "properties": {
+        "appx_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Version from AppX/MSIX package manifest (Windows).",
+          "title": "Appx Version"
+        },
+        "registry_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Version from Windows registry Add/Remove Programs entry.",
+          "title": "Registry Version"
+        },
+        "dpkg_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Version from `dpkg -s <pkg>` output (Debian/Ubuntu).",
+          "title": "Dpkg Version"
+        },
+        "binary_version": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Version output of `<binary> --version` if reproducible.",
+          "title": "Binary Version"
+        },
+        "binary_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Absolute path to the resolved binary (for native installers).",
+          "title": "Binary Path"
+        },
+        "binary_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "SHA-256 hex of the binary, when checksum verification was performed.",
+          "title": "Binary Sha256"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Free-form note explaining why this evidence was gathered.",
+          "title": "Note"
+        }
+      },
+      "title": "ItemEvidence",
+      "type": "object"
+    },
+    "ItemRollback": {
+      "additionalProperties": false,
+      "description": "How to undo a successful apply on this item.\n\nPer ADR + threat-model: every apply that succeeds must record a\nrollback hint, even if rollback is implemented via system snapshot\n(Time Machine / VSS / timeshift) rather than per-package downgrade.",
+      "properties": {
+        "available": {
+          "description": "False means rollback is not possible without a system snapshot.",
+          "title": "Available",
+          "type": "boolean"
+        },
+        "method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Concrete rollback command, if available. Example: 'winget install --id Microsoft.PowerShell --version 7.6.0' or 'apt install firefox=128.0+build1-0ubuntu0.24.04.1'.",
+          "title": "Method"
+        },
+        "snapshot_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ID of the pre-apply system snapshot (timeshift snapshot name, VSS shadow copy GUID, Time Machine timestamp). When set, rollback via snapshot is the recommended path.",
+          "title": "Snapshot Id"
+        },
+        "instructions_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Path to a generated markdown file containing human-readable rollback instructions. Default: ~/.ascendo/rollback/<run-id>.md.",
+          "title": "Instructions Path"
+        }
+      },
+      "required": [
+        "available"
+      ],
+      "title": "ItemRollback",
+      "type": "object"
+    },
+    "ItemSource": {
+      "additionalProperties": false,
+      "description": "The source/feed an item was discovered through.\n\nDistinct from `Package.category`: a package can have multiple sources\n(apt + snap), and `ItemSource.feed` may be more specific than the\ncategory (e.g. category='apt', feed='ubuntu/noble/main' or 'PPA:ondrej/php').",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/SourceType",
+          "description": "Source type."
+        },
+        "feed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional sub-source identifier. apt: repository name. winget: source name (winget/msstore). brew: tap name.",
+          "title": "Feed"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional canonical URL. For 'web' sources this is the install page or download URL. For repository-based sources this is the repository URL where applicable.",
+          "title": "Url"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "ItemSource",
+      "type": "object"
+    },
+    "ItemStatus": {
+      "description": "Outcome of a single item operation.\n\n`up_to_date` is distinct from `success`: success means we did\nsomething successfully; up_to_date means there was nothing to do.\nThe dashboard renders these differently.",
+      "enum": [
+        "success",
+        "up_to_date",
+        "failed",
+        "skipped",
+        "planned",
+        "partial"
+      ],
+      "title": "ItemStatus",
+      "type": "string"
+    },
+    "Message": {
+      "additionalProperties": false,
+      "description": "A single human-readable log-style message.\n\nDistinct from Python `logging` records — this is what gets persisted\nin the sidecar for dashboard display, audit, and stakeholder reports.\nNative scripts emit these alongside `items[]`.",
+      "properties": {
+        "level": {
+          "$ref": "#/$defs/MessageLevel"
+        },
+        "text": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "timestamp": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ISO-8601 timestamp at message emission. Optional.",
+          "title": "Timestamp"
+        }
+      },
+      "required": [
+        "level",
+        "text"
+      ],
+      "title": "Message",
+      "type": "object"
+    },
+    "MessageLevel": {
+      "description": "Severity for free-form messages.",
+      "enum": [
+        "debug",
+        "info",
+        "warn",
+        "error"
+      ],
+      "title": "MessageLevel",
+      "type": "string"
+    },
+    "OperatingSystem": {
+      "description": "Supported operating systems.\n\nTier 1 (`adapters/<os>/`): linux_ubuntu, windows, macos.\nTier 2 (`contrib/adapters/<os>/`): everything else.\n\nThe string value is what native scripts emit and what the adapter\nfactory uses to select an implementation.",
+      "enum": [
+        "linux_ubuntu",
+        "linux_debian",
+        "linux_fedora",
+        "linux_arch",
+        "linux_other",
+        "windows",
+        "macos",
+        "unknown"
+      ],
+      "title": "OperatingSystem",
+      "type": "string"
+    },
+    "Phase": {
+      "description": "The 5-phase contract every category script implements.\n\nSee `docs/agents/contract.md` (Linux pre-merge) and ADR-0003 for\nthe contract's normative definition.\n\n- **check**: read-only inventory of what's available. Side-effect-free.\n- **plan**: enumerate exactly what would change. Side-effect-free.\n- **apply**: execute changes. The only mutating phase.\n- **verify**: post-apply validation. Side-effect-free.\n- **cleanup**: bounded post-run housekeeping (cache prune, log rotate).",
+      "enum": [
+        "check",
+        "plan",
+        "apply",
+        "verify",
+        "cleanup"
+      ],
+      "title": "Phase",
+      "type": "string"
+    },
+    "PhaseStatus": {
+      "description": "Outcome of a phase.\n\n`partial` is the deliberate middle ground: some items succeeded, some\nfailed, the phase as a whole did not abort. The orchestrator uses\nthis to decide whether to continue to the next phase or short-circuit.",
+      "enum": [
+        "success",
+        "partial",
+        "failed",
+        "skipped"
+      ],
+      "title": "PhaseStatus",
+      "type": "string"
+    },
+    "RunInfo": {
+      "additionalProperties": false,
+      "description": "Run-level identity + invocation metadata. Frozen.",
+      "properties": {
+        "id": {
+          "description": "UUID v4 generated at run start. Stable across all phases.",
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "trigger": {
+          "$ref": "#/$defs/Trigger",
+          "description": "What initiated this run."
+        },
+        "profile": {
+          "description": "Profile name. Built-in: 'quick' | 'safe' | 'full'.",
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "title": "Profile",
+          "type": "string"
+        },
+        "dry_run": {
+          "default": false,
+          "description": "True if no mutations should be performed. Apply phase still runs but emits a sidecar with 'planned' items only.",
+          "title": "Dry Run",
+          "type": "boolean"
+        },
+        "started_at": {
+          "description": "ISO-8601 timestamp at run start (UTC).",
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ISO-8601 timestamp at run end (UTC). None until the orchestrator writes the final summary.",
+          "title": "Finished At"
+        },
+        "invocation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Original command-line string for human-readable audit. Optional; CLI captures this, scheduler may not.",
+          "title": "Invocation"
+        }
+      },
+      "required": [
+        "id",
+        "trigger",
+        "profile",
+        "started_at"
+      ],
+      "title": "RunInfo",
+      "type": "object"
+    },
+    "SidecarSchema": {
+      "description": "Recognized sidecar schema identifiers.\n\nThe reader accepts both during the migration period. New emitters\nwrite only `V1_ASCENDO`. See ADR-0003 for the deprecation timeline.",
+      "enum": [
+        "ascendo/v1",
+        "ubuntu-aktualizacje/v1"
+      ],
+      "title": "SidecarSchema",
+      "type": "string"
+    },
+    "SourceType": {
+      "description": "Kind of package source / feed.\n\n`web` covers everything that's not a real package manager — direct\nDMG downloads, GitHub Releases, manual installer URLs. The plugin\nsystem is built around `web` for ad-hoc installers.",
+      "enum": [
+        "apt",
+        "snap",
+        "flatpak",
+        "brew_formula",
+        "brew_cask",
+        "winget",
+        "msstore",
+        "appx",
+        "registry_arp",
+        "mac_app_store",
+        "npm",
+        "pip",
+        "pipx",
+        "web",
+        "plugin",
+        "unknown"
+      ],
+      "title": "SourceType",
+      "type": "string"
+    },
+    "Summary": {
+      "additionalProperties": false,
+      "description": "Aggregate counts + headline status for a single phase sidecar.\n\nSums of `items[]` outcomes, plus the phase-level exit code. The\norchestrator's overall run status is computed by combining all phase\nsummaries — see core.orchestrator.",
+      "properties": {
+        "total": {
+          "description": "Total items in this phase.",
+          "minimum": 0,
+          "title": "Total",
+          "type": "integer"
+        },
+        "success": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Success",
+          "type": "integer"
+        },
+        "up_to_date": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Up To Date",
+          "type": "integer"
+        },
+        "failed": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Failed",
+          "type": "integer"
+        },
+        "skipped": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Skipped",
+          "type": "integer"
+        },
+        "planned": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Planned",
+          "type": "integer"
+        },
+        "partial": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Partial",
+          "type": "integer"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Total wall-clock duration for this phase, in milliseconds.",
+          "title": "Duration Ms"
+        },
+        "exit_code": {
+          "default": 0,
+          "description": "Phase-level exit code. 0 on full success or up-to-date; non-zero on any failure (orchestrator inspects the items[] for granular reasons).",
+          "title": "Exit Code",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total"
+      ],
+      "title": "Summary",
+      "type": "object"
+    },
+    "ToolInfo": {
+      "additionalProperties": false,
+      "description": "Identity of the tool that performed this phase.\n\nDistinct from `HostInfo.os` because one OS may host multiple tools\n(Linux can have apt + snap + flatpak + brew). Sidecars are 1:1 with\na tool execution.",
+      "properties": {
+        "name": {
+          "description": "Lowercase tool slug. Also used as `category` in items[].",
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "description": "Tool's self-reported version (e.g. 'apt 2.7.14', 'winget v1.28.240').",
+          "title": "Version",
+          "type": "string"
+        },
+        "binary_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Absolute path to the tool's binary (resolved at run time). Optional — useful for audit when multiple installs of the same tool exist on PATH.",
+          "title": "Binary Path"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "title": "ToolInfo",
+      "type": "object"
+    },
+    "Trigger": {
+      "description": "What initiated this run.\n\nDrives audit + telemetry. Scheduled jobs are distinguished from CLI\nruns because they need different default behaviors (silent mode,\nautomatic snapshot, no interactive confirmations).",
+      "enum": [
+        "cli",
+        "scheduler",
+        "dashboard",
+        "plugin",
+        "unknown"
+      ],
+      "title": "Trigger",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "$ref": "#/$defs/SidecarSchema",
+      "description": "Schema identifier. Reader accepts both v1 variants."
+    },
+    "run": {
+      "$ref": "#/$defs/RunInfo"
+    },
+    "host": {
+      "$ref": "#/$defs/HostInfo"
+    },
+    "tool": {
+      "$ref": "#/$defs/ToolInfo"
+    },
+    "phase": {
+      "$ref": "#/$defs/Phase"
+    },
+    "category": {
+      "$ref": "#/$defs/SourceType",
+      "description": "Source category this sidecar describes. e.g. 'apt', 'winget'. Mirrors `tool.name` in the common case but can differ when a single tool drives multiple categories (e.g. brew → formula + cask)."
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "finished_at": {
+      "format": "date-time",
+      "title": "Finished At",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/PhaseStatus"
+    },
+    "items": {
+      "description": "Per-package operations attempted in this phase.",
+      "items": {
+        "$ref": "#/$defs/Item"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "summary": {
+      "$ref": "#/$defs/Summary"
+    },
+    "messages": {
+      "description": "Phase-level log lines not associated with a specific item.",
+      "items": {
+        "$ref": "#/$defs/Message"
+      },
+      "title": "Messages",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "run",
+    "host",
+    "tool",
+    "phase",
+    "category",
+    "started_at",
+    "finished_at",
+    "status",
+    "summary"
+  ],
+  "type": "object"
+}

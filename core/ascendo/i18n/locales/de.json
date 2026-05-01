@@ -1,0 +1,54 @@
+{
+  "phase.check": "Prüfen",
+  "phase.plan": "Planen",
+  "phase.apply": "Anwenden",
+  "phase.verify": "Verifizieren",
+  "phase.cleanup": "Aufräumen",
+
+  "status.success": "OK",
+  "status.failed": "Fehler",
+  "status.partial": "Teilweise",
+  "status.skipped": "Übersprungen",
+  "status.up_to_date": "Aktuell",
+  "status.planned": "Geplant",
+
+  "level.debug": "DEBUG",
+  "level.info": "Information",
+  "level.warn": "Warnung",
+  "level.error": "Fehler",
+
+  "msg.run.starting": "Ascendo-Update-Lauf wird gestartet...",
+  "msg.run.finished": "Alle Updates abgeschlossen.",
+  "msg.run.aborted": "Lauf abgebrochen.",
+  "msg.run.dry_run": "TROCKENLAUF — Phasen apply/verify/cleanup übersprungen.",
+
+  "msg.snapshot.creating": "Snapshot wird erstellt...",
+  "msg.snapshot.created": "Snapshot erstellt: {name}",
+  "msg.snapshot.unavailable": "Snapshot-Subsystem nicht verfügbar; weiter ohne Rollback-Unterstützung.",
+
+  "msg.elevation.required": "Erhöhte Rechte sind erforderlich, um fortzufahren.",
+  "msg.elevation.denied": "Erhöhte Rechte verweigert.",
+  "msg.elevation.granted": "Erhöhte Rechte gewährt.",
+
+  "msg.package.upgrading": "{name} wird aktualisiert...",
+  "msg.package.upgraded": "{name} erfolgreich aktualisiert.",
+  "msg.package.failed": "{name} konnte nicht aktualisiert werden.",
+  "msg.package.up_to_date": "{name} ist bereits aktuell.",
+
+  "msg.error.no_adapter": "Kein Adapter für dieses Betriebssystem oder Werkzeug verfügbar.",
+  "msg.error.lock_failed": "Konnte die Sperre des Paketmanagers nicht erhalten; möglicherweise läuft ein anderer Prozess.",
+  "msg.error.network": "Netzwerkfehler — Verbindung prüfen und erneut versuchen.",
+
+  "msg.confirm.yes": "j",
+  "msg.confirm.no": "n",
+  "msg.confirm.proceed": "Fortfahren?",
+
+  "cli.help.run": "Führt ein vollständiges Systemupdate über alle konfigurierten Werkzeuge aus.",
+  "cli.help.doctor": "Diagnostiziert den Host und meldet Probleme, die Updates blockieren.",
+  "cli.help.schedule": "Verwaltet geplante (zeitgesteuerte) Update-Läufe.",
+
+  "dashboard.title": "Ascendo-Dashboard",
+  "dashboard.runs": "Läufe",
+  "dashboard.history": "Verlauf",
+  "dashboard.no_runs": "Bisher keine Läufe aufgezeichnet."
+}

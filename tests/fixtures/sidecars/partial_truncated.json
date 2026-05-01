@@ -1,0 +1,35 @@
+{
+  "schema": "ascendo/v1",
+  "run": {
+    "id": "deadbeef-0000-4000-8000-000000000001",
+    "trigger": "cli",
+    "profile": "full",
+    "dry_run": false,
+    "started_at": "2026-04-30T10:00:00+00:00",
+    "finished_at": "2026-04-30T10:01:00+00:00",
+    "invocation": "ascendo run"
+  },
+  "host": {
+    "hostname": "trunc-host",
+    "os": "linux_ubuntu",
+    "os_version": "24.04 LTS",
+    "arch": "x86_64",
+    "user": "tester",
+    "is_elevated": false,
+    "elevation_method": "none",
+    "locale": null
+  },
+  "tool": {
+    "name": "apt",
+    "version": "apt 2.7.14",
+    "binary_path": "/usr/bin/apt"
+  },
+  "phase": "apply",
+  "category": "apt",
+  "started_at": "2026-04-30T10:00:01+00:00",
+  "items": [
+    {
+      "id": "firefox",
+      "name": "firefox",
+      "category": "apt",
+      "source": {"type": "apt", "fee

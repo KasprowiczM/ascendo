@@ -1,0 +1,54 @@
+{
+  "phase.check": "Sprawdzanie",
+  "phase.plan": "Planowanie",
+  "phase.apply": "Stosowanie",
+  "phase.verify": "Weryfikacja",
+  "phase.cleanup": "Czyszczenie",
+
+  "status.success": "OK",
+  "status.failed": "Błąd",
+  "status.partial": "Częściowy",
+  "status.skipped": "Pominięto",
+  "status.up_to_date": "Aktualne",
+  "status.planned": "Zaplanowane",
+
+  "level.debug": "DEBUG",
+  "level.info": "Info",
+  "level.warn": "Ostrzeżenie",
+  "level.error": "Błąd",
+
+  "msg.run.starting": "Uruchamianie aktualizacji Ascendo...",
+  "msg.run.finished": "Wszystkie aktualizacje zakończone.",
+  "msg.run.aborted": "Przerwano przebieg.",
+  "msg.run.dry_run": "TRYB SUCHY — fazy apply/verify/cleanup pominięte.",
+
+  "msg.snapshot.creating": "Tworzenie snapshotu...",
+  "msg.snapshot.created": "Snapshot utworzony: {name}",
+  "msg.snapshot.unavailable": "Podsystem snapshotów niedostępny; kontynuuję bez możliwości wycofania.",
+
+  "msg.elevation.required": "Do kontynuacji wymagane są uprawnienia administratora.",
+  "msg.elevation.denied": "Odmówiono uprawnień administratora.",
+  "msg.elevation.granted": "Uprawnienia administratora przyznane.",
+
+  "msg.package.upgrading": "Aktualizowanie {name}...",
+  "msg.package.upgraded": "{name} zaktualizowany pomyślnie.",
+  "msg.package.failed": "Nie udało się zaktualizować {name}.",
+  "msg.package.up_to_date": "{name} jest już aktualny.",
+
+  "msg.error.no_adapter": "Brak adaptera dla tego systemu lub narzędzia.",
+  "msg.error.lock_failed": "Nie można uzyskać blokady menedżera pakietów; być może inny proces jest uruchomiony.",
+  "msg.error.network": "Błąd sieci — sprawdź połączenie i spróbuj ponownie.",
+
+  "msg.confirm.yes": "T",
+  "msg.confirm.no": "n",
+  "msg.confirm.proceed": "Kontynuować?",
+
+  "cli.help.run": "Uruchom pełną aktualizację systemu we wszystkich skonfigurowanych narzędziach.",
+  "cli.help.doctor": "Zdiagnozuj host i zgłoś problemy blokujące aktualizacje.",
+  "cli.help.schedule": "Zarządzaj zaplanowanymi (sterowanymi timerem) aktualizacjami.",
+
+  "dashboard.title": "Pulpit Ascendo",
+  "dashboard.runs": "Przebiegi",
+  "dashboard.history": "Historia",
+  "dashboard.no_runs": "Brak zarejestrowanych przebiegów."
+}

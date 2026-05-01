@@ -1,17 +1,16 @@
-"""ascendo-windows — Tier 1 adapter implementing core interfaces for Windows.
+"""Ascendo Windows adapter (Tier 1).
 
-Implements:
-- WingetPackageManager(IPackageManager)
-- MsStorePackageManager(IPackageManager)
-- PSWindowsUpdateOSUpdater(IOSUpdater)
-- TaskSchedulerScheduler(IScheduler) — Windows schtasks.exe
-- VolumeShadowCopySnapshot(ISnapshot) — Windows VSS
-- WindowsUACElevation(IElevation) — UAC + ShellExecute "runas"
-- AuthenticodeVerifier(ICodeSigningVerifier) — Get-AuthenticodeSignature
-- WindowsHostInspector — registry, AppX, MSIX manifest version evidence
+Implements the IAdapter interface for Windows. Driven by native PowerShell
+scripts in ../scripts/ which emit JSON v1 sidecars; this module parses them
+back into Python models.
 
-Each class invokes `scripts/<category>/<phase>.ps1` via subprocess and parses
-the resulting JSON v1 sidecar.
-
-Package implementation arrives in M2-M3.
+M3 MVP scope: winget read-only check phase. plan/apply/verify/cleanup,
+inventory, snapshots (VSS), scheduling (Task Scheduler), elevation (UAC)
+will land in subsequent milestones.
 """
+from __future__ import annotations
+
+from .adapter import WindowsAdapter
+from .managers.winget import WingetManager
+
+__all__ = ["WindowsAdapter", "WingetManager"]

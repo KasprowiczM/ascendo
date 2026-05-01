@@ -1,0 +1,54 @@
+{
+  "phase.check": "Verificação",
+  "phase.plan": "Planejamento",
+  "phase.apply": "Aplicação",
+  "phase.verify": "Verificação final",
+  "phase.cleanup": "Limpeza",
+
+  "status.success": "OK",
+  "status.failed": "Erro",
+  "status.partial": "Parcial",
+  "status.skipped": "Ignorado",
+  "status.up_to_date": "Atualizado",
+  "status.planned": "Planejado",
+
+  "level.debug": "DEBUG",
+  "level.info": "Informação",
+  "level.warn": "Aviso",
+  "level.error": "Erro",
+
+  "msg.run.starting": "Iniciando execução de atualização do Ascendo...",
+  "msg.run.finished": "Todas as atualizações concluídas.",
+  "msg.run.aborted": "Execução cancelada.",
+  "msg.run.dry_run": "EXECUÇÃO A SECO — fases apply/verify/cleanup ignoradas.",
+
+  "msg.snapshot.creating": "Criando snapshot...",
+  "msg.snapshot.created": "Snapshot criado: {name}",
+  "msg.snapshot.unavailable": "Subsistema de snapshots indisponível; continuando sem suporte a rollback.",
+
+  "msg.elevation.required": "Privilégios elevados são necessários para continuar.",
+  "msg.elevation.denied": "Privilégios elevados negados.",
+  "msg.elevation.granted": "Privilégios elevados concedidos.",
+
+  "msg.package.upgrading": "Atualizando {name}...",
+  "msg.package.upgraded": "{name} atualizado com sucesso.",
+  "msg.package.failed": "Falha ao atualizar {name}.",
+  "msg.package.up_to_date": "{name} já está atualizado.",
+
+  "msg.error.no_adapter": "Nenhum adaptador disponível para este sistema ou ferramenta.",
+  "msg.error.lock_failed": "Não foi possível obter o lock do gerenciador de pacotes; outro processo pode estar em execução.",
+  "msg.error.network": "Erro de rede — verifique sua conexão e tente novamente.",
+
+  "msg.confirm.yes": "s",
+  "msg.confirm.no": "n",
+  "msg.confirm.proceed": "Continuar?",
+
+  "cli.help.run": "Executa uma atualização completa do sistema em todas as ferramentas configuradas.",
+  "cli.help.doctor": "Diagnostica o host e relata problemas que bloqueiam atualizações.",
+  "cli.help.schedule": "Gerencia atualizações agendadas (acionadas por temporizador).",
+
+  "dashboard.title": "Painel Ascendo",
+  "dashboard.runs": "Execuções",
+  "dashboard.history": "Histórico",
+  "dashboard.no_runs": "Nenhuma execução registrada ainda."
+}

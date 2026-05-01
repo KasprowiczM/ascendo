@@ -1,0 +1,61 @@
+{
+  "schema": "ascendo/v1",
+  "run": {
+    "id": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+    "trigger": "scheduler",
+    "profile": "quick",
+    "dry_run": false,
+    "started_at": "2026-04-30T03:00:00+00:00",
+    "finished_at": "2026-04-30T03:00:15+00:00",
+    "invocation": "./update-all.sh --profile quick"
+  },
+  "host": {
+    "hostname": "mk-uP5520",
+    "os": "linux_ubuntu",
+    "os_version": "24.04 LTS",
+    "arch": "x86_64",
+    "user": "mk",
+    "is_elevated": false,
+    "elevation_method": "none",
+    "locale": "pl-PL"
+  },
+  "tool": {
+    "name": "apt",
+    "version": "apt 2.7.14",
+    "binary_path": "/usr/bin/apt"
+  },
+  "phase": "check",
+  "category": "apt",
+  "started_at": "2026-04-30T03:00:01+00:00",
+  "finished_at": "2026-04-30T03:00:14+00:00",
+  "status": "success",
+  "items": [
+    {
+      "id": "firefox",
+      "name": "firefox",
+      "category": "apt",
+      "source": {"type": "apt", "feed": "ubuntu/noble/main", "url": null},
+      "current_version": "128.0+build1-0ubuntu0.24.04.1",
+      "target_version": "129.0+build1-0ubuntu0.24.04.1",
+      "resolved_version": null,
+      "status": "planned",
+      "exit_code": null,
+      "duration_ms": 340,
+      "evidence": null,
+      "rollback": null,
+      "messages": []
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "success": 0,
+    "up_to_date": 0,
+    "failed": 0,
+    "skipped": 0,
+    "planned": 1,
+    "partial": 0,
+    "duration_ms": 13000,
+    "exit_code": 0
+  },
+  "messages": []
+}

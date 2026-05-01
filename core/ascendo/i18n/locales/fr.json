@@ -1,0 +1,54 @@
+{
+  "phase.check": "Vérification",
+  "phase.plan": "Planification",
+  "phase.apply": "Application",
+  "phase.verify": "Validation",
+  "phase.cleanup": "Nettoyage",
+
+  "status.success": "OK",
+  "status.failed": "Erreur",
+  "status.partial": "Partiel",
+  "status.skipped": "Ignoré",
+  "status.up_to_date": "À jour",
+  "status.planned": "Planifié",
+
+  "level.debug": "DEBUG",
+  "level.info": "Information",
+  "level.warn": "Avertissement",
+  "level.error": "Erreur",
+
+  "msg.run.starting": "Démarrage de l'exécution de mise à jour Ascendo...",
+  "msg.run.finished": "Toutes les mises à jour sont terminées.",
+  "msg.run.aborted": "Exécution annulée.",
+  "msg.run.dry_run": "EXÉCUTION À BLANC — phases apply/verify/cleanup ignorées.",
+
+  "msg.snapshot.creating": "Création du snapshot...",
+  "msg.snapshot.created": "Snapshot créé : {name}",
+  "msg.snapshot.unavailable": "Sous-système de snapshots indisponible ; poursuite sans prise en charge du retour arrière.",
+
+  "msg.elevation.required": "Des privilèges élevés sont requis pour continuer.",
+  "msg.elevation.denied": "Privilèges élevés refusés.",
+  "msg.elevation.granted": "Privilèges élevés accordés.",
+
+  "msg.package.upgrading": "Mise à jour de {name}...",
+  "msg.package.upgraded": "{name} mis à jour avec succès.",
+  "msg.package.failed": "Échec de la mise à jour de {name}.",
+  "msg.package.up_to_date": "{name} est déjà à jour.",
+
+  "msg.error.no_adapter": "Aucun adaptateur disponible pour ce système ou cet outil.",
+  "msg.error.lock_failed": "Impossible d'acquérir le verrou du gestionnaire de paquets ; un autre processus est peut-être en cours.",
+  "msg.error.network": "Erreur réseau — vérifiez votre connexion et réessayez.",
+
+  "msg.confirm.yes": "o",
+  "msg.confirm.no": "n",
+  "msg.confirm.proceed": "Continuer ?",
+
+  "cli.help.run": "Exécute une mise à jour complète du système sur tous les outils configurés.",
+  "cli.help.doctor": "Diagnostique l'hôte et signale les problèmes bloquant les mises à jour.",
+  "cli.help.schedule": "Gère les mises à jour planifiées (déclenchées par minuteur).",
+
+  "dashboard.title": "Tableau de bord Ascendo",
+  "dashboard.runs": "Exécutions",
+  "dashboard.history": "Historique",
+  "dashboard.no_runs": "Aucune exécution enregistrée pour le moment."
+}

@@ -35,8 +35,14 @@ classifiers     = [
     "Typing :: Typed",
 ]
 
+# NOTE: The `ascendo` core dependency is intentionally pinned without a
+# version constraint during 0.x development. PyPI doesn't yet host the
+# core package, so a `>=0.0.1` constraint fails when pip tries to resolve
+# it from the index. With no constraint, pip happily uses the locally
+# editable-installed `ascendo` (e.g. `0.0.1.dev0`). Bump to a real range
+# (`>=1.0,<2.0`) when we ship to PyPI.
 dependencies = [
-    "ascendo>=0.0.1",
+    "ascendo",
     "pydantic>=2.7,<3",
     "pywin32>=306;        platform_system == 'Windows'",
     "pywin32-ctypes>=0.2; platform_system == 'Windows'",

@@ -39,8 +39,10 @@ classifiers     = [
     "Typing :: Typed",
 ]
 
+# NOTE: `ascendo` core dep intentionally unpinned during 0.x dev — see
+# adapters/windows/pyproject.toml for the full rationale.
 dependencies = [
-    "ascendo>=0.0.1",
+    "ascendo",
     "pydantic>=2.7,<3",
     # pyobjc-* added in M5 when actually implementing macOS-native calls.
 ]

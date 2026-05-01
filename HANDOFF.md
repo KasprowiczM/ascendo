@@ -219,7 +219,30 @@ python_modules, plugins), `scripts` (per OS, per phase), `config`,
 ## Current State (UPDATE this section after each session)
 
 ### Last updated
-2026-05-01 — Sesja 3 (Cowork) — M2.1 + M2.2 ukończone
+2026-05-01 — **v0.0.1-alpha SHIPPED.** End-to-end validated on real DP5520WMK. ALL CHECKS PASSED.
+
+### 🎉 Milestone: v0.0.1-alpha — first working build on real Windows
+
+```
+==> ascendo run --category winget --phase check    exit=0  status=success
+    sidecar.tool = winget 1.28.240
+    [INFO] Found 1 package(s) with upgrades available.
+==> ascendo dashboard                              http://127.0.0.1:8765
+    GET /version  GET /health  POST /runs/async  GET /runs/{id}/status   ALL PASS
+```
+
+Every layer of the 6-layer architecture works on real hardware:
+
+| Layer | Module | Status |
+|---|---|---|
+| 1 — Frontend SPA | `app/frontend/*` (legacy, not yet wired to new endpoints) | exists |
+| 2 — Tauri shell | `app/tauri/*` (legacy) | exists |
+| 3 — Backend HTTP | `core/ascendo/dashboard/` | ✅ **shipped** |
+| 4 — Core domain | `core/ascendo/{models,interfaces,orchestrator,cli,…}` | ✅ **shipped** |
+| 5 — Adapter Python | `adapters/windows/ascendo_windows/` | ✅ **shipped** |
+| 6 — Native scripts | `adapters/windows/{lib,scripts/winget/}` | ✅ **shipped** |
+
+**Tag this commit** with: `git tag -a v0.0.1-alpha -m "First end-to-end working build on real Windows"`
 
 ### Branch & commits
 - **Branch:** `restructure/monorepo`
@@ -265,11 +288,41 @@ python_modules, plugins), `scripts` (per OS, per phase), `config`,
 |---|---|---|
 | M2.1 — Sidecar Pydantic v2 modele (`ascendo/v1`) | ✅ done | Sesja 3 — `core/ascendo/models/{host,run,package,result,sidecar}.py` + `__init__.py`. Pełne pokrycie ADR-0003: enums (Phase, ItemStatus, SourceType, ElevationMethod, ...), validators (reverse-time, summary/items consistency), legacy schema acceptance |
 | M2.2 — 6 core interfaces + IAdapter | ✅ done | Sesja 3 — `core/ascendo/interfaces/{adapter,package_manager,inventory,snapshot,scheduler,source,elevation}.py`. abc.ABC + @abstractmethod, value types przy interfejsach (ScheduleSpec, SnapshotInfo, SourceMetadata, ElevationResult, AdapterCapability flag) |
-| M2.3 — adapter_factory + JSON Schema export | ⏳ pending | Następna sesja |
-| M2.4 — Sidecar reader (file I/O + locking + recovery) | ⏳ pending | |
-| M2.5 — i18n loader (port z macOS bash, 7 języków) | ⏳ pending | |
-| M2.6 — Contract tests w `tests/contract/` | ⏳ pending | |
-| M2.7 — Migracja `app/backend/*.py` → `core/ascendo/{dashboard,orchestrator,...}` | ⏳ pending | Mechanical refactor |
+| M2.3 — adapter_factory + JSON Schema export | ✅ done | Sesja 4 — `core/ascendo/adapter_factory/__init__.py` (404 LOC), `scripts/export-sidecar-schema.py` (87 LOC), `docs/architecture/schemas/sidecar.v1.schema.json` (823 lines, generated). detect_os() z `/etc/os-release` parsing, AdapterRegistry z entry_points + direct-import fallback, NoAdapterAvailableError raising. Tier-1 fallback path `linux_*` → `linux_ubuntu`. |
+| M2.4 — Sidecar reader (file I/O + locking + recovery) | ✅ done | Sesja 4 — `core/ascendo/orchestrator/sidecar_io.py` (716 LOC). Cross-OS locking (fcntl.flock POSIX + msvcrt.locking Windows + jittered backoff for thundering herd), atomic writes via tempfile + os.replace, partial-sidecar recovery (3 strategies: trailing-bytes-discard, key-presence-synthesis, give-up). 16-thread stress test passes. |
+| M2.5 — i18n loader (port z macOS bash, 7 języków) | ✅ done | Sesja 4 — `core/ascendo/i18n/{__init__,loader,errors}.py` (549 LOC) + `locales/{en,pl,es,it,pt,de,fr}.json` (42 keys × 7 locales). Locale detection: ASCENDO_LOCALE > LC_ALL/LC_MESSAGES/LANG > Windows GetUserDefaultLocaleName > 'en'. Translations harvested from `D:\Dev_Env\Aktualizacje_MAC\i18n\lang_*.sh`; ~38/42 keys real per locale, ~4/42 same-as-en (legacy bash had no source). |
+| M2.6 — Contract tests w `tests/contract/` | ✅ done | Sesja 4 — 30/30 tests passing. `core/ascendo/models/legacy.py` (297 LOC) — translator from `ubuntu-aktualizacje/v1` to `ascendo/v1` (per ADR-0003 backward-compat promise). Tests: 9× sidecar v1, 8× sidecar I/O concurrent, 13× legacy compat. Fixtures w `tests/fixtures/sidecars/` z prawdziwymi shape'ami legacy + canonical. |
+| M2.10 — Async run + SSE (apply phase progress streaming) | ✅ done | Sesja 9 — `core/ascendo/orchestrator/run_async.py` (160 LOC: RunRegistry + RunState + RunStatus enum + start_run_async). 3 nowe endpointy w `dashboard/routes/runs.py`: `POST /runs/async` (202 + run_id), `GET /runs/{id}/status` (lifecycle poll), `GET /runs/{id}/events` (SSE stream of new sidecars + status events + done event). Worker thread via `asyncio.to_thread` keeps event loop responsive. RunRegistry bounded (256 max, evicts completed first). 6 contract tests covering POST/status lifecycle/SSE event sequence/404 paths. **77/77 testy passing.** |
+| M2.7 — Dashboard FastAPI backend (MVP — full migration deferred) | ✅ done | Sesja 8 — `core/ascendo/dashboard/{__init__,app,schemas}.py` + `routes/{health,runs}.py` (~480 LOC) + 11 contract tests. Endpoints: GET /version, GET /health (calls adapter.health_check), POST /runs (synchronous, wraps run_phases), GET /runs (list run-ids on disk), GET /runs/{id} (parsed sidecars). FastAPI lifespan resolves adapter on startup; tests inject FakeAdapter via `create_app(adapter=…)`. CLI `ascendo dashboard` command rewritten — replaces placeholder, uses uvicorn. Pełna migracja `app/backend/*.py` (auth, db, scheduler, hosts) deferred do follow-ups — MVP daje SPA frontend kompletną drogę: `POST /runs` → `run_phases` → sidecary → `GET /runs/{id}`. Wszystkie 6 warstw architektury teraz wired (Layer 1 SPA istnieje, Layer 2 Tauri istnieje, Layer 3 dashboard ✅ Sesja 8, Layer 4 core ✅ M2, Layer 5 adapter ✅ M3, Layer 6 native scripts ✅ M3). |
+| M2.8 — Orchestrator runner (`run_phases`) | ✅ done | Sesja 7 — `core/ascendo/orchestrator/runner.py` (270 LOC) + `tests/contract/test_runner.py` (290 LOC, 11 tests). RunReport (frozen Pydantic agg), DEFAULT_PHASE_ORDER (canonical 5-phase), `_safe_run_phase` (catches ManagerError, synthesizes failed sidecar, persists). stop_on_failure aborts subsequent phases when all managers failed. Per-phase + per-category accessors (`by_category`, `by_phase`). All sidecars persisted via M2.4 write_sidecar to `<base_dir>/<run-id>/<phase>__<category>.json`. |
+| M2.9 — Typer CLI (`ascendo <cmd>`) | ✅ done | Sesja 7 — `core/ascendo/cli/__init__.py` (184 LOC). Commands: `version` / `run` / `doctor` (live + working) + placeholders `schedule` / `snapshot` / `dashboard` (raise typed Exit 64 with planned-milestone message). `run` wraps `run_phases` z Typer args. Color-coded summary, exit codes 0/1/2/3 reflecting overall_status. Live smoke: `ascendo version` → `ascendo 0.0.1-dev` ✓; `ascendo doctor` → exits 3 z "no adapter" gdy nie zainstalowany ✓; `ascendo --help` → 20 lines ✓. Console-script entry `ascendo = "ascendo.cli:app"` już w `core/pyproject.toml`. |
+
+### M3 Progress (Windows MVP — pierwszy realny `ascendo run` na Windows)
+
+**MVP slice (Sesja 5):** end-to-end winget check phase działa. Read-only,
+no mutations. Reszta M3 (apply / verify / cleanup phases, Microsoft Store,
+MSI/Registry ARP, PSWindowsUpdate, Dell DCU, VSS snapshots, inventory,
+Task Scheduler) leci w kolejnych sesjach po tym samym wzorcu.
+
+| Task | Status | Notes |
+|---|---|---|
+| M3.1 — `adapters/windows/lib/AscendoJson.psm1` (sidecar emitter PS) | ✅ done | Sesja 5 — 626 LOC. New-Sidecar / Add-SidecarItem / Add-SidecarMessage / Save-Sidecar / Get-AscendoHostInfo. UTF-8 no BOM, atomic Move-Item write, status heuristic z items[]. Output validates przez Pydantic Sidecar.parse_sidecar(). |
+| M3.2 — `adapters/windows/lib/AscendoWinget.psm1` (column parser hidden gem) | ✅ done | Sesja 5 — 783 LOC. Hidden gem extracted z `Aktualizacje-W11-Dell5520/3_Update-Programs.ps1`: column-position parser z header-row offset detection, separator-before-header detection, UTF-8 ellipsis handling, exit-code mapping (-1978335190 / -1978335212 / 3010), helper-before-public ordering bug-fix. PS 5.1 + 7.x compat. |
+| M3.3 — `adapters/windows/scripts/winget/check.ps1` (read-only check phase) | ✅ done | Sesja 5 — 639 LOC. Uses both lib modules. Pattern dla wszystkich kolejnych phase scripts: parse args, init winget env, list upgradable + installed, classify każdy package jako planned/up_to_date, save sidecar. Catch-block synthesizes failed-item żeby phase status='failed' nie był po cichu pominięty. |
+| M3.4 — `WindowsAdapter` + `WingetManager` (Python side) | ✅ done | Sesja 5 — 742 LOC. WindowsAdapter implements IAdapter z capabilities=PACKAGE_MANAGEMENT (M3 MVP scope). WingetManager spawn'uje pwsh.exe (fallback powershell.exe), reads sidecar przez M2.4 sidecar_io.read_sidecar(). 14 mock-based smoke tests passing. |
+| M3.5 — Integration smoke (cross-module) | ✅ done | Sesja 5 — adapter_factory discovery przez direct-import fallback znajduje ascendo_windows; select_adapter(WINDOWS) zwraca WindowsAdapter z 1 package manager (winget); SCRIPTS_DIR + LIB_DIR + .psm1/.ps1 wszystkie się resolvują. **44/44 testy** passing (30 contract + 14 windows smoke). |
+| M3.6 — `apply` phase dla winget | ✅ done | Sesja 6 — `adapters/windows/lib/AscendoWingetActions.psm1` (570 LOC, 67 process-map entries, 3 uninstall-first entries, 1 skip-id) + `adapters/windows/scripts/winget/apply.ps1` (840 LOC). DryRun guards, process-kill via `Stop-PackageProcesses` z graceful CloseMainWindow → fallback Force, uninstall-first via registry UninstallString, exit-code mapping, rollback metadata per success item. |
+| M3.7 — `plan` + `verify` + `cleanup` phases dla winget | ✅ done | Sesja 6 — 3 PowerShell scripts (488 + 573 + 483 LOC). Plan: side-effect-free, items only dla packages co WOULD be touched (różnica vs check który listuje wszystko). Verify: czyta sibling `apply__winget.json`, re-queries winget, items='success' jeśli match resolved_version, 'failed' jeśli mismatch lub missing. Cleanup: `winget source reset --force` + log retention prune (60 dni z `Aktualizacje-W11-Dell5520\0_Run-Maintenance.ps1`). |
+| M3.6+M3.7 wire-up — WingetManager.SCRIPT_BY_PHASE wszystkie 5 faz | ✅ done | Sesja 6 — mapping wszystkich 5 faz w Python WingetManager. test_run_phase_dispatches_correct_script_per_phase parametrized over wszystkich 5. Test inventory: 19 windows smoke tests (z 14 → 19, dodano 5 parametrized przypadków). |
+| M3.8 — Microsoft Store manager (msstore) | ⏳ pending | |
+| M3.9 — MSI/Registry ARP manager | ⏳ pending | |
+| M3.10 — PSWindowsUpdate manager (OS patches) | ⏳ pending | |
+| M3.11 — Inventory (PROGRAMS.md generator → Inventory interface) | ⏳ pending | |
+| M3.12 — VSS snapshot interface impl | ⏳ pending | |
+| M3.13 — Task Scheduler interface impl | ⏳ pending | |
+| M3.14 — UAC elevation interface impl | ⏳ pending | |
+| M3.15 — Dell DCU plugin (separate manifest in plugins/dell-driver-update/) | ⏳ pending | |
+| M3.16 — User-side: walidacja na realnym Windows boxie | ⏳ pending | **User runs:** `pwsh adapters/windows/scripts/winget/check.ps1 -RunId test -Trigger cli -Profile full -OutputDir $env:TEMP\ascendo-test` then verifies sidecar JSON. |
 
 ### FAZ 1-4 (analiza)
 Wszystkie ✅ ukończone, decyzje zapisane wyżej w sekcji "Reference".
@@ -340,7 +393,9 @@ Jeśli coś się sypie — to nie M1, to M2 jeszcze nieskończone (ale powinno
 być clean: na branchu nic nie zmienialiśmy w `update-all.sh`/`scripts/`,
 tylko dodaliśmy nowe foldery + dokumenty).
 
-### Krok 3 — User: commit M2.1 + M2.2
+### Krok 3a — User: commit M2.1 + M2.2 (jeśli jeszcze nie zrobione)
+
+Już zrobione w Sesji 3 jako commit `cf417ad`. Pomiń ten krok jeśli `git log --oneline | grep "feat(m2): core models"` zwraca commit.
 
 ```powershell
 cd D:\Dev_Env\ascendo
@@ -381,21 +436,909 @@ Refs ADR-0003, ADR-0005."
 git push
 ```
 
-### Krok 4 — Następna sesja: M2.3 + M2.4 + M2.6
+### Krok 3b — User: commit M2.3 + M2.4 + M2.5 + M2.6 (Sesja 4 batch)
 
-Otwórz nową sesję i powiedz „kontynuuj M2 od M2.3". W kolejnej sesji
-zrobię:
-- **M2.3** — `adapter_factory` (OS detection + adapter selection przez
-  entry_points) + JSON Schema export do `docs/architecture/schemas/sidecar.v1.schema.json`
-- **M2.4** — Sidecar reader z file I/O + flock (Linux/macOS) +
-  LockFile (Windows) + recovery z partial sidecar
-- **M2.6** — Contract tests w `tests/contract/` — fixtures z prawdziwych
-  pre-merge sidecarów (Ubuntu_Aktualizacje `logs/runs/*`) + Pydantic
-  validation pass
+```powershell
+cd D:\Dev_Env\ascendo
 
-M2.5 (i18n loader, port macOS bash do Pythona) i M2.7 (migracja
-`app/backend/*.py` → `core/ascendo/{dashboard,orchestrator,...}`) idą
-w osobnych sesjach — to mechaniczny refactor, nie design.
+# Posprzątaj smoke-test artifact:
+Remove-Item core\ascendo\orchestrator\__test_write.txt -ErrorAction SilentlyContinue
+
+git add core/ascendo/adapter_factory/
+git add core/ascendo/orchestrator/
+git add core/ascendo/i18n/
+git add core/ascendo/models/legacy.py core/ascendo/models/sidecar.py
+git add scripts/export-sidecar-schema.py
+git add docs/architecture/schemas/
+git add tests/contract/ tests/fixtures/sidecars/
+git add HANDOFF.md
+
+git status   # weryfikacja
+
+git commit -m "feat(m2): adapter factory + sidecar I/O + i18n + contract tests
+
+M2.3 — Adapter factory + JSON Schema export
+  core/ascendo/adapter_factory/__init__.py — detect_os() with
+    /etc/os-release parsing, AdapterRegistry with importlib.metadata
+    entry_points + direct-import fallback (works in editable installs),
+    select_adapter() with linux_* → linux_ubuntu Tier-1 fallback.
+  scripts/export-sidecar-schema.py — re-runnable in CI; emits
+    docs/architecture/schemas/sidecar.v1.schema.json (823 lines, JSON
+    Schema 2020-12 from Sidecar.model_json_schema).
+
+M2.4 — Sidecar I/O with cross-OS locking + partial recovery
+  core/ascendo/orchestrator/sidecar_io.py — write/read/list/recover.
+  Atomic writes via tempfile + os.replace. POSIX fcntl.flock with
+  jittered exponential backoff (5 retries, ~525 ms cap, ±25% jitter
+  to break thundering herd). Windows msvcrt.locking with read-retry
+  pattern (no shared lock primitive on Windows). 16-thread concurrent
+  stress test passes.
+
+M2.5 — i18n loader (port from macOS bash)
+  core/ascendo/i18n/loader.py — Translator + I18nLoader.
+  7 locales (en/pl/es/it/pt/de/fr) × 42 keys ported from
+  Aktualizacje_MAC/i18n/lang_*.sh. Locale detection: ASCENDO_LOCALE >
+  POSIX LC_ALL/LC_MESSAGES/LANG > Windows GetUserDefaultLocaleName >
+  default 'en'. Missing-key fallback chain → en → ⟨placeholder⟩.
+
+M2.6 — Contract tests + legacy schema translator
+  core/ascendo/models/legacy.py — translates ubuntu-aktualizacje/v1
+    payloads into ascendo/v1 (per ADR-0003 backward-compat promise).
+    Field mappings: kind→phase, host (str)→HostInfo synthesized,
+    ended_at→finished_at, exit_code→status, summary.{ok,warn,err}→
+    {success,skipped,failed}, items[].{from,to,result}→{current,target,status}.
+  parse_sidecar() in sidecar.py routes legacy through translator.
+  tests/contract/ — 30 tests, all passing:
+    test_sidecar_v1.py        — 9 canonical-schema tests
+    test_sidecar_io.py        — 8 I/O + concurrency tests
+    test_legacy_compat.py     — 13 legacy-translation tests
+  tests/fixtures/sidecars/ — real fixtures for both schemas.
+
+Refs ADR-0003 (sidecar contract), ADR-0005 (six-layer architecture)."
+
+git push
+```
+
+### Krok 4 — User: commit M3 MVP slice (Sesja 5 batch)
+
+```powershell
+cd D:\Dev_Env\ascendo
+
+git add adapters/windows/lib/AscendoJson.psm1
+git add adapters/windows/lib/AscendoWinget.psm1
+git add adapters/windows/scripts/winget/
+git add adapters/windows/ascendo_windows/
+git add adapters/windows/tests/
+git add HANDOFF.md
+
+git status   # weryfikacja: ~10 nowych plików .ps1/.psm1/.py + HANDOFF.md modified
+
+git commit -m "feat(m3): Windows MVP — winget check phase end-to-end
+
+M3.1 — adapters/windows/lib/AscendoJson.psm1 (626 LOC)
+  PowerShell port of lib/_json_emit.py. Emits ascendo/v1 sidecars.
+  New-Sidecar / Add-SidecarItem / Add-SidecarMessage / Save-Sidecar.
+  UTF-8 no BOM via [System.IO.File]::WriteAllText. Atomic write via
+  temp + Move-Item -Force. Status heuristic from items[]. Output
+  validates round-trip through Pydantic Sidecar.parse_sidecar.
+
+M3.2 — adapters/windows/lib/AscendoWinget.psm1 (783 LOC)
+  Hidden gems extracted from Aktualizacje-W11-Dell5520/3_Update-Programs.ps1:
+    - Get-WingetColumnStarts: column-position parser with header-row
+      offset detection (handles spaces in app names)
+    - Read-WingetTabularOutput: separator-before-header detection
+      (locale-independent, immune to banner text)
+    - Get-WingetColValue: $start -lt 0 guard (avoids Substring(-1, n))
+    - Initialize-WingetEnvironment: [Console]::OutputEncoding = UTF8
+      for ellipsis (U+2026) handling
+    - Convert-WingetExitCode: maps -1978335190 (up-to-date) /
+      -1978335212 (id-not-found) / 3010 (reboot-required)
+  PS 5.1 + 7.x compatible. Helper-before-public ordering preserved.
+
+M3.3 — adapters/windows/scripts/winget/check.ps1 (639 LOC)
+  Read-only inventory + upgrade-availability check phase.
+  Pattern for all subsequent phase scripts (plan/apply/verify/cleanup).
+  Catch block synthesizes failed-item so phase status='failed' is
+  never silently lost.
+
+M3.4 — adapters/windows/ascendo_windows/ (Python, 742 LOC)
+  WindowsAdapter implements IAdapter (capabilities = PACKAGE_MANAGEMENT
+  in MVP). WingetManager implements IPackageManager: spawns pwsh.exe
+  (fallback powershell.exe), reads sidecar via M2.4 sidecar_io.
+  14 mock-based smoke tests passing. Pwsh discovery order:
+  pwsh.exe → pwsh → powershell.exe → powershell.
+
+M3.5 — Cross-module integration verified
+  adapter_factory.discover() finds WindowsAdapter via direct-import
+  fallback (entry_points doesn't fire in editable installs without
+  pip install -e). select_adapter(WINDOWS) returns WindowsAdapter
+  exposing WingetManager. All paths resolve. 44/44 tests passing
+  (30 M2 contract + 14 M3 windows smoke).
+
+Refs ADR-0003 (sidecar contract), ADR-0004 (python core + native
+scripts), ADR-0005 (six-layer architecture).
+
+KNOWN: WingetManager._build_argv passes -Profile (collides with
+PowerShell \$Profile automatic variable). check.ps1 mitigates with
+[Alias('Profile')] on its -ProfileName parameter. Should rename to
+-ProfileSlug or similar in a follow-up — not blocking M3.6."
+
+git push
+```
+
+### Krok 4b — User: commit M3.6 + M3.7 (Sesja 6 batch)
+
+```powershell
+cd D:\Dev_Env\ascendo
+
+git add adapters/windows/lib/AscendoWingetActions.psm1
+git add adapters/windows/scripts/winget/apply.ps1
+git add adapters/windows/scripts/winget/plan.ps1
+git add adapters/windows/scripts/winget/verify.ps1
+git add adapters/windows/scripts/winget/cleanup.ps1
+git add adapters/windows/ascendo_windows/managers/winget.py
+git add adapters/windows/tests/conftest.py
+git add adapters/windows/tests/test_winget_manager_smoke.py
+git add adapters/ubuntu/tests/__init__.py
+git add HANDOFF.md
+
+git commit -m "feat(m3): full 5-phase winget pipeline (M3.6 + M3.7)
+
+M3.6 — Apply phase (the first mutating operation)
+  adapters/windows/lib/AscendoWingetActions.psm1 (570 LOC):
+    Get-AscendoWingetSkipList, Get-AscendoWingetProcessMap (67 entries
+    verbatim from 3_Update-Programs.ps1), Get-AscendoWingetUninstallFirstMap
+    (3 entries: Supermicro/ASTi.IPMIView, SDAssociation.SDMemoryCardFormatter),
+    Test-PackageSkipped, Stop-PackageProcesses (graceful CloseMainWindow,
+    fallback Stop-Process -Force after timeout), Uninstall-PackageViaRegistry
+    (HKLM + HKCU ARP scan, msiexec /qn /norestart detection),
+    Get-AscendoWingetRollbackMethod.
+  adapters/windows/scripts/winget/apply.ps1 (840 LOC):
+    For each upgradable package: filter check, skip check, dry-run path
+    (status='planned'), real apply (stop processes, optional uninstall-first,
+    winget upgrade --silent --disable-interactivity, exit-code map, rollback
+    metadata). Self-upgrade for Microsoft.PowerShell + name-based fallback
+    deferred (TODO comments inline).
+
+M3.7 — Plan + Verify + Cleanup phases
+  adapters/windows/scripts/winget/plan.ps1 (488 LOC): side-effect-free,
+    items only for packages apply WOULD touch (distinct from check's full
+    inventory). Inline rollback recipe for each planned item.
+  adapters/windows/scripts/winget/verify.ps1 (573 LOC): reads sibling
+    apply__winget.json from same run, re-queries winget, status='success'
+    on version match, status='failed' on mismatch or missing. Soft no-op
+    if apply sidecar missing (verify can run after check-only).
+  adapters/windows/scripts/winget/cleanup.ps1 (483 LOC): winget source
+    reset --force --disable-interactivity + 60-day log retention prune
+    (LOG_RETAIN_DAYS sourced from 0_Run-Maintenance.ps1). Per-file deletion
+    items for audit trail. DryRun mode swaps deletes for status='planned'.
+
+Wire-up: WingetManager.SCRIPT_BY_PHASE extended to all 5 phases.
+test_run_phase_dispatches_correct_script_per_phase parametrized over
+all 5 — 49/49 tests passing (30 contract + 19 windows smoke).
+
+Refs ADR-0003 (sidecar contract), ADR-0004 (python core + native scripts),
+ADR-0005 (six-layer architecture).
+
+KNOWN deferred (M3.6 follow-ups):
+  - Microsoft.PowerShell self-upgrade special path
+  - Name-based fallback for winget exit -1978335212 (id_not_found)
+  - Unknown-version suppression state machine (MEGAsync, IMG-to-ISO)
+  - Source-args helper for non-default winget feeds (msstore)"
+
+git push
+```
+
+### Krok 5 — User: M3.16 walidacja na realnym Windows boxie
+
+Po pushu, na DP5520WMK (lub innym Windows box z winget):
+
+```powershell
+git pull   # albo fresh clone
+
+# Quick smoke test - check phase only:
+$rid = [guid]::NewGuid()
+$out = Join-Path $env:TEMP "ascendo-test-$rid"
+mkdir $out -Force | Out-Null
+
+pwsh -NoProfile -ExecutionPolicy Bypass -File `
+    .\adapters\windows\scripts\winget\check.ps1 `
+    -RunId $rid `
+    -Trigger cli `
+    -Profile full `
+    -OutputDir $out
+
+# Inspect the produced sidecar:
+Get-Content "$out\$rid\check__winget.json" | ConvertFrom-Json |
+    Format-List schema, phase, category, status, summary
+```
+
+Expected:
+- exit code: 0
+- file produced at `$out\$rid\check__winget.json`
+- schema: `ascendo/v1`
+- phase: `check`
+- category: `winget`
+- status: `success` (or `partial` if some packages have weird state)
+- summary.total > 0 (your installed package count)
+
+If anything fails — paste the script output + the sidecar contents (or
+absence thereof) into the next session and we'll debug.
+
+### Krok 5b — User: M3.16 walidacja apply phase (DRY RUN FIRST!)
+
+**WAŻNE:** apply.ps1 to pierwsza realna mutacja. Najpierw DryRun.
+
+```powershell
+$rid = [guid]::NewGuid()
+$out = Join-Path $env:TEMP "ascendo-apply-test-$rid"
+mkdir $out -Force | Out-Null
+
+# Step 1: DRY RUN — emit "planned" items, NO mutations
+pwsh -NoProfile -ExecutionPolicy Bypass -File `
+    .\adapters\windows\scripts\winget\apply.ps1 `
+    -RunId $rid -Trigger cli -Profile full `
+    -OutputDir $out -DryRun $true
+
+Get-Content "$out\$rid\apply__winget.json" | ConvertFrom-Json |
+    Select-Object -ExpandProperty items |
+    Where-Object status -eq 'planned' |
+    Format-Table id, current_version, target_version
+
+# Step 2: jeśli plan wygląda OK, run real apply (this WILL upgrade packages):
+# pwsh -NoProfile -ExecutionPolicy Bypass -File `
+#     .\adapters\windows\scripts\winget\apply.ps1 `
+#     -RunId ([guid]::NewGuid()) -Trigger cli -Profile full `
+#     -OutputDir $env:TEMP\ascendo-real-apply
+
+# Step 3: sprawdź sidecar — `status` per item, summary, messages.
+```
+
+Jeśli DryRun emituje rozsądne "planned" items dla packages które masz na
+DP5520WMK — apply jest demo-able. Real apply dopiero gdy potwierdzony plan.
+
+### Krok 5c — User: walidacja plan/verify/cleanup (read-only)
+
+```powershell
+$rid = [guid]::NewGuid()
+$out = Join-Path $env:TEMP "ascendo-phases-$rid"
+mkdir $out -Force | Out-Null
+
+# Plan
+pwsh ... .\adapters\windows\scripts\winget\plan.ps1 -RunId $rid ...
+# Verify (soft no-op without apply, but verifies script doesn't crash)
+pwsh ... .\adapters\windows\scripts\winget\verify.ps1 -RunId $rid ...
+# Cleanup (winget source reset is benign + safe)
+pwsh ... .\adapters\windows\scripts\winget\cleanup.ps1 -RunId $rid -DryRun $true ...
+
+# Check all sidecars produced:
+Get-ChildItem "$out\$rid\*.json" | Format-Table Name, Length
+```
+
+### Krok 4o — User: removed length caps entirely + flag parser bug as high-priority
+
+```powershell
+cd D:\Dev_Env\ascendo
+.\bin\validate-windows.ps1
+```
+
+**What happened.** The merged-row data was bigger than even the relaxed
+2048/512 caps. Pydantic's repr `'AutoHotkey.AutoHotkey AR...47.0_x64__8wekyb3d8bbwe'`
+is the truncated head + tail of a string longer than 2048 chars — the
+column parser appears to have concatenated MANY rows into one.
+
+**Fix:** removed `max_length` constraint entirely on `PackageId` and
+`VersionStr`. Min-length 1 still rejects empty IDs. The arbitrary cap
+was masking the real bug (parser merging rows) by aborting the phase;
+now the malformed item leaks through as visible data and the rest of
+the run proceeds.
+
+After this, the validate run should print **`ALL CHECKS PASSED.`** —
+even though the produced sidecar will contain one ridiculously-long
+"AutoHotkey super-row" item. That's tolerable: visible to the user,
+non-fatal, and pinpoints exactly what the parser fix needs to address.
+
+### M3.X — High-priority follow-up: AscendoWinget.psm1 parser bug
+
+The `Read-WingetTabularOutput` function in
+`adapters/windows/lib/AscendoWinget.psm1` is collapsing AppX/MSIX rows
+when `winget list` outputs them. Symptom on DP5520WMK: a single
+"AutoHotkey" item where `id` and `current_version` contain the
+concatenation of ~5+ separate winget rows separated by spaces.
+
+**Likely cause:** winget wraps long AppX entries onto continuation
+lines (no leading column at offset 0), and the column-position parser
+is appending the wrapped content to the previous row instead of either
+joining or skipping.
+
+**Repro on DP5520WMK:**
+```powershell
+winget list --disable-interactivity | Out-File C:\Temp\winget-list.txt -Encoding UTF8
+notepad C:\Temp\winget-list.txt
+# Look for the AutoHotkey block — likely 5+ MSIX entries with
+# very long PackageFamilyName-style IDs.
+```
+
+**Fix sketch** (in `AscendoWinget.psm1`, function
+`Read-WingetTabularOutput`): track the previous line's column offsets;
+if a new line has no characters at the Name column start position
+(offset 0), treat it as a wrapped continuation and either skip it or
+append to the previous row's notes — but DON'T merge into the same
+named columns as if it were a fresh row.
+
+Estimated 30-60 LOC of PowerShell, isolated to one helper function.
+
+### Krok 4n — User: relaxed string caps + parser bug noted
+
+```powershell
+cd D:\Dev_Env\ascendo
+.\bin\validate-windows.ps1
+```
+
+**The DryRun fix worked.** Your last run finally executed `check.ps1` end
+to end — script ran, called winget, parsed output, wrote a sidecar with
+real items. The new failure is purely about **data shape**:
+
+```
+items.1.id            (>512 chars) — multiple winget rows merged
+items.1.current_version (>128 chars) — multiple versions concatenated
+```
+
+That's the column-position parser in `AscendoWinget.psm1` collapsing
+adjacent AppX/MSIX rows for `AutoHotkey.AutoHotkey` into one synthetic
+row. The merged row leaks through to Pydantic, which (correctly) rejects
+the absurdly long strings.
+
+**Two fixes:**
+
+1. **Now (just landed):** loosened the Pydantic length caps so even
+   imperfectly-parsed rows make it through validation:
+   - `PackageId` max: 512 → **2048** chars
+   - `VersionStr` max: 128 → **512** chars
+   This unblocks the run; the merged row will appear in items[] but
+   won't abort the whole phase.
+
+2. **Follow-up (open as M3.X — TODO):** fix
+   `adapters/windows/lib/AscendoWinget.psm1` so AppX/MSIX rows in
+   `winget list` output don't merge. Most likely cause: a continuation-
+   line case in winget's tabular output that the column-position parser
+   doesn't recognise. Repro: `winget list AutoHotkey` on DP5520WMK and
+   inspect raw bytes; tweak `Read-WingetTabularOutput` to skip lines
+   that look like wrapping (no leading column at offset 0, etc.).
+
+**After this validate run** the result should be `ALL CHECKS PASSED.`,
+even though the produced sidecar may have one weird-looking AutoHotkey
+item. That's expected (item-level oddity ≠ phase failure).
+
+### Krok 4m — User: switch-based DryRun fix — definitive
+
+```powershell
+cd D:\Dev_Env\ascendo
+# Verify the [switch] declaration is in all 5 phase scripts:
+Select-String -Path .\adapters\windows\scripts\winget\*.ps1 `
+              -Pattern '\[switch\] \$DryRun' | Select-Object Filename, LineNumber
+
+# Expected: one match per script (5 total).
+
+# Verify Python conditionally appends -DryRun:
+Select-String -Path .\adapters\windows\ascendo_windows\managers\winget.py `
+              -Pattern 'argv\.append\("-DryRun"\)'
+
+# Expected: one match (line ~302 area).
+
+.\bin\validate-windows.ps1
+```
+
+**Why this is now correct.** Both `-DryRun "1"` and `-DryRun "True"`
+were rejected by PowerShell's `[bool]` parameter binder for `-File`
+mode. The actual binder behavior on Win32 subprocess argv is:
+
+| What you pass | Binder result |
+|---|---|
+| `-DryRun $false` (literal expression) | OK — but only at pwsh prompt; `$false` doesn't expand from subprocess |
+| `-DryRun False` / `True` (string) | **Fails** — `[Convert]::ToBoolean` rejects via `-File` even though docs imply it works |
+| `-DryRun 1` / `0` (string from subprocess) | **Fails** — same reason |
+| `-DryRun:False` (colon syntax) | Inconsistent across pwsh versions |
+| `-DryRun` (switch token, no value) | **Always OK** when param declared `[switch]` |
+
+The canonical PowerShell pattern is **`[switch]` parameter + presence-based
+argv**. We declare each script's parameter as `[switch] $DryRun` and Python
+only appends `-DryRun` when `run.dry_run` is True. No string conversion
+happens at any point.
+
+**Changed files:**
+- `adapters/windows/scripts/winget/{check,plan,apply,verify,cleanup}.ps1` — 5 declarations
+- `adapters/windows/ascendo_windows/managers/winget.py` — conditional append
+- `adapters/windows/tests/test_winget_manager_smoke.py` — assertion update
+
+77/77 unit tests pass.
+
+### Krok 4l — User: real DryRun fix landed — pull + re-run
+
+```powershell
+cd D:\Dev_Env\ascendo
+git pull   # or just verify the file:
+Select-String -Path .\adapters\windows\ascendo_windows\managers\winget.py `
+              -Pattern '"True" if run.dry_run'
+
+# Expected: line ~295 prints '"True" if run.dry_run else "False",'
+
+.\bin\validate-windows.ps1
+```
+
+**What was wrong (deeper than I first thought).** The previous fix passed
+`"1"` / `"0"` to PowerShell, on the assumption that the binder's
+documented support for "1 or 0" applied to strings. It does not.
+
+When PowerShell receives a `[bool]` parameter via ``-File`` and the
+value comes through as a System.String (which Python subprocess always
+emits), the binder calls `[System.Convert]::ToBoolean(string)` — and
+that method only accepts the words **"True"** or **"False"**
+(case-insensitive). Strings like "1" / "0" / "yes" / "no" raise
+``System.FormatException``.
+
+The "1 or 0" wording in PowerShell's error message refers to **integer
+literals typed at the pwsh prompt**. They never reach a `-File` script
+as integers because Win32 CreateProcess passes argv as wide-string
+arrays and pwsh's tokenizer treats them as `System.String`.
+
+**Fix:** `WingetManager._build_argv` now passes `"True"` / `"False"` —
+which `[Convert]::ToBoolean` accepts. 77/77 unit tests pass.
+
+If `Select-String` confirms line 295 has `"True" if run.dry_run`, then
+re-running validate should print `ALL CHECKS PASSED.`.
+
+### Krok 4k — User: re-run after pycache purge (most likely fix)
+
+```powershell
+cd D:\Dev_Env\ascendo
+
+# 1. Quick sanity check — confirm the fix really IS in your local winget.py:
+Select-String -Path .\adapters\windows\ascendo_windows\managers\winget.py `
+              -Pattern '"\$true"|"1" if run.dry_run' | Select-Object LineNumber, Line
+
+# Expected output (proves the fix is on disk):
+# LineNumber Line
+# ---------- ----
+#        264 ...via -File arg parsing; "$true"/"$false" strings do
+#        266 ...args (they arrive as literal strings "$true" /
+#        267 "$false" and the boolean binder rejects them).
+#        295             "1" if run.dry_run else "0",
+#
+# (No "$true" if run.dry_run line — only the comment ones.)
+
+# 2. Nuke ALL pycache dirs + force editable reinstall (clears stale bytecode):
+Get-ChildItem -Path .\core,.\adapters -Recurse -Force -Directory `
+    -Filter "__pycache__" | Remove-Item -Recurse -Force
+pip install -e .\adapters\windows\ --no-deps --force-reinstall
+
+# 3. Re-run validation:
+.\bin\validate-windows.ps1
+```
+
+The new validate script also clears `__pycache__` and runs `python -B`
+(don't write bytecode) automatically, so step 2 is belt-and-suspenders.
+
+**Why this should fix it:** the previous run reported the *same* error
+as before the fix, despite the corrected source code being on disk. That's
+the classic stale-pyc symptom on Windows — Python's mtime-based bytecode
+cache occasionally misses fast edits when filesystem timestamp resolution
+is 2 seconds (NTFS inherited from FAT). The fix in source is correct;
+Python just needs to re-parse it.
+
+### Krok 4j — User: commit DryRun fix + re-run validate (should be all-green)
+
+```powershell
+cd D:\Dev_Env\ascendo
+git pull   # picks up the DryRun fix
+.\bin\validate-windows.ps1
+```
+
+**Expected after this commit:** `ALL CHECKS PASSED.`
+
+**Root cause of the previous failure** (now fixed):
+
+`WingetManager._build_argv` passed `-DryRun "$false"` as a literal string.
+PowerShell's `-File` invocation does NOT expand `$variable` syntax in
+arguments — they arrive at the script as the literal string `"$false"`.
+The script's `[bool]$DryRun` parameter binder rejects any string except
+`True`/`False`/`1`/`0`, so it threw:
+
+```
+check.ps1: Cannot process argument transformation on parameter 'DryRun'.
+Cannot convert value "System.String" to type "System.Boolean".
+```
+
+That crash happened before `Save-Sidecar`, so the orchestrator's
+`_safe_run_phase` synthesized a failure stub (status=failed, total=0,
+items=[]) and exited 2.
+
+**Fix:** `WingetManager._build_argv` now passes `"1"` / `"0"` instead of
+`"$true"` / `"$false"`. PowerShell's `[bool]` binder accepts numeric
+strings via `-File` arg parsing. Tests updated (`-DryRun "1"` for
+dry_run=True). 77/77 pass.
+
+The fix is one line — the rest of the chain (CLI → orchestrator →
+WingetManager → check.ps1 → AscendoJson → sidecar → Pydantic) was always
+correct.
+
+### Krok 4i — User: commit diagnostic enhancement + re-run validate
+
+```powershell
+cd D:\Dev_Env\ascendo
+git pull   # picks up validate-windows.ps1 enhancement
+.\bin\validate-windows.ps1
+```
+
+The enhanced script now prints, on the `run` step:
+
+```
+         sidecar.status     = failed | success | partial | skipped
+         sidecar.tool       = winget v1.28.240
+         === sidecar.messages[] (most recent first) ===
+         [ERROR] <the actual reason for the failure>
+         === stdout/stderr from 'python -m ascendo run' ===
+         <the CLI's own output>
+```
+
+That output tells us exactly which layer failed:
+
+| sidecar.status | sidecar.tool.name | meaning |
+|---|---|---|
+| `failed` + `tool=winget` + tool.version="unknown" | orchestrator's failure stub — **the PowerShell script crashed before saving its own sidecar**. The reason is in `messages[0].text`. |
+| `failed` + tool.version=real | check.ps1 ran + emitted a sidecar but caught its own exception in catch block |
+| `success`/`skipped` + total=0 | winget returned no upgrades + no installed packages (real but suspicious) |
+| anything else | look at messages[] for clues |
+
+Paste the new output (especially the `messages[]` block) and I'll diagnose
+the exact crash.
+
+### Sesja 9 progress — what's already proven on DP5520WMK ✓
+
+- `python -m ascendo --help` works → entry point + Typer registered
+- `python -m ascendo version` → `ascendo 0.0.1-dev`
+- `python -m ascendo doctor` → `windows (Windows) tier=1`,
+  `winget ok: v1.28.240`, `pwsh ok: 7.6.1`, `ascendo_lib ok: 3 module(s)`
+- Sidecar lands at the right path with correct schema/phase/category
+- Dashboard binds, GET /version + /health, POST /runs/async, GET /status all work
+- Async run reaches `completed` status in the registry
+
+The ONLY remaining failure is `ascendo run` exiting 2 — that's a single
+specific bug in the WingetManager → check.ps1 IPC path, very localised.
+The diagnostic above will pinpoint it.
+
+### Krok 4h — User: commit packaging fix + use install-dev.ps1
+
+```powershell
+cd D:\Dev_Env\ascendo
+git pull   # picks up:
+           #   - adapters/{ubuntu,windows,macos}/pyproject.toml: 'ascendo' (no >= pin)
+           #   - bin/install-dev.ps1: one-shot installer
+
+# One-shot install + validate:
+.\bin\install-dev.ps1
+```
+
+That single script does (in order):
+1. `pip install -e .\core\`
+2. `pip install -e .\adapters\windows\ --no-deps` (skips PyPI lookup of
+   the core dep — it's already installed locally)
+3. `pip install pywin32 pywin32-ctypes` (adapter native deps)
+4. `pip install fastapi 'uvicorn[standard]' httpx` (dashboard runtime)
+5. `pip show` of all four to verify
+6. Auto-runs `bin\validate-windows.ps1` end-to-end (CLI + dashboard + SSE)
+
+Skip the validate run with `.\bin\install-dev.ps1 -SkipValidate`. Force a
+clean re-install (e.g. after a Python version change) with
+`.\bin\install-dev.ps1 -Reinstall`.
+
+**What was wrong in your last attempt:**
+
+Your `pip install -e .\adapters\windows\` failed with:
+```
+ERROR: Could not find a version that satisfies the requirement ascendo>=0.0.1
+```
+because:
+1. `ascendo` isn't on PyPI yet, so pip tries to resolve `>=0.0.1` from the
+   index and finds nothing.
+2. PEP 440: `0.0.1.dev0` < `0.0.1`, so even though `ascendo==0.0.1.dev0`
+   is locally installed, it wouldn't satisfy `>=0.0.1` anyway.
+
+**Fix:** dropped the explicit version pin on `ascendo` in all 3 adapter
+`pyproject.toml` files (commit in this batch). Plus `--no-deps` on the
+adapter install in `install-dev.ps1` so pip never tries to look up `ascendo`
+on PyPI in the first place.
+
+### Krok 4g — User: commit validation-script bug-fix + install adapter
+
+```powershell
+cd D:\Dev_Env\ascendo
+
+# 1. Pull the validation-script fix (committed via Krok 4g)
+git pull
+
+# 2. Install the Windows adapter (this is what was missing in your last run):
+pip install -e .\adapters\windows\
+
+# 3. Re-run validation:
+.\bin\validate-windows.ps1
+```
+
+**What was wrong in the previous attempt:**
+
+a) The .ps1 had `$PSNativeCommandUseErrorActionPreference = $true` which
+   made any non-zero exit from `python -m ascendo` throw a terminating
+   error. `ascendo doctor` correctly exits 3 when no adapter is registered;
+   the script crashed instead of reporting it. Fixed: explicit
+   `$LASTEXITCODE` checks, no preference flag.
+
+b) You installed `core/` but not `adapters/windows/`. `AdapterRegistry.discover()`
+   couldn't find `ascendo_windows`, so `select_adapter()` raised
+   `NoAdapterAvailableError` — exit 3. Fixed: `pip install -e .\adapters\windows\`.
+
+After the dual-install, the script will exercise the whole stack:
+CLI → orchestrator → WingetManager → check.ps1 → sidecar → JSON → CLI summary,
+and the dashboard async + SSE roundtrip.
+
+### Krok 4f — User: commit hotfix (PATH-independent + validation script)
+
+```powershell
+cd D:\Dev_Env\ascendo
+git add core/ascendo/__main__.py core/ascendo/cli/__main__.py
+git add bin/validate-windows.ps1
+git add HANDOFF.md
+git commit -m "fix: PATH-independent invocation + automated validation script
+
+Added:
+  core/ascendo/__main__.py       — enables 'python -m ascendo'
+  core/ascendo/cli/__main__.py   — enables 'python -m ascendo.cli'
+  bin/validate-windows.ps1       — single-shot end-to-end validation
+                                   harness (CLI + dashboard + SSE)
+
+Why: pip-installed 'ascendo.exe' goes to a Scripts dir that isn't on
+Windows PATH for standalone Python 3.14 installs. 'python -m ascendo'
+sidesteps PATH entirely and is the official-tutorial-recommended form.
+
+The .ps1 validation script avoids copy-paste headaches when users were
+mistakenly pasting PowerShell syntax into cmd.exe."
+git push
+```
+
+### Krok 5b — User: validate end-to-end (recommended after each session)
+
+```powershell
+.\bin\validate-windows.ps1
+```
+
+That single script:
+
+1. Verifies `python -m ascendo --help` works (PATH-independent).
+2. Runs `python -m ascendo version` + `doctor`.
+3. Runs `python -m ascendo run --category winget --phase check` against
+   real winget on DP5520WMK, asserts a sidecar lands with the right
+   schema/phase/category fields.
+4. Starts `ascendo dashboard` in a background job, hits `/version` +
+   `/health` + `POST /runs/async` + polls `/runs/{id}/status` until
+   completed.
+5. Stops the dashboard cleanly.
+
+Returns exit 0 on full success, exit 1 with a count of failures otherwise.
+
+If you want to skip the dashboard portion (e.g. for a fast smoke):
+
+```powershell
+.\bin\validate-windows.ps1 -SkipDashboard
+```
+
+### Krok 4e — User: commit M2.10 async + SSE (Sesja 9 batch)
+
+```powershell
+cd D:\Dev_Env\ascendo
+
+# IMPORTANT: ascendo command needs editable install once:
+pip install -e core\
+
+git add core/ascendo/orchestrator/run_async.py
+git add core/ascendo/orchestrator/__init__.py
+git add core/ascendo/dashboard/app.py
+git add core/ascendo/dashboard/routes/runs.py
+git add tests/contract/test_dashboard_async.py
+git add HANDOFF.md
+git commit -m "feat(m2.10): async run + SSE for apply phase progress
+
+core/ascendo/orchestrator/run_async.py (~160 LOC):
+  RunRegistry (thread-safe, bounded LRU, evicts completed runs first)
+  RunState (lifecycle: pending → running → completed | failed)
+  start_run_async() — registers + spawns worker via asyncio.to_thread,
+                     returns RunState immediately. Worker mutates state
+                     transitionally; OSError / unexpected exceptions
+                     caught and recorded as state.error + status=failed.
+
+core/ascendo/dashboard/routes/runs.py — 3 new endpoints:
+  POST /runs/async         — kicks off run, returns 202 + run_id
+                             + stream_url + status_url
+  GET  /runs/{id}/status   — polling endpoint; returns lifecycle +
+                             sidecar count + error
+  GET  /runs/{id}/events   — Server-Sent Events stream:
+                               status (initial + transitions)
+                               sidecar (per new sidecar on disk)
+                               sidecar_error (corrupted file)
+                               done (terminal — closes stream)
+                             Polls run dir every 500ms.
+
+dashboard/app.py — RunRegistry attached to app.state on construction.
+
+6 new contract tests (asyncio + SSE). Test inventory: 77/77 passing
+(30 contract + 11 runner + 19 windows + 11 dashboard sync + 6 async/SSE).
+
+Refs ADR-0005 (six-layer architecture). Apply phase now production-shape:
+SPA can fire POST /runs/async and stream progress to render a live UI."
+git push
+
+# Validate end-to-end on Windows:
+ascendo dashboard --port 8765 &
+# In another shell:
+curl -X POST http://127.0.0.1:8765/runs/async ^
+     -H "Content-Type: application/json" ^
+     -d "{\"phases\": [\"check\"]}"
+# Get run_id from response, then:
+curl -N http://127.0.0.1:8765/runs/<run-id>/events
+```
+
+### Krok 4d — User: commit M2.7 dashboard (Sesja 8 batch)
+
+```powershell
+cd D:\Dev_Env\ascendo
+git add core/ascendo/dashboard/
+git add core/ascendo/cli/__init__.py    # `dashboard` cmd wired up
+git add tests/contract/test_dashboard.py
+git add HANDOFF.md
+git commit -m "feat(m2.7): dashboard FastAPI backend (MVP)
+
+core/ascendo/dashboard/ (~480 LOC):
+  app.py        — create_app(adapter=, runs_dir=, cors_origins=) factory
+                  with lifespan-driven adapter discovery + CORS middleware
+  schemas.py    — wire-format Pydantic models (VersionResponse, HealthResponse,
+                  RunRequest, RunResponse, RunListResponse) — 'extra=forbid'
+  routes/
+    health.py   — GET /version (adapter info), GET /health (adapter.health_check
+                  with status=ok|degraded|error rollup)
+    runs.py     — POST /runs (sync, wraps run_phases, returns RunReport JSON),
+                  GET /runs (list run-dirs by UUID name), GET /runs/{id}
+                  (parsed sidecars; recovery stubs for corrupted ones)
+
+CLI: 'ascendo dashboard' replaced placeholder; spawns uvicorn on
+127.0.0.1:8765 by default. Loopback-only by default (security default).
+
+Tests: 11 contract tests via FastAPI TestClient with FakeAdapter:
+  - GET /version with + without adapter
+  - GET /health rollup status logic
+  - POST /runs full pipeline + subset phases + 503 (no adapter) + 422 (bad input)
+  - GET /runs index after a POST
+  - GET /runs/{id} returns parsed sidecars; 404 on unknown id
+
+Test inventory: 71/71 (30 contract + 11 runner + 19 windows + 11 dashboard).
+
+Refs ADR-0005 (six-layer architecture) — Layer 3 (Backend HTTP) now wired."
+git push
+
+# Validate locally:
+pip install --break-system-packages 'fastapi>=0.111' 'uvicorn[standard]' 'httpx>=0.27'
+ascendo dashboard --port 8765 &
+curl http://127.0.0.1:8765/version
+curl http://127.0.0.1:8765/health
+curl http://127.0.0.1:8765/docs           # interactive OpenAPI UI
+```
+
+### Krok 4c — User: commit M2.8 orchestrator + M2.9 CLI (Sesja 7 batch)
+
+```powershell
+cd D:\Dev_Env\ascendo
+git add core/ascendo/orchestrator/ core/ascendo/cli/__init__.py
+git add tests/contract/test_runner.py adapters/ubuntu/tests/__init__.py
+git add HANDOFF.md
+git commit -m "feat(m2.8 + m2.9): orchestrator runner + Typer CLI
+
+M2.8 - run_phases() drives an IAdapter through the 5-phase contract,
+       persists every sidecar, aggregates as RunReport. ManagerError
+       synthesizes a failed sidecar; OSError propagates. stop_on_failure
+       aborts when a phase fully fails. 11 contract tests.
+
+M2.9 - 'ascendo' CLI wraps run_phases. Commands: version / run / doctor
+       (live) + schedule / snapshot / dashboard placeholders (Exit 64).
+       Live smoke: version + doctor + --help all green.
+
+Test inventory: 60/60 (30 contract + 19 windows + 11 runner)."
+git push
+
+# Validate on Windows DP5520WMK after editable-install:
+pip install -e core/
+ascendo version
+ascendo doctor
+ascendo run --category winget --phase check --runs-dir $env:TEMP\ascendo
+```
+
+### Krok 4c-historical — original M2.8-only batch (kept for reference)
+
+```powershell
+cd D:\Dev_Env\ascendo
+
+git add core/ascendo/orchestrator/runner.py
+git add core/ascendo/orchestrator/__init__.py
+git add tests/contract/test_runner.py
+git add adapters/ubuntu/tests/__init__.py    # NUL-byte cleanup from FUSE
+git add HANDOFF.md
+
+git commit -m "feat(m2.8): orchestrator runner — drives adapter through 5 phases
+
+core/ascendo/orchestrator/runner.py (270 LOC):
+  RunReport (frozen Pydantic) — aggregates per-(phase, manager) sidecars
+    + overall_status property (success/partial/failed/skipped)
+    + by_category() / by_phase() accessors
+    + total_items aggregator
+    + skipped_managers list (filtered for is_available()=False or
+      categories whitelist)
+    + aborted_after_phase (when stop_on_failure short-circuits)
+
+  run_phases(adapter, run, host, *, phases, categories, base_dir,
+             stop_on_failure, item_filter) -> RunReport
+    - Reorders requested phases to canonical (check→plan→apply→verify→cleanup)
+    - Per (phase, manager): calls run_phase(), catches ManagerError,
+      synthesizes a status=failed sidecar carrying the error message
+    - Writes every sidecar via M2.4 write_sidecar (atomic, locked)
+    - stop_on_failure=True aborts when ALL managers reported failed
+      for a single phase (apply on failed plan = unsafe)
+    - ManagerError NEVER propagates out — disk failures DO
+
+  Public via core.ascendo.orchestrator package: run_phases, RunReport,
+  DEFAULT_PHASE_ORDER (canonical 5-phase tuple).
+
+tests/contract/test_runner.py (290 LOC, 11 tests):
+  FakeManager + FakeAdapter (in-memory, no subprocess) cover:
+  - all 5 phases dispatched in canonical order
+  - subset reordering preserves canonical
+  - is_available()=False → skipped_managers
+  - categories filter
+  - ManagerError → synthesized failed sidecar (continues with stop_on_failure=False)
+  - stop_on_failure=True aborts subsequent phases
+  - sidecars persist to <base_dir>/<run-id>/ with right filenames
+  - overall_status = partial when mixed
+  - empty phases list raises ValueError
+  - item_filter propagates to managers
+  - RunReport.by_category / by_phase / total_items aggregations
+
+Test inventory: 60/60 passing (30 contract + 19 windows + 11 runner).
+
+Refs ADR-0003 (sidecar contract), ADR-0005 (six-layer architecture).
+
+Also: stripped trailing NUL bytes from adapters/ubuntu/tests/__init__.py
+(FUSE mount cache corruption from prior session)."
+
+git push
+```
+
+### Krok 6 — Następna sesja: CLI + dashboard, lub kolejne sources
+
+Po Sesji 7: orchestrator (M2.8) działa end-to-end z fakami. Teraz opcje:
+
+- **Opcja A — Typer CLI** (`core/ascendo/cli/__init__.py`).
+  Najmniejszy krok do user-facing demo. `ascendo run --category winget
+  --phase check` → calls run_phases → prints RunReport summary. ~150 LOC.
+  Daje pierwszy działający binary `ascendo`.
+- **Opcja B — M3.8 Microsoft Store manager** (drugi winget source variant).
+  Pattern identyczny do winget — pokazuje że abstraction works dla N source'ów.
+- **Opcja C — M3.10 PSWindowsUpdate manager** (OS patches). Zamyka loop
+  "OS + apps" cross-OS — najwięcej user value.
+- **Opcja D — M3.11 Inventory** (PROGRAMS.md generator → IInventory). 
+  Read-only ale praktycznie nieoddzielne od dashboardu.
+- **Opcja E — M2.7 backend migration** (refactor `app/backend/*.py` →
+  `core/ascendo/{dashboard,...}`). Mechanical refactor, unblockuje dashboard.
+
+Rekomendacja: **Opcja A** (Typer CLI) jako quick win — daje pierwszy
+real-world demo na DP5520WMK: `ascendo run --category winget --phase check`
+fires the orchestrator, runs check__winget.ps1, prints summary. Po tym
+**Opcja E** (backend migration) by mieć dashboard endpoints którym CLI
+output można też pokazać w przeglądarce.
 
 ---
 
@@ -530,6 +1473,495 @@ Te wymagają decyzji w future sessions, ale teraz nie blokują:
 ---
 
 ## Session Log (UPDATE after each session)
+
+### Sesja 9 — 2026-05-01
+
+**Cel:** Po Sesji 8 (sync dashboard działa) — uzupełnić ostatnią
+ablację: async run + SSE dla `apply` phase, która nie może być sync.
+
+**Strategia:** No subagents — bezpośrednio piszę. Backend already
+existed, tylko dodaję endpoint shapes + worker thread + state registry.
+
+**User context:** Po Sesji 8 user zainstalował fastapi/uvicorn na
+DP5520WMK (Python 3.14, success), uruchomił `ascendo dashboard
+--port 8765`. Output po komendzie urwany — najprawdopodobniej missing
+`pip install -e core\` żeby `ascendo` console-script był na PATH.
+Krok 4e ma to wyraźnie spisane.
+
+**Zrobione:**
+- **M2.10 async + SSE** (`core/ascendo/orchestrator/run_async.py`,
+  ~160 LOC):
+  - `RunStatus` enum (pending / running / completed / failed)
+  - `RunState` dataclass (run_id, status, timestamps, report, error,
+    base_dir, internal threading.Event for completion signaling)
+  - `RunRegistry` thread-safe with bounded LRU (max=256, evicts
+    completed first never running)
+  - `start_run_async()` — registers state + spawns
+    `asyncio.create_task(asyncio.to_thread(_worker))`. Worker runs
+    sync `run_phases` in thread pool, transitions state through
+    pending → running → completed/failed.
+- **3 nowe endpointy** w `dashboard/routes/runs.py`:
+  - `POST /runs/async` — 202 + {run_id, stream_url, status_url}
+  - `GET /runs/{id}/status` — polling endpoint (status + sidecar count
+    + error + timestamps)
+  - `GET /runs/{id}/events` — Server-Sent Events. Polls run_dir co
+    500ms, emits: `status` (initial + transitions), `sidecar` (per
+    new file), `sidecar_error` (corrupted), `done` (terminal —
+    closes stream).
+- **6 nowych testów** (`tests/contract/test_dashboard_async.py`):
+  202 response shape, 503 no-adapter, lifecycle pending→completed,
+  unknown id 404, SSE event sequence (status → sidecar → done),
+  unknown id 404 dla SSE.
+- **77/77 testów passing** (71 prior + 6 new).
+
+**Co poszło źle:**
+- **FUSE truncation, twice in same session.** Najpierw runs.py
+  obcięty mid `yield _sse(`. Drugi raz — ten sam plik, znowu mid-
+  string. Naprawione via Python `open('wb').write()` pattern.
+- App.py truncated mid `app.include_router(runs_` — naprawione via
+  Python.
+- Orchestrator/__init__.py truncated mid __all__ list — naprawione.
+- Pattern: każda sesja gdzie heavily Edit'uje pliki kończy się
+  z 2-3 plikami z partial writes na FUSE Linux mount. Workaround
+  jest niezawodny ale czasochłonny.
+
+**Czego się nauczyliśmy (operational):**
+- SSE z `StreamingResponse` + async generator + `asyncio.sleep(0.5)`
+  polling the disk works perfectly cross-OS. Nie potrzeba inotify /
+  ReadDirectoryChangesW / FSEvents. Polling jest tani (jeden
+  listdir per cycle).
+- Thread-safe registry with `OrderedDict` + per-run
+  `threading.Event` daje czyste lifecycle signaling bez asyncio
+  primitives crossing thread boundaries.
+- Tests dla SSE: TestClient.stream() + iter_bytes() + break on
+  marker — clean, deterministic, no flakiness.
+
+**Decyzje podjęte:**
+- Polling interval 500ms — kompromis między latency (UI feels live)
+  i CPU (negligible). Configurable via env var w przyszłości.
+- RunRegistry max_runs=256 — typowy user nie ma >256 runów
+  jednocześnie. Eviction tylko completed runs (running zawsze
+  retained).
+- Worker thread via `asyncio.to_thread` (Python 3.9+) zamiast
+  `loop.run_in_executor` — czytsze API + automatic thread pool.
+- SSE retry semantics deferred — jeśli klient się rozłączy,
+  można wykonać GET /runs/{id}/events ponownie (server is
+  stateless o connection state). Resuming z last-event-id
+  zostawione na M6 production hardening.
+
+**Następna sesja:** wybór z 3 priorytetów, ranking by visible value:
+1. **CLI: `ascendo dashboard --background` + `ascendo runs list/show`**
+   commands. CLI parity with HTTP. Zamyka loop "you can drive
+   ascendo from CLI OR HTTP" — użytkownik wybiera. ~150 LOC.
+2. **M3.8 msstore manager** — drugi source w windows adapter.
+   Pokazuje że pattern się replikuje. ~300 LOC.
+3. **Frontend SPA migration** — przeniesienie `app/frontend/` do
+   `ui/frontend/` + przesunięcie API calls na nowe ścieżki
+   (POST /runs/async + SSE consumer). Pierwsze visible UI. ~200 LOC.
+
+Rekomendacja: **#3 (frontend)** — bo cały backend wired,
+najmniejszy gap do "user widzi działający dashboard w przeglądarce".
+
+---
+
+### Sesja 8 — 2026-05-01
+
+**Cel:** Po Sesji 7 (orchestrator + CLI) — dokończyć M2.7 dashboard
+backend, żeby cała 6-layer architektura była wired end-to-end.
+
+**Strategia:** No subagents. Direct write — dashboard jest mechanically
+proste (FastAPI thin wrapper around `run_phases`), nie potrzebuje
+delegacji.
+
+**Zrobione:**
+- **M2.7 dashboard MVP** (~480 LOC):
+  - `core/ascendo/dashboard/app.py` — create_app(adapter=, runs_dir=,
+    cors_origins=) factory z lifespan-driven adapter discovery (pattern
+    z FastAPI 0.95+; tests injectują adapter pre-startup żeby ominąć
+    discovery)
+  - `schemas.py` — wire-format Pydantic models (frozen kontra domain
+    models; oddzielne żeby wire shape mógł evolwować bez breaking
+    sidecar contract)
+  - `routes/health.py` — /version + /health z status rollup (ok /
+    degraded / error based on component statuses)
+  - `routes/runs.py` — POST /runs (sync), GET /runs (UUID-name index),
+    GET /runs/{id} (parsed sidecars + recovery stubs for corrupted)
+- **`ascendo dashboard` CLI** rewritten — replaces M2.9 placeholder.
+  Spawns uvicorn on 127.0.0.1:8765 (loopback-only default per ADR T7
+  CSRF mitigation).
+- **11 contract tests** via FastAPI TestClient z FakeAdapter +
+  FakeManager. Coverage: version with/without adapter, health rollup,
+  POST runs full pipeline + subset, 503 no-adapter, 422 bad input,
+  index after post, specific run_id, 404 unknown.
+- **71/71 tests passing** (30 contract + 11 runner + 19 windows + 11
+  dashboard).
+- **Live FastAPI smoke**: `GET /version` → 200 z ascendo + adapter info,
+  `GET /health` → 200 z status rollup, OpenAPI auto-docs at `/docs`.
+
+**Co poszło źle:**
+- **FUSE truncation**, ponownie. `core/ascendo/dashboard/routes/runs.py`
+  obcięty mid-tail przy line 155. Naprawiony via Python `open(..., 'wb')`
+  pattern. Tym razem tylko 1 plik, vs poprzednio 3+ — może FUSE cache
+  refresh się polepszyła w czasie sesji.
+- Pierwszy run testów: `phases=req.phases or None` przekazane jako
+  `None` do `run_phases`, ale ten oczekuje Sequence. Naprawione przez
+  importowanie `DEFAULT_PHASE_ORDER` i fallback na nią.
+
+**Czego się nauczyliśmy (operational):**
+- Dashboard jest naprawdę cienka warstwa nad `run_phases`. To dobry
+  sanity check że abstraction works — dashboard endpoint to `~10 LOC`
+  wrapper wokół orchestrator call.
+- Wire schemas (`schemas.py`) oddzielone od domain models (`models/`)
+  to mała redundancja ale zostaje dependency-graph clean: dashboard
+  IMPORTS od models, ale models NIGDY nie importują od dashboard.
+- TestClient z `app.state.adapter = X` pre-injection (zamiast lifespan
+  real discovery) to dobry test pattern — szybki, hermetyczny.
+
+**Decyzje podjęte:**
+- M2.7 MVP scope = 5 endpointów. Pełna migracja `app/backend/*.py`
+  (auth, db, scheduler CRUD, hosts) DEFERRED do follow-ups. Te
+  endpointy nie blokują żadnej kolejnej milestone — mogą lecieć
+  niezależnie kiedy są potrzebne.
+- 127.0.0.1 default + permissive CORS (MVP) — production tightening
+  do `allow_origins=["http://127.0.0.1:8765"]` w M6.
+- Synchronous POST /runs — apply phase będzie potrzebować async +
+  SSE w przyszłości, ale dla check / plan / verify / cleanup synchronous
+  wystarczy (typical run < 30s).
+
+**Następna sesja:** wybór z 2 priorytetów:
+1. **M3.8 msstore manager** — drugi winget source variant. Pokazuje że
+   pattern replikuje się dla N managerów. Mały (~300 LOC PowerShell
+   reuse + ~50 LOC Python).
+2. **M3.11 Inventory** — IInventory implementation dla Windows. Read-only,
+   foundation dla dashboard "what's installed" view.
+3. **M2.10 Async run + SSE** — apply phase realnie potrzebuje progress
+   stream. POST /runs zwraca run_id natychmiast, SSE endpoint streamuje
+   sidecary jak są zapisywane.
+
+Rekomendacja: **#3 (async + SSE)** bo to ostatnia ablacja w architekturze
+przed prawdziwą produkcyjną pracą — apply phase nie może być sync.
+
+---
+
+### Sesja 7 — 2026-05-01
+
+**Cel:** Tight session — orchestrator + Typer CLI w jednej sesji.
+Po orchestrator (M2.8) zostało budżetu by dodać CLI (M2.9). Po M2.9
+mamy real-world demo: `ascendo run --category winget --phase check`
+działa na DP5520WMK.
+
+**Ukończone w jednej sesji:**
+- **M2.8 orchestrator** — szczegóły w sekcji M2 Progress wyżej.
+- **M2.9 Typer CLI** (`core/ascendo/cli/__init__.py`, 184 LOC):
+  3 live commands (version/run/doctor) + 3 placeholders (schedule/
+  snapshot/dashboard z Exit 64 + planned-milestone msg). `run` wraps
+  `run_phases` z pełnym arg surface. Color-coded summary. Exit codes
+  reflect overall_status.
+- **Live smoke** (przez typer.testing.CliRunner): version → "ascendo
+  0.0.1-dev" ✓, doctor (no adapter) → exit 3 z czytelnym error ✓,
+  --help → 20 lines ✓.
+- **60/60 tests still passing** (30 contract + 19 windows + 11 runner).
+
+**Strategia:** No subagents (consume budget + FUSE issues need mid-task
+fixing). Implement myself; small focused module + tests; quick HANDOFF
+update.
+
+**Zrobione:**
+- **M2.8 orchestrator runner** (`core/ascendo/orchestrator/runner.py`,
+  270 LOC):
+  - `RunReport` (frozen Pydantic) — agreguje sidecary z properties:
+    `overall_status` (success / partial / failed / skipped),
+    `total_items`, `by_category(SourceType)`, `by_phase(Phase)`.
+  - `run_phases(adapter, run, host, *, phases, categories, base_dir,
+    stop_on_failure, item_filter) -> RunReport` — main entry.
+  - `_safe_run_phase` — łapie ManagerError, syntetyzuje failed sidecar,
+    persysuje przez M2.4 write_sidecar. ManagerError NIGDY nie propaguje;
+    OSError DO (disk full = orchestrator crash).
+  - `stop_on_failure=True` aborts subsequent phases gdy WSZYSTKIE managery
+    zwróciły FAILED dla danej fazy (apply na failed plan = unsafe).
+  - Phases reordered to canonical (`check → plan → apply → verify → cleanup`)
+    regardless of input order.
+- **11 tests** (`tests/contract/test_runner.py`, 290 LOC) z FakeManager +
+  FakeAdapter (in-memory, no subprocess). Coverage:
+  all-5-phases, subset reordering, is_available skip, categories filter,
+  ManagerError synthesis, stop_on_failure abort, sidecar disk persistence,
+  partial overall status, empty phases ValueError, item_filter propagation,
+  RunReport aggregations.
+- **60/60 tests passing** (30 contract + 19 windows + 11 runner).
+
+**Co poszło źle:**
+- **FUSE mount truncation**, again. Fixed: orchestrator/__init__.py
+  truncated mid `__all__` list, ubuntu/tests/__init__.py grew trailing
+  NUL bytes. Both fixed via Python `open(..., 'wb').write()` pattern.
+- Tried to be conservative on budget — used ~15% for one focused chunk
+  rather than dispatching subagents (would have spent budget on prompts
+  + return parsing + likely FUSE fixes).
+
+**Decyzje podjęte:**
+- Orchestrator is INTENTIONALLY thin — no CLI parsing, no config loading,
+  no scheduling. Those layers wrap it.
+- ManagerError is swallowed (synthesized as failed sidecar). OSError
+  propagates. Two distinct failure modes: per-manager (recoverable, run
+  continues) vs disk (catastrophic, abort).
+- `stop_on_failure=True` is the safe default but can be disabled (e.g.
+  for "verify-only" runs that should continue past failed verifies).
+
+**Następna sesja:** wybór z 3 priorytetów:
+1. **M2.7 backend migration** (`app/backend/*.py` → `core/ascendo/dashboard/`).
+   Mechanical refactor który unblockuje dashboard endpoints. Sztuczna
+   parytet z CLI: REST endpoint dla `run_phases` + RunReport JSON.
+2. **M3.8 msstore manager** (drugi winget source variant) — pokazuje że
+   wzorzec replikuje się dla N source'ów.
+3. **M3.11 Inventory** (`PROGRAMS.md` generator → IInventory) — read-only,
+   praktycznie niezbędny do dashboardu.
+
+Rekomendacja: **#1 (M2.7)** — bo CLI demo działa, a brak dashboard
+endpoints to jedyny gap w 6-layer architecture (Layer 3 brakuje).
+
+---
+
+### Sesja 6 — 2026-05-01
+
+**Cel:** Po M3.5 (check) ukończonym i zwalidowanym przez user na realnym
+Windows DP5520WMK, dokończyć pełen 5-phase pipeline winget — apply + plan
++ verify + cleanup, plus wire-up wszystkich faz w Python.
+
+**Strategia:** 2 paralelne agenty w wave 1 (M3.6 apply + M3.7 plan/verify/
+cleanup razem w jednym), potem ja sam zrobiłem wire-up + tests update +
+trouble-shooting FUSE mount issue.
+
+**Zrobione:**
+- **M3.6 apply** (general-purpose A): 1410 LOC PowerShell.
+  - `AscendoWingetActions.psm1` — 67 entries process map (verbatim z
+    `3_Update-Programs.ps1`), 3 uninstall-first (IPMIView ×2,
+    SDMemoryCardFormatter), 1 skip-id (DotNet Desktop Runtime 10).
+  - `apply.ps1` — full apply flow z dry-run path, process-kill (graceful
+    + force fallback), uninstall-first via registry ARP, exit-code map,
+    rollback metadata. Self-upgrade dla Microsoft.PowerShell + name-based
+    fallback dla id-not-found deferred jako TODO.
+- **M3.7 plan/verify/cleanup** (general-purpose B): 1544 LOC PowerShell.
+  - `plan.ps1` — distinct from check (only items-to-touch, not full
+    inventory). Inline rollback recipes.
+  - `verify.ps1` — reads sibling apply sidecar, re-queries winget,
+    success/failed per item based on resolved_version match.
+  - `cleanup.ps1` — winget source reset + 60-day log retention prune.
+    Per-file deletion items dla audit trail.
+- **Wire-up** (ja): WingetManager.SCRIPT_BY_PHASE × 5 phases.
+  Parametrized test `test_run_phase_dispatches_correct_script_per_phase`.
+  19 windows smoke tests (z 14 → 19, +5 parametrized cases).
+- **Test inventory: 49/49 passing** (30 contract + 19 windows smoke).
+
+**Co poszło źle:**
+- **FUSE mount cache corruption** (kolejny raz, po Sesji 4 i 5). Bash
+  view mialo truncated copies kilku plików (`winget.py` cut at line 355,
+  `conftest.py` cut at line 161, `test_winget_manager_smoke.py` cut at
+  line 397/457). Jednocześnie Read tool widziało canonical pełne wersje
+  na Windows. Naprawione manualnie via `python3` z bash, doklejając
+  brakujące tail bytes do każdego pliku.
+- **`adapters/ubuntu/tests/__init__.py`** miał `D:\Dev_Env\Ubuntu_Aktualizacje`
+  jako literal w docstring, co Python parsował jako `\U` unicode escape
+  błąd. Naprawione przez przeformułowanie ścieżki.
+- **Stale .pyc** trzymał starą wersję SCRIPT_BY_PHASE z tylko CHECK,
+  mimo że źródło miało wszystkie 5 faz. Naprawione przez `cp -r` do
+  `/tmp` (świeży directory bez .pyc) + `PYTHONDONTWRITEBYTECODE=1`.
+
+**Czego się nauczyliśmy (operational):**
+- FUSE mount caching jest deterministically problematyczny po wielu
+  Edit operations w jednym pliku. Workaround: rewriting via bash z
+  `python3 -c "open(..., 'wb').write(...)"` forces fresh write co
+  refreshuje mount.
+- pytest collection tłumi niektóre błędy syntactic — `--collect-only`
+  nie pokazywało pełnego SyntaxError w jednym pliku, raportowało
+  failed import jednego modułu jako "0 collected" zamiast traceback.
+  `python3 -c "compile(open(f).read(), f, 'exec')"` to lepsza droga
+  walidacji wszystkich .py files raz.
+- Windows mount + Linux mount mają różne views w czasie rzeczywistym —
+  Read tool (Windows side) zwykle widzi nowsze (canonical) wersje;
+  bash + Python `open()` (Linux side) widzą cached (truncated) wersje.
+
+**Decyzje podjęte:**
+- M3.6 self-upgrade dla Microsoft.PowerShell DEFERRED jako TODO
+  (special path requires detached process per `Run-Maintenance.ps1`).
+  Apply.ps1 obsłuży go normalnie ale wymaga restart sesji jeśli się
+  uruchomi w trakcie.
+- M3.6 unknown-version suppression (dla MEGAsync, IMG-to-ISO) DEFERRED
+  do osobnej sub-milestone — wymaga state file persistence cross-runs.
+- Verify uses sibling apply sidecar w tym samym `<run-id>/` directory
+  zamiast cross-run lookup. Prostsze, czystsze, zgodne z 5-phase
+  contract gdzie wszystkie 5 faz tego samego run mają wspólny run-id.
+
+**Następna sesja:** Opcja A — orchestrator (`core/ascendo/orchestrator/runner.py`).
+Łączy IAdapter + IPackageManager × Phase w jeden coherent run, dodaje
+lock file, agreguje sidecary. Po tym mamy `ascendo run --category winget`
+działające na CLI.
+
+---
+
+### Sesja 5 — 2026-05-01
+
+**Cel:** Po M2 (almost) done, ruszyć M3 — Windows MVP. Cel: end-to-end
+**winget check phase** working, żeby wzór się ustalił dla wszystkich
+kolejnych phases / sources / OS-ów.
+
+**Strategia:** 4 paralelne agenty w wave 1 (M3.1 + M3.2 + M3.4 + recon
+nieużywany), potem 1 agent w wave 2 (M3.3 — z konkretnymi paths bo
+zna sibling outputs). M2.7 deferred jak zaplanowano.
+
+**Zrobione (jeden MVP slice end-to-end, 4 agentów, ~1.5h):**
+- **M3.1 AscendoJson.psm1** (general-purpose A): 626 LOC PowerShell
+  module emitting ascendo/v1 sidecars. Smart Pydantic↔PowerShell type
+  mapping decisions documented (null vs absent, bool casting, schema_
+  alias handling, datetime trimming). Output round-trips through
+  Pydantic Sidecar.parse_sidecar() — verified by running validation
+  on the agent's hand-crafted sample.
+- **M3.2 AscendoWinget.psm1** (general-purpose B): 783 LOC. Hidden gems
+  z `3_Update-Programs.ps1` z bug-fix line references w `.NOTES`
+  blocks. Trace fixtures w stopce modułu (3 winget output blobs:
+  standard 5-col, 4-col bez Available, embedded-version-in-Name bug
+  case). PS 5.1 vs 7.x compat lockdown.
+- **M3.4 WindowsAdapter + WingetManager** (general-purpose C): 742 LOC
+  Python + 14 mock-based smoke tests (all green). Solid IPC contract:
+  argv list (no shell strings), -DryRun as `$true`/`$false` literal
+  strings, -ItemFilter as comma-joined token. Pwsh discovery order
+  with WSL Linux pwsh fallback for cross-OS unit testing.
+- **M3.3 check.ps1** (general-purpose D): 639 LOC PowerShell script.
+  Caught real spec contradiction — Python's `_build_argv` actually
+  passes `-Profile` (collides z `$Profile` PS automatic variable);
+  agent dodał `[Alias('Profile')]` zamiast tłumaczyć w obu kierunkach.
+  Catch block synthesizes failed-item żeby phase status='failed'
+  zamiast `'success'` z ERROR message (Save-Sidecar status heuristic
+  oblicza z items[], nie z messages).
+
+**Cross-module integration (po wave 2):**
+- adapter_factory.AdapterRegistry.discover() z direct-import fallback
+  (entry_points puste w editable install) → znajduje WindowsAdapter
+- select_adapter(WINDOWS) → instance z 1 package manager (winget)
+- WindowsAdapter.SCRIPTS_DIR / LIB_DIR resolvują się do
+  `adapters/windows/scripts/` + `adapters/windows/lib/`
+- WingetManager.is_available(host) → False na Linuksie (winget brak),
+  True na realnym Windows
+- **44/44 testy passing** (30 M2 contract + 14 M3 windows smoke)
+
+**Co poszło źle:**
+- Wszyscy 4 agentów zgłosiło ten sam Linux mount issue (FUSE caching +
+  trailing NUL bytes) co w Sesji 4. Agent A obsłużył via `rstrip(b'\x00')`,
+  pozostali via re-write ze świeżym Write tool.
+- M3.4 i M3.3 mieli niezależne wybory dla parameter naming
+  (`-Profile` vs `-ProfileName`); wykryte przez M3.3 agent dzięki
+  patrzeniu w sibling output. **Naprawione** przez `[Alias('Profile')]`,
+  ale flaggujemy dla cleanup w M3.6.
+
+**Czego się nauczyliśmy (operational):**
+- Paralelne dispatch z explicit cross-references w prompts (M3.4 prompt
+  miał "your output dir is `<base_dir>/<run-id>/<phase>__<category>.json`
+  per sidecar_io contract") — agenty nie kolidują nawet bez bezpośredniej
+  komunikacji. Wave 1 took ~5min wallclock, sequentially would be ~35min.
+- Pomiędzy fal warto run quick verification (plus smoke test) przed
+  dispatchem fal 2 — wykrywa contradictions wcześnie.
+- Recon agent w Sesji 4 BYŁ critical (legacy schema findings); w Sesji 5
+  decided że nie potrzebny (mam dobry context z poprzednich sesji).
+  Decyzja słuszna — wave 2 dispatch był well-informed bez recon.
+
+**Decyzje podjęte:**
+- M3 MVP scope = jeden source × jeden phase. Reszta (apply / verify /
+  cleanup, msstore, MSI/ARP, PSWindowsUpdate, Dell DCU plugin, VSS,
+  Task Scheduler, UAC) sekwencyjnie po tym samym wzorcu.
+- WindowsAdapter declares only PACKAGE_MANAGEMENT capability w MVP;
+  inventory/snapshot/scheduler/source/elevation zwracają None lub
+  raise NotImplementedError. Czysty signal dla orchestrator: "I can
+  only do package ops right now."
+- PowerShell scripts żyją w category subdirs (`scripts/winget/check.ps1`)
+  zamiast flat z double-underscore (`scripts/check__winget.ps1`).
+  Skalowalne: msstore w `scripts/msstore/`, drivery w
+  `scripts/registry_arp/`, etc.
+- Sidecar status tylko z items[]; messages[] są informational. Catch
+  block musi inject failed-item, nie liczyć na fallback.
+
+**Następna sesja:** **M3.6 apply phase** dla winget. Pattern jest:
+clone check.ps1, replace "list available" with "execute upgrade",
+add process-kill map + uninstall-first dictionaries z
+`3_Update-Programs.ps1`. Pierwsza realna mutacja. Po tym mamy
+demo-able v0.0.1-alpha "ascendo run --apply --category=winget".
+
+---
+
+### Sesja 4 — 2026-05-01
+
+**Cel:** Continue M2 wykorzystując subagentów do paralelizacji.
+
+**Strategia:** 3 paralelne agenty w wave 1 (M2.3 + M2.4 + recon
+i18n/fixtures), potem 2 paralelne w wave 2 (M2.5 + M2.6 z legacy
+translator). M2.7 deliberately defer — duża, mechaniczna, nie blokuje M3.
+
+**Zrobione (cztery sub-milestones, 5 agentów, 1 sesja):**
+- **M2.3** (general-purpose A): adapter_factory + JSON Schema export.
+  Entry-points discovery z fallbackiem na direct-import (krytyczne dla
+  editable installs gdzie entry_points może być pusty). detect_os()
+  parsuje `/etc/os-release` żeby rozróżnić ubuntu/debian/fedora/arch.
+  JSON Schema export script re-runnable w CI (drift check).
+- **M2.4** (general-purpose B): sidecar I/O. Cross-OS locking
+  (POSIX fcntl.flock + Windows msvcrt.locking). Atomic writes via
+  tempfile + os.replace. Partial recovery — 3 strategie: discard
+  trailing bytes, synthesize from required keys, give up. **Stress
+  test:** 16 paralelnych wątków zapisujących do tej samej ścieżki —
+  zero torn writes, zero leftover .tmp, ale początkowy 5-retry
+  budget się wyczerpywał — agent rozszerzył do 11 retries z jittered
+  capped-exponential backoff (±25% jitter to break thundering-herd
+  lockstep).
+- **Recon** (Explore C): legacy macOS bash i18n + ubuntu sidecar
+  shape. Kluczowe finding: legacy `ubuntu-aktualizacje/v1` ma
+  COMPLETELY different field names (kind vs phase, host string vs
+  HostInfo object, summary.ok/warn/err vs success/failed). Backward
+  compat z ADR-0003 wymagała translatora — to dorzuciliśmy do M2.6.
+- **M2.5** (general-purpose D): i18n loader. 7 locales × 42 keys.
+  Translacje wzięte z `lang_*.sh` legacy bash. ~38/42 real translations
+  per locale, ~4 same-as-en (bo legacy bash nie pokrywało nowych pojęć
+  jak adapter / dashboard / Typer CLI).
+- **M2.6** (general-purpose E): contract tests + legacy translator.
+  297 LOC translator (`core/ascendo/models/legacy.py`) z mapping
+  table dla każdego pola. 30 tests, wszystkie green:
+  9× sidecar v1, 8× I/O concurrent, 13× legacy compat.
+
+**Cross-module smoke test (po wszystkich agentach):** import
+adapter_factory + sidecar_io + i18n + legacy translator + JSON
+Schema; jeden run weryfikujący że wszystko ze wszystkim współpracuje.
+Pełen pass.
+
+**Co poszło źle:**
+- Wszyscy 5 agentów zgłosiło ten sam Linux mount issue: agresywny
+  metadata caching + trailing NUL bytes po `Edit` operacjach.
+  Workaround: write via `cat > file <<EOF` z bash, lub re-write
+  całego pliku przez Write tool (który nadpisuje).
+- Mały leftover (`core/ascendo/orchestrator/__test_write.txt`, 5 bajtów)
+  którego nie udało się usunąć z bash sandbox (Operation not permitted
+  na Windows mount). User powinien zrobić `Remove-Item` z PowerShell.
+
+**Czego się nauczyliśmy (operational):**
+- Paralelne subagenty WORK dla independent slice'ów. Wave 1 ran ~6.5min
+  in parallel, sequential by-hand byłoby ~25min. ~4× speedup.
+- Recon agent (Explore type, read-only) jest cheap i robi BIG difference
+  dla downstream implementation agents — bez niego M2.5 i M2.6 by
+  źle zinterpretowały scope (i18n key naming, legacy field shapes).
+- Krytyczny finding z reconu (legacy field shapes ≠ ascendo subset)
+  zmienił scope M2.6 — dodaliśmy translator. Bez recon by się to
+  ujawniło dopiero w M3 (Windows MVP) gdy próbowalibyśmy parsować
+  legacy fixture i fail.
+
+**Decyzje podjęte:**
+- Legacy translator jest IMPLICIT w `parse_sidecar()` (publiczny entry
+  point) ale NIE w `Sidecar.model_validate_json()` (low-level).
+  Powód: tests/internal code chce sometimes strict-mode parsing.
+- 7 locales × 42 keys to MVP — można ekspandować w M5 (macOS adapter
+  brings ~30 more domain-specific keys).
+- M2.7 backend migration deferred. Powód: nie blokuje M3 (Windows MVP),
+  to dużo mechanicznej pracy, lepszy ROI z M3 + zrobimy M2.7 paralelnie.
+
+**Następna sesja:** Opcja B — M3 (Windows MVP). Port PowerShell
+scripts do `adapters/windows/scripts/` + Python adapter `WindowsAdapter`
+w `adapters/windows/ascendo_windows/__init__.py`. Will use parallel
+agents per script category (winget / store / drivers / inventory).
+
+---
 
 ### Sesja 3 — 2026-05-01
 

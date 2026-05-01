@@ -1,0 +1,83 @@
+{
+  "schema": "ascendo/v1",
+  "run": {
+    "id": "1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d",
+    "trigger": "cli",
+    "profile": "full",
+    "dry_run": false,
+    "started_at": "2026-04-30T10:00:00+00:00",
+    "finished_at": "2026-04-30T10:05:30+00:00",
+    "invocation": ".\\0_Run-Maintenance.ps1"
+  },
+  "host": {
+    "hostname": "DP5520WMK",
+    "os": "windows",
+    "os_version": "11 Pro 26200",
+    "arch": "x86_64",
+    "user": "MK",
+    "is_elevated": true,
+    "elevation_method": "uac",
+    "locale": "en-US"
+  },
+  "tool": {
+    "name": "winget",
+    "version": "v1.28.240",
+    "binary_path": "C:/Users/MK/AppData/Local/Microsoft/WindowsApps/winget.exe"
+  },
+  "phase": "apply",
+  "category": "winget",
+  "started_at": "2026-04-30T10:01:00+00:00",
+  "finished_at": "2026-04-30T10:05:00+00:00",
+  "status": "success",
+  "items": [
+    {
+      "id": "Microsoft.PowerShell",
+      "name": "PowerShell",
+      "category": "winget",
+      "source": {"type": "winget", "feed": "winget", "url": null},
+      "current_version": "7.5.0",
+      "target_version": "7.6.0",
+      "resolved_version": "7.6.0",
+      "status": "success",
+      "exit_code": 0,
+      "duration_ms": 12450,
+      "evidence": null,
+      "rollback": {
+        "available": true,
+        "method": "winget install --id Microsoft.PowerShell --version 7.5.0",
+        "snapshot_id": null,
+        "instructions_path": null
+      },
+      "messages": []
+    },
+    {
+      "id": "Mozilla.Firefox",
+      "name": "Firefox",
+      "category": "winget",
+      "source": {"type": "winget", "feed": "winget", "url": null},
+      "current_version": "128.0",
+      "target_version": "129.0",
+      "resolved_version": "129.0",
+      "status": "success",
+      "exit_code": 0,
+      "duration_ms": 8200,
+      "evidence": null,
+      "rollback": null,
+      "messages": []
+    }
+  ],
+  "summary": {
+    "total": 2,
+    "success": 2,
+    "up_to_date": 0,
+    "failed": 0,
+    "skipped": 0,
+    "planned": 0,
+    "partial": 0,
+    "duration_ms": 240000,
+    "exit_code": 0
+  },
+  "messages": [
+    {"level": "info", "text": "winget upgrade completed without manual-attention items"}
+  ]
+}

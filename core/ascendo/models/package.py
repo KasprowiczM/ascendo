@@ -45,16 +45,25 @@ class SourceType(str, Enum):
     UNKNOWN = "unknown"
 
 
-# Free-form but strict identifier — what the source uses internally to
-# refer to the package. Examples: 'firefox', 'Microsoft.PowerShell',
-# 'com.brave.Browser'.
-PackageId = Annotated[str, StringConstraints(min_length=1, max_length=512, strip_whitespace=True)]
+# Free-form identifier — what the source uses internally to refer to the
+# package. Examples: 'firefox', 'Microsoft.PowerShell', 'com.brave.Browser',
+# or full MSIX package family names like
+# 'AutoHotkey.AutoHotkey_2.0.24.0_x64__1234abcd5678'.
+#
+# NB: NO upper length cap. We previously capped this at 512 / 2048 chars
+# but real-world output from `winget list` on machines with many AppX/MSIX
+# packages can produce parser-merged rows that exceed any sane cap. An
+# arbitrary cap aborts the entire phase; we'd rather let the weird row
+# through as visible data and fix the parser side. Min-length 1 still
+# rejects truly-empty IDs.
+PackageId = Annotated[str, StringConstraints(min_length=1, strip_whitespace=True)]
 
 # Free-form version string. We deliberately keep this as plain `str` rather
 # than parsed (e.g. PEP 440 / SemVer) — package managers use wildly
 # different version conventions and we should not lose information by
 # normalising too early. Comparison is delegated to per-source helpers.
-VersionStr = Annotated[str, StringConstraints(min_length=1, max_length=128)]
+# Same rationale as PackageId for not capping length.
+VersionStr = Annotated[str, StringConstraints(min_length=1)]
 
 
 class Package(BaseModel):

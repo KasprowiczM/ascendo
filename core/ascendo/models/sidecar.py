@@ -14,6 +14,7 @@ defaults (None or empty list/dict).
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from enum import Enum
 from typing import Annotated, Literal
@@ -166,12 +167,35 @@ class Sidecar(BaseModel):
 def parse_sidecar(payload: str | bytes | dict) -> Sidecar:  # noqa: D401 (imperative)
     """Parse a JSON string / bytes / pre-loaded dict into a Sidecar model.
 
+    Accepts both schema variants:
+      - ``ascendo/v1`` — passed straight to :meth:`Sidecar.model_validate`.
+      - ``ubuntu-aktualizacje/v1`` — translated via
+        :mod:`ascendo.models.legacy` first, then validated as ascendo/v1.
+
+    The legacy translation is applied unconditionally when the schema
+    string matches; this is the public entry point for sidecar parsing
+    and is the only place that handles both shapes.
+    :meth:`Sidecar.model_validate_json` (used internally elsewhere)
+    deliberately stays strict — only the canonical shape is accepted.
+
     Raises:
-        pydantic.ValidationError: if the payload doesn't match v1 schema.
+        pydantic.ValidationError: if the payload (after optional legacy
+            translation) doesn't match the v1 schema.
+        json.JSONDecodeError: if ``payload`` is bytes/str that aren't
+            valid JSON.
     """
+    # Local import to keep module import graph acyclic.
+    from .legacy import is_legacy_v1, translate_legacy_v1
+
     if isinstance(payload, dict):
-        return Sidecar.model_validate(payload)
-    return Sidecar.model_validate_json(payload)
+        data: dict = payload
+    else:
+        data = json.loads(payload)
+
+    if is_legacy_v1(data):
+        data = translate_legacy_v1(data)
+
+    return Sidecar.model_validate(data)
 
 
 # Type alias for v1 reader's accept-both-schemas contract — exported for

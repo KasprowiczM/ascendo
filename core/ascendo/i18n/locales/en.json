@@ -1,0 +1,54 @@
+{
+  "phase.check": "Check",
+  "phase.plan": "Plan",
+  "phase.apply": "Apply",
+  "phase.verify": "Verify",
+  "phase.cleanup": "Cleanup",
+
+  "status.success": "OK",
+  "status.failed": "Error",
+  "status.partial": "Partial",
+  "status.skipped": "Skipped",
+  "status.up_to_date": "Up to date",
+  "status.planned": "Planned",
+
+  "level.debug": "DEBUG",
+  "level.info": "Info",
+  "level.warn": "Warning",
+  "level.error": "Error",
+
+  "msg.run.starting": "Starting Ascendo update run...",
+  "msg.run.finished": "All updates complete.",
+  "msg.run.aborted": "Run aborted.",
+  "msg.run.dry_run": "DRY RUN — apply/verify/cleanup phases skipped.",
+
+  "msg.snapshot.creating": "Creating snapshot...",
+  "msg.snapshot.created": "Snapshot created: {name}",
+  "msg.snapshot.unavailable": "Snapshot subsystem unavailable; continuing without rollback support.",
+
+  "msg.elevation.required": "Elevation required to continue.",
+  "msg.elevation.denied": "Elevation was denied.",
+  "msg.elevation.granted": "Elevation granted.",
+
+  "msg.package.upgrading": "Upgrading {name}...",
+  "msg.package.upgraded": "{name} upgraded successfully.",
+  "msg.package.failed": "Failed to upgrade {name}.",
+  "msg.package.up_to_date": "{name} is already up to date.",
+
+  "msg.error.no_adapter": "No adapter available for this OS or tool.",
+  "msg.error.lock_failed": "Could not acquire package manager lock; another process may be running.",
+  "msg.error.network": "Network error — check your connection and try again.",
+
+  "msg.confirm.yes": "y",
+  "msg.confirm.no": "n",
+  "msg.confirm.proceed": "Proceed?",
+
+  "cli.help.run": "Run a full system update across all configured tools.",
+  "cli.help.doctor": "Diagnose the host and report issues that block updates.",
+  "cli.help.schedule": "Manage scheduled (timer-driven) update runs.",
+
+  "dashboard.title": "Ascendo Dashboard",
+  "dashboard.runs": "Runs",
+  "dashboard.history": "History",
+  "dashboard.no_runs": "No runs recorded yet."
+}

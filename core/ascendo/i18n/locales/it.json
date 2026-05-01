@@ -1,0 +1,54 @@
+{
+  "phase.check": "Controllo",
+  "phase.plan": "Pianificazione",
+  "phase.apply": "Applicazione",
+  "phase.verify": "Verifica",
+  "phase.cleanup": "Pulizia",
+
+  "status.success": "OK",
+  "status.failed": "Errore",
+  "status.partial": "Parziale",
+  "status.skipped": "Saltato",
+  "status.up_to_date": "Aggiornato",
+  "status.planned": "Pianificato",
+
+  "level.debug": "DEBUG",
+  "level.info": "Informazione",
+  "level.warn": "Avviso",
+  "level.error": "Errore",
+
+  "msg.run.starting": "Avvio esecuzione aggiornamento Ascendo...",
+  "msg.run.finished": "Tutti gli aggiornamenti completati.",
+  "msg.run.aborted": "Esecuzione interrotta.",
+  "msg.run.dry_run": "ESECUZIONE A VUOTO — fasi apply/verify/cleanup saltate.",
+
+  "msg.snapshot.creating": "Creazione snapshot...",
+  "msg.snapshot.created": "Snapshot creato: {name}",
+  "msg.snapshot.unavailable": "Sottosistema snapshot non disponibile; si continua senza supporto di rollback.",
+
+  "msg.elevation.required": "Sono richiesti privilegi elevati per continuare.",
+  "msg.elevation.denied": "Privilegi elevati negati.",
+  "msg.elevation.granted": "Privilegi elevati concessi.",
+
+  "msg.package.upgrading": "Aggiornamento di {name}...",
+  "msg.package.upgraded": "{name} aggiornato con successo.",
+  "msg.package.failed": "Impossibile aggiornare {name}.",
+  "msg.package.up_to_date": "{name} è già aggiornato.",
+
+  "msg.error.no_adapter": "Nessun adattatore disponibile per questo sistema o strumento.",
+  "msg.error.lock_failed": "Impossibile acquisire il lock del gestore pacchetti; potrebbe essere in esecuzione un altro processo.",
+  "msg.error.network": "Errore di rete — controlla la connessione e riprova.",
+
+  "msg.confirm.yes": "s",
+  "msg.confirm.no": "n",
+  "msg.confirm.proceed": "Procedere?",
+
+  "cli.help.run": "Esegue un aggiornamento completo del sistema su tutti gli strumenti configurati.",
+  "cli.help.doctor": "Diagnostica l'host e segnala i problemi che bloccano gli aggiornamenti.",
+  "cli.help.schedule": "Gestisce gli aggiornamenti pianificati (tramite timer).",
+
+  "dashboard.title": "Pannello Ascendo",
+  "dashboard.runs": "Esecuzioni",
+  "dashboard.history": "Cronologia",
+  "dashboard.no_runs": "Nessuna esecuzione ancora registrata."
+}

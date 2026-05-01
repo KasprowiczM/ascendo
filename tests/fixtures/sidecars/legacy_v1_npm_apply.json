@@ -1,0 +1,53 @@
+{
+  "schema": "ubuntu-aktualizacje/v1",
+  "kind": "apply",
+  "category": "npm",
+  "host": "ubuntu-desktop",
+  "started_at": "2026-04-29T01:00:00Z",
+  "ended_at": "2026-04-29T01:02:30Z",
+  "exit_code": 1,
+  "summary": {"ok": 3, "warn": 0, "err": 1},
+  "items": [
+    {
+      "id": "@anthropic-ai/claude-code",
+      "action": "upgrade",
+      "from": "1.4.0",
+      "to": "1.5.0",
+      "result": "ok",
+      "duration_ms": 8200,
+      "details": "installed via npm install -g @anthropic-ai/claude-code@latest"
+    },
+    {
+      "id": "@openai/codex",
+      "action": "upgrade",
+      "from": "0.9.1",
+      "to": "0.10.0",
+      "result": "ok",
+      "duration_ms": 6100,
+      "details": null
+    },
+    {
+      "id": "opencode-ai",
+      "action": "upgrade",
+      "from": "0.3.0",
+      "to": "0.4.0",
+      "result": "ok",
+      "duration_ms": 4500,
+      "details": null
+    },
+    {
+      "id": "@google/gemini-cli",
+      "action": "upgrade",
+      "from": "0.7.5",
+      "to": "0.8.0",
+      "result": "failed",
+      "duration_ms": 1200,
+      "details": "EACCES: permission denied"
+    }
+  ],
+  "diagnostics": [
+    {"level": "error", "code": "PERM-DENIED", "msg": "@google/gemini-cli failed with EACCES"}
+  ],
+  "log_path": "/var/log/ascendo/npm-apply.log",
+  "needs_reboot": false
+}

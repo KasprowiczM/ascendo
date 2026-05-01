@@ -1,0 +1,36 @@
+{
+  "schema": "ubuntu-aktualizacje/v1",
+  "kind": "check",
+  "category": "apt",
+  "host": "ubuntu-desktop",
+  "started_at": "2026-04-29T00:00:00Z",
+  "ended_at": "2026-04-29T00:00:15Z",
+  "exit_code": 0,
+  "summary": {"ok": 12, "warn": 2, "err": 0},
+  "items": [
+    {
+      "id": "firefox",
+      "action": "check-update",
+      "from": "128.0+build1-0ubuntu0.24.04.1",
+      "to": "129.0+build1-0ubuntu0.24.04.1",
+      "result": "ok",
+      "duration_ms": 340,
+      "details": "candidate detected"
+    },
+    {
+      "id": "openssl",
+      "action": "check-update",
+      "from": "3.0.13-0ubuntu3.4",
+      "to": "3.0.13-0ubuntu3.5",
+      "result": "ok",
+      "duration_ms": 120,
+      "details": null
+    }
+  ],
+  "diagnostics": [
+    {"level": "warn", "code": "DRIFT-CODE", "msg": "drift detected on firefox"},
+    {"level": "info", "code": "MIRROR-OK", "msg": "primary mirror reachable"}
+  ],
+  "log_path": "/var/log/ascendo/apt-check.log",
+  "needs_reboot": false
+}

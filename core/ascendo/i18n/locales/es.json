@@ -1,0 +1,54 @@
+{
+  "phase.check": "Comprobar",
+  "phase.plan": "Planificar",
+  "phase.apply": "Aplicar",
+  "phase.verify": "Verificar",
+  "phase.cleanup": "Limpieza",
+
+  "status.success": "OK",
+  "status.failed": "Error",
+  "status.partial": "Parcial",
+  "status.skipped": "Omitido",
+  "status.up_to_date": "Actualizado",
+  "status.planned": "Planificado",
+
+  "level.debug": "DEBUG",
+  "level.info": "Información",
+  "level.warn": "Advertencia",
+  "level.error": "Error",
+
+  "msg.run.starting": "Iniciando ejecución de actualización de Ascendo...",
+  "msg.run.finished": "Todas las actualizaciones completadas.",
+  "msg.run.aborted": "Ejecución cancelada.",
+  "msg.run.dry_run": "EJECUCIÓN EN SECO — fases apply/verify/cleanup omitidas.",
+
+  "msg.snapshot.creating": "Creando snapshot...",
+  "msg.snapshot.created": "Snapshot creado: {name}",
+  "msg.snapshot.unavailable": "Subsistema de snapshots no disponible; continuando sin soporte de retroceso.",
+
+  "msg.elevation.required": "Se requieren privilegios elevados para continuar.",
+  "msg.elevation.denied": "Privilegios elevados denegados.",
+  "msg.elevation.granted": "Privilegios elevados concedidos.",
+
+  "msg.package.upgrading": "Actualizando {name}...",
+  "msg.package.upgraded": "{name} actualizado correctamente.",
+  "msg.package.failed": "Error al actualizar {name}.",
+  "msg.package.up_to_date": "{name} ya está actualizado.",
+
+  "msg.error.no_adapter": "No hay adaptador disponible para este sistema o herramienta.",
+  "msg.error.lock_failed": "No se pudo obtener el bloqueo del gestor de paquetes; puede haber otro proceso en ejecución.",
+  "msg.error.network": "Error de red — verifica tu conexión e inténtalo de nuevo.",
+
+  "msg.confirm.yes": "s",
+  "msg.confirm.no": "n",
+  "msg.confirm.proceed": "¿Continuar?",
+
+  "cli.help.run": "Ejecuta una actualización completa del sistema en todas las herramientas configuradas.",
+  "cli.help.doctor": "Diagnostica el host e informa de los problemas que bloquean las actualizaciones.",
+  "cli.help.schedule": "Gestiona las actualizaciones programadas (mediante temporizador).",
+
+  "dashboard.title": "Panel de Ascendo",
+  "dashboard.runs": "Ejecuciones",
+  "dashboard.history": "Historial",
+  "dashboard.no_runs": "Aún no hay ejecuciones registradas."
+}
