@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .routes.health import router as health_router
 from .routes.runs import router as runs_router
+from .routes.service import router as service_router
 from .routes.spa_real import InventoryCache
 from .routes.spa_real import router as spa_real_router
 from .routes.spa_stubs import router as spa_stubs_router
@@ -155,6 +156,12 @@ def create_app(
     # implementation lands.
     app.include_router(spa_stubs_router, prefix="")
     app.include_router(runs_router, prefix="/runs")
+    # Windows service management (/service/*). Registered last among API
+    # routers so it sits next to runs in the OpenAPI tag list. On non-
+    # Windows hosts every endpoint returns the typed-empty "unsupported"
+    # shape rather than 404 -- the SPA can branch on
+    # ``status.supported``.
+    app.include_router(service_router, prefix="")
 
     # ── SPA bundle -- serve at root, last so REST routes win ──────────────
     frontend_dir = _resolve_frontend_dir()
