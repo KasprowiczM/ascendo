@@ -1,10 +1,40 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-01 — Sesja 12 closed, v0.0.7-alpha-rc on real DP5520WMK.
+> Last updated: 2026-05-02 — Sesja 13 closed, Windows end-to-end + frontend apply UX + Tauri 2.x scaffold landed.
 >
 > This file is the **single source of truth for what comes next**. HANDOFF.md
 > is the historical session log; PLAN.md is the forward roadmap. Update this
 > file whenever priorities shift; prune completed items into HANDOFF.md.
+
+---
+
+## What landed in 2026-05-02 (post-Sesja 12)
+
+Six commits on `claude/windows-end-to-end-2026-05-02`:
+
+- `0ea118f` **docs(spec):** Windows end-to-end A+B+C design doc
+  (`docs/superpowers/specs/2026-05-02-ascendo-windows-end-to-end-design.md`)
+  laid out the three concurrent waves: CLI polish + dashboard wiring +
+  frontend apply UX + Tauri 2.x scaffold.
+- `30d1167` **feat(ui/desktop-tauri):** Tauri 2.x scaffold with Python
+  sidecar + 4 scaffold tests; build hook in `bin/launch-desktop.ps1`.
+- `742d6cc` **fix(plugin/dell-driver-update):** rewrote 5 PowerShell
+  scripts (check/plan/apply/verify/cleanup) with the StrictMode-safe
+  pattern + splat helpers + `Add-SidecarMessage -Text`; sidecars now save
+  as `<phase>__plugin.json` (PowerShell-side adapter renamed enum).
+- `f97afe8` **feat(cli):** wired `ascendo snapshot {create,list,restore}`,
+  `ascendo schedule {install,remove,list,trigger}`, exit 75 on
+  `needs_reboot`, new `ascendo runs json <id>` command.
+- `de54a1b` **feat(dashboard):** `/inventory`, `/inventory/summary`,
+  `/inventory/category/{c}`, `/health/check`, `/runs/active`,
+  `/runs/active/stop`, SSE `/runs/{id}/events` wired to the real adapter
+  (no more stubs).
+- `18c5bcf` **feat(frontend):** apply confirmation modal (literal `apply`
+  string), per-category 5-phase buttons, self-hosted Inter Tight +
+  JetBrains Mono webfonts, wizard step for theme picker.
+
+45 new tests (5 + 20 + 8 + 8 + 4) green; 2 pre-existing
+`test_dashboard_spa.py` failures unchanged (predate this work).
 
 ---
 
@@ -73,21 +103,17 @@ git push --tags
 
 ## Pending Windows polish (post-v0.0.7-alpha)
 
-### `dell-driver-update` plugin scripts
-- 5 plugin PowerShell scripts under `plugins/dell-driver-update/windows/` use the
-  same broken patterns the in-tree msstore/arp scripts had (inline hashtable
-  splat, `Get-WingetVersion` calls, `-Tool` instead of `-ToolName`).
-- **Fix pattern (now well-understood):** copy `scripts/winget/check.ps1`
-  line-by-line, change `category='dell_driver_update'`, swap winget calls for
-  `dcu-cli.exe /scan` / `/applyUpdates`. Same splatting + StrictMode-safe
-  property access.
-- Effort: 2-3 hours once you have `dcu-cli.exe` installed.
+### `dell-driver-update` plugin scripts ✅ (2026-05-02)
+- ~~5 plugin PowerShell scripts...~~ Done in commit `742d6cc`. All five
+  (check/plan/apply/verify/cleanup) rewritten with the StrictMode-safe
+  pattern; 8 lint tests pass. Sidecars now save as `<phase>__plugin.json`
+  (PowerShell-side enum renamed from `dell_driver_update` to `plugin`).
 
-### CLI snapshot/schedule wiring
-- `ascendo snapshot create` / `list` / `restore` currently is a placeholder
-  (`raise typer.Exit(64)`). M3.12 manager exists; just wire the CLI.
-- Same for `ascendo schedule install / uninstall / list / trigger`.
-- Effort: ~150 LOC, half a day.
+### CLI snapshot/schedule wiring ✅ (2026-05-02)
+- ~~`ascendo snapshot create` / `list` / `restore` placeholder...~~ Done in
+  commit `f97afe8`. All snapshot subcommands (`create`/`list`/`restore`) and
+  schedule subcommands (`install`/`remove`/`list`/`trigger`) wired to the
+  M3.12/M3.13 managers via `_resolve_adapter_for_capability()`.
 
 ### Light-theme contrast pass
 - Manual WCAG AA audit on every accent surface in light mode. `--accent-fg`
@@ -105,9 +131,9 @@ git push --tags
 | **winget manifest** | 1 day | PR to `microsoft/winget-pkgs`: `manifests/A/Ascendo/Ascendo/<version>/*.yaml` |
 | **GitHub Releases CI** | 2-3 days | `.github/workflows/release.yml`: build + sign + publish on tag |
 | **Authenticode signing** | 1 day | toolchain setup (azure trusted-signing or DigiCert); required for SmartScreen |
-| **Tauri 2.x shell** | 3-4 days | rebuild `app/tauri/` for Tauri 2.x + FastAPI backend pairing; replace legacy shell |
-| **Frontend SPA migration** | 1-2 days | physically move `app/frontend/` → `ui/frontend/`; update mount path in `core/ascendo/dashboard/app.py` |
-| **Self-host webfonts** | 2 hours | drop Inter Tight + JetBrains Mono woff2 into `app/frontend/fonts/`; `@font-face` + remove Google Fonts CDN import |
+| **Tauri 2.x shell** ✅ scaffold (2026-05-02) | 3-4 days for full build | `ui/desktop-tauri/` scaffold landed in `30d1167` (4 tests pass); full packaged build pending Rust toolchain on user's machine. `bin/launch-desktop.ps1 -Build` produces `.exe + .msi` once `winget install Rustlang.Rustup` runs. |
+| **Frontend SPA migration** | 1-2 days (deferred) | Already mounted via `core/ascendo/dashboard/app.py`; physical move `app/frontend/` → `ui/frontend/` is the M4 step. |
+| **Self-host webfonts** ✅ (2026-05-02) | done in `18c5bcf` | Inter Tight + JetBrains Mono woff2 dropped into `app/frontend/fonts/`; `@font-face` rules + Google Fonts CDN import removed. |
 
 **Tag:** `v0.1.0-alpha` after MSI ships and runs end-to-end through winget install.
 
@@ -150,11 +176,20 @@ Mirror `adapters/windows/` as `adapters/macos/`. Same patterns, OS-specific tool
 
 ## Quick-win backlog (each < 1 day)
 
-1. **IInventory wired to SPA `/apps`** — M3.11 backend exists, just stub the endpoint to live data. ~150 LOC Python + ~50 JS.
-2. **Wizard step for theme picker** — current wizard has 4 steps (lang, profile, schedule, snapshot); add a 5th for dark vs light.
-3. **`ascendo runs json <id>`** — emit the consolidated run report as a single JSON blob (useful for piping into `jq`).
-4. **Health card on dashboard Overview** — already has the API (`/health/check`), just render.
-5. **Reboot detection in CLI** — `python -m ascendo run` exits 0 even if `needs_reboot=true`; add a separate exit code (e.g. 75) and a clear stderr line.
+1. **IInventory wired to SPA `/apps`** ✅ (2026-05-02) — done in `de54a1b`.
+   Endpoint renamed `/apps` → `/inventory[/summary]`; SPA Categories tab
+   reads live data via the real `WindowsInventory` adapter.
+2. **Wizard step for theme picker** ✅ (2026-05-02) — done in `18c5bcf`.
+   Wizard now has 5 steps; theme step persists `dark` vs `light` to
+   settings + `data-theme` on `<html>`.
+3. **`ascendo runs json <id>`** ✅ (2026-05-02) — done in `f97afe8`.
+   Emits `ascendo/run/v1` JSON with sidecars + summary + `needs_reboot`.
+4. **Health card on dashboard Overview** ✅ (2026-05-02) — done in
+   `de54a1b`. `/health/check` returns real `score 0-100` + `issues[]`;
+   Overview card renders it.
+5. **Reboot detection in CLI** ✅ (2026-05-02) — done in `f97afe8`. `run`
+   now scans messages for "Reboot required" and exits 75 when SUCCESS;
+   stderr line "system reboot required to complete updates".
 
 ---
 

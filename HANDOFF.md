@@ -6,6 +6,113 @@
 
 ---
 
+## Sesja 13 (2026-05-02) — Windows end-to-end + frontend apply UX + Tauri 2.x scaffold
+
+Six commits on `claude/windows-end-to-end-2026-05-02` finishing the path
+to v0.0.7-alpha. Reference design:
+`docs/superpowers/specs/2026-05-02-ascendo-windows-end-to-end-design.md`.
+
+### Commits
+
+- `0ea118f` **docs(spec):** Windows end-to-end A+B+C design doc.
+  Three concurrent waves: CLI polish + dashboard wiring + frontend
+  apply UX + Tauri 2.x scaffold.
+- `30d1167` **feat(ui/desktop-tauri):** Tauri 2.x scaffold. `Cargo.toml`,
+  `tauri.conf.json` (1280×800 default window), `package.json`,
+  `src-tauri/src/main.rs` spawning `python -m ascendo dashboard --port`
+  as a sidecar. 4 scaffold tests pass. `bin/launch-desktop.ps1` wraps
+  `npm run tauri {dev,build}`.
+- `742d6cc` **fix(plugin/dell-driver-update):** rewrote 5 PowerShell
+  scripts (check/plan/apply/verify/cleanup) line-by-line from
+  `scripts/winget/check.ps1`. StrictMode-safe property access via
+  `PSObject.Properties[name]`, splat helper (`$_v = @{...}; New-Sidecar
+  @_v`), `Add-SidecarMessage -Text`, `Save-Sidecar -OutputDir`. 8 lint
+  tests pass. **Sidecars now save as `<phase>__plugin.json`** — the
+  PowerShell-side adapter renamed the source-type enum from
+  `dell_driver_update` to `plugin`. Update any hardcoded paths.
+- `f97afe8` **feat(cli):** wired `ascendo snapshot {create,list,restore}`
+  and `ascendo schedule {install,remove,list,trigger}` to the M3.12 +
+  M3.13 managers via `_resolve_adapter_for_capability()`. `run` now
+  exits 75 on `needs_reboot` (SUCCESS only — FAILED/PARTIAL still win).
+  New `ascendo runs json <id>` emits consolidated `ascendo/run/v1` JSON
+  for `jq` piping. 5 contract tests pass.
+- `de54a1b` **feat(dashboard):** `/inventory`, `/inventory/summary`,
+  `/inventory/category/{c}`, `/health/check`, `/runs/active`,
+  `/runs/active/stop`, SSE `/runs/{id}/events` wired to the real
+  `WindowsInventory` adapter (no more stubs). 60s in-memory cache;
+  category projection by `SourceType`. 20 contract tests pass.
+- `18c5bcf` **feat(frontend):** apply confirmation modal (literal
+  `apply` string), per-category 5-phase buttons (`check / plan / apply
+  / verify / cleanup`), self-hosted Inter Tight + JetBrains Mono woff2
+  in `app/frontend/fonts/` (Google Fonts CDN import removed), wizard
+  step for theme picker (dark vs light, persisted to settings +
+  `data-theme` on `<html>`). 8 frontend smoke tests pass.
+
+### Wave 3 deliverables (this commit)
+
+- `bin/run-tag-release.ps1` NEW: end-to-end one-liner from elevated
+  shell. Preflight → snapshot → plan → confirm-gate → apply → verify
+  → cleanup → doctor → tag. Sets `PYTHONPATH=$repo/core` so the
+  worktree's code runs (not the editable install). Flags: `-NoTag`,
+  `-NoSnapshot`, `-Category`, `-IAcceptUpgradeRisk`, `-WhatIf`.
+- `bin/validate-windows.ps1`: extended with the Wave 2 endpoint smokes
+  (`/categories`, `/inventory`, `/inventory/summary`, `/health/check`,
+  `/runs/active`), frontend modal markup check
+  (`apply-confirm-modal`), self-hosted-fonts URL check
+  (`/static/fonts/inter-tight-400.woff2`).
+- `WINDOWS_TESTING.md`: new sections 5b (dashboard apply), 5c (desktop
+  launch), 5d (run-tag-release); milestone bumped to v0.0.7-alpha.
+- `PLAN.md`: marked Wave 1+2+3 deliverables complete; added 2026-05-02
+  "What landed" section.
+
+### Verification
+
+```bash
+PYTHONPATH=$(pwd)/core python -m pytest tests/ -v --tb=short
+# 165 passed, 2 failed (pre-existing test_dashboard_spa.py), 19 subtests passed
+PYTHONPATH=$(pwd)/core python -m pytest plugins/dell-driver-update/tests/ -v
+# 8 passed, 40 subtests passed
+PYTHONPATH=$(pwd)/core python -m pytest ui/desktop-tauri/tests/ -v
+# 4 passed
+```
+
+45 new tests (5 + 20 + 8 + 8 + 4) all green.
+
+### Known limitations
+
+1. **Editable install resolves to primary checkout, not worktree.** The
+   user must `pip install -e core/` from the worktree before
+   `python -m ascendo` reflects this branch's code. Workaround:
+   `PYTHONPATH=$(pwd)/core` from the worktree shell. `bin/run-tag-release.ps1`
+   does this automatically (sets `$env:PYTHONPATH = "$repoRoot\core"`).
+2. **Real winget apply still pending.** `bin/run-tag-release.ps1` runs
+   it from an Admin shell when the user is ready. The script does NOT
+   push the tag — the user runs `git push --tags` manually.
+3. **Tauri build needs Rust toolchain.** Scaffold + 4 tests pass; full
+   packaged build is `winget install Rustlang.Rustup && cd
+   ui/desktop-tauri && npm install && npm run tauri build` away. Needs
+   ~5-10 min on first run for Cargo deps.
+4. **Dell plugin sidecars now save as `<phase>__plugin.json`** (not
+   `<phase>__dell_driver_update.json`). The PowerShell-side adapter
+   renamed the enum from `dell_driver_update` → `plugin`. Update any
+   hardcoded paths if you have them.
+5. **2 pre-existing `test_dashboard_spa.py` failures remain.**
+   `test_spa_brand_asset_traversal_blocked` (path traversal) and
+   `test_spa_index_pins_dark_theme_by_default` (asset load order).
+   Predate this work, untouched.
+
+### Next steps (~15 minutes from elevated shell)
+
+```powershell
+cd D:\Dev_Env\Ascendo
+git checkout claude/windows-end-to-end-2026-05-02
+# Open elevated PowerShell, then:
+.\bin\run-tag-release.ps1               # interactive, asks 'apply' to proceed
+git push origin claude/windows-end-to-end-2026-05-02 --tags
+```
+
+---
+
 ## ⚡ FAST RESUME (2026-05-01, post-Sesja 12)
 
 **Where we are:** v0.0.7-alpha-rc. **Windows MVP feature-complete.** Real-hardware validated on DP5520WMK end-to-end.

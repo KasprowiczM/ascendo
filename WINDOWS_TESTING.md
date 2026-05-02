@@ -214,6 +214,77 @@ Then in a browser:
 
 ---
 
+## 5b. Apply updates from the dashboard (Wave 2)
+
+The dashboard now drives full apply workflows from the browser — no CLI
+needed for everyday operation.
+
+1. Open `http://127.0.0.1:8765/`, navigate to **Categories**.
+2. Each category row now has 5 phase buttons: `check / plan / apply /
+   verify / cleanup`. Click **plan** first to see what would change.
+3. Click **apply** → a modal opens asking you to type the literal string
+   `apply` to proceed (anything else aborts). Once confirmed, the run
+   starts and the log streams live via SSE.
+4. Watch the run progress in real time; when it finishes you'll see
+   ✓ Run complete with the per-category status table.
+5. Switch to the **History** tab to inspect saved sidecars from past runs.
+
+The same flow works for individual phase buttons (e.g. just `check` or
+`verify`). This mirrors `python -m ascendo run --category <c> --phase <p>`
+on the CLI — same sidecars on disk under `~/.ascendo/runs/<run-id>/`.
+
+---
+
+## 5c. Launch the desktop app (Wave 4)
+
+```powershell
+.\bin\launch-desktop.ps1                # dev mode (Ctrl+C to stop)
+.\bin\launch-desktop.ps1 -Build         # produce a packaged .exe + .msi
+```
+
+Build prerequisites: Rust (`winget install Rustlang.Rustup`), Node 18+,
+WebView2 runtime (preinstalled on Win11), MSVC linker
+(`winget install Microsoft.VisualStudio.2022.BuildTools`).
+
+The Tauri 2.x shell spawns the FastAPI backend as a sidecar process and
+opens a native WebView2 window pointing at `http://127.0.0.1:8765/` —
+same SPA, same REST API, no browser tab.
+
+---
+
+## 5d. End-to-end first apply with snapshot + tag (Wave 3)
+
+`bin/run-tag-release.ps1` is the user's "apply + tag v0.0.7-alpha"
+one-liner. **Run from an elevated PowerShell.**
+
+```powershell
+.\bin\run-tag-release.ps1               # normal (interactive confirm)
+.\bin\run-tag-release.ps1 -WhatIf       # show plan only, no mutation
+.\bin\run-tag-release.ps1 -NoSnapshot   # if VSS is full / disabled
+.\bin\run-tag-release.ps1 -NoTag        # apply but don't tag
+```
+
+What it does, in order:
+1. **Preflight** — admin check, repo root, PYTHONPATH wiring (so the
+   worktree's `core/` is used, not the editable install).
+2. **Snapshot** — `Checkpoint-Computer` VSS restore point (skip with
+   `-NoSnapshot`).
+3. **Plan** — `python -m ascendo run --category winget --phase plan`.
+4. **Confirm gate** — interactive prompt requiring the literal string
+   `apply` (skip with `-IAcceptUpgradeRisk` for automation).
+5. **Apply** — `python -m ascendo run --category winget --phase apply`.
+   Exit code 75 = reboot required.
+6. **Verify** — `python -m ascendo run --category winget --phase verify`.
+7. **Cleanup** — `python -m ascendo run --category winget --phase cleanup`.
+8. **Health card** — `python -m ascendo doctor`.
+9. **Tag** — `git tag -a v0.0.7-alpha -m "..."` (skip with `-NoTag`).
+   The script does NOT push; run `git push --tags` when ready.
+
+If a reboot is pending, the script prints a clearly-marked banner with
+`shutdown /r /t 30` so you can reboot on your own schedule.
+
+---
+
 ## 6. What's been validated end-to-end
 
 After steps 1-5, you've exercised every single layer of the 6-layer
@@ -288,14 +359,18 @@ diagnose given the diagnostic output the validate script emits.
 
 ## 9. What's next
 
-Beyond this baseline (v0.0.1-alpha), the roadmap is:
+Beyond this baseline (v0.0.7-alpha), the roadmap is:
 
-- **v0.0.2-alpha** — first real apply landed via `run-apply.ps1`.
-- **v0.0.3-alpha** — Microsoft Store manager (msstore source — second source,
-  proves the pattern replicates).
-- **v0.0.4-alpha** — PSWindowsUpdate (OS patches via Windows Update).
-- **v0.1.0** — frontend SPA wired up + Tauri desktop app.
-- **v1.0** — full 3-OS support (Linux + macOS adapters land), code signing,
-  msi/dmg/deb releases.
+- **v0.0.7-alpha** — Windows MVP feature-complete: real-hardware-validated
+  apply on DP5520WMK + frontend apply UX (per-category phase buttons,
+  confirm modal, live SSE) + Tauri 2.x scaffold. Tagged via
+  `bin/run-tag-release.ps1` from an elevated shell.
+- **v0.1.0** — MSI installer (WiX) + winget manifest + GitHub Releases CI +
+  Authenticode signing + Tauri 2.x packaged build + frontend physically
+  moved to `ui/frontend/`.
+- **v0.2.0** — macOS adapter (brew, mas, softwareupdate, launchservices,
+  Time Machine, launchd).
+- **v1.0** — full 3-OS support (Linux re-integrated), security audit,
+  plugin signing + verification, msi/dmg/deb releases.
 
 See `HANDOFF.md` for the per-session work log and the full backlog.

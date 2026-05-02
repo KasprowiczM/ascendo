@@ -226,6 +226,42 @@ try {
                     if ($s.status -eq 'completed' -or $s.status -eq 'failed') { $pollOk = $true; break }
                 }
                 Test-Result "GET /runs/{id}/status reaches completed/failed" $pollOk "status=$($s.status)"
+
+                # New (Wave 2): real dashboard endpoints + SSE
+                Write-Host "[validate] checking real dashboard endpoints..." -ForegroundColor Cyan
+
+                $endpoints = @(
+                    @{ path = "/categories";        contains = "categories" }
+                    @{ path = "/inventory";         contains = "categories" }
+                    @{ path = "/inventory/summary"; contains = "totals" }
+                    @{ path = "/health/check";      contains = "score" }
+                    @{ path = "/runs/active";       contains = "active" }
+                )
+                foreach ($ep in $endpoints) {
+                    $resp = Invoke-RestMethod -Uri ("http://127.0.0.1:" + $DashboardPort + $ep.path) -ErrorAction Stop
+                    $body = $resp | ConvertTo-Json -Depth 4
+                    if ($body -notmatch $ep.contains) {
+                        Write-Host "[FAIL] $($ep.path): expected '$($ep.contains)' in response" -ForegroundColor Red
+                        exit 1
+                    }
+                    Write-Host "[OK]   $($ep.path)" -ForegroundColor Green
+                }
+
+                # Frontend smoke
+                $frontendChecks = @(
+                    @{ path = "/";                            contains = "apply-confirm-modal" }
+                    @{ path = "/static/fonts/inter-tight-400.woff2"; expectStatus = 200 }
+                )
+                foreach ($c in $frontendChecks) {
+                    $resp = Invoke-WebRequest -Uri ("http://127.0.0.1:" + $DashboardPort + $c.path) -ErrorAction SilentlyContinue
+                    if ($c.expectStatus -and $resp.StatusCode -ne $c.expectStatus) {
+                        Write-Host "[FAIL] $($c.path): status $($resp.StatusCode)" -ForegroundColor Red; exit 1
+                    }
+                    if ($c.contains -and ($resp.Content -notmatch $c.contains)) {
+                        Write-Host "[FAIL] $($c.path): expected '$($c.contains)'" -ForegroundColor Red; exit 1
+                    }
+                    Write-Host "[OK]   $($c.path)" -ForegroundColor Green
+                }
             } catch {
                 Test-Result "dashboard endpoint reachable" $false $_.Exception.Message
             }
