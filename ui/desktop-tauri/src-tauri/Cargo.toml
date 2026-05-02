@@ -8,10 +8,13 @@ edition = "2021"
 rust-version = "1.78"
 
 # See https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[lib]
-name = "ascendo_desktop_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+#
+# Note: Tauri 2.x's `npm create tauri-app` template includes a [lib]
+# section pointing at src/lib.rs to support mobile (iOS/Android). We
+# don't ship mobile, so we keep just the binary at src/main.rs and omit
+# the lib target. If you ever add `tauri android init` / `tauri ios
+# init`, restore [lib] + create src/lib.rs that exports a `run()` fn
+# called from main.rs.
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
