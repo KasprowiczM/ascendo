@@ -399,7 +399,10 @@ function Add-SidecarItem {
     Test-AscendoEnumValue -Value $SourceType -Allowed $script:VALID_SOURCE_TYPE -FieldName 'item.SourceType'
     Test-AscendoEnumValue -Value $Status     -Allowed $script:VALID_ITEM_STATUS -FieldName 'item.Status'
 
-    if ($PSBoundParameters.ContainsKey('DurationMs') -and $DurationMs.HasValue -and $DurationMs.Value -lt 0) {
+    # PowerShell auto-unwraps [Nullable[T]] params to T-or-$null at the
+    # callee, so $ExitCode/$DurationMs are plain int-or-$null here -- the
+    # .HasValue / .Value API doesn't apply. Treat $null as "not provided".
+    if ($PSBoundParameters.ContainsKey('DurationMs') -and $null -ne $DurationMs -and [int]$DurationMs -lt 0) {
         throw "DurationMs must be non-negative."
     }
 
@@ -463,8 +466,8 @@ function Add-SidecarItem {
         'target_version'   = $(if ($PSBoundParameters.ContainsKey('TargetVersion')   -and $TargetVersion)   { $TargetVersion }   else { $null })
         'resolved_version' = $(if ($PSBoundParameters.ContainsKey('ResolvedVersion') -and $ResolvedVersion) { $ResolvedVersion } else { $null })
         'status'           = $Status
-        'exit_code'        = $(if ($PSBoundParameters.ContainsKey('ExitCode')   -and $ExitCode.HasValue)   { [int]$ExitCode.Value }   else { $null })
-        'duration_ms'      = $(if ($PSBoundParameters.ContainsKey('DurationMs') -and $DurationMs.HasValue) { [int]$DurationMs.Value } else { $null })
+        'exit_code'        = $(if ($PSBoundParameters.ContainsKey('ExitCode')   -and $null -ne $ExitCode)   { [int]$ExitCode }   else { $null })
+        'duration_ms'      = $(if ($PSBoundParameters.ContainsKey('DurationMs') -and $null -ne $DurationMs) { [int]$DurationMs } else { $null })
         'evidence'         = $evidenceBlock
         'rollback'         = $rollbackBlock
         'messages'         = $msgList

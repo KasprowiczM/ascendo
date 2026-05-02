@@ -237,30 +237,38 @@ try {
                     @{ path = "/health/check";      contains = "score" }
                     @{ path = "/runs/active";       contains = "active" }
                 )
+                # NOTE on PS hashtable access: $h.contains is the Contains()
+                # method (System.Collections.IDictionary inherits it case-
+                # insensitively). To read the *key* named 'contains', always
+                # index with $h['contains'] or $h.Item('contains'). Same trap
+                # for any other "method-like" key name.
                 foreach ($ep in $endpoints) {
-                    $resp = Invoke-RestMethod -Uri ("http://127.0.0.1:" + $DashboardPort + $ep.path) -ErrorAction Stop
+                    $resp = Invoke-RestMethod -Uri ("http://127.0.0.1:" + $DashboardPort + $ep['path']) -ErrorAction Stop
                     $body = $resp | ConvertTo-Json -Depth 4
-                    if ($body -notmatch $ep.contains) {
-                        Write-Host "[FAIL] $($ep.path): expected '$($ep.contains)' in response" -ForegroundColor Red
+                    if ($body -notmatch [string]$ep['contains']) {
+                        Write-Host "[FAIL] $($ep['path']): expected '$($ep['contains'])' in response" -ForegroundColor Red
                         exit 1
                     }
-                    Write-Host "[OK]   $($ep.path)" -ForegroundColor Green
+                    Write-Host "[OK]   $($ep['path'])" -ForegroundColor Green
                 }
 
                 # Frontend smoke
                 $frontendChecks = @(
-                    @{ path = "/";                            contains = "apply-confirm-modal" }
-                    @{ path = "/static/fonts/inter-tight-400.woff2"; expectStatus = 200 }
+                    @{ path = "/";                                    contains = "apply-confirm-modal" }
+                    @{ path = "/static/fonts/inter-tight-400.woff2";  expectStatus = 200 }
                 )
                 foreach ($c in $frontendChecks) {
-                    $resp = Invoke-WebRequest -Uri ("http://127.0.0.1:" + $DashboardPort + $c.path) -ErrorAction SilentlyContinue
-                    if ($c.expectStatus -and $resp.StatusCode -ne $c.expectStatus) {
-                        Write-Host "[FAIL] $($c.path): status $($resp.StatusCode)" -ForegroundColor Red; exit 1
+                    $url = "http://127.0.0.1:" + $DashboardPort + $c['path']
+                    $resp = Invoke-WebRequest -Uri $url -ErrorAction SilentlyContinue
+                    $expectStatus = $c['expectStatus']
+                    $expectContains = $c['contains']
+                    if ($null -ne $expectStatus -and $resp.StatusCode -ne [int]$expectStatus) {
+                        Write-Host "[FAIL] $($c['path']): status $($resp.StatusCode), expected $expectStatus" -ForegroundColor Red; exit 1
                     }
-                    if ($c.contains -and ($resp.Content -notmatch $c.contains)) {
-                        Write-Host "[FAIL] $($c.path): expected '$($c.contains)'" -ForegroundColor Red; exit 1
+                    if ($null -ne $expectContains -and ($resp.Content -notmatch [string]$expectContains)) {
+                        Write-Host "[FAIL] $($c['path']): expected '$expectContains'" -ForegroundColor Red; exit 1
                     }
-                    Write-Host "[OK]   $($c.path)" -ForegroundColor Green
+                    Write-Host "[OK]   $($c['path'])" -ForegroundColor Green
                 }
             } catch {
                 Test-Result "dashboard endpoint reachable" $false $_.Exception.Message

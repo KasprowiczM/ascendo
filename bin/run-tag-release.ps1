@@ -127,10 +127,20 @@ python -m ascendo doctor
 # 9. Tag ────────────────────────────────────────────────
 if (-not $NoTag -and -not $WhatIfPreference) {
     Write-Host "[7/7] tagging v0.0.7-alpha..." -ForegroundColor Cyan
-    git tag -a v0.0.7-alpha -m "Windows MVP feature-complete on real DP5520WMK + frontend apply UX + Tauri 2.x scaffold"
-    Write-Host "       tag created. Push with: git push --tags" -ForegroundColor Green
+    $existing = (git tag -l 'v0.0.7-alpha').Trim()
+    if ($existing) {
+        Write-Host "       tag v0.0.7-alpha already exists locally; skipping." -ForegroundColor Yellow
+        Write-Host "       to retag (move to current HEAD): git tag -fa v0.0.7-alpha -m '...'" -ForegroundColor DarkGray
+    } else {
+        git tag -a v0.0.7-alpha -m "Windows MVP feature-complete on real DP5520WMK + frontend apply UX + Tauri 2.x scaffold"
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "       tag created. Push with: git push --tags" -ForegroundColor Green
+        } else {
+            Write-Host "       tag creation failed (exit $LASTEXITCODE)." -ForegroundColor Red
+        }
+    }
 } else {
-    Write-Host "[7/7] skipping tag (per --NoTag or -WhatIf)" -ForegroundColor Yellow
+    Write-Host "[7/7] skipping tag (per -NoTag or -WhatIf)" -ForegroundColor Yellow
 }
 
 if ($rebootNeeded) {
