@@ -22,7 +22,7 @@ build-backend = "hatchling.build"
 
 [project]
 name            = "ascendo-macos"
-version         = "0.0.1-dev"
+version         = "0.0.7"
 description     = "Ascendo macOS adapter (softwareupdate, mas, brew, App Store, Time Machine)."
 readme          = "README.md"
 license         = { text = "MIT" }

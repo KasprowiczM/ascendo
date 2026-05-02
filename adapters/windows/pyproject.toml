@@ -19,7 +19,7 @@ build-backend = "hatchling.build"
 
 [project]
 name            = "ascendo-windows"
-version         = "0.0.1-dev"
+version         = "0.0.7"
 description     = "Ascendo Windows adapter (winget, Store, MSI/EXE, PSWindowsUpdate, VSS)."
 readme          = "README.md"
 license         = { text = "MIT" }

@@ -19,7 +19,7 @@ build-backend = "hatchling.build"
 
 [project]
 name            = "ascendo-ubuntu"
-version         = "0.0.1-dev"
+version         = "0.0.7"
 description     = "Ascendo Ubuntu/Debian adapter (apt, snap, flatpak, NVIDIA, fwupd)."
 readme          = "README.md"
 license         = { text = "MIT" }

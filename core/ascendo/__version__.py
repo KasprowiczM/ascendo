@@ -8,4 +8,4 @@ Versioning: SemVer 2.0.0
 - 1.0.0 — stable API, semver promise
 """
 
-__version__ = "0.0.1-dev"
+__version__ = "0.0.7"

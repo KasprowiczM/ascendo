@@ -27,7 +27,7 @@
 
 [project]
 name            = "ascendo-workspace"
-version         = "0.0.1-dev"
+version         = "0.0.7"
 description     = "Workspace root for Ascendo (not an installable package)."
 readme          = "README.md"
 license         = { file = "LICENSE" }
