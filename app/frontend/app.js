@@ -50,15 +50,23 @@ const sudoMgr = {
     try {
       const s = await api.get("/sudo/status");
       const ind = $("#sudo-indicator");
-      ind.innerHTML = s.cached
-        ? '<span class="badge ok">sudo cached</span>'
-        : '<span class="badge warn">sudo not cached</span>';
+      // DOM-construction (not innerHTML interpolation) so a malicious
+      // i18n value can never inject markup. Strings flow through textContent.
+      ind.textContent = "";
+      const span = document.createElement("span");
+      span.className = "badge " + (s.cached ? "ok" : "warn");
+      span.textContent = s.cached
+        ? ((window.tr && window.tr("sudo.cached")) || "Administrator authorized")
+        : ((window.tr && window.tr("sudo.not_cached")) || "Administrator not authorized");
+      ind.appendChild(span);
     } catch {}
   },
   async ensure() {
     const s = await api.get("/sudo/status");
     if (s.cached) return true;
-    return this.open("sudo cache empty - enter password to authenticate");
+    const prompt = (window.tr && window.tr("sudo.empty_prompt"))
+      || "Administrator credentials needed — enter your password to authenticate.";
+    return this.open(prompt);
   },
 };
 
@@ -1386,14 +1394,16 @@ async function startRunWithSudo(body) {
   );
   if (mutating) {
     const ok = await sudoMgr.ensure();
-    if (!ok) throw new Error("sudo authentication cancelled");
+    if (!ok) throw new Error((window.tr && window.tr("sudo.cancelled")) || "Administrator authentication cancelled");
   }
   const tryEndpoint = async (url) => {
     try { return await api.post(url, body); }
     catch (e) {
       if (e.status === 401 && String(e.body || "").includes("SUDO-REQUIRED")) {
-        const ok = await sudoMgr.open("sudo cache expired - re-authenticate");
-        if (!ok) throw new Error("sudo authentication cancelled");
+        const expiredPrompt = (window.tr && window.tr("sudo.expired_prompt"))
+          || "Administrator session expired — re-authenticate to continue.";
+        const ok = await sudoMgr.open(expiredPrompt);
+        if (!ok) throw new Error((window.tr && window.tr("sudo.cancelled")) || "Administrator authentication cancelled");
         return await api.post(url, body);
       }
       throw e;

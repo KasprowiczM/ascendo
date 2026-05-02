@@ -612,11 +612,11 @@
         <a href="#help-install">1. Install</a> ·
         <a href="#help-firstrun">2. First run</a> ·
         <a href="#help-cli">3. CLI cheat-sheet</a> ·
-        <a href="#help-scripts">4. Scripts reference</a> ·
-        <a href="#help-config">5. Configuration files</a> ·
+        <a href="#help-scripts">4. Scripts &amp; managers reference</a> ·
+        <a href="#help-config">5. Configuration files &amp; paths</a> ·
         <a href="#help-dashboard">6. Dashboard tour</a> ·
         <a href="#help-scheduler">7. Scheduler &amp; maintenance windows</a> ·
-        <a href="#help-snapshots">8. Snapshots &amp; rollback</a> ·
+        <a href="#help-snapshots">8. Snapshots &amp; rollback (VSS)</a> ·
         <a href="#help-devsync">9. Dev-sync (cloud overlay)</a> ·
         <a href="#help-ai">10. AI Suggestions</a> ·
         <a href="#help-troubleshoot">11. Troubleshooting</a>
@@ -624,136 +624,194 @@
 
       <article class="help-doc card">
         <h3 id="help-install">1. Install</h3>
-        <p>Three install paths, pick whichever fits:</p>
-        <pre><code># A - fresh machine (one-liner)
-git clone https://github.com/KasprowiczM/Ubuntu_Aktualizacje ~/Dev_Env/Ubuntu_Aktualizacje
-cd ~/Dev_Env/Ubuntu_Aktualizacje
-bash scripts/fresh-machine.sh
+        <p>Three install paths on Windows 11 — pick whichever fits:</p>
+        <pre><code># A — packaged installer (recommended for end users, once shipped)
+# Download Ascendo-&lt;ver&gt;-x64-setup.exe or Ascendo-&lt;ver&gt;-x64.msi from
+# Releases, double-click. Adds Start-menu + Desktop shortcuts and an
+# Add/Remove Programs entry.
 
-# B - Debian package (.deb)
-bash packaging/build-deb.sh
-sudo dpkg -i dist/ascendo_*_all.deb
-ascendo --help
+# B — winget (when manifest is published)
+winget install --id Ascendo.Ascendo
 
-# C - manual setup (advanced)
-bash setup.sh
-bash app/install.sh                       # creates app/.venv with FastAPI
-bash systemd/user/install-dashboard.sh    # autostart dashboard at login</code></pre>
+# C — developer / source install (today)
+git clone https://github.com/KasprowiczM/ascendo.git D:\Dev_Env\Ascendo
+cd D:\Dev_Env\Ascendo
+.\bin\install-dev.ps1                  # core + adapters/windows + smoke
+.\bin\install-shortcut.ps1             # Desktop + Start-menu icons</code></pre>
+        <p>Re-running <code>install-dev.ps1</code> after a <code>git pull</code>
+        is safe — it's idempotent and re-installs the editable Python packages
+        so the dashboard always runs the latest code.</p>
 
         <h3 id="help-firstrun">2. First run</h3>
-        <p>The wizard at <code>http://127.0.0.1:8765</code> on first dashboard
-        visit asks for: language, default profile (quick/safe/full), weekly
-        schedule, and snapshot-before-apply preference. CLI:</p>
-        <pre><code>./update-all.sh                       # full profile, NVIDIA held
-./update-all.sh --profile quick       # read-only sweep (~15s)
-./update-all.sh --profile safe        # full pipeline, no driver mutations
-./update-all.sh --nvidia              # apply NVIDIA driver upgrade too
-./update-all.sh --snapshot            # timeshift/etckeeper before apply
-./update-all.sh --budget 30m          # stop after 30 min, resume next time</code></pre>
+        <p>Three equivalent ways to launch the app (CLI / Web / Desktop):</p>
+        <table class="tbl">
+          <thead><tr><th></th><th>Command</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td>A</td><td>Double-click <b>Ascendo</b> on the Desktop</td><td>Spawns the FastAPI sidecar, opens the SPA in your default browser at <code>http://127.0.0.1:8765</code>.</td></tr>
+            <tr><td>B</td><td><code>.\bin\launch-desktop.ps1</code></td><td>Native Tauri 2.x window — the app in a real OS window, not a browser tab.</td></tr>
+            <tr><td>C</td><td><code>python -m ascendo dashboard</code></td><td>Server only; open <code>http://127.0.0.1:8765</code> yourself.</td></tr>
+          </tbody>
+        </table>
+        <p>The first-run wizard at <code>http://127.0.0.1:8765</code> walks you
+        through: language → theme → first inventory scan → category preview
+        → upgrade candidates → optional dry-run demo → done. The first
+        scan takes ~10–20s on a typical box (winget list + ARP + MSIX +
+        optional <code>Get-WUList</code>).</p>
 
         <h3 id="help-cli">3. CLI cheat-sheet</h3>
-        <pre><code>ascendo                              # equivalent of ./update-all.sh
-ascendo fresh                        # bring-up on a new machine
-ascendo dashboard                    # start dashboard ad-hoc
-ascendo schedule --calendar "Sun *-*-* 03:00:00" --profile safe
-ascendo snapshot create "before risky run"
-ascendo snapshot list
-ascendo apps detect                  # tracked vs detected vs missing report
-ascendo apps add &lt;pkg&gt; --category snap
-ascendo apps install-missing
-ascendo settings export backup.tar.gz
-ascendo settings import backup.tar.gz
-ascendo health --json
-ascendo exclusions list / add / remove cat:pkg</code></pre>
+        <pre><code># Health + inventory
+python -m ascendo doctor                                  # 5-component health
+python -m ascendo run --category winget --phase check     # one cat × one phase
+python -m ascendo run --categories winget,msstore --phases check,plan
+python -m ascendo run --categories winget --phases apply  # mutating; UAC prompt
 
-        <h3 id="help-scripts">4. Scripts reference</h3>
-        <p>Every category implements 5 phases (<code>check</code>, <code>plan</code>,
+# Run history (CLI runs and dashboard runs share the same store)
+python -m ascendo runs list -n 10
+python -m ascendo runs show &lt;id&gt;
+python -m ascendo runs json &lt;id&gt; --pretty                 # ascendo/run/v1 JSON
+
+# Snapshot / scheduler / dashboard
+python -m ascendo snapshot create "before risky upgrade"
+python -m ascendo snapshot list
+python -m ascendo snapshot restore &lt;id&gt;
+python -m ascendo schedule install --expression "WEEKLY SUN 03:00" --profile safe
+python -m ascendo schedule list
+python -m ascendo schedule remove &lt;id&gt;
+python -m ascendo dashboard --port 8765 [--background]
+
+# Validation + tag-release
+.\bin\validate-windows.ps1                                # 30s end-to-end smoke
+.\bin\run-tag-release.ps1 -WhatIf                         # plan only, no apply
+.\bin\run-tag-release.ps1                                 # interactive 'apply' gate</code></pre>
+
+        <h3 id="help-scripts">4. Scripts &amp; managers reference</h3>
+        <p>Every package source implements 5 phases (<code>check</code>, <code>plan</code>,
         <code>apply</code>, <code>verify</code>, <code>cleanup</code>) emitting
-        a JSON sidecar to <code>logs/runs/&lt;id&gt;/&lt;cat&gt;/&lt;phase&gt;.json</code> (schema v1).</p>
+        a JSON sidecar to <code>logs/runs/&lt;run-id&gt;/&lt;source&gt;/&lt;phase&gt;__&lt;source&gt;.json</code>
+        validated against <code>schemas/phase-result.schema.json</code> (schema v1).
+        The orchestrator aggregates the per-run summary into <code>run.json</code>
+        (schema <code>ascendo/run/v1</code>).</p>
         <table class="tbl">
-          <thead><tr><th>Script</th><th>What it does</th></tr></thead>
+          <thead><tr><th>Source / script</th><th>What it does</th></tr></thead>
           <tbody>
-            <tr><td><code>update-all.sh</code></td><td>Master orchestrator. Reads <code>--profile</code>, locks <code>/run/user/&lt;uid&gt;/ubuntu-aktualizacje.lock</code>, prompts sudo ONCE, builds askpass helper, runs all categories × all phases, writes <code>run.json</code>, emits CHECK-ONLY banner if no apply phase.</td></tr>
-            <tr><td><code>scripts/apt/*.sh</code></td><td>APT: refresh repos (fail-closed), <code>apt-get upgrade</code> with per-package streaming progress, NVIDIA hold by default, exclusions via <code>apt-mark hold</code> for the duration of the phase.</td></tr>
-            <tr><td><code>scripts/snap/*.sh</code></td><td>Snap: <code>snap refresh</code> with <code>--ignore-running</code> fallback for browsers, removes disabled revisions in cleanup.</td></tr>
-            <tr><td><code>scripts/brew/*.sh</code></td><td>Homebrew: drops to <code>SUDO_USER</code> (brew refuses root), proactive Cellar chown to fix pipx pyc cleanup warnings.</td></tr>
-            <tr><td><code>scripts/npm/*.sh</code></td><td>npm globals: forces <code>@latest</code> for AI CLIs (Claude Code, Codex, Gemini CLI), <code>npm audit</code> in verify.</td></tr>
-            <tr><td><code>scripts/pip/*.sh</code></td><td>pip user packages + pipx <code>upgrade-all</code>; respects PEP-668 by routing system-managed Python through pipx.</td></tr>
-            <tr><td><code>scripts/flatpak/*.sh</code></td><td>flatpak update + cleanup of unused runtimes.</td></tr>
-            <tr><td><code>scripts/drivers/*.sh</code></td><td>NVIDIA driver (held unless <code>--nvidia</code>), fwupd metadata refresh + manual update advisory.</td></tr>
-            <tr><td><code>scripts/inventory/*.sh</code></td><td>Regenerates <code>APPS.md</code> (gitignored) - installed packages by category.</td></tr>
-            <tr><td><code>scripts/snapshot/create.sh</code></td><td>Pre-apply snapshot: timeshift (300s timeout) → etckeeper fallback. Never blocks the run.</td></tr>
-            <tr><td><code>scripts/scheduler/install.sh</code></td><td>Installs systemd timer <code>ubuntu-aktualizacje@%i.timer</code> with <code>ExecStartPre=should-run.sh</code>.</td></tr>
-            <tr><td><code>scripts/scheduler/should-run.sh</code></td><td>Pre-flight gate: defers if on battery (<code>UA_REQUIRE_AC=1</code>), outside maintenance window (<code>UA_MAINTENANCE_WINDOW=02:00-05:00</code>), or apt/dpkg busy.</td></tr>
-            <tr><td><code>scripts/health-check.sh</code></td><td>Post-run audit: <code>systemctl --failed</code>, dmesg errors, disk pressure, reboot pending. Emits score 0–100 to <code>health.json</code>.</td></tr>
-            <tr><td><code>scripts/apps/{detect,add,remove,install-missing,list}.sh</code></td><td>App registration: detect installed-but-untracked, add to <code>config/&lt;cat&gt;-packages.list</code>, remove, bulk-install missing.</td></tr>
+            <tr><td><code>winget</code> — <code>adapters/windows/scripts/winget/*.ps1</code></td><td>winget-feed apps. <code>check</code> runs <code>winget list</code> + classifies by source prefix; <code>apply</code> runs <code>winget upgrade --silent --accept-source-agreements</code> with per-item progress.</td></tr>
+            <tr><td><code>msstore</code> — <code>adapters/windows/scripts/msstore/*.ps1</code></td><td>Microsoft Store apps + MSIX bundles. Surfaces store entries from <code>winget list</code>; <code>apply</code> uses <code>winget upgrade --source msstore</code>. Microsoft Store auto-refresh in the background can claim updates between phases — Ascendo emits <code>STORE-AUTO-REFRESHED</code> as info, not warn.</td></tr>
+            <tr><td><code>registry_arp</code> — <code>adapters/windows/scripts/arp/*.ps1</code></td><td>Add-or-Remove-Programs entries (legacy MSI / EXE installers). <code>check</code> walks <code>HKLM/HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall</code>; <code>apply</code> is best-effort — many ARP entries don't expose a silent uninstall+reinstall path, so the manager surfaces a manual-action advisory instead of attempting a risky upgrade.</td></tr>
+            <tr><td><code>windows_update</code> — <code>adapters/windows/scripts/windows_update/*.ps1</code></td><td>OS patches (KB cumulative updates, defender definitions, security rollups). Backed by the PSWindowsUpdate module (<code>Get-WUList -MicrosoftUpdate</code> for check, <code>Install-WindowsUpdate -AcceptAll -AutoReboot:$false</code> for apply). First call installs the module from PSGallery if missing.</td></tr>
+            <tr><td><code>snapshot</code> — <code>adapters/windows/scripts/snapshot/snapshot.ps1</code></td><td>Pre-apply snapshot via Volume Shadow Copy (<code>vssadmin create shadow</code>). Bounded by a 300s timeout — never stalls the run; falls through to a warn diagnostic if VSS is disabled or the system drive is read-only.</td></tr>
+            <tr><td><code>scheduler</code> — registered through <code>schtasks /Create</code></td><td>Per-user Task Scheduler entry <code>\\Ascendo\\WeeklyRun</code>. Trigger string is cron-like or schtasks-native; the scheduled job runs <code>python -m ascendo run</code> with the saved profile and battery / focus / window guards (<code>ASCENDO_REQUIRE_AC=1</code>, <code>ASCENDO_MAINTENANCE_WINDOW=02:00-05:00</code>).</td></tr>
+            <tr><td><code>elevation</code> — <code>adapters/windows/ascendo_windows/managers/elevation.py</code></td><td>UAC-based elevation. Allowlists native binaries by basename (lowercase), denies on non-Windows, runs the helper with <code>ShellExecute</code> + <code>runas</code>. The dashboard caches the Administrator token in-memory only — never on disk.</td></tr>
+            <tr><td><code>plugins/dell-driver-update</code></td><td>First-class plugin: 5 PowerShell phase scripts (StrictMode-safe), enumerates Dell driver / firmware updates via Dell Command | Update CLI, sidecars saved as <code>&lt;phase&gt;__plugin.json</code>.</td></tr>
+            <tr><td><code>bin/launch-desktop.ps1</code></td><td>Wraps <code>npm run tauri dev</code> (default) or <code>npm run tauri build</code> (<code>-Build</code>). Prereq check for Rust + MSVC + Node before launch; offers exact <code>winget</code> commands when something is missing.</td></tr>
+            <tr><td><code>bin/validate-windows.ps1</code></td><td>30-second end-to-end smoke: starts the dashboard on a free port, hits <code>/categories</code>, <code>/inventory/summary</code>, <code>/runs/active</code>, posts an async <code>check</code> run, asserts SSE events arrive, kills the dashboard cleanly. CI-grade.</td></tr>
+            <tr><td><code>bin/run-tag-release.ps1</code></td><td>7-phase tag-release helper from elevated PowerShell: preflight → snapshot → plan → confirm-gate → apply → verify → cleanup → doctor. <code>-WhatIf</code> stops at plan.</td></tr>
             <tr><td><code>dev-sync/dev_sync_export.py</code></td><td>Push private overlay (.env.local, agent settings, keys) via rclone to your cloud provider. Copy semantics, never sync-with-deletes.</td></tr>
-            <tr><td><code>scripts/maintenance/prune-logs.sh</code></td><td>Log retention: keep last N runs OR last N days (whichever larger).</td></tr>
-            <tr><td><code>scripts/notify.sh</code></td><td>Notification routing: ntfy, Slack webhook, email, Telegram, plus desktop notify-send.</td></tr>
           </tbody>
         </table>
 
-        <h3 id="help-config">5. Configuration files</h3>
+        <h3 id="help-config">5. Configuration files &amp; paths</h3>
         <ul>
-          <li><code>config/&lt;cat&gt;-packages.list</code> - source of truth for tracked packages.</li>
-          <li><code>config/exclusions.list</code> - per-user opt-out (<code>cat:pkg</code> per line).</li>
-          <li><code>config/categories.toml</code> / <code>config/profiles.toml</code> - taxonomy + profiles.</li>
-          <li><code>config/hosts.toml</code> - multi-host registry (read-only SSH preflight).</li>
-          <li><code>~/.config/ubuntu-aktualizacje/settings.json</code> - UI defaults, AI provider, scheduler.</li>
-          <li><code>~/.config/ascendo/lang</code> - CLI language preference (en/pl).</li>
+          <li><code>config/categories.toml</code> / <code>config/profiles.toml</code> — source taxonomy + profiles (quick / safe / full).</li>
+          <li><code>config/exclusions.list</code> — per-user opt-out (one <code>source:package</code> per line).</li>
+          <li><code>config/hosts.toml</code> — multi-host registry (read-only SSH preflight).</li>
+          <li><code>%APPDATA%\Ascendo\settings.json</code> — UI defaults, AI provider, scheduler, theme.</li>
+          <li><code>%LocalAppData%\Ascendo\</code> — run history (SQLite), per-run JSON sidecars, plain logs.</li>
+          <li><code>%LocalAppData%\Ascendo\lang</code> — UI language preference (en / pl).</li>
+          <li><code>logs\runs\&lt;run-id&gt;\</code> (in repo root for dev installs) — sidecars + plain logs for the last N runs (configurable).</li>
         </ul>
 
         <h3 id="help-dashboard">6. Dashboard tour</h3>
-        <p>Sidebar items, top-down: <b>Overview</b> (charts + quick actions),
-        <b>Categories</b> (per-category 5-phase buttons + add-package widget),
-        <b>Run Center</b> (start a run, see live progress bar), <b>History</b>
-        (past runs + ETA averages), <b>Logs</b> (per-phase JSON + plain log viewer),
-        <b>Sync</b> (git push/pull + dev-sync export + cloud provider config),
-        <b>Apps</b> (tracked vs detected, exclusion checkboxes), <b>Suggestions</b>
-        (heuristic + AI advice as diffs), <b>Hosts</b> (multi-host preflight),
-        <b>Settings</b> (defaults, theme, scheduler, backup), <b>Help</b> (this page),
-        <b>About</b> (version + release notes).</p>
+        <p>Sidebar items, top-down: <b>Overview</b> (status donut + per-source bar
+        + reboot banner + quick actions), <b>Categories</b> (4 sources with
+        per-source 5-phase buttons; expand a row for the package list with
+        installed / candidate / status pills), <b>Run Center</b> (kick off a run
+        and watch live SSE progress per phase), <b>History</b> (past runs
+        with status / profile / phase counts, ETA averages from the last 10),
+        <b>Logs</b> (pick a run from the dropdown to see every phase's JSON
+        sidecar + plain log), <b>Sync</b> (git push/pull + dev-sync export +
+        cloud-provider config), <b>Apps</b> (tracked vs detected vs missing
+        report, exclusion checkboxes), <b>Suggestions</b> (heuristic + optional
+        AI advice as diffs — nothing applies without your click), <b>Hosts</b>
+        (multi-host preflight via SSH), <b>Settings</b> (defaults, theme,
+        scheduler, AI provider, backup), <b>Help</b> (this page), <b>About</b>
+        (version, host info, release notes).</p>
 
         <h3 id="help-scheduler">7. Scheduler &amp; maintenance windows</h3>
-        <p>Settings → Scheduler installs a per-user systemd timer. Set env in
-        <code>~/.config/environment.d/ascendo.conf</code> to make it skip on
-        battery / outside hours:</p>
-        <pre><code>UA_REQUIRE_AC=1
-UA_MAINTENANCE_WINDOW=02:00-05:00
-UA_RESPECT_FOCUS=1</code></pre>
+        <p>Settings → Scheduler installs a per-user Windows Task Scheduler
+        entry (<code>\\Ascendo\\WeeklyRun</code>). The scheduled job calls
+        <code>python -m ascendo run</code> with the configured profile,
+        gated by environment guards so it skips when the laptop is on
+        battery / outside the maintenance window / Focus Assist is on:</p>
+        <pre><code>setx ASCENDO_REQUIRE_AC 1
+setx ASCENDO_MAINTENANCE_WINDOW 02:00-05:00
+setx ASCENDO_RESPECT_FOCUS 1</code></pre>
+        <p>Use <code>schtasks /Query /TN \Ascendo\WeeklyRun /V</code> to inspect
+        the trigger; <code>python -m ascendo schedule list</code> shows the
+        same info from Ascendo's view.</p>
 
-        <h3 id="help-snapshots">8. Snapshots &amp; rollback</h3>
+        <h3 id="help-snapshots">8. Snapshots &amp; rollback (VSS)</h3>
         <p>With <code>--snapshot</code> (or the toggle in Settings), Ascendo
-        creates a timeshift snapshot before apply. timeshift hangs without a
-        TTY are bounded by a 300s timeout - the run never stalls. To roll back:
-        <code>POST /snapshots/restore</code> with <code>{"id":"&lt;snap-id&gt;","confirm":"RESTORE"}</code>
-        or <code>ascendo snapshot list</code> &amp; <code>scripts/snapshot/restore.sh &lt;id&gt;</code>.</p>
+        creates a Volume Shadow Copy snapshot before any apply phase via
+        <code>vssadmin create shadow /for=C:</code>. Snapshot creation is
+        bounded by a 300s timeout — the run never stalls if VSS is slow
+        or the writer is busy. To roll back:</p>
+        <pre><code>python -m ascendo snapshot list                  # shows GUID + timestamp
+python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</code></pre>
+        <p>The dashboard's <code>POST /snapshots/restore</code> takes
+        <code>{"id":"&lt;snap-id&gt;","confirm":"RESTORE"}</code>. Note that VSS
+        is best-effort — it doesn't roll back user data outside the
+        protected-volume snapshot, just system state and program files.</p>
 
         <h3 id="help-devsync">9. Dev-sync (cloud overlay)</h3>
-        <p>Workflow separate from updates. GitHub holds tracked files. Cloud
+        <p>Workflow separate from updates. GitHub holds tracked files. A cloud
         provider (Proton, Google Drive, Dropbox, OneDrive, WebDAV/Nextcloud,
-        S3, local) holds a small private overlay (~8 files: tokens, agent settings).
-        Sync screen lets you pick the provider; first-time auth happens via
-        <code>bash dev-sync/provider_setup.sh</code> in a real terminal because
-        rclone needs OAuth callback. Then <code>bash dev-sync-export.sh
-        --dry-run</code> &amp; the real export.</p>
+        S3, local) holds a small private overlay (~8 files: tokens, agent
+        settings). The Sync screen lets you pick the provider; first-time
+        auth happens in a real PowerShell window because rclone needs an
+        OAuth callback (no headless first-time flow). Then dry-run + real
+        export from the dashboard.</p>
 
         <h3 id="help-ai">10. AI Suggestions</h3>
         <p>Heuristic engine runs free, deterministic rules over inventory + run
-        history. Optional LLM step *enriches* rationales - never edits files
-        autonomously. Supports Anthropic (Claude), OpenAI, Google Gemini,
-        Ollama (local), LM Studio (local), or any OpenAI-compatible endpoint.
-        Local providers need no API key; just set the Base URL (e.g. Ollama:
-        <code>http://127.0.0.1:11434</code>, LM Studio: <code>http://127.0.0.1:1234/v1</code>).
-        All apply paths show a unified diff with manual confirm.</p>
+        history. Optional LLM step <em>enriches</em> rationales — never edits
+        files autonomously. Supports Anthropic (Claude), OpenAI, Google
+        Gemini, Ollama (local), LM Studio (local), or any OpenAI-compatible
+        endpoint. Local providers need no API key; just set the Base URL
+        (Ollama: <code>http://127.0.0.1:11434</code>, LM Studio:
+        <code>http://127.0.0.1:1234/v1</code>). All apply paths show a unified
+        diff with manual confirm.</p>
 
         <h3 id="help-troubleshoot">11. Troubleshooting</h3>
         <ul>
-          <li><b>"a run is already in progress" 409</b> - <code>POST /runs/active/stop</code> or remove stale lock <code>$XDG_RUNTIME_DIR/ubuntu-aktualizacje.lock</code> after verifying no process holds it.</li>
-          <li><b>NVIDIA DKMS sypie po upgrade</b> - <code>bash scripts/rebuild-dkms.sh &amp;&amp; reboot</code>.</li>
-          <li><b>apt-get update failuje</b> - najczęściej duplikat <code>*.list</code> + <code>*.sources</code>; lib/repos.sh łapie i naprawia automatycznie.</li>
-          <li><b>Snap firefox blocked</b> - close Firefox, then <code>--only snap --phase apply</code>; or accept the <code>--ignore-running</code> fallback (forces refresh while running).</li>
-          <li><b>Frontend pusta strona</b> - Ctrl+Shift+R, sprawdź <code>/health</code> w curl, sprawdź <code>journalctl --user -u ubuntu-aktualizacje-dashboard</code>.</li>
+          <li><b>"Apps menu is empty / Categories shows one mash-row"</b> —
+          you're running an old SPA in your browser cache. Close the browser
+          tab, kill any lingering <code>python.exe</code>, re-launch via
+          the Desktop shortcut or <code>.\bin\launch-desktop.ps1</code>, then
+          hard-reload the page (Ctrl-Shift-R).</li>
+          <li><b>"a run is already in progress" 409</b> —
+          <code>POST /runs/active/stop</code> from the dashboard, or remove
+          the stale lock at
+          <code>%LocalAppData%\Ascendo\ascendo.lock</code> after verifying
+          no <code>python.exe</code> holds a handle to it (<code>handle.exe ascendo.lock</code>).</li>
+          <li><b>winget says "package is currently installing"</b> — Microsoft
+          Store auto-refresh is holding the package lock. Wait ~30s, or open
+          Store → Library → "Get updates" once and let it finish.</li>
+          <li><b>UAC prompt declined → run shows red apply</b> — the helper
+          process needs Administrator. Click "Authenticate" in the SPA when
+          prompted, or run <code>python -m ascendo dashboard</code> from an
+          elevated PowerShell so the elevation token is inherited.</li>
+          <li><b>PSWindowsUpdate import error on first <code>windows_update check</code></b> —
+          the module installs from PSGallery on first call;
+          <code>Set-PSRepository -Name PSGallery -InstallationPolicy Trusted</code>
+          if you've never used the gallery before.</li>
+          <li><b>Tauri build fails with MSVC error</b> — re-read
+          <code>.\bin\launch-desktop.ps1</code>'s prereq output; you likely
+          need the C++ workload added via <code>vs_installer modify --add Microsoft.VisualStudio.Workload.VCTools</code>
+          (the bootstrapper alone isn't enough).</li>
+          <li><b>Dashboard tab loads blank</b> — Ctrl-Shift-R, then check the
+          browser console (F12). Common cause: stale browser cache after a
+          <code>git pull</code>; the cache buster only triggers on script
+          name changes.</li>
         </ul>
       </article>
     </section>

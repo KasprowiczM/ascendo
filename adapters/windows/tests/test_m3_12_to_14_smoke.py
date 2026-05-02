@@ -35,7 +35,7 @@ def test_snapshot_backend_is_vss(tmp_path: Path) -> None:
 
 def test_snapshot_unavailable_on_non_windows(tmp_path: Path) -> None:
     s = WindowsSnapshot(scripts_dir=tmp_path, lib_dir=tmp_path)
-    assert s.is_available(_make_host(OperatingSystem.LINUX)) is False
+    assert s.is_available(_make_host(OperatingSystem.LINUX_UBUNTU)) is False
     assert s.is_available(_make_host(OperatingSystem.MACOS)) is False
 
 
@@ -55,7 +55,7 @@ def test_scheduler_backend_is_task_scheduler(tmp_path: Path) -> None:
 
 def test_scheduler_unavailable_on_non_windows(tmp_path: Path) -> None:
     sched = WindowsScheduler(scripts_dir=tmp_path, lib_dir=tmp_path)
-    assert sched.is_available(_make_host(OperatingSystem.LINUX)) is False
+    assert sched.is_available(_make_host(OperatingSystem.LINUX_UBUNTU)) is False
 
 
 def test_scheduler_available_on_windows_with_schtasks(tmp_path: Path) -> None:
@@ -111,7 +111,7 @@ def test_elevation_denies_command_not_in_allowlist() -> None:
 def test_elevation_denies_on_non_windows() -> None:
     e = WindowsElevation()
     e.register_allowlist(["winget.exe"])
-    host = _make_host(OperatingSystem.LINUX)
+    host = _make_host(OperatingSystem.LINUX_UBUNTU)
     with pytest.raises(ElevationDenied):
         e.run(host, ["winget.exe", "list"])
 

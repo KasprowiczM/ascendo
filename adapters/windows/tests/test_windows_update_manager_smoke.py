@@ -290,19 +290,34 @@ def test_is_available_returns_false_when_psmodule_missing(
 def test_adapter_package_managers_includes_windows_update(
     windows_host: HostInfo,
 ) -> None:
-    """WindowsAdapter.package_managers() must surface BOTH managers post-M3.10."""
+    """WindowsAdapter.package_managers() must surface every manager.
+
+    Post-M3.15 the adapter declares 4 managers:
+    WingetManager, MSStoreManager, ArpManager, WindowsUpdateManager.
+    Order must remain deterministic: winget first, windows_update last
+    (tests downstream depend on the bookend pair).
+    """
+    from ascendo_windows.managers.msstore import MSStoreManager
+    from ascendo_windows.managers.arp import ArpManager
+
     adapter = WindowsAdapter()
     managers = adapter.package_managers(windows_host)
 
-    # Ordering must be deterministic: WingetManager first, WindowsUpdateManager
-    # second. Tests downstream depend on this contract.
-    assert len(managers) == 2
+    assert len(managers) == 4
     assert isinstance(managers[0], WingetManager)
-    assert isinstance(managers[1], WindowsUpdateManager)
+    assert isinstance(managers[-1], WindowsUpdateManager)
+    types_present = {type(m).__name__ for m in managers}
+    assert {
+        "WingetManager",
+        "MSStoreManager",
+        "ArpManager",
+        "WindowsUpdateManager",
+    } <= types_present
 
     # And the new manager reports the expected SourceType.
-    assert managers[1].category.value == "windows_update"
-    assert managers[1].display_name == "Windows Update (PSWindowsUpdate)"
+    wu = managers[-1]
+    assert wu.category.value == "windows_update"
+    assert wu.display_name == "Windows Update (PSWindowsUpdate)"
 
 
 def test_run_phase_passes_item_filter_as_comma_list(

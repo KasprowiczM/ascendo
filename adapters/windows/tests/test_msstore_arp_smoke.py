@@ -87,13 +87,13 @@ def test_arp_script_dir(tmp_path: Path, phase: Phase, expected_dir: str) -> None
 
 def test_msstore_unavailable_on_non_windows(tmp_path: Path) -> None:
     m = MSStoreManager(scripts_dir=tmp_path, lib_dir=tmp_path)
-    assert m.is_available(_make_host(OperatingSystem.LINUX)) is False
+    assert m.is_available(_make_host(OperatingSystem.LINUX_UBUNTU)) is False
     assert m.is_available(_make_host(OperatingSystem.MACOS)) is False
 
 
 def test_arp_unavailable_on_non_windows(tmp_path: Path) -> None:
     m = ArpManager(scripts_dir=tmp_path, lib_dir=tmp_path)
-    assert m.is_available(_make_host(OperatingSystem.LINUX)) is False
+    assert m.is_available(_make_host(OperatingSystem.LINUX_UBUNTU)) is False
     assert m.is_available(_make_host(OperatingSystem.MACOS)) is False
 
 
