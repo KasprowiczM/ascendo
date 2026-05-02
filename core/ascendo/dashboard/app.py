@@ -23,6 +23,8 @@ from fastapi.staticfiles import StaticFiles
 
 from .routes.health import router as health_router
 from .routes.runs import router as runs_router
+from .routes.spa_real import InventoryCache
+from .routes.spa_real import router as spa_real_router
 from .routes.spa_stubs import router as spa_stubs_router
 
 if TYPE_CHECKING:
@@ -123,6 +125,10 @@ def create_app(
     from ..orchestrator import RunRegistry
     app.state.run_registry = RunRegistry()
 
+    # Per-app inventory cache (B1). Thread-safe, 60s TTL. Mutated via
+    # POST /inventory/refresh.
+    app.state.inventory_cache = InventoryCache()
+
     # CORS -- permissive default for local-only usage on 127.0.0.1.
     app.add_middleware(
         CORSMiddleware,
@@ -139,6 +145,10 @@ def create_app(
     # /runs/{run_id} catch-pattern, which would otherwise reject
     # active as uuid_parsing.
     app.include_router(health_router, prefix="")
+    # Real adapter-backed handlers (B1+B2+B3). MUST be mounted BEFORE
+    # spa_stubs so they win on path collisions for /categories,
+    # /inventory*, /health/check, /health/run, /runs/active*.
+    app.include_router(spa_real_router, prefix="")
     # Legacy SPA stubs -- transient placeholders for endpoints the
     # Ubuntu_Aktualizacje SPA expects but the new core hasn't ported yet.
     # Delete the matching stub from routes/spa_stubs.py when each real

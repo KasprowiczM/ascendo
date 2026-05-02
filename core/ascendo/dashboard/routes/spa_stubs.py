@@ -54,24 +54,28 @@ _SPA_FETCH_INVENTORY: dict[str, str] = {
     "GET /runs": "served",
     "POST /runs": "served",
     "GET /runs/{id}": "served",
+    # Served by spa_real.py (B1+B2+B3):
+    "GET /categories": "served",
+    "GET /inventory": "served",
+    "GET /inventory/summary": "served",
+    "GET /inventory/{cat}": "served",
+    "GET /health/check": "served",
+    "POST /health/run": "served",
+    "POST /inventory/refresh": "served",
+    "GET /runs/active": "served",
+    "GET /runs/active/stream": "served",
+    "POST /runs/active/stop": "served",
     # Stubbed below:
     "GET /about": "stub",
     "GET /apps/detect": "stub",
-    "GET /categories": "stub-from-adapter",
     "GET /exclusions": "stub",
     "GET /git/status": "stub",
-    "GET /health/check": "stub",
     "GET /hosts": "stub-from-adapter",
     "GET /hosts/list": "stub-from-adapter",
-    "GET /inventory": "stub-from-adapter",
-    "GET /inventory/summary": "stub-from-adapter",
-    "GET /inventory/{cat}": "stub-from-adapter",
     "GET /onboarding/state": "stub",
     "GET /preflight": "stub",
     "GET /profiles": "stub",
     "GET /profiles/templates": "stub",
-    "GET /runs/active": "stub",
-    "GET /runs/active/stream": "stub-sse",
     "GET /settings": "stub",
     "GET /sudo/status": "stub",
     "GET /suggestions": "stub",
@@ -91,13 +95,10 @@ _SPA_FETCH_INVENTORY: dict[str, str] = {
     "POST /git/fetch": "stub",
     "POST /git/pull": "stub",
     "POST /git/push": "stub",
-    "POST /health/run": "stub",
     "POST /hosts/delete": "stub",
     "POST /hosts/upsert": "stub",
-    "POST /inventory/refresh": "stub",
     "POST /onboarding/complete": "stub",
     "POST /profiles/import": "stub",
-    "POST /runs/active/stop": "stub",
     "POST /scheduler/install": "stub",
     "POST /scheduler/remove": "stub",
     "POST /suggestions/apply": "stub",
@@ -149,14 +150,7 @@ def _safe_host(adapter: IAdapter | None) -> dict[str, Any]:
         }
 
 
-def _empty_inv_summary() -> dict[str, Any]:
-    return {
-        "totals": {"ok": 0, "outdated": 0, "missing": 0, "total": 0},
-        "categories": {},
-    }
-
-
-# -- About / preflight / health-check --------------------------------------
+# -- About / preflight -----------------------------------------------------
 
 
 @router.get("/about")
@@ -186,129 +180,7 @@ async def preflight_stub() -> dict[str, Any]:
     return {"ok": True, "checks": [], "warnings": [], "errors": []}
 
 
-@router.get("/health/check")
-async def health_check_stub() -> dict[str, Any]:
-    """Post-run health card on Overview."""
-    return {
-        "score": 100,
-        "status": "ok",
-        "failed_units": [],
-        "dmesg_errors": [],
-        "disk_pressure": [],
-        "reboot_required": False,
-        "checked_at": None,
-    }
-
-
-@router.post("/health/run")
-async def health_run_stub() -> dict[str, Any]:
-    """Re-check button on Overview re-emits the empty-clean snapshot."""
-    snapshot = await health_check_stub()
-    return {"ok": True, "stub": True, "snapshot": snapshot}
-
-
-# -- Categories / inventory ------------------------------------------------
-
-
-@router.get("/categories")
-async def categories_stub(request: Request) -> dict[str, Any]:
-    """Sourced from ``adapter.package_managers(host)`` when available."""
-    adapter = _get_adapter(request)
-    if adapter is None:
-        return {"categories": []}
-    try:
-        host = adapter.detect_host()
-        managers = adapter.package_managers(host)
-    except Exception:  # noqa: BLE001
-        _log.debug("package_managers failed", exc_info=True)
-        return {"categories": []}
-
-    cats: list[dict[str, Any]] = []
-    for m in managers:
-        try:
-            cat_id = m.category.value if hasattr(m.category, "value") else str(m.category)
-            cats.append(
-                {
-                    "id": cat_id,
-                    "display_name": m.display_name,
-                    "available": True,
-                },
-            )
-        except Exception:  # noqa: BLE001
-            continue
-    return {"categories": cats}
-
-
-@router.get("/inventory")
-async def inventory_stub(request: Request) -> dict[str, Any]:
-    """Best-effort inventory -- empty until the inventory service is wired in."""
-    adapter = _get_adapter(request)
-    if adapter is None:
-        return {"categories": {}}
-    try:
-        inv = adapter.inventory()
-        host = adapter.detect_host()
-        packages = inv.list_installed(host)
-    except Exception:  # noqa: BLE001
-        _log.debug("inventory unavailable in stub", exc_info=True)
-        return {"categories": {}}
-
-    bucketed: dict[str, list[dict[str, Any]]] = {}
-    for pkg in packages:
-        try:
-            cat_key = pkg.source.value if hasattr(pkg.source, "value") else str(pkg.source)
-        except Exception:  # noqa: BLE001
-            continue
-        bucketed.setdefault(cat_key, []).append(
-            {
-                "name": getattr(pkg, "name", ""),
-                "installed": getattr(pkg, "version", None),
-                "candidate": getattr(pkg, "available_version", None),
-                "source": cat_key,
-                "status": "outdated"
-                if getattr(pkg, "available_version", None)
-                else "ok",
-            },
-        )
-    return {"categories": bucketed}
-
-
-@router.get("/inventory/summary")
-async def inventory_summary_stub(request: Request) -> dict[str, Any]:
-    """Donut+bars summary -- derived from `/inventory` if cheap, else empty."""
-    payload = await inventory_stub(request)
-    cats = payload.get("categories", {})
-    out = _empty_inv_summary()
-    for cat_id, items in cats.items():
-        ok = sum(1 for i in items if i.get("status") == "ok")
-        outdated = sum(1 for i in items if i.get("status") == "outdated")
-        missing = sum(1 for i in items if i.get("status") == "missing")
-        total = len(items)
-        out["categories"][cat_id] = {
-            "ok": ok,
-            "outdated": outdated,
-            "missing": missing,
-            "total": total,
-        }
-        out["totals"]["ok"] += ok
-        out["totals"]["outdated"] += outdated
-        out["totals"]["missing"] += missing
-        out["totals"]["total"] += total
-    return out
-
-
-@router.get("/inventory/{category}")
-async def inventory_category_stub(category: str, request: Request) -> dict[str, Any]:
-    """Single-category projection of /inventory."""
-    payload = await inventory_stub(request)
-    items = payload.get("categories", {}).get(category, [])
-    return {"category": category, "items": items}
-
-
-@router.post("/inventory/refresh")
-async def inventory_refresh_stub() -> dict[str, Any]:
-    """Cache-bust for /inventory -- no cache to bust yet."""
-    return {"ok": True, "stub": True, "refreshed": []}
+# /categories, /inventory*, /health/check, /health/run -- served by spa_real.
 
 
 # -- Apps registration (config/*.list equivalent) --------------------------
@@ -567,42 +439,10 @@ async def backup_import_stub() -> dict[str, Any]:
     return {"ok": True, "stub": True}
 
 
-# -- Active run + log routes -----------------------------------------------
+# /runs/active, /runs/active/stop, /runs/active/stream -- served by spa_real.
 
 
-@router.get("/runs/active")
-async def runs_active_stub(request: Request) -> dict[str, Any]:
-    """Report the most recently registered async run, if any."""
-    registry = getattr(request.app.state, "run_registry", None)
-    if registry is None:
-        return {"active": None}
-    try:
-        active = None
-        runs_map = getattr(registry, "_runs", None) or {}
-        for run_id, state in runs_map.items():
-            status = getattr(state.status, "value", str(state.status))
-            if status in ("pending", "running"):
-                active = {"run_id": str(run_id), "status": status}
-                break
-        return {"active": active}
-    except Exception:  # noqa: BLE001
-        return {"active": None}
-
-
-@router.post("/runs/active/stop")
-async def runs_active_stop_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True}
-
-
-@router.get("/runs/active/stream")
-async def runs_active_stream_stub() -> Response:
-    """Empty SSE stream -- one heartbeat then EOF."""
-    from fastapi.responses import StreamingResponse
-
-    async def _gen():
-        yield b"event: status\ndata: {\"status\": \"idle\"}\n\n"
-
-    return StreamingResponse(_gen(), media_type="text/event-stream")
+# -- Per-phase log (still stub) --------------------------------------------
 
 
 @router.get("/runs/{run_id}/phase/{category}/{phase}/log")
