@@ -74,11 +74,14 @@ if (-not $SkipPrereqCheck) {
             # Use `vs_installer modify` to add the workload to the existing
             # install. winget refuses to re-run with --override when the
             # package is "already installed".
-            $cmd = "& '$vsInstaller' modify --installPath '$bootstrapperPath' --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --wait"
+            # vs_installer.exe modify does NOT accept --wait (only the
+            # bootstrapper does). --passive already blocks until the
+            # operation completes.
+            $cmd = "& '$vsInstaller' modify --installPath '$bootstrapperPath' --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --norestart"
             $missing += @{
                 name    = "MSVC C++ workload (Microsoft.VisualStudio.Workload.VCTools)"
                 install = $cmd
-                details = "The Build Tools bootstrapper is installed at `"$bootstrapperPath`" but no C++ workload is selected. Run the modify command (UAC will prompt). 5-10 min."
+                details = "The Build Tools bootstrapper is installed at `"$bootstrapperPath`" but no C++ workload is selected. Run the modify command (UAC will prompt; takes 5-10 min)."
             }
         } else {
             $missing += @{
