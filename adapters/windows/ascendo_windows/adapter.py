@@ -36,14 +36,33 @@ from .managers.windows_update import WindowsUpdateManager
 _log = logging.getLogger(__name__)
 
 
+def _resolve_resource_dir(env_var: str, repo_relative: str) -> Path:
+    """Resolve a bundled-resource directory.
+
+    Priority:
+      1. ``$<env_var>`` if set (PyInstaller bundle, MSI install path,
+         or test fixture override).
+      2. ``adapters/windows/<repo_relative>`` resolved from the
+         module's source location (the editable-install case).
+
+    Returns a :class:`Path` even if the directory does not yet exist;
+    callers (e.g. ``health_check``) report missing resources by checking
+    ``is_dir()`` themselves.
+    """
+    override = os.environ.get(env_var)
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent.parent / repo_relative
+
+
 class WindowsAdapter(IAdapter):
     """Tier 1 adapter for Windows 10/11."""
 
-    SCRIPTS_DIR: ClassVar[Path] = (
-        Path(__file__).resolve().parent.parent / "scripts"
+    SCRIPTS_DIR: ClassVar[Path] = _resolve_resource_dir(
+        "ASCENDO_WIN_SCRIPTS_DIR", "scripts"
     )
-    LIB_DIR: ClassVar[Path] = (
-        Path(__file__).resolve().parent.parent / "lib"
+    LIB_DIR: ClassVar[Path] = _resolve_resource_dir(
+        "ASCENDO_WIN_LIB_DIR", "lib"
     )
 
     def __init__(self) -> None:
