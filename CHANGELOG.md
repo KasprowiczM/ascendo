@@ -9,7 +9,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-(in flight — see ## [0.0.1-alpha] below for the most recent shipped milestone.)
+(in flight — see ## [0.0.7] below for the next release candidate.)
+
+---
+
+## [0.0.7] — pending tag (in flight)
+
+**Windows MVP feature-complete + branded installer + first-run wizard.**
+First publicly installable Ascendo build. Tested on Dell Precision 5520,
+Windows 11 Pro Build 26200, PowerShell 7.6.1, winget 1.28.240, Python 3.14.
+
+### Added
+
+- **`packaging/winget-manifest/`** — Microsoft winget submission manifest
+  (3 YAML files per spec 1.6.0): `Ascendo.Ascendo.yaml`,
+  `Ascendo.Ascendo.installer.yaml`, `Ascendo.Ascendo.locale.en-US.yaml`,
+  plus a submission `README.md`. Hashes filled at release time by
+  `bin/build-installer.ps1`.
+- **`branding/SLOGANS.md`** — single source of truth for marketing copy.
+  Tagline `Unified updates. Every app. One click.` Installer banner,
+  About modal, wizard welcome, Tauri config, and READMEs all pull from
+  this file.
+- **Windows-flavoured Help section** in the dashboard: 11 sections
+  (Install / First run / CLI / Scripts / Config / Dashboard /
+  Scheduler / Snapshots / Dev-sync / AI / Troubleshoot) explicitly
+  cover Tauri shell + `bin/install-dev.ps1` install paths,
+  `python -m ascendo` cheat-sheet, the 4 Windows package sources
+  (winget / msstore / registry_arp / windows_update), Volume Shadow
+  Copy snapshot/restore, and Windows-specific troubleshooting.
+- **`auth.cached`-style i18n keys** with Windows wording: every "sudo"
+  reference in the SPA now resolves through `tr()` to "Administrator
+  authorized" / "not authorized" / "credentials needed" / "session
+  expired" / "authentication cancelled". Polish parallel.
+- **`docs/superpowers/specs/2026-05-02-ascendo-windows-end-to-end-design.md`** —
+  the design that drove this milestone (CLI polish + dashboard wiring +
+  frontend apply UX + Tauri 2.x scaffold).
+
+### Changed
+
+- Repository consolidated to a single `main` branch; the three sibling
+  `claude/*` worktrees from earlier sessions reconciled into a linear
+  history (no merge conflicts — pedantic was a strict ancestor of
+  windows-end-to-end). All future work happens on `main`.
+- `CLAUDE.md` rewritten for the monorepo layout
+  (`core/` + `adapters/{ubuntu,windows,macos}/` + `ui/` + `plugins/`)
+  and hard-codes a "no new worktrees" rule for Claude Code sessions.
+- README rewrites the hero with the unified-updates pitch + Windows-first
+  badge, and adds a per-platform feature matrix.
+
+### Fixed
+
+- 6 pre-existing `adapters/windows/tests/` failures that survived earlier
+  sessions: `OperatingSystem.LINUX` references corrected to
+  `OperatingSystem.LINUX_UBUNTU` (the enum never had a `.LINUX`); the
+  `test_adapter_package_managers_includes_windows_update` assertion
+  updated from `len() == 2` (M3.8 era) to the post-M3.15 contract of 4
+  managers (winget / msstore / arp / windows_update).
+- `test_windows_update_manager_smoke.py` no longer asserts a stale ordering
+  contract; bookend assertions (winget first, windows_update last) plus a
+  set-membership check for all 4 expected managers.
+
+### Verified
+
+- `python -m pytest adapters/windows/tests/ plugins/dell-driver-update/tests/ ui/desktop-tauri/tests/` → 70 + 8 + 5 = 83 pass.
+- `bin/validate-windows.ps1 -DashboardPort 8770` → ALL CHECKS PASSED on real hardware: 210-package inventory bucketed across 4 sources, async run completes in ~23s, every dashboard endpoint healthy.
 
 ---
 

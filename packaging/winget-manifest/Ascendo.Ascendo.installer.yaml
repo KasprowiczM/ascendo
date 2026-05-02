@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+# Microsoft Store / winget manifest — installer file.
+#
+# To submit a release:
+#   1. Build the installers via `bin/build-installer.ps1` (sub-project 3).
+#   2. Replace <FILL_AT_RELEASE> below with sha256 from the build script's
+#      summary line (it prints both .msi and -setup.exe hashes).
+#   3. Replace <RELEASE_URL_*> with the GitHub Releases asset URLs.
+#   4. Submit via:  winget submit ./Ascendo.Ascendo.installer.yaml
+#      (or open a PR against microsoft/winget-pkgs with all 3 files).
+#
+# This file is the *installer* manifest. The sibling files are:
+#   - Ascendo.Ascendo.locale.en-US.yaml  (default-locale package metadata)
+#   - Ascendo.Ascendo.yaml                (version manifest, points at the others)
+
+PackageIdentifier: Ascendo.Ascendo
+PackageVersion: 0.0.7
+InstallerType: nullsoft       # NSIS .exe; the .msi listed below uses InstallerType: wix
+Scope: machine                # default; users can override via --scope user
+InstallModes:
+  - interactive
+  - silent
+  - silentWithProgress
+UpgradeBehavior: install
+Commands:
+  - ascendo                   # exposed by Tauri shell; spawns the dashboard sidecar
+Protocols: []
+FileExtensions: []
+ReleaseDate: 2026-05-02
+
+Installers:
+  - Architecture: x64
+    InstallerType: nullsoft
+    InstallerUrl: <RELEASE_URL_NSIS_EXE>
+    InstallerSha256: <FILL_AT_RELEASE>
+    Scope: machine
+    InstallerSwitches:
+      Silent: /S
+      SilentWithProgress: /S
+      InstallLocation: /D=<INSTALLPATH>
+    InstallerSuccessCodes:
+      - 0
+      - 3010   # success, reboot required
+    UpgradeBehavior: install
+
+  - Architecture: x64
+    InstallerType: wix
+    InstallerUrl: <RELEASE_URL_MSI>
+    InstallerSha256: <FILL_AT_RELEASE>
+    Scope: machine
+    InstallerSwitches:
+      Silent: /quiet /norestart
+      SilentWithProgress: /qb! /norestart
+      InstallLocation: INSTALLDIR="<INSTALLPATH>"
+      Custom: ALLUSERS=1
+    InstallerSuccessCodes:
+      - 0
+      - 1641   # success, reboot initiated
+      - 3010   # success, reboot required
+    UpgradeBehavior: install
+
+ManifestType: installer
+ManifestVersion: 1.6.0

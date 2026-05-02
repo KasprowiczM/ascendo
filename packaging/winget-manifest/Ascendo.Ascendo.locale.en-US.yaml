@@ -1,0 +1,68 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+# Default-locale (en-US) metadata for winget. Polish locale lives in a sibling
+# file (.locale.pl-PL.yaml) when we add it.
+
+PackageIdentifier: Ascendo.Ascendo
+PackageVersion: 0.0.7
+PackageLocale: en-US
+Publisher: Ascendo Software
+PublisherUrl: https://github.com/KasprowiczM/ascendo
+PublisherSupportUrl: https://github.com/KasprowiczM/ascendo/issues
+PrivacyUrl: https://github.com/KasprowiczM/ascendo/blob/main/SECURITY.md
+Author: KasprowiczM
+PackageName: Ascendo
+PackageUrl: https://github.com/KasprowiczM/ascendo
+License: MIT
+LicenseUrl: https://github.com/KasprowiczM/ascendo/blob/main/LICENSE
+Copyright: Copyright (c) KasprowiczM
+CopyrightUrl: https://github.com/KasprowiczM/ascendo/blob/main/LICENSE
+ShortDescription: Unified updates for winget, Microsoft Store, Add/Remove Programs, and Windows Update.
+Description: |-
+  Ascendo is a cross-platform update orchestrator that wraps every package
+  source on your machine — winget, Microsoft Store, Add/Remove Programs,
+  Windows Update, drivers, and dev tools — behind one command, one
+  dashboard, and one schedule.
+
+  Run a read-only check in 15 seconds. Plan before applying. Apply with a
+  typed confirmation gate and an automatic Volume Shadow Copy snapshot.
+  Verify and clean up automatically. See every change as a structured JSON
+  receipt in run history.
+
+  Ships as a Tauri 2.x desktop window, a FastAPI dashboard at
+  127.0.0.1:8765, or a python -m ascendo CLI — all backed by the same
+  monorepo core. The same shell runs on Linux and macOS.
+
+Moniker: ascendo
+Tags:
+  - updates
+  - update-manager
+  - winget
+  - microsoft-store
+  - windows-update
+  - dell-driver-update
+  - tauri
+  - dashboard
+  - cli
+  - automation
+  - scheduler
+  - snapshot
+  - cross-platform
+ReleaseNotesUrl: https://github.com/KasprowiczM/ascendo/releases/tag/v0.0.7
+PurchaseUrl: ""
+InstallationNotes: |-
+  After install, launch Ascendo from the Start menu (or run "ascendo"
+  from any shell). The first-run wizard scans your installed apps, shows
+  what's outdated, and walks you through a dry-run before any real
+  upgrade. UAC will prompt for Administrator credentials when an apply
+  phase needs them; the password is held only in dashboard process
+  memory and never written to disk.
+Documentations:
+  - DocumentLabel: Quickstart guide
+    DocumentUrl: https://github.com/KasprowiczM/ascendo/blob/main/WINDOWS_QUICKSTART.md
+  - DocumentLabel: Full operator manual
+    DocumentUrl: https://github.com/KasprowiczM/ascendo/blob/main/WINDOWS_TESTING.md
+  - DocumentLabel: 5-phase contract (schema v1)
+    DocumentUrl: https://github.com/KasprowiczM/ascendo/blob/main/docs/agents/contract.md
+
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

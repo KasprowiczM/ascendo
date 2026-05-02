@@ -1,40 +1,65 @@
 # Ascendo
 
-> Cross-platform update orchestrator for Linux, Windows, and macOS — with a
-> web dashboard, scheduler, snapshots, and a plugin system. **Open source, MIT.**
+> **Unified updates. Every app. One click.**
+>
+> Cross-platform update orchestrator for Windows, Linux, and macOS — with a
+> branded Tauri 2.x desktop, a FastAPI dashboard, a CLI, snapshots, scheduler,
+> and a plugin system. **Open source, MIT.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Status: pre-release](https://img.shields.io/badge/status-pre--release-orange)](HANDOFF.md)
-[![Made for: Linux | Windows | macOS](https://img.shields.io/badge/OS-Linux%20%7C%20Windows%20%7C%20macOS-blue)](README.md)
+[![Status: Windows v0.0.7](https://img.shields.io/badge/status-Windows%20v0.0.7-green)](HANDOFF.md)
+[![Made for: Windows | Linux | macOS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux%20%7C%20macOS-blue)](README.md)
+[![Tests: 70+8+5 green](https://img.shields.io/badge/tests-83%20green-brightgreen)](#tests)
 
 ---
 
 ## What is Ascendo?
 
-Ascendo is **one tool to keep your machine up-to-date** — across operating
-systems, package managers, and software sources. Manage:
+If you've ever opened the Microsoft Store, then `winget upgrade`, then the
+Windows Update settings panel, then `pip list --outdated`, then a vendor's
+bespoke driver updater — and still missed something — Ascendo is for you.
 
-- **OS updates** (Windows Update, `apt full-upgrade`, `softwareupdate -ia -R`)
-- **Native package managers** (`apt`, `winget`, `brew`, `snap`, `flatpak`)
-- **App stores** (Microsoft Store, Mac App Store)
-- **Cross-OS dev tools** (`npm`, `pip`, `pipx`)
-- **Drivers / firmware** (Dell Command Update, NVIDIA, fwupd) — via plugins
-- **AI agent CLIs** (Claude Code, Codex, Gemini, Qwen, OpenCode) — via plugin
+**One tool that knows about every package source on your machine.** Scan
+winget, Microsoft Store, Add/Remove Programs, and Windows Update in a
+single 20-second sweep. See what's outdated with installed/candidate
+versions side-by-side. Plan changes, dry-run them, snapshot before you
+apply, then verify and clean up — all under one structured 5-phase
+contract that writes a JSON receipt for every change.
 
-Through one CLI (`ascendo run`) and one local dashboard
-(`http://127.0.0.1:8765/`).
+| | Windows | Linux | macOS |
+|---|---|---|---|
+| OS updates | Windows Update (PSWindowsUpdate) | `apt full-upgrade` | `softwareupdate -ia -R` |
+| Package managers | winget | apt, snap, brew, npm, pip, flatpak | brew, npm, pip |
+| App stores | Microsoft Store + MSIX | (n/a) | Mac App Store |
+| Drivers / firmware | Dell Command Update, fwupd | NVIDIA, fwupd | (n/a) |
+| Snapshot backend | Volume Shadow Copy | timeshift / etckeeper | Time Machine |
+| Scheduler | Windows Task Scheduler | systemd timer | launchd |
+| Elevation | UAC (in-memory token) | sudo (askpass helper) | sudo + osascript |
+
+All three OSes share the same Python core, FastAPI dashboard, vanilla SPA,
+and Tauri 2.x desktop shell. What you learn on one platform is muscle
+memory on the next.
 
 ## Status
 
-Ascendo is currently **pre-release** — under active reorganization in branch
-`restructure/monorepo`. See [`HANDOFF.md`](HANDOFF.md) for the current
-implementation state and roadmap.
+| Platform | Adapter | CLI | Dashboard | Tauri shell | Installer | Released |
+|---|---|---|---|---|---|---|
+| Windows  | ✅ MVP | ✅ | ✅ | ✅ | 🟡 in flight (v0.0.7) | tag pending |
+| Linux    | ✅ legacy code (migrating into `adapters/ubuntu/`) | ✅ | ✅ | 🟡 needs polish | ✅ `.deb` | v0.5 |
+| macOS    | 🟡 stub (`adapters/macos/`) | 🟡 | 🟡 | 🟡 | 🟡 | — |
+
+See [`HANDOFF.md`](HANDOFF.md) for the live session log,
+[`PLAN.md`](PLAN.md) for the forward roadmap, and
+[`branding/SLOGANS.md`](branding/SLOGANS.md) for marketing copy
+(installer banner, About modal, wizard welcome — single source of truth).
 
 Target releases:
 
-- **v0.1.0** — Linux + Windows MVP (Tauri UI + winget + apt + plugins)
-- **v0.2.0** — macOS adapter (full 3-OS support)
-- **v1.0.0** — security audit + code signing + stable API
+- **v0.0.7 — Windows MVP** (in flight): MSI + NSIS installer, first-run
+  wizard, Windows service, winget manifest.
+- **v0.1.0 — Windows + Linux feature parity** under the new monorepo.
+- **v0.2.0 — macOS adapter** (full 3-OS support).
+- **v1.0.0** — security audit + code signing + stable API.
 
 ## Install (when v0.1.0 ships)
 
@@ -55,11 +80,24 @@ pip install ascendo[ubuntu]
 ### Windows
 
 ```powershell
-# Recommended:
-winget install Ascendo.Ascendo
+# Recommended (once v0.0.7 hits winget):
+winget install --id Ascendo.Ascendo
 
-# Or direct MSI from GitHub Releases.
+# Direct .exe / .msi from GitHub Releases:
+# Download Ascendo-0.0.7-x64-setup.exe (NSIS) or Ascendo-0.0.7-x64.msi (WiX)
+# from https://github.com/KasprowiczM/ascendo/releases — double-click.
+
+# Source / dev install today:
+git clone https://github.com/KasprowiczM/ascendo.git D:\Dev_Env\Ascendo
+cd D:\Dev_Env\Ascendo
+.\bin\install-dev.ps1                  # core + adapters/windows + smoke
+.\bin\install-shortcut.ps1             # Desktop + Start-menu icons
 ```
+
+After install, launch from the Start menu (or `ascendo` from any shell).
+The first-run wizard scans installed apps, shows what's outdated, and
+walks you through a dry-run before any real upgrade. See
+[`WINDOWS_QUICKSTART.md`](WINDOWS_QUICKSTART.md) for the operator guide.
 
 ### macOS
 

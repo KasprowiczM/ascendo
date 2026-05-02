@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.version.1.6.0.schema.json
+# Version manifest — points at the other two files. Update PackageVersion
+# in lockstep across all three when cutting a release.
+
+PackageIdentifier: Ascendo.Ascendo
+PackageVersion: 0.0.7
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.6.0
