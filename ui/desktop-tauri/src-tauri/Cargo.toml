@@ -1,0 +1,30 @@
+[package]
+name = "ascendo-desktop"
+version = "0.0.1-dev"
+description = "Ascendo - Unified Updates desktop shell"
+authors = ["Ascendo"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.78"
+
+# See https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "ascendo_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = "2"
+
+[features]
+# This feature is used for production builds where `devPath` points to the
+# filesystem and the bundle is fully bundled. When unset, dev tooling can
+# still reach the dev server.
+custom-protocol = ["tauri/custom-protocol"]

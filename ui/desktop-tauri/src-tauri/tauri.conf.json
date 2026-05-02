@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0.0-rc",
+  "productName": "Ascendo",
+  "version": "0.0.1-dev",
+  "identifier": "dev.ascendo.app",
+  "build": {
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "devPath": "../src",
+    "distDir": "../src",
+    "withGlobalTauri": false
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Ascendo - Unified Updates",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 600,
+        "resizable": true,
+        "center": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "shortDescription": "Ascendo - Unified Updates",
+    "longDescription": "Ascendo desktop shell. Spawns the Python dashboard sidecar on a loopback port and opens it in a WebView2 window.",
+    "category": "DeveloperTool",
+    "publisher": "Ascendo"
+  }
+}

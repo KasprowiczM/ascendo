@@ -1,0 +1,15 @@
+{
+  "name": "ascendo-desktop-tauri",
+  "private": true,
+  "version": "0.0.1-dev",
+  "description": "Tauri 2.x desktop shell for Ascendo (spawns python -m ascendo dashboard sidecar).",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

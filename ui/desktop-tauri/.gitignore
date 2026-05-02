@@ -1,0 +1,25 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/Cargo.lock
+src-tauri/gen/
+
+# Build outputs
+dist/
+*.msi
+*.exe
+*.AppImage
+*.deb
+*.dmg
+
+# IDE
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability for the Ascendo desktop shell. Webview is loaded against the loopback Python sidecar at http://127.0.0.1:<port>/, so no broad shell access is required at runtime.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:webview:default"
+  ]
+}
