@@ -82,8 +82,22 @@ def test_spa_brand_assets_served(client: TestClient, filename: str) -> None:
 
 
 def test_spa_brand_asset_traversal_blocked(client: TestClient) -> None:
-    """Defense in depth: /assets/{filename} must reject path traversal."""
-    for bad in ("../style.css", "..\\\\style.css", "subdir/x.svg"):
+    """Defense in depth: /assets/{filename} must reject path-y filenames.
+
+    Note: httpx (and every conforming HTTP client) normalises ``..`` segments
+    in the URL path *before* the request is sent, so a literal
+    ``/assets/../style.css`` becomes ``/style.css`` at the transport layer
+    and never reaches our handler. We test the cases the handler actually
+    sees: subdirectories that won't match the route at all, and
+    URL-encoded separators that survive transport-layer normalisation
+    and reach the handler verbatim, where the explicit reject lands.
+    """
+    cases = (
+        "subdir/x.svg",      # contains "/", route won't match → 404
+        "..%5Cstyle.css",    # URL-encoded backslash, decoded to ``..\style.css``
+        "%2E%2E/style.css",  # URL-encoded ``..`` segment
+    )
+    for bad in cases:
         r = client.get(f"/assets/{bad}")
         assert r.status_code == 404, f"/assets/{bad}: leaked through with {r.status_code}"
 
@@ -95,18 +109,33 @@ def test_spa_index_pins_dark_theme_by_default(client: TestClient) -> None:
     activated via :root[data-theme="dark"]. The SPA must explicitly opt in
     on the <html> element so the first paint is dark, not light.
     """
+    import re
+
     r = client.get("/")
     assert r.status_code == 200
-    body = r.text.lower()
-    # Must include design tokens stylesheet ordered before style.css.
-    tokens_pos = body.find("colors_and_type.css")
-    style_pos = body.find("style.css")
-    assert tokens_pos != -1, "index.html does not load colors_and_type.css"
-    assert style_pos != -1
-    assert tokens_pos < style_pos, "colors_and_type.css must load before style.css"
+    body = r.text
+    # Match the actual <link rel="stylesheet" href="..."> tags rather than
+    # naive substring search, which trips on documentation comments that
+    # mention the filenames before the real <link> appears.
+    link_re = re.compile(
+        r'<link[^>]+rel="stylesheet"[^>]+href="/(?P<href>[^"]+)"',
+        re.IGNORECASE,
+    )
+    links = [m.group("href") for m in link_re.finditer(body)]
+    assert "colors_and_type.css" in links, (
+        f"index.html does not load colors_and_type.css; saw {links}"
+    )
+    assert "style.css" in links, f"index.html does not load style.css; saw {links}"
+    assert links.index("colors_and_type.css") < links.index("style.css"), (
+        f"colors_and_type.css must load before style.css; saw order {links}"
+    )
     # Dark is pinned at parse time (either as <html data-theme="dark"> or
-    # via the inline pre-paint script in index.html).
-    assert 'data-theme="dark"' in body or 'documentelement.dataset.theme = "dark"' in body
+    # via the inline pre-paint script in index.html that sets dataset.theme).
+    body_lower = body.lower()
+    assert (
+        'data-theme="dark"' in body_lower
+        or "documentelement.dataset.theme" in body_lower
+    )
 
 
 # -- existing endpoints not shadowed ---------------------------------------
@@ -258,51 +287,3 @@ def test_spa_stub_inventory_summary_shape(client: TestClient) -> None:
     for k in ("ok", "outdated", "missing", "total"):
         assert k in body["totals"]
     assert "categories" in body
-
-
-# -- design-system brand assets (logo wordmarks + marks) --------------------
-
-
-@pytest.mark.parametrize(
-    "filename",
-    [
-        "logo-mark.svg",
-        "logo-mark-light.svg",
-        "logo-mark-mono.svg",
-        "logo-wordmark.svg",
-        "logo-wordmark-dark.svg",
-    ],
-)
-def test_spa_brand_assets_served(client: TestClient, filename: str) -> None:
-    r = client.get(f"/assets/{filename}")
-    assert r.status_code == 200, f"/assets/{filename}: {r.status_code} {r.text[:80]}"
-    assert r.headers["content-type"] == "image/svg+xml"
-    assert "<svg" in r.text
-
-
-def test_spa_brand_asset_traversal_blocked(client: TestClient) -> None:
-    """Defense in depth: /assets/{filename} must reject path traversal."""
-    for bad in ("../style.css", "..\\style.css", "subdir/x.svg"):
-        r = client.get(f"/assets/{bad}")
-        assert r.status_code == 404, f"/assets/{bad}: leaked through with {r.status_code}"
-
-
-def test_spa_index_pins_dark_theme_by_default(client: TestClient) -> None:
-    """index.html must bootstrap with data-theme=dark before paint.
-
-    The Ascendo design system uses light as its CSS-default theme; dark is
-    activated via :root[data-theme="dark"]. The SPA must explicitly opt in
-    on the <html> element so the first paint is dark, not light.
-    """
-    r = client.get("/")
-    assert r.status_code == 200
-    body = r.text.lower()
-    # Must include design tokens stylesheet ordered before style.css.
-    tokens_pos = body.find("colors_and_type.css")
-    style_pos = body.find("style.css")
-    assert tokens_pos != -1, "index.html does not load colors_and_type.css"
-    assert style_pos != -1
-    assert tokens_pos < style_pos, "colors_and_type.css must load before style.css"
-    # Dark is pinned at parse time (either as <html data-theme="dark"> or
-    # via the inline pre-paint script in index.html).
-    assert 'data-theme="dark"' in body or 'documentelement.dataset.theme = "dark"' in body

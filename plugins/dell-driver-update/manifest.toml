@@ -36,7 +36,10 @@ supported_oses = ["windows"]
 
 # Phase script map (relative to plugin root). Each script must accept the
 # standard Ascendo phase params (-RunId / -Trigger / -Profile / -OutputDir
-# / -DryRun / -ItemFilter) and emit `<phase>__dell_driver_update.json`.
+# / -DryRun / -ItemFilter) and emit `<phase>__plugin.json`. The sidecar
+# Category is `plugin` (the schema's source-type enum doesn't include a
+# Dell-specific value); the plugin identity is preserved via the run-level
+# manifest binding, not the per-phase filename.
 [phases.windows]
 check   = "windows/check.ps1"
 plan    = "windows/plan.ps1"
@@ -50,4 +53,7 @@ python_modules = []
 plugins = []
 
 [reporting]
-sidecar_category = "dell_driver_update"
+# Must match the SourceType the PowerShell scripts pass to AscendoJson
+# `-Category`. The schema enum (ADR-0003) doesn't include a Dell-specific
+# value, so all OEM driver plugins report under the generic `plugin` source.
+sidecar_category = "plugin"

@@ -16,8 +16,22 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
+
+# The legacy ``app.backend.main`` (the pre-monorepo Ubuntu_Aktualizacje
+# dashboard kept in-tree until the M4 ``app/`` retirement) registers
+# startup hooks with FastAPI's deprecated ``@app.on_event("startup")``.
+# Repo-wide ``filterwarnings = ["error", ...]`` escalates that to a test
+# error on import. Scope the ignore to this file only — when ``app/`` is
+# removed the marker can go with it.
+pytestmark = pytest.mark.filterwarnings(
+    # The warning message starts with a leading newline + indentation, so
+    # ``.*`` cannot span it without DOTALL. Inline ``(?s)`` enables it.
+    r"ignore:(?s).*on_event is deprecated.*:DeprecationWarning",
+)
 
 
 def _client():
@@ -25,6 +39,17 @@ def _client():
     from app.backend.main import app
     from fastapi.testclient import TestClient
     return TestClient(app)
+
+
+@pytest.fixture
+def client():
+    """pytest fixture exposing the legacy ``app.backend.main`` TestClient.
+
+    The module also runs as a standalone script via ``main()`` below; the
+    fixture is what lets pytest discover and inject the same client when
+    the file is collected as a normal test target.
+    """
+    return _client()
 
 
 def assert_200(client, path):
@@ -37,6 +62,9 @@ def test_index_has_all_views(client):
     r = assert_200(client, "/")
     body = r.text
     assert "<!doctype html>" in body.lower()
+    # Required views — the SPA may add optional ones (apps, suggest, help,
+    # about) over time; the test asserts presence of the must-haves and
+    # one nav link per ``view-*`` section, not an exact count.
     expected_views = [
         "view-overview", "view-categories", "view-run",
         "view-history", "view-logs", "view-sync", "view-hosts", "view-settings",
@@ -44,9 +72,15 @@ def test_index_has_all_views(client):
     for vid in expected_views:
         assert f'id="{vid}"' in body, f"missing section id={vid!r}"
     nav_links = re.findall(r'data-view="([^"]+)"', body)
-    assert len(nav_links) == len(expected_views), \
-        f"expected {len(expected_views)} nav links, found {len(nav_links)}: {nav_links}"
-    print(f"  index.html: all {len(expected_views)} views present")
+    expected_short = {v.removeprefix("view-") for v in expected_views}
+    missing = expected_short - set(nav_links)
+    assert not missing, f"nav links missing for required views: {missing}"
+    assert len(nav_links) >= len(expected_views), (
+        f"expected at least {len(expected_views)} nav links, found "
+        f"{len(nav_links)}: {nav_links}"
+    )
+    print(f"  index.html: all {len(expected_views)} required views present "
+          f"(SPA exposes {len(nav_links)} nav links total)")
 
 
 def test_static_assets(client):
