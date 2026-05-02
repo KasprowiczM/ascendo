@@ -21,6 +21,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .routes.about import router as about_router
+from .routes.apps import router as apps_router
 from .routes.health import router as health_router
 from .routes.onboarding import router as onboarding_router
 from .routes.runs import router as runs_router
@@ -154,6 +156,13 @@ def create_app(
     # Persistent first-run wizard endpoints (graduated from spa_stubs).
     # MUST be mounted BEFORE spa_stubs so its real handlers win.
     app.include_router(onboarding_router, prefix="")
+    # Apps tracking + per-app exclusion list (default-include model:
+    # every detected app is in_config until the user opts out). MUST
+    # be BEFORE spa_stubs (which still has an /apps/detect placeholder).
+    app.include_router(apps_router, prefix="")
+    # About + platform-aware release-notes (graduates the about_stub).
+    # MUST be BEFORE spa_stubs.
+    app.include_router(about_router, prefix="")
     # Legacy SPA stubs -- transient placeholders for endpoints the
     # Ubuntu_Aktualizacje SPA expects but the new core hasn't ported yet.
     # Delete the matching stub from routes/spa_stubs.py when each real

@@ -1185,78 +1185,157 @@ const ui = {
   },
 
   async loadApps() {
+    // Default-include model (per resident operator's spec, 2026-05-03):
+    // every detected app is in_config by default; user opts OUT per app
+    // by toggling the "In config" checkbox (POST /apps/exclude). The
+    // backend persists exclusions to %APPDATA%\Ascendo\excluded.json.
     const wrap = $("#apps-table-wrap");
     const summary = $("#apps-summary");
-    wrap.innerHTML = `<span class="spinner"></span> ${tr("overview.scanning") || "Scanning…"}`;
-    summary.textContent = "";
+    if (!wrap) return;
+    wrap.textContent = "";
+    const spinner = document.createElement("span");
+    spinner.className = "spinner";
+    wrap.appendChild(spinner);
+    wrap.appendChild(document.createTextNode(" " + (tr("overview.scanning") || "Scanning…")));
+    if (summary) summary.textContent = "";
+
     try {
-      const [data, excl] = await Promise.all([
-        api.get("/apps/detect"),
-        api.get("/exclusions").catch(() => ({items:[], category_skipped:[]})),
-      ]);
-      const s = data.summary || {tracked:0, detected:0, missing:0};
-      const exclSet = new Set((excl.items||[]).map(e => `${e.category}:${e.package}`));
-      const exclCats = new Set(excl.category_skipped || []);
-      summary.innerHTML = `
-        <span class="st-pill st-info">tracked ${s.tracked}</span>
-        <span class="st-pill st-warn">detected ${s.detected}</span>
-        <span class="st-pill st-err">missing ${s.missing}</span>
-        <span class="st-pill st-skip">excluded ${exclSet.size}${exclCats.size?` +${exclCats.size} cats`:""}</span>`;
-      const items = data.items || [];
-      const rank = {missing:0, detected:1, tracked:2};
-      items.sort((a,b) =>
-        (rank[a.state]??9) - (rank[b.state]??9) ||
-        a.category.localeCompare(b.category) ||
-        a.package.localeCompare(b.package));
-      const stCls = {tracked:"st-info", detected:"st-warn", missing:"st-err"};
-      const rows = items.map(it => {
-        const key = `${it.category}:${it.package}`;
-        const isExcl = exclSet.has(key) || exclCats.has(it.category);
-        return `
-        <tr class="${isExcl ? "excluded" : ""}">
-          <td>${it.category}</td>
-          <td class="col-mono pkg-name">${it.package}</td>
-          <td><span class="st-pill ${stCls[it.state]||"st-skip"}">${it.state}</span></td>
-          <td class="excl-toggle">
-            <label title="Skip this package on apply phases">
-              <input type="checkbox" data-excl-toggle data-pkg="${it.package}" data-cat="${it.category}" ${isExcl ? "checked" : ""} />
-              skip
-            </label>
-          </td>
-          <td>
-            ${it.state === "detected"
-              ? `<button class="secondary" data-apps-add data-pkg="${it.package}" data-cat="${it.category}">+ Add to config</button>`
-              : it.state === "tracked"
-              ? `<button class="secondary" data-apps-rm data-pkg="${it.package}" data-cat="${it.category}">Remove</button>`
-              : `<span class="dim">${it.suggested||""}</span>`}
-          </td>
-        </tr>`;
-      }).join("");
-      wrap.innerHTML = `
-        <table class="tbl">
-          <thead><tr><th>Category</th><th>Package</th><th>State</th><th>Auto-update</th><th>Action</th></tr></thead>
-          <tbody>${rows||"<tr><td colspan='5' class='dim'>-</td></tr>"}</tbody>
-        </table>`;
+      const data = await api.get("/apps/detect");
+      const apps = data.apps || [];
+      const sum = data.summary || {total: 0, tracked: 0, excluded: 0, missing: 0};
+
+      // Summary pills: total / tracked / excluded.
+      if (summary) {
+        summary.textContent = "";
+        const pill = (cls, label, n) => {
+          const s = document.createElement("span");
+          s.className = "st-pill " + cls;
+          s.textContent = `${label} ${n}`;
+          return s;
+        };
+        summary.appendChild(pill("st-info",  tr("apps.pill_total")    || "total",    sum.total));
+        summary.appendChild(document.createTextNode(" "));
+        summary.appendChild(pill("st-ok",    tr("apps.pill_tracked")  || "in config", sum.tracked));
+        summary.appendChild(document.createTextNode(" "));
+        summary.appendChild(pill("st-skip",  tr("apps.pill_excluded") || "excluded",  sum.excluded));
+      }
+
+      // Sort: excluded first (so the user can see what they've opted
+      // out of at the top), then by category, then alphabetical.
+      apps.sort((a, b) =>
+        ((a.in_config ? 1 : 0) - (b.in_config ? 1 : 0)) ||
+        (a.category || "").localeCompare(b.category || "") ||
+        (a.name || "").localeCompare(b.name || ""));
+
+      const tbl = document.createElement("table");
+      tbl.className = "tbl inv-table";
+      const thead = document.createElement("thead");
+      const trh = document.createElement("tr");
+      [
+        tr("categories.col_cat")     || "Category",
+        tr("categories.col_pkg")     || "Package",
+        tr("categories.col_inst")    || "Installed",
+        tr("categories.col_cand")    || "Candidate",
+        tr("categories.col_status")  || "Status",
+        tr("apps.col_in_config")     || "In config",
+      ].forEach(label => {
+        const th = document.createElement("th");
+        th.textContent = label;
+        trh.appendChild(th);
+      });
+      thead.appendChild(trh);
+      tbl.appendChild(thead);
+
+      const tbody = document.createElement("tbody");
+      const stCls = {ok: "st-ok", outdated: "st-warn", missing: "st-err", unknown: "st-skip"};
+
+      if (!apps.length) {
+        const trEmpty = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 6;
+        td.className = "dim";
+        td.textContent = tr("apps.empty") || "No apps detected. Run a check from Categories first.";
+        trEmpty.appendChild(td);
+        tbody.appendChild(trEmpty);
+      } else {
+        apps.forEach(it => {
+          const trRow = document.createElement("tr");
+          if (!it.in_config) trRow.classList.add("excluded");
+          trRow.classList.add("status-" + (it.status || "ok"));
+          const addCell = (text, cls) => {
+            const td = document.createElement("td");
+            if (cls) td.className = cls;
+            td.textContent = text;
+            trRow.appendChild(td);
+          };
+          addCell(it.category || "—", "dim");
+          addCell(it.name || "—", "pkg-name");
+          addCell(it.installed || "—", "mono");
+          addCell(it.candidate || "—", "mono");
+          // Status pill cell
+          const tdStatus = document.createElement("td");
+          const pill = document.createElement("span");
+          pill.className = "st-pill " + (stCls[it.status] || "st-skip");
+          pill.textContent = it.status || "ok";
+          tdStatus.appendChild(pill);
+          trRow.appendChild(tdStatus);
+          // In-config toggle
+          const tdToggle = document.createElement("td");
+          tdToggle.className = "in-config-toggle";
+          const lbl = document.createElement("label");
+          lbl.title = it.in_config
+            ? (tr("apps.in_config_on_hint")  || "In config — Ascendo will update this app. Uncheck to skip.")
+            : (tr("apps.in_config_off_hint") || "Excluded — Ascendo will NOT update this app. Check to re-include.");
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.checked = !!it.in_config;
+          cb.dataset.appsToggle = "1";
+          cb.dataset.cat = it.category;
+          cb.dataset.name = it.name;
+          lbl.appendChild(cb);
+          lbl.appendChild(document.createTextNode(" "));
+          const txt = document.createElement("span");
+          txt.className = "dim";
+          txt.textContent = it.in_config
+            ? (tr("apps.in_config_on")  || "in config")
+            : (tr("apps.in_config_off") || "excluded");
+          lbl.appendChild(txt);
+          tdToggle.appendChild(lbl);
+          trRow.appendChild(tdToggle);
+
+          tbody.appendChild(trRow);
+        });
+      }
+      tbl.appendChild(tbody);
+      wrap.textContent = "";
+      wrap.appendChild(tbl);
     } catch (e) {
       wrap.textContent = String(e);
     }
   },
 
   async toggleExclusion(pkg, cat, on) {
+    // ``on`` = checkbox is now CHECKED → user wants this app IN config
+    // (i.e. NOT excluded). on=false → user wants the app excluded.
     try {
-      await api.post(on ? "/exclusions/add" : "/exclusions/remove", {package: pkg, category: cat});
-      ui.status(on ? `excluded ${cat}:${pkg}` : `un-excluded ${cat}:${pkg}`);
+      const url = on ? "/apps/include" : "/apps/exclude";
+      await api.post(url, {category: cat, name: pkg});
+      ui.status(on ? `${cat}:${pkg} → in config` : `${cat}:${pkg} → excluded`);
     } catch (e) { ui.status(String(e)); }
   },
 
   async appsAdd(pkg, cat) {
-    try { await api.post("/apps/add", {package: pkg, category: cat}); }
+    // Legacy hook (pre-default-include): "Add to config" now means
+    // remove from the exclusion list (= /apps/include).
+    try { await api.post("/apps/include", {category: cat, name: pkg}); }
     catch (e) { ui.status(String(e)); return; }
     ui._loaded.apps = false; ui.show("apps");
   },
   async appsRemove(pkg, cat) {
-    if (!confirm(`Remove ${pkg} from ${cat} config? (does NOT uninstall)`)) return;
-    try { await api.post("/apps/remove", {package: pkg, category: cat}); }
+    // Legacy hook (pre-default-include): "Remove from config" now means
+    // add to the exclusion list (= /apps/exclude). Does NOT uninstall.
+    if (!confirm(`Exclude ${pkg} (${cat}) from updates? (does NOT uninstall — Ascendo will skip it on future runs.)`)) return;
+    try { await api.post("/apps/exclude", {category: cat, name: pkg}); }
     catch (e) { ui.status(String(e)); return; }
     ui._loaded.apps = false; ui.show("apps");
   },
@@ -1878,30 +1957,133 @@ ui.loadRunDetail = async function(runId) {
 ui.loadAbout = async function() {
   try {
     const a = await api.get("/about");
-    $("#about-app").innerHTML = `
-      <div><b>${a.name}</b> <span class="dim">- ${a.tagline}</span></div>
-      <div>Version: <code>${a.version}</code> <span class="dim">git ${a.git_head||"?"}</span></div>
-      <div class="dim">Python: ${a.python}</div>
-    `;
-    $("#about-system").innerHTML = `
-      <div>Host: <code>${a.host}</code></div>
-      <div>OS: <code>${a.distro||"?"}</code></div>
-      <div>Kernel: <code>${a.kernel}</code></div>
-      <div>Arch: <code>${a.arch}</code></div>
-    `;
-    // Render markdown release notes minimally (no full md parser to keep it light).
-    const md = a.release_notes_md || "";
-    const html = md
-      .replace(/^# (.+)$/gm, '<h2>$1</h2>')
-      .replace(/^## (.+)$/gm, '<h3>$1</h3>')
-      .replace(/^### (.+)$/gm, '<h4>$1</h4>')
-      .replace(/^- (.+)$/gm, '<li>$1</li>')
-      .replace(/(<li>.+<\/li>\n?)+/g, m => `<ul>${m}</ul>`)
-      .replace(/`([^`]+)`/g, '<code>$1</code>');
-    $("#about-release").innerHTML = html || "<p class='dim'>No release notes file found (RELEASE_NOTES.md).</p>";
+    // Stash the platform on <html> so loadHelp() (and any future
+    // platform-aware views) can branch on it without re-fetching /about.
+    const platform = (a.platform || "windows").toLowerCase();
+    document.documentElement.dataset.platform = platform;
+
+    // -- App card (DOM construction; static template, app values via textContent)
+    const app = $("#about-app"); app.textContent = "";
+    const line1 = document.createElement("div");
+    const nameB = document.createElement("b"); nameB.textContent = a.name || "Ascendo";
+    line1.appendChild(nameB);
+    const tagSpan = document.createElement("span");
+    tagSpan.className = "dim";
+    tagSpan.textContent = " — " + (a.tagline || "");
+    line1.appendChild(tagSpan);
+    app.appendChild(line1);
+    const line2 = document.createElement("div");
+    line2.appendChild(document.createTextNode("Version: "));
+    const verCode = document.createElement("code"); verCode.textContent = a.version || "?";
+    line2.appendChild(verCode);
+    line2.appendChild(document.createTextNode(" "));
+    const platSpan = document.createElement("span"); platSpan.className = "dim";
+    platSpan.textContent = "platform: " + platform;
+    line2.appendChild(platSpan);
+    app.appendChild(line2);
+    const line3 = document.createElement("div"); line3.className = "dim";
+    line3.textContent = "Python: " + (a.python || "?");
+    app.appendChild(line3);
+
+    // -- Host card
+    const sys = $("#about-system"); sys.textContent = "";
+    const sysRow = (label, value) => {
+      const div = document.createElement("div");
+      div.appendChild(document.createTextNode(label + ": "));
+      const c = document.createElement("code");
+      c.textContent = String(value ?? "?");
+      div.appendChild(c);
+      sys.appendChild(div);
+    };
+    sysRow("Host", a.host);
+    sysRow("OS", a.distro);
+    sysRow("Kernel", a.kernel);
+    sysRow("Arch", a.arch);
+
+    // -- Release notes from /about/release-notes (platform-tagged from CHANGELOG)
+    const rel = $("#about-release");
+    rel.textContent = "";
+    const spinner = document.createElement("span"); spinner.className = "spinner";
+    rel.appendChild(spinner);
+    rel.appendChild(document.createTextNode(" loading release notes…"));
+    try {
+      const rn = await api.get("/about/release-notes?platform=" + encodeURIComponent(platform) + "&limit=20");
+      rel.textContent = "";
+      const head = document.createElement("p");
+      head.className = "dim";
+      head.textContent = `Showing ${rn.entries.length} of ${rn.total_in_changelog || 0} CHANGELOG entries tagged for ${rn.platform}.`;
+      rel.appendChild(head);
+      if (!rn.entries || rn.entries.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "dim";
+        empty.textContent = "No release notes for this platform yet.";
+        rel.appendChild(empty);
+      } else {
+        rn.entries.forEach(e => {
+          const sec = document.createElement("section");
+          sec.className = "release-entry";
+          const h = document.createElement("h3");
+          h.textContent = `[${e.version}]` + (e.rest ? " — " + e.rest : "");
+          sec.appendChild(h);
+          // Render the body as a <pre> for fidelity with CHANGELOG markup.
+          // Doing minimal markdown→HTML here would be unreliable across the
+          // long-form Added/Changed/Fixed bullet lists.
+          const body = document.createElement("pre");
+          body.className = "release-body";
+          body.style.whiteSpace = "pre-wrap";
+          body.style.fontFamily = "var(--mono, monospace)";
+          body.style.fontSize = "0.78rem";
+          body.textContent = e.body || "";
+          sec.appendChild(body);
+          rel.appendChild(sec);
+        });
+      }
+    } catch (e) {
+      rel.textContent = "";
+      const err = document.createElement("p");
+      err.className = "dim";
+      err.textContent = "Failed to load release notes: " + e;
+      rel.appendChild(err);
+    }
+
+    // -- Re-render Help (it's platform-aware now via loadHelp).
+    if (typeof ui.loadHelp === "function") ui.loadHelp(platform);
   } catch (e) {
     $("#about-app").textContent = String(e);
   }
+};
+
+// Platform-aware Help section. The hardcoded HTML in index.html is
+// Windows-flavoured; on Linux/macOS we hide it and show a "coming soon"
+// banner. When the Ubuntu / macOS adapters land, swap in their content.
+ui.loadHelp = function(platform) {
+  const root = document.getElementById("view-help");
+  if (!root) return;
+  const p = (platform || document.documentElement.dataset.platform || "windows").toLowerCase();
+  // Tag the root so CSS / future per-platform sections can branch.
+  root.dataset.platform = p;
+  // Show / hide the existing Windows article based on platform tag.
+  // Sections in index.html opt-in via data-platforms="windows"
+  // (space-separated); untagged sections show on every platform.
+  root.querySelectorAll("[data-platforms]").forEach(el => {
+    const platforms = (el.dataset.platforms || "").split(/\s+/).filter(Boolean);
+    el.hidden = platforms.length > 0 && !platforms.includes(p);
+  });
+  // Insert a small platform banner at the top of Help (idempotent).
+  let banner = root.querySelector(".help-platform-banner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.className = "help-platform-banner dim";
+    banner.style.padding = "0.4rem 0.6rem";
+    banner.style.borderRadius = "6px";
+    banner.style.background = "var(--accent-soft, var(--bg-elev))";
+    banner.style.marginBottom = "0.6rem";
+    banner.style.fontSize = "0.82rem";
+    const h2 = root.querySelector("h2");
+    (h2 ? h2.parentNode : root).insertBefore(banner, h2 ? h2.nextSibling : root.firstChild);
+  }
+  const labelMap = {windows: "Windows", linux: "Linux / Ubuntu", macos: "macOS"};
+  banner.textContent = `Operator manual for ${labelMap[p] || p}. Switch platforms by running this dashboard from a different OS.`;
 };
 
 // -- Hosts tab: add/edit/delete + form binding -------------------------------
@@ -2431,7 +2613,14 @@ document.addEventListener("submit", async e => {
   }
 });
 
-// Exclusion checkboxes (in Apps tab)
+// Apps tab in-config checkboxes (default-include model). The new
+// data attribute is ``data-apps-toggle`` written by ``ui.loadApps()``.
+// ``data-excl-toggle`` (legacy) is preserved for any old SPA tabs that
+// might still have it cached after a long-running session.
+document.addEventListener("change", e => {
+  const t = e.target.closest("[data-apps-toggle]");
+  if (t) ui.toggleExclusion(t.dataset.name, t.dataset.cat, t.checked);
+});
 document.addEventListener("change", e => {
   const t = e.target.closest("[data-excl-toggle]");
   if (t) ui.toggleExclusion(t.dataset.pkg, t.dataset.cat, t.checked);
@@ -2587,20 +2776,28 @@ function bindSidebar() {
 // -- Topbar switchers: theme / language / font-size ---------------------
 function bindSwitchers() {
   const root = document.documentElement;
-  // Theme cycle: dark <-> light (binary). Dark is the primary theme of
-  // the Ascendo design system; light is the alternate. Any legacy "auto"
-  // value (carried over from older builds) is treated as dark on read.
-  const normalizePref = (p) => (p === "light" ? "light" : "dark");
+  // Theme cycle: dark → light → auto (system). Dark is the primary theme
+  // of the Ascendo design system; light is the alternate; auto follows
+  // the OS via prefers-color-scheme. The user explicitly asked for the
+  // "system" option to come back (it was removed in the UX baseline pass).
+  const VALID_THEMES = ["dark", "light", "auto"];
+  const normalizePref = (p) => (VALID_THEMES.includes(p) ? p : "dark");
+  const NEXT_THEME = { dark: "light", light: "auto", auto: "dark" };
+  const ICON_FOR = { dark: "moon", light: "sun", auto: "monitor" };
   const repaintThemeIcon = (pref) => {
     if (!window.ICONS) return;
-    const k = pref === "light" ? "sun" : "moon";
-    const b = $("#theme-switcher"); if (b) b.innerHTML = window.ICONS[k];
-    if (b) b.title = `Theme: ${pref}`;
+    const b = $("#theme-switcher");
+    if (!b) return;
+    // window.ICONS values are static SVG strings authored in icons.js —
+    // not user input — so the innerHTML assignment is safe. Keep the
+    // existing pattern for symmetry with lang/font switchers.
+    b.innerHTML = window.ICONS[ICON_FOR[pref]] || window.ICONS.moon;
+    b.title = `Theme: ${pref} (click to cycle dark → light → auto)`;
   };
   $("#theme-switcher")?.addEventListener("click", () => {
     const cur  = normalizePref(root.dataset.themePref
                   || (window.SETTINGS_CACHE?.ui?.theme));
-    const next = cur === "dark" ? "light" : "dark";
+    const next = NEXT_THEME[cur] || "dark";
     root.dataset.themePref = next;
     try { localStorage.setItem("ui-theme", next); } catch {}
     window.applyTheme(next);
@@ -2614,7 +2811,21 @@ function bindSwitchers() {
   const initial = normalizePref(root.dataset.themePref
     || (() => { try { return localStorage.getItem("ui-theme"); } catch { return null; } })());
   root.dataset.themePref = initial;
+  // Re-apply the chosen theme so the inline pre-paint hint
+  // ("dark") gets overridden when the persisted value is "light" or "auto".
+  window.applyTheme && window.applyTheme(initial);
   repaintThemeIcon(initial);
+  // Live-track OS theme changes when the user is on "auto".
+  if (window.matchMedia) {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onSystemChange = () => {
+      if ((root.dataset.themePref || "dark") === "auto") {
+        window.applyTheme && window.applyTheme("auto");
+      }
+    };
+    if (mq.addEventListener) mq.addEventListener("change", onSystemChange);
+    else if (mq.addListener) mq.addListener(onSystemChange);  // Safari < 14
+  }
   // Language cycle: en ↔ pl
   $("#lang-switcher")?.addEventListener("click", () => {
     const cur = window.UI_LANG || "en";

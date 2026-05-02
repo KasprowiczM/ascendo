@@ -66,8 +66,12 @@ _SPA_FETCH_INVENTORY: dict[str, str] = {
     "GET /runs/active/stream": "served",
     "POST /runs/active/stop": "served",
     # Stubbed below:
-    "GET /about": "stub",
-    "GET /apps/detect": "stub",
+    "GET /about": "served",
+    "GET /about/release-notes": "served",
+    "GET /apps/detect": "served",
+    "GET /apps/excluded": "served",
+    "POST /apps/exclude": "served",
+    "POST /apps/include": "served",
     "GET /exclusions": "stub",
     "GET /git/status": "stub",
     "GET /hosts": "stub-from-adapter",
@@ -153,25 +157,7 @@ def _safe_host(adapter: IAdapter | None) -> dict[str, Any]:
 # -- About / preflight -----------------------------------------------------
 
 
-@router.get("/about")
-async def about_stub(request: Request) -> dict[str, Any]:
-    """Minimal /about payload for the About tab."""
-    from ... import __version__
-
-    adapter = _get_adapter(request)
-    host = _safe_host(adapter)
-    return {
-        "name": "Ascendo",
-        "tagline": "unified updates",
-        "version": __version__,
-        "git_head": None,
-        "python": sys.version.split()[0],
-        "host": host.get("hostname"),
-        "distro": host.get("os"),
-        "kernel": host.get("os_version"),
-        "arch": host.get("arch"),
-        "release_notes_md": "",
-    }
+# /about and /about/release-notes -- served by routes/about.py.
 
 
 @router.get("/preflight")
@@ -186,20 +172,21 @@ async def preflight_stub() -> dict[str, Any]:
 # -- Apps registration (config/*.list equivalent) --------------------------
 
 
-@router.get("/apps/detect")
-async def apps_detect_stub() -> dict[str, Any]:
-    """tracked / detected / missing report -- empty for the Windows MVP."""
-    return {"tracked": [], "detected": [], "missing": [], "by_category": {}}
+# /apps/detect, /apps/exclude, /apps/include, /apps/excluded
+# -- served by routes/apps.py (default-include model + persistent
+#    %APPDATA%\\Ascendo\\excluded.json store).
+# Legacy /apps/add and /apps/remove still routed here as no-ops for any
+# old-SPA tab that POSTs them; the new model uses /apps/exclude + /apps/include.
 
 
 @router.post("/apps/add")
 async def apps_add_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True}
+    return {"ok": True, "stub": True, "message": "deprecated; use /apps/include"}
 
 
 @router.post("/apps/remove")
 async def apps_remove_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True}
+    return {"ok": True, "stub": True, "message": "deprecated; use /apps/exclude"}
 
 
 @router.post("/apt/downgrade")

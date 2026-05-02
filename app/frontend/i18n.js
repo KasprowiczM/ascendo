@@ -59,7 +59,16 @@ window.I18N = {
     },
     apps: {
       title: "Apps",
-      hint: "Compare what is installed on this machine with what's tracked in config/*.list. Add detected packages to make them part of every future update; install missing packages with one click.",
+      hint: "Every detected app is in your update config by default. Uncheck \"in config\" to skip a specific app on future runs (does NOT uninstall it). The list updates live as you check / plan / apply phases populate installed and candidate versions.",
+      col_in_config:    "In config",
+      in_config_on:     "in config",
+      in_config_off:    "excluded",
+      in_config_on_hint: "In config — Ascendo will update this app. Uncheck to skip.",
+      in_config_off_hint: "Excluded — Ascendo will NOT update this app. Check to re-include.",
+      pill_total:    "total",
+      pill_tracked:  "in config",
+      pill_excluded: "excluded",
+      empty: "No apps detected. Run a check from Categories first.",
     },
     wizard: {
       title:        "Welcome to Ascendo",
@@ -458,7 +467,16 @@ window.I18N = {
     },
     apps: {
       title: "Aplikacje",
-      hint:  "Porównaj zainstalowane aplikacje z config/*.list. Dodaj wykryte pakiety aby były aktualizowane; zainstaluj brakujące jednym klikiem.",
+      hint:  "Każda wykryta aplikacja jest domyślnie w konfiguracji aktualizacji. Odznacz \"w konfiguracji\" aby pominąć daną aplikację (nie odinstalowuje jej). Lista aktualizuje się gdy fazy check / plan / apply uzupełniają wersje.",
+      col_in_config:    "W konfiguracji",
+      in_config_on:     "w konfiguracji",
+      in_config_off:    "wykluczona",
+      in_config_on_hint: "W konfiguracji — Ascendo będzie aktualizować. Odznacz aby pominąć.",
+      in_config_off_hint: "Wykluczona — Ascendo NIE będzie aktualizować. Zaznacz aby ponownie włączyć.",
+      pill_total:    "razem",
+      pill_tracked:  "w konfiguracji",
+      pill_excluded: "wykluczone",
+      empty: "Nie wykryto aplikacji. Najpierw uruchom check w Kategoriach.",
     },
     wizard: {
       title:        "Witaj w Ascendo",
@@ -851,13 +869,23 @@ window.detectLanguage = function detectLanguage() {
 };
 
 window.applyTheme = function applyTheme(themePref) {
-  // Dark-first: any unrecognised or legacy "auto" preference resolves to
-  // dark. Only an explicit "light" flips to the secondary theme. Without
-  // this, the design system's CSS-default light theme would leak through
-  // when localStorage holds a stale value.
+  // Three-state preference: "dark" / "light" / "auto" (follows the OS via
+  // prefers-color-scheme). Anything unrecognised resolves to dark — the
+  // design system's primary surface — so a stale localStorage value can
+  // never leak the CSS-default light theme through.
   const root = document.documentElement;
-  const mode = themePref === "light" ? "light" : "dark";
+  let mode;
+  if (themePref === "auto") {
+    const sys = window.matchMedia &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches;
+    mode = sys ? "dark" : "light";
+  } else {
+    mode = themePref === "light" ? "light" : "dark";
+  }
   root.setAttribute("data-theme", mode);
-  // Keep the preference dataset in sync so the cycle resumes correctly.
-  root.dataset.themePref = mode;
+  // Keep the user-facing preference in dataset.themePref (might be "auto")
+  // separately from the resolved-mode in data-theme (always "dark" or
+  // "light"). This lets the cycle resume from the user's intent, not
+  // the rendered mode.
+  root.dataset.themePref = themePref || "dark";
 };

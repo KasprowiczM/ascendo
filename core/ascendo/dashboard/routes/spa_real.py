@@ -39,6 +39,7 @@ import re
 import time
 from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
+from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -222,6 +223,107 @@ def _load_packages(adapter: IAdapter) -> list[Package]:
     return list(inv.list_installed(host))
 
 
+# ── Check-sidecar overlay ─────────────────────────────────────────────────
+#
+# Inventory by itself only knows what's installed; it doesn't know what's
+# upgradable. The check phase produces a sidecar at
+# ``<runs_dir>/<run-id>/<source>/check__<source>.json`` with items[]
+# carrying installed + candidate + status.
+#
+# When the SPA asks ``GET /inventory/{cat}``, we look for the most-recent
+# such sidecar on disk and overlay its values onto the inventory items.
+# Result: as soon as the user clicks "check" once, every visit to
+# Categories shows real installed/candidate/status pairs without re-running
+# winget.
+
+import json as _json  # local alias so the new helper is self-contained
+
+
+def _latest_check_overlay(runs_dir: Path, category: str) -> dict[str, dict[str, Any]]:
+    """Return ``{name: {installed, candidate, status}}`` from the latest
+    successful check sidecar for ``category``, or ``{}`` if none exists.
+
+    Bounded scan (latest 50 runs) so a long-lived install with hundreds
+    of historical runs doesn't pay an O(N) glob on every request.
+    """
+    if not isinstance(runs_dir, Path):
+        runs_dir = Path(runs_dir)
+    if not runs_dir.is_dir():
+        return {}
+    candidates: list[tuple[float, Path]] = []
+    # runs_dir layout: <runs_dir>/<run-id>/<category>/check__<category>.json
+    try:
+        run_dirs = sorted(
+            (p for p in runs_dir.iterdir() if p.is_dir()),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )[:50]
+    except OSError:
+        return {}
+    for run_dir in run_dirs:
+        sidecar = run_dir / category / f"check__{category}.json"
+        if sidecar.is_file():
+            try:
+                candidates.append((sidecar.stat().st_mtime, sidecar))
+            except OSError:
+                continue
+    if not candidates:
+        return {}
+    candidates.sort(reverse=True)
+    latest = candidates[0][1]
+    try:
+        data = _json.loads(latest.read_text(encoding="utf-8"))
+    except (OSError, _json.JSONDecodeError):
+        return {}
+    items = data.get("items") or []
+    overlay: dict[str, dict[str, Any]] = {}
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        name = it.get("name") or it.get("id")
+        if not name:
+            continue
+        overlay[str(name)] = {
+            "installed": it.get("installed") or it.get("current_version"),
+            "candidate": it.get("candidate") or it.get("target_version"),
+            "status": it.get("status"),
+        }
+    return overlay
+
+
+def _enrich_items(items: list[dict[str, Any]], category: str, runs_dir: Path | None,
+                  excluded: set[str]) -> list[dict[str, Any]]:
+    """Apply check-sidecar overlay + in_config flag to a bucketed item list.
+
+    ``excluded`` is the set of ``"category:name"`` strings from
+    :mod:`apps.excluded_keys()`. ``in_config`` is True for any item NOT in
+    that set (default-include model — a fresh user has every app in
+    config until they opt-out).
+    """
+    overlay: dict[str, dict[str, Any]] = {}
+    if runs_dir is not None:
+        overlay = _latest_check_overlay(runs_dir, category)
+    enriched: list[dict[str, Any]] = []
+    for it in items:
+        out = dict(it)
+        name = out.get("name", "")
+        hit = overlay.get(name)
+        if hit:
+            if hit.get("installed") is not None:
+                out["installed"] = hit["installed"]
+            if hit.get("candidate") is not None:
+                out["candidate"] = hit["candidate"]
+            if hit.get("status"):
+                out["status"] = hit["status"]
+        # Re-classify in case the overlay filled in versions after the
+        # initial "ok" classification.
+        if out.get("installed") or out.get("candidate"):
+            out["status"] = _classify(out.get("installed"), out.get("candidate"))
+        out["in_config"] = f"{category}:{name}" not in excluded
+        enriched.append(out)
+    return enriched
+
+
 # ── /categories ───────────────────────────────────────────────────────────
 
 
@@ -255,21 +357,40 @@ async def inventory_real(request: Request) -> dict[str, Any]:
     """Full bucketed inventory keyed by source.
 
     Returns ``{"categories": {<source>: [item, ...]}}``. Each item is
-    ``{name, installed, candidate, source, status, vendor}`` per the
-    SPA contract.
+    ``{name, installed, candidate, source, status, vendor, in_config}``
+    per the SPA contract — enriched per-category with the latest check
+    sidecar overlay + exclusion-list ``in_config`` flag.
     """
+    from . import apps as apps_mod
+
     adapter = _require_adapter(request)
     cache = _get_inventory_cache(request)
+    runs_dir = getattr(request.app.state, "runs_dir", None)
     packages = cache.get(lambda: _load_packages(adapter))
-    return {"categories": _bucket(packages)}
+    excluded = apps_mod.excluded_keys()
+    buckets = _bucket(packages)
+    enriched = {
+        cat: _enrich_items(items, cat, runs_dir, excluded)
+        for cat, items in buckets.items()
+    }
+    return {"categories": enriched}
 
 
 @router.get("/inventory/summary")
 async def inventory_summary_real(request: Request) -> dict[str, Any]:
-    """Donut/bars totals derived from cached inventory."""
+    """Donut/bars totals derived from cached inventory.
+
+    Counts use enriched (check-sidecar-overlaid) items so the SPA's
+    "Available updates" panel reflects the latest check phase results
+    instead of the always-zero raw inventory.
+    """
+    from . import apps as apps_mod
+
     adapter = _require_adapter(request)
     cache = _get_inventory_cache(request)
+    runs_dir = getattr(request.app.state, "runs_dir", None)
     packages = cache.get(lambda: _load_packages(adapter))
+    excluded = apps_mod.excluded_keys()
     buckets = _bucket(packages)
 
     out = {
@@ -277,10 +398,11 @@ async def inventory_summary_real(request: Request) -> dict[str, Any]:
         "categories": {},
     }
     for cat_id, items in buckets.items():
-        ok = sum(1 for i in items if i.get("status") == "ok")
-        outdated = sum(1 for i in items if i.get("status") == "outdated")
-        missing = sum(1 for i in items if i.get("status") == "missing")
-        total = len(items)
+        enriched = _enrich_items(items, cat_id, runs_dir, excluded)
+        ok = sum(1 for i in enriched if i.get("status") == "ok")
+        outdated = sum(1 for i in enriched if i.get("status") == "outdated")
+        missing = sum(1 for i in enriched if i.get("status") == "missing")
+        total = len(enriched)
         out["categories"][cat_id] = {
             "ok": ok,
             "outdated": outdated,
@@ -296,12 +418,22 @@ async def inventory_summary_real(request: Request) -> dict[str, Any]:
 
 @router.get("/inventory/{category}")
 async def inventory_category_real(category: str, request: Request) -> dict[str, Any]:
-    """Single-category projection of /inventory."""
+    """Single-category projection of /inventory.
+
+    Items are enriched with the latest check-sidecar overlay (so
+    ``installed`` and ``candidate`` are populated as soon as the user
+    runs check once) and an ``in_config`` flag computed from the
+    persistent exclusion list (default = True; user opts out per app).
+    """
+    from . import apps as apps_mod  # avoid import cycle at module load
+
     adapter = _require_adapter(request)
     cache = _get_inventory_cache(request)
+    runs_dir = getattr(request.app.state, "runs_dir", None)
     packages = cache.get(lambda: _load_packages(adapter))
     items = _bucket(packages).get(category, [])
-    return {"category": category, "items": items}
+    enriched = _enrich_items(items, category, runs_dir, apps_mod.excluded_keys())
+    return {"category": category, "items": enriched}
 
 
 @router.post("/inventory/refresh")
@@ -327,6 +459,21 @@ def _build_health_snapshot(adapter: IAdapter) -> dict[str, Any]:
     is "good" when its status string starts with ``ok`` or
     ``degraded`` — both indicate a usable subsystem; ``error`` and
     ``unavailable`` are scored against the operator.
+
+    Output shape (matches what ``app/frontend/app.js::ui.loadHealth``
+    expects — ``available: True`` flag tells the SPA the snapshot is
+    populated, and ``issues[]`` is the per-component failure list with
+    the severity/msg shape the SPA renders as a bulleted ``<ul>``):
+
+        {
+          "available": True,
+          "score": 0..100,
+          "status": "ok" | "degraded",
+          "components": {<name>: <status-string>, ...},
+          "failed": [<name>, ...],          # list of bad component keys
+          "issues": [{"severity": "warn|err", "msg": "<comp>: <status>"}],
+          "checked_at": "<iso8601>"
+        }
     """
     components = adapter.health_check()
     bad = [
@@ -335,11 +482,25 @@ def _build_health_snapshot(adapter: IAdapter) -> dict[str, Any]:
         if not (str(v).startswith("ok") or str(v).startswith("degraded"))
     ]
     score = max(0, 100 - len(bad) * 20)
+
+    # Render the SPA-friendly issues list. Each component that's NOT
+    # plainly "ok" gets a row; "degraded" → warn, anything else → err.
+    # Operators see exactly which subsystem is misbehaving.
+    issues: list[dict[str, str]] = []
+    for name, status_str in components.items():
+        s = str(status_str)
+        if s.startswith("ok"):
+            continue
+        severity = "warn" if s.startswith("degraded") else "err"
+        issues.append({"severity": severity, "msg": f"{name}: {s}"})
+
     return {
+        "available": True,
         "score": score,
         "status": "ok" if not bad else "degraded",
         "components": components,
         "failed": bad,
+        "issues": issues,
         "checked_at": datetime.now(timezone.utc).isoformat(),
     }
 
