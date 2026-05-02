@@ -1805,6 +1805,10 @@ const ui = {
     const rec  = prog.querySelector(".run-progress-recent");
     rec.innerHTML = ""; lbl.innerHTML = ""; fill.style.width = "0%";
     prog.classList.add("hidden");
+    // Reset the live-detail panel for the new run.
+    if (window.runDetail && typeof window.runDetail.reset === "function") {
+      window.runDetail.reset(runId);
+    }
     const stripAnsi = s => s.replace(/\x1b\[[0-9;]*m/g, "");
 
     // Parse PROGRESS|... markers emitted by lib/progress.sh + apt awk parser.
@@ -1869,9 +1873,9 @@ const ui = {
       row.className = cls; row.textContent = text;
       lbl.innerHTML = `<span><b>${sc.phase}</b> · ${sc.category}</span><span class="dim">${phaseRows.size} sidecars</span>`;
     }
-    es.addEventListener("status", e => { try { const m=JSON.parse(e.data); ui.status(`run ${runId}: ${m.status}`); if(m.status==="running") ensureProgVisible(); } catch {} });
-    es.addEventListener("sidecar", e => { try { const sc=JSON.parse(e.data); renderSidecar(sc); log.textContent += `[${sc.phase}:${sc.category}] ${sc.status}\n`; log.scrollTop=log.scrollHeight; } catch {} });
-    es.addEventListener("sidecar_error", e => { try { const m=JSON.parse(e.data); log.textContent += `[sidecar parse error] ${m.path}: ${m.error}\n`; } catch {} });
+    es.addEventListener("status", e => { try { const m=JSON.parse(e.data); ui.status(`run ${runId}: ${m.status}`); if(m.status==="running") ensureProgVisible(); if (window.runDetail) window.runDetail.onStatus(runId, m); } catch {} });
+    es.addEventListener("sidecar", e => { try { const sc=JSON.parse(e.data); renderSidecar(sc); log.textContent += `[${sc.phase}:${sc.category}] ${sc.status}\n`; log.scrollTop=log.scrollHeight; if (window.runDetail) window.runDetail.onSidecar(runId, sc); } catch {} });
+    es.addEventListener("sidecar_error", e => { try { const m=JSON.parse(e.data); log.textContent += `[sidecar parse error] ${m.path}: ${m.error}\n`; if (window.runDetail) window.runDetail.onSidecarError(runId, m); } catch {} });
     es.addEventListener("done", e => {
       let p = {}; try { p = JSON.parse(e.data); } catch {}
       const status = p.status || "completed";
@@ -1880,6 +1884,7 @@ const ui = {
       ui.status(`run ${runId} ${status}${ms ? ` (${(ms/1000).toFixed(1)}s)` : ""}`);
       const stopBtn = $("#stop-btn"); if (stopBtn) stopBtn.disabled = true;
       fill.style.width = "100%"; es.close();
+      if (window.runDetail) window.runDetail.onDone(runId, p);
       ui.invalidateCaches(); ui.checkRebootBanner(); ui.loadHealth();
     });
     es.addEventListener("log", e => { try { const m=JSON.parse(e.data); const ln=m.line||""; if (!handleMarker(ln)) { log.textContent += ln + "\n"; log.scrollTop=log.scrollHeight; } } catch {} });
@@ -3000,3 +3005,558 @@ document.addEventListener("change", e => {
 
 bootstrap();
 window.ui = ui;
+
+// =====================================================================
+// Run Center: Live detail panel controller (renders BELOW the summary
+// cards). Fed by the SSE handlers in ui.attachStream — pure DOM, no
+// innerHTML interpolation. The panel renders a per-(phase, source)
+// progress bar + a streaming Packages-found list + a Diagnostics tail
+// + a chip-row navigator. All labels go through tr() for EN+PL parity.
+// =====================================================================
+(function () {
+  function $$(id) { return document.getElementById(id); }
+  function trKey(key, fallback) {
+    if (typeof window.tr !== "function") return fallback;
+    const v = window.tr(key);
+    return (v === key) ? fallback : v;
+  }
+  function clearChildren(node) {
+    while (node && node.firstChild) node.removeChild(node.firstChild);
+  }
+  function fmtElapsed(ms) {
+    if (!Number.isFinite(ms) || ms < 0) return "";
+    const totalSec = Math.floor(ms / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return m > 0 ? (m + "m " + String(s).padStart(2, "0") + "s")
+                 : (s + "s");
+  }
+  function statusToCls(status) {
+    if (status === "success" || status === "ok" || status === "up_to_date") return "success";
+    if (status === "failed" || status === "error") return "failed";
+    if (status === "partial" || status === "warn" || status === "warning") return "partial";
+    if (status === "skipped") return "skipped";
+    if (status === "running" || status === "planned") return "running";
+    return "skipped";
+  }
+  function pillClassFor(status) {
+    const c = statusToCls(status);
+    if (c === "success") return "st-pill st-ok";
+    if (c === "failed")  return "st-pill st-err";
+    if (c === "partial") return "st-pill st-warn";
+    if (c === "running") return "st-pill st-info";
+    return "st-pill st-skip";
+  }
+  function statusLabel(status) {
+    const key = "run.detail.status." + (status || "unknown");
+    const fb = (status || "unknown");
+    return trKey(key, fb);
+  }
+
+  // Per-package row keyed by item.name + index fallback.
+  function packageKey(item, idx) {
+    const id = item && (item.name || item.id);
+    return id ? String(id) : ("__row_" + idx);
+  }
+
+  // ---- State -----------------------------------------------------------
+  // runDetail.state shape:
+  //   {
+  //     runId: string|null,
+  //     activeKey: "<phase>__<source>" | null,
+  //     phaseSource: Map<key, {
+  //         phase, source, sidecar, status,
+  //         items: Map<itemKey, item>,
+  //         itemOrder: [itemKey, ...],
+  //         messages: [{level, text, time}],
+  //         lastEventAt: number,
+  //         done: boolean,
+  //     }>,
+  //     started: number, finished: number|null,
+  //     userScrolledDiagnostics: boolean,
+  //     elapsedTimer: handle,
+  //   }
+  function newState() {
+    return {
+      runId: null,
+      activeKey: null,
+      phaseSource: new Map(),
+      started: Date.now(),
+      finished: null,
+      userScrolledDiagnostics: false,
+      elapsedTimer: null,
+      etaSeconds: null,
+    };
+  }
+  let state = newState();
+
+  function setActive(key) {
+    if (!state.phaseSource.has(key)) return;
+    state.activeKey = key;
+    render();
+  }
+
+  function ensureBucket(phase, source) {
+    const key = (phase || "?") + "__" + (source || "?");
+    let b = state.phaseSource.get(key);
+    if (!b) {
+      b = {
+        phase: phase || "?",
+        source: source || "?",
+        sidecar: null,
+        status: "running",
+        items: new Map(),
+        itemOrder: [],
+        messages: [],
+        lastEventAt: Date.now(),
+        done: false,
+      };
+      state.phaseSource.set(key, b);
+    }
+    return { key, bucket: b };
+  }
+
+  function ingestSidecar(sc) {
+    if (!sc || typeof sc !== "object") return;
+    const phase = sc.phase || (sc.kind || "?");
+    const source = sc.category || sc.source_type || "?";
+    const { key, bucket } = ensureBucket(phase, source);
+    bucket.sidecar = sc;
+    bucket.status = sc.status || "running";
+    bucket.lastEventAt = Date.now();
+    bucket.done = (sc.status === "success" || sc.status === "failed"
+                   || sc.status === "partial" || sc.status === "skipped");
+    // Items: replace with the sidecar's items[] (sidecars are full snapshots).
+    const items = Array.isArray(sc.items) ? sc.items : [];
+    bucket.items = new Map();
+    bucket.itemOrder = [];
+    items.forEach((it, idx) => {
+      const k = packageKey(it, idx);
+      bucket.items.set(k, it);
+      bucket.itemOrder.push(k);
+    });
+    // Diagnostics: rebuild from sidecar messages[].
+    const msgs = Array.isArray(sc.messages) ? sc.messages : [];
+    bucket.messages = msgs.map(m => ({
+      level: (m.level || "info").toLowerCase(),
+      text:  m.text || m.message || "",
+      time:  m.time || m.timestamp || sc.finished_at || sc.started_at || null,
+    }));
+    // Auto-focus newly arrived bucket if no active or the active is done.
+    const cur = state.activeKey ? state.phaseSource.get(state.activeKey) : null;
+    if (!cur || cur.done || !cur.lastEventAt) state.activeKey = key;
+  }
+
+  function ingestSidecarError(payload) {
+    // Surface parse errors as diagnostics on the active bucket so the user
+    // sees them; if no bucket exists yet, create a synthetic one.
+    const phase = "?", source = "?";
+    const { key, bucket } = ensureBucket(phase, source);
+    bucket.messages.push({
+      level: "error",
+      text: "sidecar parse error: " + (payload.path || "?") + ": " + (payload.error || "?"),
+      time: new Date().toISOString(),
+    });
+    if (!state.activeKey) state.activeKey = key;
+  }
+
+  function onStatus(_runId, m) {
+    if (!m) return;
+    if (m.status === "running" && !state.elapsedTimer) {
+      state.elapsedTimer = setInterval(render, 1000);
+    }
+    if (m.status === "completed" || m.status === "failed") {
+      state.finished = Date.now();
+    }
+    render();
+  }
+
+  function onSidecar(_runId, sc) {
+    ingestSidecar(sc);
+    render();
+  }
+
+  function onSidecarError(_runId, m) {
+    ingestSidecarError(m || {});
+    render();
+  }
+
+  function onDone(_runId, p) {
+    state.finished = Date.now();
+    if (state.elapsedTimer) {
+      clearInterval(state.elapsedTimer);
+      state.elapsedTimer = null;
+    }
+    if (p && Number.isFinite(p.duration_ms)) {
+      state.started = state.finished - p.duration_ms;
+    }
+    render();
+  }
+
+  function reset(runId) {
+    if (state.elapsedTimer) {
+      clearInterval(state.elapsedTimer);
+      state.elapsedTimer = null;
+    }
+    state = newState();
+    state.runId = runId || null;
+    state.started = Date.now();
+    state.elapsedTimer = setInterval(render, 1000);
+    // Optional ETA, degrades gracefully if endpoint is unwired.
+    fetch("/telemetry/eta", { credentials: "omit" })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (j && Number.isFinite(j.eta_seconds)) {
+          state.etaSeconds = j.eta_seconds;
+          render();
+        }
+      })
+      .catch(() => { /* silent — endpoint optional */ });
+    render();
+  }
+
+  // ---- Render ----------------------------------------------------------
+  function render() {
+    const panel = $$("run-detail-panel");
+    if (!panel) return;
+    const buckets = state.phaseSource;
+    if (buckets.size === 0 && !state.runId) {
+      panel.classList.add("hidden");
+      return;
+    }
+    panel.classList.remove("hidden");
+
+    renderElapsed();
+    renderNav();
+    renderActiveBucket();
+  }
+
+  function renderElapsed() {
+    const elapsedEl = $$("run-detail-elapsed");
+    if (!elapsedEl) return;
+    const end = state.finished || Date.now();
+    const ms = Math.max(0, end - state.started);
+    const label = trKey("run.detail.elapsed", "elapsed");
+    elapsedEl.textContent = label + " " + fmtElapsed(ms);
+  }
+
+  function renderNav() {
+    const nav = $$("run-detail-nav");
+    if (!nav) return;
+    clearChildren(nav);
+    // Render in canonical phase order, then by source.
+    const phaseOrder = ["check", "plan", "apply", "verify", "cleanup"];
+    const keys = Array.from(state.phaseSource.keys()).sort((a, b) => {
+      const ba = state.phaseSource.get(a), bb = state.phaseSource.get(b);
+      const pa = phaseOrder.indexOf(ba.phase), pb = phaseOrder.indexOf(bb.phase);
+      const ia = pa < 0 ? phaseOrder.length : pa;
+      const ib = pb < 0 ? phaseOrder.length : pb;
+      if (ia !== ib) return ia - ib;
+      return (ba.source || "").localeCompare(bb.source || "");
+    });
+    keys.forEach(key => {
+      const b = state.phaseSource.get(key);
+      const tab = document.createElement("button");
+      tab.type = "button";
+      tab.className = "run-detail-tab";
+      tab.dataset.phase = b.phase;
+      tab.dataset.source = b.source;
+      tab.dataset.status = statusToCls(b.status);
+      tab.setAttribute("aria-selected", state.activeKey === key ? "true" : "false");
+      const dot = document.createElement("span");
+      dot.className = "run-detail-tab-dot";
+      tab.appendChild(dot);
+      const lbl = document.createElement("span");
+      lbl.className = "run-detail-tab-label";
+      lbl.textContent = b.phase + " · " + b.source;
+      tab.appendChild(lbl);
+      tab.addEventListener("click", () => setActive(key));
+      nav.appendChild(tab);
+    });
+  }
+
+  function renderActiveBucket() {
+    const b = state.activeKey ? state.phaseSource.get(state.activeKey) : null;
+    renderBar(b);
+    renderPackages(b);
+    renderDiagnostics(b);
+  }
+
+  function renderBar(bucket) {
+    const fill = $$("run-detail-bar-fill");
+    const meta = $$("run-detail-bar-meta");
+    const wrap = $$("run-detail-bar-wrap");
+    if (!fill || !meta || !wrap) return;
+    fill.classList.remove("is-warn", "is-err");
+    if (!bucket) {
+      fill.style.width = "0%";
+      wrap.setAttribute("aria-valuenow", "0");
+      clearChildren(meta);
+      return;
+    }
+    const items = bucket.itemOrder.map(k => bucket.items.get(k)).filter(Boolean);
+    const total = items.length;
+    let processed = 0;
+    let failed = 0;
+    items.forEach(it => {
+      const s = (it && it.status) || "";
+      if (s && s !== "planned" && s !== "running") processed++;
+      if (s === "failed" || s === "error") failed++;
+    });
+    const pct = total > 0 ? Math.round((processed / total) * 100)
+                          : (bucket.done ? 100 : 0);
+    fill.style.width = pct + "%";
+    if (statusToCls(bucket.status) === "failed") fill.classList.add("is-err");
+    else if (statusToCls(bucket.status) === "partial") fill.classList.add("is-warn");
+    wrap.setAttribute("aria-valuenow", String(pct));
+
+    clearChildren(meta);
+    const left = document.createElement("span");
+    left.className = "run-detail-meta-left";
+    const phaseB = document.createElement("b");
+    phaseB.textContent = bucket.phase;
+    left.appendChild(phaseB);
+    left.appendChild(document.createTextNode(" · " + bucket.source));
+    meta.appendChild(left);
+
+    const middle = document.createElement("span");
+    middle.className = "run-detail-meta-middle";
+    middle.textContent = pct + "%  ·  " + processed + " "
+      + trKey("run.detail.of", "of") + " " + total + " "
+      + trKey("run.detail.items_total", "items")
+      + (failed > 0 ? "  ·  " + failed + " " + trKey("run.detail.items_failed", "failed") : "");
+    meta.appendChild(middle);
+
+    const right = document.createElement("span");
+    right.className = "run-detail-meta-eta";
+    if (Number.isFinite(state.etaSeconds) && state.etaSeconds > 0 && !bucket.done) {
+      right.textContent = trKey("run.detail.eta", "ETA") + " " + fmtElapsed(state.etaSeconds * 1000);
+    }
+    meta.appendChild(right);
+  }
+
+  function renderPackages(bucket) {
+    const list = $$("run-detail-packages-list");
+    const empty = $$("run-detail-packages-empty");
+    if (!list || !empty) return;
+    clearChildren(list);
+    const items = bucket ? bucket.itemOrder.map(k => bucket.items.get(k)).filter(Boolean) : [];
+    if (!bucket) {
+      empty.classList.remove("hidden");
+      empty.textContent = trKey("run.detail.packages_empty",
+                                "Waiting for the first sidecar to land.");
+      return;
+    }
+    if (items.length === 0) {
+      empty.classList.remove("hidden");
+      empty.textContent = trKey("run.detail.no_packages",
+                                "This phase reported no packages.");
+      return;
+    }
+    empty.classList.add("hidden");
+    items.forEach((it, idx) => list.appendChild(buildPackageRow(it, idx, bucket)));
+  }
+
+  function buildPackageRow(item, idx, bucket) {
+    const row = document.createElement("li");
+    const det = document.createElement("details");
+    det.className = "run-detail-pkg";
+    det.dataset.itemKey = packageKey(item, idx);
+
+    const sum = document.createElement("summary");
+    sum.className = "run-detail-pkg-summary";
+
+    const name = document.createElement("span");
+    name.className = "run-detail-pkg-name";
+    name.title = item.name || item.id || "";
+    name.textContent = item.name || item.id || "—";
+    sum.appendChild(name);
+
+    const installed = document.createElement("span");
+    installed.className = "run-detail-pkg-version";
+    const installedLabel = document.createElement("b");
+    installedLabel.textContent = item.installed || item.current_version
+                                 || trKey("run.detail.unknown_version", "—");
+    installed.appendChild(installedLabel);
+    sum.appendChild(installed);
+
+    const candidate = document.createElement("span");
+    candidate.className = "run-detail-pkg-version";
+    const arrow = document.createElement("span");
+    arrow.className = "run-detail-arrow";
+    arrow.textContent = "→ ";
+    candidate.appendChild(arrow);
+    const candB = document.createElement("b");
+    candB.textContent = item.candidate || item.target_version || item.resolved_version
+                        || trKey("run.detail.unknown_version", "—");
+    candidate.appendChild(candB);
+    sum.appendChild(candidate);
+
+    const pill = document.createElement("span");
+    const status = item.status || "unknown";
+    pill.className = pillClassFor(status) + " run-detail-pkg-status";
+    pill.textContent = statusLabel(status);
+    sum.appendChild(pill);
+
+    // Per-package mini progress bar (apply phase or anything claiming
+    // running). For sources that don't stream per-package progress,
+    // we render an indeterminate strobe.
+    if (bucket && bucket.phase === "apply") {
+      const progress = document.createElement("span");
+      progress.className = "run-detail-pkg-progress";
+      const pf = document.createElement("span");
+      pf.className = "run-detail-pkg-progress-fill";
+      progress.appendChild(pf);
+      const pct = (item && Number.isFinite(item.progress_pct)) ? item.progress_pct : null;
+      if (pct !== null) {
+        pf.style.width = Math.max(0, Math.min(100, pct)) + "%";
+        progress.classList.add("is-running");
+      } else if (status === "running" || status === "planned") {
+        progress.classList.add("is-indeterminate");
+      } else if (status === "success" || status === "up_to_date") {
+        pf.style.width = "100%";
+      } else if (status === "failed") {
+        pf.style.width = "100%";
+        pf.style.background = "var(--err)";
+      }
+      sum.appendChild(progress);
+    }
+
+    det.appendChild(sum);
+    det.appendChild(buildPackageDetail(item));
+    row.appendChild(det);
+    return row;
+  }
+
+  function buildPackageDetail(item) {
+    const wrap = document.createElement("div");
+    wrap.className = "run-detail-pkg-detail";
+
+    const dl = document.createElement("dl");
+    dl.className = "run-detail-pkg-meta-row";
+    function dtdd(label, value) {
+      if (value === undefined || value === null || value === "") return;
+      const dt = document.createElement("dt"); dt.textContent = label;
+      const dd = document.createElement("dd"); dd.textContent = String(value);
+      dl.appendChild(dt); dl.appendChild(dd);
+    }
+    dtdd(trKey("run.detail.installed", "Installed"),
+         item.installed || item.current_version);
+    dtdd(trKey("run.detail.candidate", "Candidate"),
+         item.candidate || item.target_version);
+    dtdd(trKey("run.detail.resolved", "Resolved"), item.resolved_version);
+    dtdd(trKey("run.detail.source",   "Source"),
+         (item.source && (item.source.type || item.source.feed)) || item.source_type);
+    if (item.evidence && typeof item.evidence === "object") {
+      const evParts = [];
+      Object.keys(item.evidence).forEach(k => {
+        if (item.evidence[k]) evParts.push(k + "=" + item.evidence[k]);
+      });
+      if (evParts.length) dtdd(trKey("run.detail.evidence", "Evidence"), evParts.join("  "));
+    }
+    if (Number.isFinite(item.exit_code)) dtdd("exit", item.exit_code);
+    wrap.appendChild(dl);
+
+    const messages = Array.isArray(item.messages) ? item.messages : [];
+    const ul = document.createElement("ul");
+    ul.className = "run-detail-pkg-msg";
+    if (messages.length === 0) {
+      const li = document.createElement("li");
+      li.className = "lvl-info";
+      li.textContent = trKey("run.detail.no_messages",
+                             "No item-level messages.");
+      ul.appendChild(li);
+    } else {
+      messages.forEach(m => {
+        const li = document.createElement("li");
+        const lvl = (m.level || "info").toLowerCase();
+        li.className = "lvl-" + (lvl === "warning" ? "warn" : lvl);
+        li.textContent = "[" + lvl.toUpperCase() + "] " + (m.text || m.message || "");
+        ul.appendChild(li);
+      });
+    }
+    wrap.appendChild(ul);
+    return wrap;
+  }
+
+  function renderDiagnostics(bucket) {
+    const list = $$("run-detail-diagnostics-list");
+    if (!list) return;
+    // Track userScrolledDiagnostics so auto-scroll only kicks when the user
+    // has the toggle on AND hasn't scrolled away.
+    if (!list._scrollHookInstalled) {
+      list._scrollHookInstalled = true;
+      list.addEventListener("scroll", () => {
+        const nearBottom = (list.scrollTop + list.clientHeight) >= (list.scrollHeight - 4);
+        state.userScrolledDiagnostics = !nearBottom;
+      });
+    }
+    clearChildren(list);
+    const messages = bucket ? bucket.messages : [];
+    if (messages.length === 0) {
+      const li = document.createElement("li");
+      li.className = "run-detail-diag lvl-info";
+      const time = document.createElement("span");
+      time.className = "run-detail-diag-time"; time.textContent = "·";
+      const lvl = document.createElement("span");
+      lvl.className = "run-detail-diag-level"; lvl.textContent = "info";
+      const text = document.createElement("span");
+      text.className = "run-detail-diag-text";
+      text.textContent = trKey("run.detail.no_diagnostics", "No diagnostics yet.");
+      li.appendChild(time); li.appendChild(lvl); li.appendChild(text);
+      list.appendChild(li);
+      return;
+    }
+    // Chronological order (assume sidecar order is chronological).
+    messages.forEach(m => {
+      const li = document.createElement("li");
+      const lvl = (m.level || "info").toLowerCase();
+      const lvlNorm = (lvl === "warning") ? "warn" : (lvl === "err" ? "error" : lvl);
+      li.className = "run-detail-diag lvl-" + lvlNorm;
+      const time = document.createElement("span");
+      time.className = "run-detail-diag-time";
+      time.textContent = formatDiagTime(m.time);
+      const lvlEl = document.createElement("span");
+      lvlEl.className = "run-detail-diag-level";
+      lvlEl.textContent = lvlNorm;
+      const text = document.createElement("span");
+      text.className = "run-detail-diag-text";
+      text.textContent = m.text || "";
+      li.appendChild(time); li.appendChild(lvlEl); li.appendChild(text);
+      list.appendChild(li);
+    });
+    const auto = $$("run-detail-autoscroll");
+    if (auto && auto.checked && !state.userScrolledDiagnostics) {
+      list.scrollTop = list.scrollHeight;
+    }
+  }
+  function formatDiagTime(t) {
+    if (!t) return "·";
+    try {
+      const d = new Date(t);
+      if (Number.isNaN(d.getTime())) return "·";
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      const ss = String(d.getSeconds()).padStart(2, "0");
+      return hh + ":" + mm + ":" + ss;
+    } catch { return "·"; }
+  }
+
+  // ---- Public API exposed via window.runDetail ------------------------
+  window.runDetail = {
+    reset: reset,
+    onStatus: onStatus,
+    onSidecar: onSidecar,
+    onSidecarError: onSidecarError,
+    onDone: onDone,
+    // Test/debug accessor (do not rely on the shape externally).
+    _state: function () { return state; },
+  };
+
+  // Initial render once DOM is ready (panel just stays hidden until a run).
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", render, { once: true });
+  } else {
+    render();
+  }
+})();
