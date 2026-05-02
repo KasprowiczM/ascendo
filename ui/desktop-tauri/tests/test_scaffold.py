@@ -34,15 +34,26 @@ class TestScaffold(unittest.TestCase):
         self.assertIn('tauri = { version = "2"', text)
         self.assertIn("ureq", text)
 
-    def test_tauri_conf_window_size(self) -> None:
+    def test_tauri_conf_identifier_and_no_static_windows(self) -> None:
         p = ROOT / "src-tauri" / "tauri.conf.json"
         self.assertTrue(p.exists(), f"missing {p}")
         data = json.loads(p.read_text(encoding="utf-8"))
-        win = data["app"]["windows"][0]
-        self.assertEqual(win["width"], 1280)
-        self.assertEqual(win["height"], 800)
-        self.assertEqual(win["title"], "Ascendo - Unified Updates")
+        # We deliberately keep app.windows empty so the only window is built
+        # at runtime in main.rs with a port-resolved URL. A static window
+        # entry with the same label "main" would conflict and crash the app
+        # with: "a webview with label `main` already exists".
+        self.assertEqual(data["app"]["windows"], [])
         self.assertEqual(data["identifier"], "dev.ascendo.app")
+        self.assertEqual(data["productName"], "Ascendo")
+
+    def test_main_rs_window_dimensions(self) -> None:
+        # The window builder lives in main.rs now (not tauri.conf.json) so
+        # that's where we pin the dimensions.
+        p = ROOT / "src-tauri" / "src" / "main.rs"
+        text = p.read_text(encoding="utf-8")
+        self.assertIn("inner_size(1280.0, 800.0)", text)
+        self.assertIn("min_inner_size(960.0, 600.0)", text)
+        self.assertIn('"Ascendo - Unified Updates"', text)
 
     def test_main_rs_spawns_python(self) -> None:
         p = ROOT / "src-tauri" / "src" / "main.rs"

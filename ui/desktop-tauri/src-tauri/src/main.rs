@@ -91,7 +91,10 @@ fn main() {
     let port = pick_port();
     let child = spawn_backend(port);
 
-    if !wait_for_health(port, Duration::from_secs(10)) {
+    // 60s window: Python 3.14 + uvicorn + adapter discovery cold-starts in
+    // 8-25s on a typical Win11 laptop; the original 10s ceiling was too
+    // tight and produced a connection-refused webview most of the time.
+    if !wait_for_health(port, Duration::from_secs(60)) {
         // Don't bail — let the WebView render a connection-refused page so
         // the user can read the troubleshooting hint at the very top of
         // ui/desktop-tauri/README.md.
@@ -110,6 +113,11 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .manage(SidecarProcess(Mutex::new(Some(child))))
         .setup(move |app| {
+            // We deliberately do NOT declare any windows in tauri.conf.json
+            // (`app.windows = []` there) so we can build the only window
+            // here with a runtime-resolved URL. If a tauri.conf window with
+            // label "main" is ever re-added, this builder will panic with
+            // "a webview with label `main` already exists".
             let _window = WebviewWindowBuilder::new(
                 app,
                 "main",
