@@ -57,15 +57,35 @@ if (-not $SkipPrereqCheck) {
     # native crates and needs cl.exe / link.exe / Windows SDK headers.
     $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
     $hasMsvc = $false
+    $bootstrapperPath = $null
     if (Test-Path $vswhere) {
+        # Look for the C++ workload component specifically.
         $msvc = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
         if ($msvc) { $hasMsvc = $true }
+        # Also detect whether the bootstrapper itself is installed (so we
+        # can recommend `vs_installer modify` instead of `winget install`,
+        # which silently no-ops on an already-installed package).
+        $bootstrapperPath = & $vswhere -all -prerelease -products * -property installationPath 2>$null | Select-Object -First 1
     }
     if (-not $hasMsvc) {
-        $missing += @{
-            name    = "MSVC C++ build tools (Microsoft.VisualStudio.Workload.VCTools)"
-            install = 'winget install Microsoft.VisualStudio.2022.BuildTools --override "--passive --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"'
-            details = "The bare BuildTools package only ships the bootstrapper. The workload flag is required to actually install cl.exe + the Windows SDK."
+        $vsInstaller = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
+        if ($bootstrapperPath -and (Test-Path $vsInstaller)) {
+            # Bootstrapper is there but the C++ workload isn't selected.
+            # Use `vs_installer modify` to add the workload to the existing
+            # install. winget refuses to re-run with --override when the
+            # package is "already installed".
+            $cmd = "& '$vsInstaller' modify --installPath '$bootstrapperPath' --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --wait"
+            $missing += @{
+                name    = "MSVC C++ workload (Microsoft.VisualStudio.Workload.VCTools)"
+                install = $cmd
+                details = "The Build Tools bootstrapper is installed at `"$bootstrapperPath`" but no C++ workload is selected. Run the modify command (UAC will prompt). 5-10 min."
+            }
+        } else {
+            $missing += @{
+                name    = "MSVC C++ build tools (Microsoft.VisualStudio.Workload.VCTools)"
+                install = 'winget install Microsoft.VisualStudio.2022.BuildTools --override "--passive --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"'
+                details = "First-time install: winget will pull the bootstrapper and run it with the workload flag in one shot."
+            }
         }
     }
 
