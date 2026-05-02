@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .routes.health import router as health_router
+from .routes.onboarding import router as onboarding_router
 from .routes.runs import router as runs_router
 from .routes.spa_real import InventoryCache
 from .routes.spa_real import router as spa_real_router
@@ -149,6 +150,9 @@ def create_app(
     # spa_stubs so they win on path collisions for /categories,
     # /inventory*, /health/check, /health/run, /runs/active*.
     app.include_router(spa_real_router, prefix="")
+    # Persistent first-run wizard endpoints (graduated from spa_stubs).
+    # MUST be mounted BEFORE spa_stubs so its real handlers win.
+    app.include_router(onboarding_router, prefix="")
     # Legacy SPA stubs -- transient placeholders for endpoints the
     # Ubuntu_Aktualizacje SPA expects but the new core hasn't ported yet.
     # Delete the matching stub from routes/spa_stubs.py when each real
