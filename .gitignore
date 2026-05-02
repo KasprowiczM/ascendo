@@ -33,6 +33,14 @@ __pycache__/
 # PyInstaller bundle. The exe + _internal/ tree is too large to commit.
 ui/desktop-tauri/src-tauri/binaries/
 
+# Tauri build needs installer assets + LICENSE inside src-tauri/ because
+# Tauri's path resolution chokes on `..` segments crossing the workspace
+# root. We treat the src-tauri/ copies as build-time artefacts and let
+# `bin/build-installer.ps1` populate them from the canonical sources
+# under `packaging/installer-assets/` and the repo root LICENSE.
+ui/desktop-tauri/src-tauri/installer-assets/
+ui/desktop-tauri/src-tauri/LICENSE
+
 # Throw-away preview PNGs from the installer-assets generator.
 packaging/installer-assets/_preview-*.png
 *.py[cod]

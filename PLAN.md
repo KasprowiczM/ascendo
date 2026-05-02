@@ -1,6 +1,6 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-02 — Sesja 13 closed, Windows end-to-end + frontend apply UX + Tauri 2.x scaffold landed.
+> Last updated: 2026-05-02 (sesja 15) — Windows installer pipeline shipped (sub-project 3). PyInstaller sidecar + branded MSI/NSIS produced from a single command.
 >
 > This file is the **single source of truth for what comes next**. HANDOFF.md
 > is the historical session log; PLAN.md is the forward roadmap. Update this
@@ -127,11 +127,12 @@ git push --tags
 
 | Item | Effort | Files |
 |---|---|---|
-| **MSI installer (WiX)** | 3-4 days | `packaging/windows/ascendo.wxs` + `build-msi.ps1`; bundles PyInstaller one-folder + FastAPI runtime + .psm1 modules |
-| **winget manifest** | 1 day | PR to `microsoft/winget-pkgs`: `manifests/A/Ascendo/Ascendo/<version>/*.yaml` |
+| **MSI installer (WiX)** ✅ (2026-05-02 sesja 15) | done | `packaging/pyinstaller/ascendo.spec` + `bin/build-installer.ps1` produce `dist/Ascendo-<v>-x64.msi`. Tauri 2.x WiX bundler with `bundle.windows.wix` + branded BMPs. |
+| **NSIS .exe installer** ✅ (2026-05-02 sesja 15) | done | Same pipeline, `dist/Ascendo-<v>-x64-setup.exe`. perMachine install, license page, Start menu + Desktop shortcuts, Add/Remove entry, NSIS hook file with sub-project 4 placeholder for service registration. |
+| **winget manifest** | 1 day (sub-project 5) | PR to `microsoft/winget-pkgs`: `manifests/A/Ascendo/Ascendo/<version>/*.yaml` |
 | **GitHub Releases CI** | 2-3 days | `.github/workflows/release.yml`: build + sign + publish on tag |
-| **Authenticode signing** | 1 day | toolchain setup (azure trusted-signing or DigiCert); required for SmartScreen |
-| **Tauri 2.x shell** ✅ scaffold (2026-05-02) | 3-4 days for full build | `ui/desktop-tauri/` scaffold landed in `30d1167` (4 tests pass); full packaged build pending Rust toolchain on user's machine. `bin/launch-desktop.ps1 -Build` produces `.exe + .msi` once `winget install Rustlang.Rustup` runs. |
+| **Authenticode signing** | 1 day | toolchain setup (azure trusted-signing or DigiCert); required for SmartScreen. `signtool` invocation documented in `packaging/README.md`. |
+| **Tauri 2.x shell** ✅ scaffold (2026-05-02) | 3-4 days for full build ✅ done sesja 15 | `ui/desktop-tauri/` scaffold landed in `30d1167`; full packaged build wired in sesja 15 — `pwsh -File bin/build-installer.ps1` is the single command. Sidecar = PyInstaller-bundled `ascendo.exe`, no system Python needed. |
 | **Frontend SPA migration** | 1-2 days (deferred) | Already mounted via `core/ascendo/dashboard/app.py`; physical move `app/frontend/` → `ui/frontend/` is the M4 step. |
 | **Self-host webfonts** ✅ (2026-05-02) | done in `18c5bcf` | Inter Tight + JetBrains Mono woff2 dropped into `app/frontend/fonts/`; `@font-face` rules + Google Fonts CDN import removed. |
 

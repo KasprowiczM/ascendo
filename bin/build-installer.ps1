@@ -101,8 +101,8 @@ if (-not $SkipPyInstaller) {
     }
 }
 
-# ── Step 2: Stage into Tauri sidecar slot ─────────────────────────────
-Write-Host "[2/4] staging sidecar bundle into $SidecarStaging…" -ForegroundColor Cyan
+# ── Step 2: Stage into Tauri sidecar slot + installer assets ─────────
+Write-Host "[2/4] staging sidecar bundle + installer assets…" -ForegroundColor Cyan
 if (Test-Path $SidecarStaging) {
     Remove-Item -Recurse -Force $SidecarStaging
 }
@@ -110,14 +110,35 @@ New-Item -ItemType Directory -Force -Path $SidecarStaging | Out-Null
 Copy-Item -Recurse -Force `
     -Path (Join-Path $PyinstallerDist "ascendo/*") `
     -Destination $SidecarStaging
-Write-Host "      → $SidecarStaging" -ForegroundColor Green
+Write-Host "      → sidecar    : $SidecarStaging" -ForegroundColor Green
+
+# Tauri's path resolver does not handle `..` segments crossing the
+# workspace root cleanly (verified on tauri@2.11), so we mirror the
+# canonical sources from packaging/installer-assets/ + repo-root LICENSE
+# into src-tauri/ at build time. The mirror is .gitignored.
+$AssetsSrc = Join-Path $RepoRoot "packaging/installer-assets"
+$AssetsDst = Join-Path $RepoRoot "ui/desktop-tauri/src-tauri/installer-assets"
+$LicenseSrc = Join-Path $RepoRoot "LICENSE"
+$LicenseDst = Join-Path $RepoRoot "ui/desktop-tauri/src-tauri/LICENSE"
+New-Item -ItemType Directory -Force -Path $AssetsDst | Out-Null
+foreach ($f in @("installer-banner-nsis.bmp","installer-banner-wix.bmp",
+                 "installer-sidebar-nsis.bmp","installer-sidebar-wix.bmp",
+                 "nsis-installer-hooks.nsh")) {
+    Copy-Item -Force (Join-Path $AssetsSrc $f) (Join-Path $AssetsDst $f)
+}
+Copy-Item -Force $LicenseSrc $LicenseDst
+Write-Host "      → assets     : $AssetsDst" -ForegroundColor Green
+Write-Host "      → license    : $LicenseDst" -ForegroundColor Green
 
 # ── Step 3: Tauri build ───────────────────────────────────────────────
 if (-not $SkipTauri) {
     Write-Host "[3/4] running Tauri build (this can take 5-10 min on first run)…" -ForegroundColor Cyan
-    $launchArgs = @("-Build")
-    if ($SkipDeps)        { $launchArgs += "-SkipDeps" }
-    if ($SkipPrereqCheck) { $launchArgs += "-SkipPrereqCheck" }
+    # Splat as a hashtable, NOT an array — array splatting drops switch
+    # names through nested script invocation in some PS edges (verified
+    # on PS7.6 against bin/launch-desktop.ps1 with `[switch]$Build`).
+    $launchArgs = @{ Build = $true }
+    if ($SkipDeps)        { $launchArgs['SkipDeps']        = $true }
+    if ($SkipPrereqCheck) { $launchArgs['SkipPrereqCheck'] = $true }
     & (Join-Path $PSScriptRoot "launch-desktop.ps1") @launchArgs
     if ($LASTEXITCODE -ne 0) {
         throw "tauri build failed (exit $LASTEXITCODE)"
