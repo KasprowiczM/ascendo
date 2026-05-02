@@ -70,6 +70,112 @@ const sudoMgr = {
   },
 };
 
+// -- Windows service indicator ----------------------------------------------
+//
+// Mirrors sudoMgr's pattern: refreshIndicator() updates the footer pill via
+// DOM construction (no innerHTML interpolation; the security hook blocks it
+// and i18n strings could otherwise inject markup). Settings tab buttons
+// drive install / uninstall / restart through the /service/* REST surface.
+const serviceMgr = {
+  _last: null,
+  _t: (key, fallback) => (window.tr && window.tr("service." + key)) || fallback,
+
+  async refreshIndicator() {
+    try {
+      const s = await api.get("/service/status");
+      this._last = s;
+      const ind = document.getElementById("service-indicator");
+      if (!ind) return;
+      ind.textContent = "";
+      const span = document.createElement("span");
+      const installed = !!s.installed;
+      const running = !!s.running;
+      span.className = "badge " + (running ? "ok" : (installed ? "warn" : "dim"));
+      span.textContent = running
+        ? this._t("pill_running", "service running")
+        : installed
+          ? this._t("pill_stopped", "service stopped")
+          : this._t("pill_not_installed", "service off");
+      ind.appendChild(span);
+      this._renderCard(s);
+    } catch (e) {
+      // Backend may not have /service yet (mid-rollout) — pill silently absent.
+    }
+  },
+
+  _renderCard(s) {
+    const card = document.getElementById("service-status-card");
+    if (!card) return;
+    card.textContent = "";
+    if (!s.installed) {
+      const p = document.createElement("p");
+      p.className = "dim";
+      p.textContent = this._t("not_installed_msg",
+        "Service not installed. Click Install to register AscendoDashboard.");
+      card.appendChild(p);
+      return;
+    }
+    const row = (label, value) => {
+      const div = document.createElement("div");
+      div.style.display = "flex";
+      div.style.justifyContent = "space-between";
+      const lab = document.createElement("span"); lab.textContent = label;
+      const val = document.createElement("span"); val.textContent = value;
+      val.style.fontFamily = "var(--mono, monospace)";
+      div.appendChild(lab); div.appendChild(val);
+      return div;
+    };
+    const yes = this._t("yes", "yes");
+    const no = this._t("no", "no");
+    card.appendChild(row(this._t("status_installed", "Installed"), s.installed ? yes : no));
+    card.appendChild(row(this._t("status_running", "Running"),     s.running   ? yes : no));
+    if (s.port_listening !== undefined) card.appendChild(row(this._t("status_port", "Port"), s.port_listening ? yes : no));
+    if (s.health) card.appendChild(row(this._t("status_health", "Health"), String(s.health)));
+    if (s.pid)    card.appendChild(row(this._t("status_pid", "PID"), String(s.pid)));
+    if (s.last_started) card.appendChild(row(this._t("status_last_started", "Last started"), String(s.last_started)));
+  },
+
+  async _post(action, confirmKey) {
+    const msg = (window.tr && window.tr("service." + confirmKey));
+    if (msg && !window.confirm(msg)) return;
+    try {
+      const r = await api.post("/service/" + action, {});
+      // refresh status pill + card whether or not the call succeeded
+      await this.refreshIndicator();
+      const tag = r && r.ok === false ? "action_failed" : "action_ok";
+      const line = document.getElementById("status-line");
+      if (line) line.textContent = this._t(tag, tag === "action_ok" ? "Service action completed" : "Service action failed");
+    } catch (e) {
+      const line = document.getElementById("status-line");
+      if (line) line.textContent = this._t("action_failed", "Service action failed") +
+        ": " + (e && e.message ? e.message : "");
+      await this.refreshIndicator();
+    }
+  },
+
+  install()   { return this._post("install", "confirm_install"); },
+  uninstall() { return this._post("uninstall", "confirm_uninstall"); },
+  restart()   { return this._post("restart"); },
+};
+
+// Wire button bindings once DOM is ready (bindings are idempotent — safe to
+// re-run if the Settings tab gets re-rendered).
+function _bindServiceButtons() {
+  const map = {
+    "service-install-btn":   () => serviceMgr.install(),
+    "service-uninstall-btn": () => serviceMgr.uninstall(),
+    "service-restart-btn":   () => serviceMgr.restart(),
+    "service-refresh-btn":   () => serviceMgr.refreshIndicator(),
+  };
+  for (const [id, fn] of Object.entries(map)) {
+    const el = document.getElementById(id);
+    if (el && !el.__ascendoBound) {
+      el.__ascendoBound = true;
+      el.addEventListener("click", fn);
+    }
+  }
+}
+
 const ui = {
   show(view) {
     $$(".view").forEach(v => v.classList.add("hidden"));
@@ -1531,6 +1637,11 @@ const ui = {
   async loadSettings() {
     const s = await api.get("/settings");
     window.SETTINGS_CACHE = s;
+    // Re-bind service buttons (idempotent) and refresh status now that the
+    // Settings tab is visible — the user opened the panel because they want
+    // to see service state.
+    _bindServiceButtons();
+    serviceMgr.refreshIndicator();
     // Load profile templates panel + updates repo field.
     ui.loadProfilesPanel();
     const f = $("#settings-form");
@@ -2229,6 +2340,12 @@ $("#sudo-cancel").addEventListener("click", () => sudoMgr.close(false));
 // Refresh sudo indicator on load + every 30s
 sudoMgr.refreshIndicator();
 setInterval(() => sudoMgr.refreshIndicator(), 30000);
+
+// Refresh service indicator on load + every 30s; bind buttons in case the
+// Settings tab is the very first view the user opens.
+serviceMgr.refreshIndicator();
+setInterval(() => serviceMgr.refreshIndicator(), 30000);
+_bindServiceButtons();
 
 // First-run wizard — step-router controls
 document.addEventListener("click", e => {

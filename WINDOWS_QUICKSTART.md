@@ -143,7 +143,52 @@ CLI equivalent (single command):
 python -m ascendo run --category windows_update --phase apply
 ```
 
-## 8 · Troubleshooting (the bugs we just shipped fixes for)
+## 8 · Run as a Windows service (optional)
+
+Want the dashboard to be always on — no double-click, no sidecar
+spawn lag, ready instantly when you open the desktop shortcut?
+Install AscendoDashboard as a real Windows service. The service is
+NSSM-wrapped (Non-Sucking Service Manager — downloaded automatically
+on first install, with SHA-256 verification), runs as
+`Automatic (Delayed Start)` so it doesn't slow user login, and
+auto-restarts on crash.
+
+Three install paths:
+
+```powershell
+# A — from the dashboard (easiest)
+# Open Settings → Windows service → Install. UAC prompts once;
+# AscendoDashboard registers, starts, and the footer pill flips to
+# "service running" within ~5 s.
+
+# B — from the CLI (elevated PowerShell)
+.\bin\install-service.ps1 -Action install
+.\bin\install-service.ps1 -Action status -Json   # machine-readable
+.\bin\install-service.ps1 -Action restart
+.\bin\install-service.ps1 -Action uninstall      # idempotent
+
+# C — at install-time (silent)
+setx ASCENDO_INSTALL_AS_SERVICE 1
+Ascendo-0.0.7-x64-setup.exe                      # NSIS installer picks up the env var
+```
+
+After install, the dashboard listens on `127.0.0.1:8765` 24/7. Logs go
+to `%LocalAppData%\Ascendo\logs\service\`. To inspect or tweak the
+service directly:
+
+```powershell
+# Built-in view
+sc query AscendoDashboard
+# NSSM panel for advanced config (recovery actions, env vars, etc.)
+nssm edit AscendoDashboard
+```
+
+Uninstalling Ascendo (`Ascendo-0.0.7-x64-setup.exe /S` or via
+Add/Remove Programs) automatically removes the service through the
+NSIS pre-uninstall hook — no manual cleanup needed. User data in
+`%LocalAppData%\Ascendo\` is preserved across re-installs by default.
+
+## 9 · Troubleshooting (the bugs we just shipped fixes for)
 
 | Symptom | Likely cause | Quick check |
 |---------|--------------|-------------|
@@ -156,7 +201,7 @@ python -m ascendo run --category windows_update --phase apply
 | "no PowerShell binary on PATH" | pwsh.exe missing | `winget install --id Microsoft.PowerShell` |
 | `winget` says "v1.28" but `ascendo doctor` says it's missing | Per-user install on a different account | `winget install --id Microsoft.AppInstaller --scope machine` |
 
-## 9 · Where everything lives
+## 10 · Where everything lives
 
 ```
 D:\Dev_Env\ascendo\
@@ -186,7 +231,7 @@ D:\Dev_Env\ascendo\
 └─ logs\runs\<uuid>\           # All sidecars and per-phase logs
 ```
 
-## 10 · One-liner sanity check
+## 11 · One-liner sanity check
 
 If anything seems off, run this first — exits 0 only when CLI + dashboard
 + all 5 phases × winget produce real sidecars and the SPA assets serve

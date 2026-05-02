@@ -14,56 +14,69 @@
 ;  A macro that does not exist is silently ignored, so we only define the
 ;  ones we actually use right now.
 ;
-;  Sub-project 4 (Windows service) hook:
-;  ─────────────────────────────────────
-;  When sub-project 4 lands, it should:
+;  Service registration (sub-project 4 of v0.0.7):
+;  ─────────────────────────────────────────────────
+;  bin\install-service.ps1 is the canonical front-end for the
+;  AscendoDashboard Windows service (NSSM-wrapped FastAPI sidecar).
 ;
-;    1. Add a Modern UI 2 components page entry like:
+;  Default install path: NO automatic service registration. We don't want
+;  to register a system service silently — it has security and start-time
+;  implications the user should opt into. The SPA's Settings → Service
+;  panel exposes Install / Uninstall buttons that call the same script.
 ;
-;         !insertmacro MUI_PAGE_COMPONENTS
-;         Section /o "Run Ascendo as a Windows service (recommended)" SecService
-;           ; SectionIn flag ensures the section is OFF by default.
-;           StrCpy $InstallAsService "1"
-;         SectionEnd
+;  Power users / silent installs can opt in by setting the environment
+;  variable ASCENDO_INSTALL_AS_SERVICE=1 before running the .exe / .msi:
 ;
-;    2. Inside !macro NSIS_HOOK_POSTINSTALL below, gate the existing
-;       "do nothing" comment on $InstallAsService:
+;    setx ASCENDO_INSTALL_AS_SERVICE 1   ; one-time
+;    Ascendo-0.0.7-x64-setup.exe         ; will register the service
 ;
-;         ${If} $InstallAsService == "1"
-;             nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass \
-;               -File "$INSTDIR\\bin\\install-service.ps1" -InstallPath "$INSTDIR"'
-;             Pop $0   ; exit code
-;             ${If} $0 != 0
-;                 MessageBox MB_ICONEXCLAMATION "Service install returned $0; \
-;                   you can re-run install-service.ps1 manually from $INSTDIR\\bin."
-;             ${EndIf}
-;         ${EndIf}
-;
-;    3. In !macro NSIS_HOOK_PREUNINSTALL, mirror that with uninstall-service.ps1.
-;
-;  We do NOT implement service registration here yet — sub-project 4 owns it.
+;  Uninstall ALWAYS attempts to tear down the service, idempotently —
+;  install-service.ps1 -Action uninstall returns 0 if the service is
+;  already gone, so it's safe to call unconditionally.
 ; ============================================================================
 
 !macro NSIS_HOOK_PREINSTALL
-    ; Reserved for sub-project 4 — pre-install service-related work.
+    ; (Reserved for future use — currently a noop.)
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-    ; Currently a noop. Sub-project 4 will replace this with the conditional
-    ; install-service.ps1 invocation gated on the user's checkbox.
-    DetailPrint "Ascendo: post-install hook (no service registration in 0.0.7)"
+    ; Opt-in service registration via $ASCENDO_INSTALL_AS_SERVICE env var.
+    ; A future release will replace this with a Modern UI 2 components page
+    ; checkbox; for now, env-var keeps the silent-install path scriptable.
+    ReadEnvStr $0 "ASCENDO_INSTALL_AS_SERVICE"
+    ${If} $0 == "1"
+        DetailPrint "Ascendo: ASCENDO_INSTALL_AS_SERVICE=1 → registering AscendoDashboard service"
+        nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\bin\install-service.ps1" -Action install -InstallPath "$INSTDIR"'
+        Pop $1
+        ${If} $1 != 0
+            MessageBox MB_ICONEXCLAMATION "AscendoDashboard service install returned exit $1.$\nYou can re-run install-service.ps1 manually from $INSTDIR\bin\, or use Settings → Service in the dashboard."
+        ${EndIf}
+    ${Else}
+        DetailPrint "Ascendo: post-install OK. Run from Start menu, or install as service via Settings → Service."
+    ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
-    ; Currently a noop. Sub-project 4 will tear down the Windows service here
-    ; if it was previously registered (idempotent: try-catch + ignore "service
-    ; not found").
-    DetailPrint "Ascendo: pre-uninstall hook (no service teardown in 0.0.7)"
+    ; Always tear down the service if present. install-service.ps1 -Action
+    ; uninstall returns 0 even when the service doesn't exist (idempotent),
+    ; so we can call it unconditionally without a presence check.
+    ${If} ${FileExists} "$INSTDIR\bin\install-service.ps1"
+        DetailPrint "Ascendo: pre-uninstall → removing AscendoDashboard service if present"
+        nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\bin\install-service.ps1" -Action uninstall'
+        Pop $0
+        ; Exit 0 = removed or already absent. Anything else is informational
+        ; only — we don't block uninstall on service-removal failure since
+        ; the user explicitly asked to uninstall.
+        ${If} $0 != 0
+            DetailPrint "Ascendo: service removal returned $0 (continuing — service may have been removed by hand)"
+        ${EndIf}
+    ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
     ; Optional cleanup of user data lives here. The default uninstall already
-    ; removes the install dir; we do NOT touch %LocalAppData%\Ascendo unless
-    ; the user opts in (tracked separately as a future enhancement — wire a
-    ; second checkbox on the uninstall page).
+    ; removes the install dir; we do NOT touch %LocalAppData%\Ascendo by
+    ; default — that holds the user's run history + settings, which they
+    ; might want to keep across re-installs. A future release will add a
+    ; "Remove user data" checkbox on the uninstall page.
 !macroend

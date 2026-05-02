@@ -560,6 +560,21 @@
             <div id="backup-output" class="dim" style="margin-top:0.5rem;font-size:0.78rem"></div>
           </div>
           <div class="card">
+            <h3 data-i18n="service.title">Windows service</h3>
+            <p class="dim" data-i18n="service.hint" style="font-size:0.82rem">Run the
+              dashboard as an always-on Windows service (NSSM-wrapped). Survives
+              reboots and auto-restarts on failure.</p>
+            <div id="service-status-card" class="dim" style="font-size:0.82rem;
+                 margin:0.5rem 0; padding:0.5rem; background:var(--surface);
+                 border-radius:6px">…</div>
+            <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+              <button type="button" id="service-install-btn"   class="secondary" data-i18n="service.btn_install">Install</button>
+              <button type="button" id="service-uninstall-btn" class="secondary" data-i18n="service.btn_uninstall">Uninstall</button>
+              <button type="button" id="service-restart-btn"   class="secondary" data-i18n="service.btn_restart">Restart</button>
+              <button type="button" id="service-refresh-btn"   class="secondary" data-i18n="service.btn_refresh">Refresh</button>
+            </div>
+          </div>
+          <div class="card">
             <h3 data-i18n="settings.scheduler">Scheduler (systemd timer)</h3>
             <label class="inline">
               <input type="checkbox" name="scheduler_enabled" disabled />
@@ -849,7 +864,8 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
 
   <footer>
     <span id="status-line" data-i18n="footer.ready">ready</span>
-    <span id="sudo-indicator" class="dim" style="float:right"></span>
+    <span id="sudo-indicator"    class="dim" style="float:right"></span>
+    <span id="service-indicator" class="dim" style="float:right; margin-right:0.5rem"></span>
   </footer>
   <!-- Apply confirmation modal (B4 — mirrors bin/run-apply.ps1).
        Native <dialog> + form method="dialog" so Esc / backdrop / browser
