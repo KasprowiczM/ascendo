@@ -434,6 +434,244 @@ dialog.modal-dialog #apply-modal-confirm:disabled {
   gap: 0.35rem;
   cursor: pointer;
 }
+
+/* ── 6-step Windows first-run wizard (sub-project 2) ─────────────────── */
+.wizard-card {
+  width: min(720px, 92vw);
+  max-width: 720px;
+  min-width: 320px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+  overflow: hidden;
+}
+.wizard-header {
+  display: flex; align-items: center; gap: 0.8rem;
+  padding: 1rem 1.2rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.wizard-brand {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-weight: 600;
+}
+.wizard-brand img.brand-mark { width: 26px; height: 26px; }
+.wizard-brand .brand-name { font-size: 1rem; }
+.wizard-skip-btn {
+  margin-left: auto; background: transparent;
+  color: var(--dim); border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.3rem 0.7rem; font-size: 0.82rem; cursor: pointer;
+}
+.wizard-skip-btn:hover { color: var(--text); border-color: var(--text); }
+
+.wizard-breadcrumb {
+  list-style: none; margin: 0; padding: 0.7rem 1.2rem;
+  display: flex; gap: 0.45rem; flex-wrap: wrap;
+  font-size: 0.78rem; color: var(--dim);
+  border-bottom: 1px solid var(--border);
+}
+.wizard-breadcrumb li {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.2rem 0.55rem; border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.wizard-breadcrumb li.current {
+  color: var(--text);
+  border-color: var(--accent, var(--ok));
+  background: rgba(34, 197, 94, 0.08);
+}
+.wizard-breadcrumb li.done {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+.wizard-breadcrumb li .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: currentColor; opacity: 0.55;
+}
+.wizard-breadcrumb li.current .dot { opacity: 1; }
+.wizard-breadcrumb li .pill-ok {
+  font-size: 0.7rem; background: var(--ok); color: #08090d;
+  padding: 0 0.35rem; border-radius: 999px; font-weight: 600;
+}
+
+.wizard-step-host {
+  padding: 1.1rem 1.2rem;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+.wizard-step-host h3 { margin: 0 0 0.35rem; font-size: 1.15rem; }
+.wizard-step-host p { margin: 0.35rem 0; line-height: 1.5; }
+.wizard-step-host ul { margin: 0.35rem 0 0.6rem 1.1rem; line-height: 1.6; }
+
+.wizard-footer {
+  display: flex; gap: 0.5rem; align-items: center;
+  padding: 0.85rem 1.2rem;
+  border-top: 1px solid var(--border);
+}
+.wizard-footer .wizard-spacer { flex: 1 1 auto; }
+.wizard-footer button[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* Welcome step ----------------------------------------------------- */
+.wizard-welcome-hero {
+  display: flex; align-items: center; gap: 1rem;
+  padding: 0.4rem 0 1rem;
+}
+.wizard-welcome-hero img.hero-logo {
+  width: 64px; height: 64px;
+}
+.wizard-welcome-hero .hero-text h3 {
+  font-size: 1.4rem; margin: 0;
+}
+.wizard-welcome-hero .hero-text .tagline {
+  color: var(--dim); font-size: 0.9rem;
+}
+.wizard-welcome-preview {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 0.8rem 1rem; margin-top: 0.6rem;
+}
+.wizard-welcome-preview h4 {
+  margin: 0 0 0.4rem; font-size: 0.85rem;
+  color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em;
+}
+.wizard-welcome-preview ol {
+  margin: 0; padding-left: 1.2rem; line-height: 1.6;
+}
+.wizard-welcome-cta {
+  margin-top: 0.9rem;
+}
+.wizard-welcome-cta button { padding: 0.55rem 1rem; font-size: 0.95rem; }
+
+/* Prefs (lang + theme) step --------------------------------------- */
+.wizard-choice-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem;
+  margin-top: 0.6rem;
+}
+@media (max-width: 560px) {
+  .wizard-choice-grid { grid-template-columns: 1fr; }
+}
+.wizard-choice-card {
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg);
+  padding: 0.8rem;
+}
+.wizard-choice-card h4 {
+  margin: 0 0 0.5rem; font-size: 0.95rem;
+}
+.wizard-choice-card .opt {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.4rem 0.5rem; border-radius: 6px;
+  cursor: pointer; transition: background 0.1s;
+}
+.wizard-choice-card .opt:hover { background: var(--panel); }
+.wizard-choice-card .opt input { accent-color: var(--ok); }
+
+.wizard-live-hint { color: var(--dim); font-size: 0.78rem; margin-top: 0.6rem; }
+
+/* Admin step ----------------------------------------------------- */
+.wizard-admin-callout {
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg);
+  padding: 0.8rem 0.9rem; margin: 0.4rem 0;
+}
+.wizard-admin-callout h4 {
+  margin: 0 0 0.3rem; font-size: 0.92rem;
+}
+.wizard-admin-actions {
+  display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.7rem;
+}
+.wizard-admin-status {
+  margin-top: 0.7rem; font-size: 0.85rem;
+  color: var(--dim);
+}
+.wizard-admin-status .pill-ok {
+  background: var(--ok); color: #08090d; padding: 0.15rem 0.55rem;
+  border-radius: 999px; font-weight: 600; margin-right: 0.4rem;
+}
+.wizard-admin-status .pill-warn {
+  background: var(--warn); color: #08090d; padding: 0.15rem 0.55rem;
+  border-radius: 999px; font-weight: 600; margin-right: 0.4rem;
+}
+
+/* Scan step ----------------------------------------------------- */
+.wizard-scan-progress {
+  margin: 0.6rem 0 0.8rem;
+}
+.wizard-scan-bar {
+  height: 0.6rem; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 999px; overflow: hidden;
+}
+.wizard-scan-bar > .fill {
+  height: 100%; background: var(--ok); width: 0%;
+  transition: width 0.25s ease;
+}
+.wizard-scan-source {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.85rem; color: var(--dim); margin: 0.4rem 0;
+}
+.wizard-scan-summary {
+  display: flex; gap: 1rem; align-items: center; margin-top: 0.6rem;
+  flex-wrap: wrap;
+}
+.wizard-scan-summary .donut-host { flex: 0 0 auto; min-width: 200px; }
+.wizard-scan-summary .totals-text { flex: 1 1 220px; }
+
+/* Sources step -------------------------------------------------- */
+.wizard-sources-table {
+  width: 100%; border-collapse: collapse; margin-top: 0.6rem;
+  font-size: 0.9rem;
+}
+.wizard-sources-table th, .wizard-sources-table td {
+  padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.wizard-sources-table th {
+  font-size: 0.78rem; color: var(--dim);
+  text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600;
+}
+.wizard-sources-table td.num {
+  text-align: right; font-family: var(--mono); font-size: 0.88rem;
+}
+.wizard-sources-table .src-name { font-weight: 600; }
+.wizard-sources-table .src-desc { color: var(--dim); font-size: 0.82rem; }
+.wizard-sources-banner {
+  margin: 0.7rem 0;
+  padding: 0.55rem 0.8rem; border-radius: 6px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: var(--text);
+  font-size: 0.88rem;
+}
+.wizard-sources-banner.ok {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+/* Done step ----------------------------------------------------- */
+.wizard-done-section {
+  margin-top: 0.9rem; padding-top: 0.7rem;
+  border-top: 1px dashed var(--border);
+}
+.wizard-done-section:first-child { border-top: 0; padding-top: 0; }
+.wizard-done-section h4 { margin: 0 0 0.4rem; font-size: 0.95rem; }
+.wizard-done-where ul {
+  list-style: "→ "; margin-top: 0.3rem;
+}
+.wizard-dryrun-row {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+.wizard-dryrun-output {
+  margin-top: 0.5rem;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 0.5rem 0.7rem;
+  font-family: var(--mono); font-size: 12px;
+  max-height: 160px; overflow-y: auto;
+  white-space: pre-wrap;
+}
+.wizard-dryrun-output:empty { display: none; }
+.wizard-finish-hint {
+  font-size: 0.8rem; color: var(--dim); margin-top: 0.4rem;
+}
 .dim { color: var(--dim); }
 .mono { font-family: var(--mono); }
 

@@ -72,7 +72,7 @@ _SPA_FETCH_INVENTORY: dict[str, str] = {
     "GET /git/status": "stub",
     "GET /hosts": "stub-from-adapter",
     "GET /hosts/list": "stub-from-adapter",
-    "GET /onboarding/state": "stub",
+    "GET /onboarding/state": "served",
     "GET /preflight": "stub",
     "GET /profiles": "stub",
     "GET /profiles/templates": "stub",
@@ -97,7 +97,7 @@ _SPA_FETCH_INVENTORY: dict[str, str] = {
     "POST /git/push": "stub",
     "POST /hosts/delete": "stub",
     "POST /hosts/upsert": "stub",
-    "POST /onboarding/complete": "stub",
+    "POST /onboarding/complete": "served",
     "POST /profiles/import": "stub",
     "POST /scheduler/install": "stub",
     "POST /scheduler/remove": "stub",
@@ -251,15 +251,8 @@ async def settings_put_stub() -> dict[str, Any]:
     return {"ok": True, "stub": True}
 
 
-@router.get("/onboarding/state")
-async def onboarding_state_stub() -> dict[str, Any]:
-    """First-run wizard already considered finished on Windows MVP."""
-    return {"completed": True, "stub": True}
-
-
-@router.post("/onboarding/complete")
-async def onboarding_complete_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True}
+# /onboarding/state and /onboarding/complete -- served by routes/onboarding.py
+# (graduated to real persistent JSON storage; see _SPA_FETCH_INVENTORY).
 
 
 # -- Profiles --------------------------------------------------------------
