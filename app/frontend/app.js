@@ -104,50 +104,760 @@ const ui = {
     try {
       const s = await api.get("/onboarding/state");
       if (s.onboarded) return;
-      $("#wizard-modal").classList.remove("hidden");
+      // Initialise the step-router state machine before showing the modal.
+      ui.wizard.start();
     } catch {}
   },
 
-  async finishWizard(skip) {
-    const modal = $("#wizard-modal");
-    const langPick = (document.querySelector("input[name=wiz-lang]:checked") || {}).value || "en";
-    const themePick = (document.querySelector("input[name=wiz-theme]:checked") || {}).value || "auto";
-    const choices = skip ? {skipped: true} : {
-      language:        langPick,
-      default_profile: (document.querySelector("input[name=wiz-profile]:checked") || {}).value || "safe",
-      schedule:        $("#wiz-schedule").checked,
-      snapshot_before_apply: $("#wiz-snapshot").checked,
-      theme:           themePick,
-    };
-    if (!skip) {
-      // Apply language change immediately so the rest of the dashboard switches.
-      window.UI_LANG = langPick;
-      try { window.applyI18n(); } catch {}
-      // Persist + apply theme choice straight away so the next paint reflects it.
+  // Step-router for the 6-step Windows first-run wizard.
+  // Self-contained: every step is a function that builds DOM into
+  // #wizard-step-host. Persists choices to localStorage as the user
+  // moves so a refresh mid-wizard doesn't lose work; final POST to
+  // /onboarding/complete writes the durable state file.
+  wizard: {
+    state: null,
+    steps: ["welcome", "prefs", "admin", "scan", "sources", "done"],
+    currentIdx: 0,
+    start() {
+      this.state = {
+        language: window.UI_LANG || "en",
+        theme:    "dark",
+        admin_authorised: false,
+        inventory_seen: false,
+        dry_run_seen: false,
+        sources_summary: null,
+        wu_check: null,         // {status: "idle"|"running"|"done"|"failed", count?, error?}
+        dry_run: null,          // {status, items, error?}
+      };
+      // Pull any mid-wizard scratch from a previous reload so progress
+      // survives. Keys are namespaced under 'wizard:'.
       try {
-        localStorage.setItem("ascendo_theme", themePick);
-        window.applyThemePref && window.applyThemePref(themePick);
+        const saved = localStorage.getItem("wizard:state");
+        if (saved) Object.assign(this.state, JSON.parse(saved));
       } catch {}
-    }
-    try {
-      await api.post("/onboarding/complete", choices);
-      if (!skip) {
-        // Persist into settings.json so next sessions honour the choices.
-        const cur = window.SETTINGS_CACHE || (await api.get("/settings"));
+      try {
+        const lsTheme = localStorage.getItem("ascendo_theme");
+        if (lsTheme) this.state.theme = lsTheme;
+      } catch {}
+      this.currentIdx = 0;
+      $("#wizard-modal").classList.remove("hidden");
+      this.render();
+    },
+    saveScratch() {
+      try {
+        // Don't persist the streaming/transient bits.
+        const {language, theme, admin_authorised, inventory_seen,
+               dry_run_seen} = this.state;
+        localStorage.setItem("wizard:state", JSON.stringify({
+          language, theme, admin_authorised, inventory_seen, dry_run_seen,
+        }));
+      } catch {}
+    },
+    clearScratch() {
+      try { localStorage.removeItem("wizard:state"); } catch {}
+    },
+    advance() {
+      if (this.currentIdx < this.steps.length - 1) {
+        this.currentIdx++;
+        this.render();
+      }
+    },
+    back() {
+      if (this.currentIdx > 0) {
+        this.currentIdx--;
+        this.render();
+      }
+    },
+    renderBreadcrumb() {
+      const ol = $("#wizard-breadcrumb");
+      ol.textContent = "";
+      this.steps.forEach((id, i) => {
+        const li = document.createElement("li");
+        if (i === this.currentIdx) li.classList.add("current");
+        else if (i < this.currentIdx) li.classList.add("done");
+        const dot = document.createElement("span");
+        dot.className = "dot";
+        const lbl = document.createElement("span");
+        lbl.textContent = `${i + 1}. ${tr(`wizard.step.${id}`)}`;
+        li.appendChild(dot);
+        li.appendChild(lbl);
+        // Admin step shows authenticated pill once user has approved.
+        if (id === "admin" && this.state.admin_authorised) {
+          const pill = document.createElement("span");
+          pill.className = "pill-ok";
+          pill.textContent = tr("wizard.admin.ok_pill");
+          li.appendChild(pill);
+        }
+        ol.appendChild(li);
+      });
+    },
+    render() {
+      this.renderBreadcrumb();
+      const host = $("#wizard-step-host");
+      host.textContent = "";
+      const id = this.steps[this.currentIdx];
+      const builder = this[`build_${id}`];
+      if (typeof builder === "function") builder.call(this, host);
+      // Footer state.
+      $("#wizard-back").style.visibility = (this.currentIdx === 0) ? "hidden" : "visible";
+      const nextBtn = $("#wizard-next");
+      // Welcome step uses its own internal CTA so hide footer Next.
+      // Done step swaps Next for Finish, gated on dry_run_seen.
+      if (id === "welcome") {
+        nextBtn.style.display = "none";
+      } else if (id === "done") {
+        nextBtn.style.display = "";
+        nextBtn.textContent = tr("wizard.done.finish_btn");
+        nextBtn.disabled = !this.state.dry_run_seen;
+        nextBtn.dataset.role = "finish";
+      } else {
+        nextBtn.style.display = "";
+        nextBtn.textContent = tr("wizard.next");
+        nextBtn.disabled = false;
+        nextBtn.dataset.role = "next";
+      }
+      // Translate static labels in the footer / skip btn.
+      window.applyI18n(host);
+      window.applyI18n($("#wizard-modal").querySelector("header"));
+      window.applyI18n($("#wizard-modal").querySelector("footer"));
+    },
+    // ── Step 1: Welcome ─────────────────────────────────────────────
+    build_welcome(host) {
+      const hero = document.createElement("div");
+      hero.className = "wizard-welcome-hero";
+      const img = document.createElement("img");
+      img.className = "hero-logo";
+      img.src = "/assets/logo-mark.svg";
+      img.alt = "";
+      hero.appendChild(img);
+      const tx = document.createElement("div");
+      tx.className = "hero-text";
+      const h = document.createElement("h3");
+      h.id = "wizard-title";
+      h.textContent = tr("wizard.welcome.title");
+      const tag = document.createElement("p");
+      tag.className = "tagline";
+      tag.textContent = tr("wizard.welcome.tagline");
+      tx.appendChild(h); tx.appendChild(tag);
+      hero.appendChild(tx);
+      host.appendChild(hero);
+      const body = document.createElement("p");
+      body.textContent = tr("wizard.welcome.body");
+      host.appendChild(body);
+      const preview = document.createElement("div");
+      preview.className = "wizard-welcome-preview";
+      const ph = document.createElement("h4");
+      ph.textContent = tr("wizard.welcome.preview");
+      preview.appendChild(ph);
+      const ol = document.createElement("ol");
+      ["bullet1","bullet2","bullet3","bullet4","bullet5"].forEach(k => {
+        const li = document.createElement("li");
+        li.textContent = tr(`wizard.welcome.${k}`);
+        ol.appendChild(li);
+      });
+      preview.appendChild(ol);
+      host.appendChild(preview);
+      const cta = document.createElement("div");
+      cta.className = "wizard-welcome-cta";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = tr("wizard.welcome.cta");
+      btn.addEventListener("click", () => ui.wizard.advance());
+      cta.appendChild(btn);
+      host.appendChild(cta);
+    },
+    // ── Step 2: Language + Theme ─────────────────────────────────
+    build_prefs(host) {
+      const h = document.createElement("h3");
+      h.textContent = tr("wizard.prefs.title");
+      host.appendChild(h);
+      const body = document.createElement("p");
+      body.textContent = tr("wizard.prefs.body");
+      host.appendChild(body);
+      const grid = document.createElement("div");
+      grid.className = "wizard-choice-grid";
+      // Language card
+      const langCard = document.createElement("div");
+      langCard.className = "wizard-choice-card";
+      const langH = document.createElement("h4");
+      langH.textContent = tr("wizard.prefs.lang_h");
+      langCard.appendChild(langH);
+      [["en", tr("wizard.prefs.lang_en")], ["pl", tr("wizard.prefs.lang_pl")]].forEach(([val, lbl]) => {
+        const opt = document.createElement("label");
+        opt.className = "opt";
+        const r = document.createElement("input");
+        r.type = "radio"; r.name = "wiz-lang"; r.value = val;
+        if (this.state.language === val) r.checked = true;
+        r.addEventListener("change", () => {
+          this.state.language = val;
+          window.UI_LANG = val;
+          try { window.applyI18n(); } catch {}
+          this.saveScratch();
+          // Re-render so all step copy switches language live.
+          this.render();
+        });
+        const sp = document.createElement("span");
+        sp.textContent = lbl;
+        opt.appendChild(r); opt.appendChild(sp);
+        langCard.appendChild(opt);
+      });
+      grid.appendChild(langCard);
+      // Theme card
+      const themeCard = document.createElement("div");
+      themeCard.className = "wizard-choice-card";
+      const themeH = document.createElement("h4");
+      themeH.textContent = tr("wizard.prefs.theme_h");
+      themeCard.appendChild(themeH);
+      [["auto", tr("wizard.prefs.theme_auto")],
+       ["dark", tr("wizard.prefs.theme_dark")],
+       ["light", tr("wizard.prefs.theme_light")]].forEach(([val, lbl]) => {
+        const opt = document.createElement("label");
+        opt.className = "opt";
+        const r = document.createElement("input");
+        r.type = "radio"; r.name = "wiz-theme"; r.value = val;
+        if (this.state.theme === val) r.checked = true;
+        r.addEventListener("change", () => {
+          this.state.theme = val;
+          try {
+            localStorage.setItem("ascendo_theme", val);
+            window.applyThemePref(val);
+          } catch {}
+          this.saveScratch();
+        });
+        const sp = document.createElement("span");
+        sp.textContent = lbl;
+        opt.appendChild(r); opt.appendChild(sp);
+        themeCard.appendChild(opt);
+      });
+      grid.appendChild(themeCard);
+      host.appendChild(grid);
+      const hint = document.createElement("p");
+      hint.className = "wizard-live-hint";
+      hint.textContent = tr("wizard.prefs.live_hint");
+      host.appendChild(hint);
+      // Persist immediately to /settings so refresh keeps the choice.
+      this.persistPrefs();
+    },
+    async persistPrefs() {
+      try {
+        const cur = window.SETTINGS_CACHE || (await api.get("/settings").catch(()=>({}))) || {};
         const merged = {
           ...cur,
-          default_profile: choices.default_profile,
-          snapshot_before_apply: !!choices.snapshot_before_apply,
+          ui: { ...(cur.ui || {}), language: this.state.language, theme: this.state.theme },
         };
-        await fetch("/settings", {method:"PUT", headers:{"content-type":"application/json"},
-                                  body: JSON.stringify(merged)});
-        if (choices.schedule) {
-          await api.post("/scheduler/install", {calendar:"Sun *-*-* 03:00:00",
-                                                profile: choices.default_profile});
+        await fetch("/settings", {
+          method: "PUT",
+          headers: {"content-type": "application/json"},
+          body: JSON.stringify(merged),
+        }).catch(()=>{});
+        window.SETTINGS_CACHE = merged;
+      } catch {}
+    },
+    // ── Step 3: Administrator (UAC) ─────────────────────────────
+    build_admin(host) {
+      const h = document.createElement("h3");
+      h.textContent = tr("wizard.admin.title");
+      host.appendChild(h);
+      const body = document.createElement("p");
+      body.textContent = tr("wizard.admin.body");
+      host.appendChild(body);
+      ["why", "do"].forEach(k => {
+        const co = document.createElement("div");
+        co.className = "wizard-admin-callout";
+        const t = document.createElement("h4");
+        t.textContent = tr(`wizard.admin.${k}_h`);
+        const b = document.createElement("p");
+        b.textContent = tr(`wizard.admin.${k}_b`);
+        co.appendChild(t); co.appendChild(b);
+        host.appendChild(co);
+      });
+      const acts = document.createElement("div");
+      acts.className = "wizard-admin-actions";
+      const authBtn = document.createElement("button");
+      authBtn.type = "button";
+      authBtn.textContent = tr("wizard.admin.auth_now");
+      authBtn.addEventListener("click", async () => {
+        const ok = await sudoMgr.open(tr("wizard.admin.title"));
+        if (ok) {
+          this.state.admin_authorised = true;
+          this.saveScratch();
+          this.render();
+          // Auto-advance after a short pause so the green pill is visible.
+          setTimeout(() => this.advance(), 700);
         }
+      });
+      const skipBtn = document.createElement("button");
+      skipBtn.type = "button";
+      skipBtn.className = "secondary";
+      skipBtn.textContent = tr("wizard.admin.skip_now");
+      skipBtn.addEventListener("click", () => this.advance());
+      acts.appendChild(authBtn);
+      acts.appendChild(skipBtn);
+      host.appendChild(acts);
+      const status = document.createElement("div");
+      status.className = "wizard-admin-status";
+      if (this.state.admin_authorised) {
+        const pill = document.createElement("span");
+        pill.className = "pill-ok";
+        pill.textContent = tr("wizard.admin.ok_pill");
+        status.appendChild(pill);
+      } else {
+        const pill = document.createElement("span");
+        pill.className = "pill-warn";
+        pill.textContent = tr("wizard.admin.skipped_pill");
+        status.appendChild(pill);
       }
-    } catch (e) { console.warn("wizard:", e); }
-    modal.classList.add("hidden");
+      host.appendChild(status);
+    },
+    // ── Step 4: Inventory scan ───────────────────────────────────
+    build_scan(host) {
+      const h = document.createElement("h3");
+      h.textContent = tr("wizard.scan.title");
+      host.appendChild(h);
+      const body = document.createElement("p");
+      body.textContent = tr("wizard.scan.body");
+      host.appendChild(body);
+      const prog = document.createElement("div");
+      prog.className = "wizard-scan-progress";
+      const bar = document.createElement("div");
+      bar.className = "wizard-scan-bar";
+      const fill = document.createElement("div");
+      fill.className = "fill";
+      bar.appendChild(fill);
+      prog.appendChild(bar);
+      const src = document.createElement("div");
+      src.className = "wizard-scan-source";
+      src.id = "wizard-scan-src";
+      const spin = document.createElement("span");
+      spin.className = "spinner";
+      const lbl = document.createElement("span");
+      lbl.id = "wizard-scan-lbl";
+      lbl.textContent = tr("wizard.scan.progress_label");
+      src.appendChild(spin); src.appendChild(lbl);
+      prog.appendChild(src);
+      host.appendChild(prog);
+      const summary = document.createElement("div");
+      summary.id = "wizard-scan-summary";
+      summary.className = "wizard-scan-summary";
+      summary.style.display = "none";
+      host.appendChild(summary);
+      this.runInventoryScan(fill, lbl, summary);
+    },
+    async runInventoryScan(fillEl, lblEl, summaryEl) {
+      const sources = [
+        ["winget",         "wizard.scan.scanning_winget"],
+        ["msstore",        "wizard.scan.scanning_msstore"],
+        ["registry_arp",   "wizard.scan.scanning_arp"],
+        ["windows_update", "wizard.scan.scanning_wu"],
+      ];
+      const t0 = performance.now();
+      const minDuration = 2000;
+      // Drive the user-facing progress bar through the labels while the
+      // real call (POST /inventory/refresh + GET /inventory/summary)
+      // runs concurrently in the background. The ticker just yields
+      // visible progress in case the refresh resolves instantly.
+      let stopTicker = false;
+      const totalSteps = sources.length;
+      let idx = 0;
+      const stepDuration = 350;
+      const ticker = (async () => {
+        for (; idx < totalSteps; idx++) {
+          if (stopTicker) break;
+          lblEl.textContent = tr(sources[idx][1]);
+          fillEl.style.width = `${Math.round((idx + 0.5) / totalSteps * 90)}%`;
+          await new Promise(r => setTimeout(r, stepDuration));
+        }
+      })();
+      let summary = null;
+      let err = null;
+      try {
+        // Trigger a real cache-bust then a fresh /inventory/summary.
+        await api.post("/inventory/refresh").catch(()=>{});
+        summary = await api.get("/inventory/summary");
+      } catch (e) { err = e; }
+      stopTicker = true;
+      await ticker;
+      // Hold for 2s minimum so the user sees the success state.
+      const elapsed = performance.now() - t0;
+      if (elapsed < minDuration) {
+        await new Promise(r => setTimeout(r, minDuration - elapsed));
+      }
+      fillEl.style.width = "100%";
+      if (err) {
+        lblEl.textContent = String(err);
+        return;
+      }
+      lblEl.textContent = tr("wizard.scan.done_title");
+      this.state.sources_summary = summary;
+      this.state.inventory_seen = true;
+      this.saveScratch();
+      // Build summary box: donut + totals.
+      summaryEl.style.display = "";
+      summaryEl.textContent = "";
+      const donutHost = document.createElement("div");
+      donutHost.className = "donut-host";
+      donutHost.id = "wizard-scan-donut";
+      summaryEl.appendChild(donutHost);
+      const totals = summary.totals || {ok:0, outdated:0, missing:0, total:0};
+      const totalsText = document.createElement("div");
+      totalsText.className = "totals-text";
+      const sub = document.createElement("h4");
+      sub.style.margin = "0 0 0.25rem";
+      sub.textContent = tr("wizard.scan.done_subtitle");
+      totalsText.appendChild(sub);
+      const summaryLine = document.createElement("p");
+      summaryLine.style.margin = "0";
+      const tplVars = {
+        total: totals.total || 0,
+        sources: Object.keys(summary.categories || {}).length || 4,
+      };
+      summaryLine.textContent = tr("wizard.scan.done_body")
+        .replace("{total}", tplVars.total).replace("{sources}", tplVars.sources);
+      totalsText.appendChild(summaryLine);
+      summaryEl.appendChild(totalsText);
+      ui.renderDonut("wizard-scan-donut", [
+        { label: "ok",       value: totals.ok || 0,       color: "var(--ok)" },
+        { label: "outdated", value: totals.outdated || 0, color: "var(--warn)" },
+        { label: "missing",  value: totals.missing || 0,  color: "var(--err)" },
+      ]);
+      // Auto-advance after a short pause, but only if user hasn't moved.
+      const myIdx = this.currentIdx;
+      setTimeout(() => {
+        if (this.currentIdx === myIdx) this.advance();
+      }, 1700);
+    },
+    // ── Step 5: Sources preview ─────────────────────────────────
+    build_sources(host) {
+      const h = document.createElement("h3");
+      h.textContent = tr("wizard.sources.title");
+      host.appendChild(h);
+      const body = document.createElement("p");
+      body.textContent = tr("wizard.sources.body");
+      host.appendChild(body);
+      const summary = this.state.sources_summary || {categories: {}, totals: {}};
+      const tbl = document.createElement("table");
+      tbl.className = "wizard-sources-table";
+      const thead = document.createElement("thead");
+      const trh = document.createElement("tr");
+      ["col_source","col_desc","col_total","col_outdated"].forEach(k => {
+        const th = document.createElement("th");
+        th.textContent = tr(`wizard.sources.${k}`);
+        if (k === "col_total" || k === "col_outdated") th.classList.add("num");
+        trh.appendChild(th);
+      });
+      // Action column for Windows Update "Run check".
+      const thAct = document.createElement("th");
+      thAct.textContent = "";
+      trh.appendChild(thAct);
+      thead.appendChild(trh);
+      tbl.appendChild(thead);
+      const tb = document.createElement("tbody");
+      const rows = [
+        ["winget",         "wizard.sources.winget_desc"],
+        ["msstore",        "wizard.sources.msstore_desc"],
+        ["registry_arp",   "wizard.sources.arp_desc"],
+        ["windows_update", "wizard.sources.wu_desc"],
+      ];
+      let outdatedTotal = 0;
+      for (const [src, descKey] of rows) {
+        const cat = (summary.categories || {})[src] || {total: 0, outdated: 0};
+        const trr = document.createElement("tr");
+        const tdSrc = document.createElement("td");
+        tdSrc.className = "src-name";
+        tdSrc.textContent = src;
+        trr.appendChild(tdSrc);
+        const tdDesc = document.createElement("td");
+        tdDesc.className = "src-desc";
+        tdDesc.textContent = tr(descKey);
+        trr.appendChild(tdDesc);
+        const tdTotal = document.createElement("td");
+        tdTotal.className = "num";
+        tdTotal.textContent = cat.total || 0;
+        trr.appendChild(tdTotal);
+        const tdOut = document.createElement("td");
+        tdOut.className = "num";
+        if (src === "windows_update" && (!cat || cat.total === 0)) {
+          if (this.state.wu_check && this.state.wu_check.status === "done") {
+            tdOut.textContent = String(this.state.wu_check.count || 0);
+            outdatedTotal += this.state.wu_check.count || 0;
+          } else if (this.state.wu_check && this.state.wu_check.status === "running") {
+            tdOut.textContent = "…";
+          } else if (this.state.wu_check && this.state.wu_check.status === "failed") {
+            tdOut.textContent = "—";
+          } else {
+            tdOut.textContent = tr("wizard.sources.wu_pending");
+          }
+        } else {
+          tdOut.textContent = cat.outdated || 0;
+          outdatedTotal += cat.outdated || 0;
+        }
+        trr.appendChild(tdOut);
+        const tdAct = document.createElement("td");
+        if (src === "windows_update") {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "secondary";
+          btn.style.fontSize = "0.78rem";
+          btn.textContent = tr("wizard.sources.run_check");
+          if (this.state.wu_check && this.state.wu_check.status === "running") {
+            btn.disabled = true;
+            btn.textContent = "…";
+          }
+          btn.addEventListener("click", () => this.runWindowsUpdateCheck());
+          tdAct.appendChild(btn);
+        }
+        trr.appendChild(tdAct);
+        tb.appendChild(trr);
+      }
+      tbl.appendChild(tb);
+      host.appendChild(tbl);
+      // Banner — green if all clear, warn if anything outdated.
+      const banner = document.createElement("div");
+      if (outdatedTotal > 0) {
+        banner.className = "wizard-sources-banner";
+        banner.textContent = tr("wizard.sources.upgradeable_banner")
+          .replace("{count}", String(outdatedTotal));
+      } else {
+        banner.className = "wizard-sources-banner ok";
+        banner.textContent = tr("wizard.sources.all_clear_banner");
+      }
+      host.appendChild(banner);
+      // Surface the live wu_check status under the table.
+      if (this.state.wu_check) {
+        const note = document.createElement("p");
+        note.className = "dim";
+        note.style.fontSize = "0.82rem";
+        if (this.state.wu_check.status === "running") {
+          note.textContent = tr("wizard.sources.wu_running");
+        } else if (this.state.wu_check.status === "done") {
+          note.textContent = tr("wizard.sources.wu_done")
+            .replace("{count}", String(this.state.wu_check.count || 0));
+        } else if (this.state.wu_check.status === "failed") {
+          note.textContent = tr("wizard.sources.wu_failed");
+        }
+        if (note.textContent) host.appendChild(note);
+      }
+    },
+    async runWindowsUpdateCheck() {
+      this.state.wu_check = {status: "running"};
+      this.render();
+      try {
+        const r = await api.post("/runs/async", {
+          profile: "quick",
+          phases: ["check"],
+          categories: ["windows_update"],
+          dry_run: true,
+        });
+        const runId = r.run_id;
+        // Subscribe to the SSE for events; resolve once we see "done".
+        let count = 0;
+        await new Promise((resolve, reject) => {
+          const es = new EventSource(`/runs/${runId}/events`);
+          es.addEventListener("sidecar", e => {
+            try {
+              const sc = JSON.parse(e.data);
+              const summ = sc.summary || {};
+              count += (summ.total ?? (sc.items || []).length) || 0;
+            } catch {}
+          });
+          es.addEventListener("done", () => {
+            try { es.close(); } catch {}
+            resolve();
+          });
+          es.onerror = () => {
+            try { es.close(); } catch {}
+            reject(new Error("stream closed"));
+          };
+          // Hard timeout 60s.
+          setTimeout(() => { try { es.close(); } catch {}; resolve(); }, 60000);
+        });
+        this.state.wu_check = {status: "done", count};
+      } catch (e) {
+        this.state.wu_check = {status: "failed", error: String(e)};
+      }
+      this.render();
+    },
+    // ── Step 6: Done — try a dry-run + finish ─────────────────────
+    build_done(host) {
+      const h = document.createElement("h3");
+      h.textContent = tr("wizard.done.title");
+      host.appendChild(h);
+      // A — dry-run
+      const dryS = document.createElement("div");
+      dryS.className = "wizard-done-section";
+      const dryH = document.createElement("h4");
+      dryH.textContent = tr("wizard.done.dry_h");
+      dryS.appendChild(dryH);
+      const dryP = document.createElement("p");
+      dryP.textContent = tr("wizard.done.dry_body");
+      dryS.appendChild(dryP);
+      const row = document.createElement("div");
+      row.className = "wizard-dryrun-row";
+      const runBtn = document.createElement("button");
+      runBtn.type = "button";
+      runBtn.id = "wizard-dryrun-btn";
+      runBtn.textContent = tr("wizard.done.dry_btn");
+      const skipBtn = document.createElement("button");
+      skipBtn.type = "button";
+      skipBtn.className = "secondary";
+      skipBtn.textContent = tr("wizard.done.skip_dry");
+      skipBtn.addEventListener("click", () => {
+        this.state.dry_run_seen = true;
+        this.saveScratch();
+        this.render();
+      });
+      const dryStatus = document.createElement("span");
+      dryStatus.className = "dim";
+      dryStatus.id = "wizard-dryrun-status";
+      dryStatus.style.fontSize = "0.85rem";
+      if (this.state.dry_run && this.state.dry_run.status === "done") {
+        dryStatus.textContent = tr("wizard.done.dry_done")
+          .replace("{items}", String(this.state.dry_run.items || 0));
+      } else if (this.state.dry_run && this.state.dry_run.status === "running") {
+        dryStatus.textContent = tr("wizard.done.dry_running");
+      } else if (this.state.dry_run && this.state.dry_run.status === "failed") {
+        dryStatus.textContent = tr("wizard.done.dry_failed")
+          .replace("{error}", this.state.dry_run.error || "");
+      }
+      runBtn.addEventListener("click", () => this.runDryRun(dryStatus));
+      row.appendChild(runBtn); row.appendChild(skipBtn); row.appendChild(dryStatus);
+      dryS.appendChild(row);
+      const dryOut = document.createElement("pre");
+      dryOut.className = "wizard-dryrun-output";
+      dryOut.id = "wizard-dryrun-out";
+      dryS.appendChild(dryOut);
+      host.appendChild(dryS);
+      // B — apply for real
+      const appS = document.createElement("div");
+      appS.className = "wizard-done-section";
+      const appH = document.createElement("h4");
+      appH.textContent = tr("wizard.done.apply_h");
+      appS.appendChild(appH);
+      const ul = document.createElement("ul");
+      ["apply_1","apply_2","apply_3"].forEach(k => {
+        const li = document.createElement("li");
+        li.textContent = tr(`wizard.done.${k}`);
+        ul.appendChild(li);
+      });
+      appS.appendChild(ul);
+      host.appendChild(appS);
+      // C — where to find things
+      const whS = document.createElement("div");
+      whS.className = "wizard-done-section wizard-done-where";
+      const whH = document.createElement("h4");
+      whH.textContent = tr("wizard.done.where_h");
+      whS.appendChild(whH);
+      const whUl = document.createElement("ul");
+      [["where_overview","overview"],["where_categories","categories"],
+       ["where_run","run"],["where_history","history"],["where_logs","logs"],
+       ["where_help","help"]].forEach(([k, view]) => {
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.href = `#${view}`;
+        a.textContent = tr(`wizard.done.${k}`);
+        a.addEventListener("click", () => {
+          // Defer view-switch until after Finish closes the modal.
+          ui.wizard.targetView = view;
+        });
+        li.appendChild(a);
+        whUl.appendChild(li);
+      });
+      whS.appendChild(whUl);
+      host.appendChild(whS);
+      // Footer hint
+      if (!this.state.dry_run_seen) {
+        const hint = document.createElement("p");
+        hint.className = "wizard-finish-hint";
+        hint.textContent = tr("wizard.done.finish_hint");
+        host.appendChild(hint);
+      }
+    },
+    async runDryRun(statusEl) {
+      this.state.dry_run = {status: "running"};
+      const out = $("#wizard-dryrun-out");
+      if (out) out.textContent = "";
+      const btn = $("#wizard-dryrun-btn");
+      if (btn) btn.disabled = true;
+      if (statusEl) statusEl.textContent = tr("wizard.done.dry_running");
+      try {
+        const r = await api.post("/runs/async", {
+          profile: "quick",
+          phases: ["plan"],
+          categories: ["winget"],
+          dry_run: true,
+        });
+        const runId = r.run_id;
+        let items = 0;
+        await new Promise((resolve, reject) => {
+          const es = new EventSource(`/runs/${runId}/events`);
+          es.addEventListener("sidecar", e => {
+            try {
+              const sc = JSON.parse(e.data);
+              const summ = sc.summary || {};
+              const total = summ.total ?? (sc.items || []).length;
+              items += total || 0;
+              if (out) {
+                const ln = `[${sc.phase}:${sc.category}] ${sc.status || "ok"} - ${total || 0} items\n`;
+                out.textContent += ln;
+              }
+            } catch {}
+          });
+          es.addEventListener("log", e => {
+            try {
+              const m = JSON.parse(e.data);
+              if (out && m.line) {
+                out.textContent += m.line + "\n";
+                out.scrollTop = out.scrollHeight;
+              }
+            } catch {}
+          });
+          es.addEventListener("done", () => {
+            try { es.close(); } catch {}
+            resolve();
+          });
+          es.onerror = () => {
+            try { es.close(); } catch {}
+            // Some adapters' events stream closes after first done; treat as success.
+            resolve();
+          };
+          setTimeout(() => { try { es.close(); } catch {}; resolve(); }, 90000);
+        });
+        this.state.dry_run = {status: "done", items};
+        this.state.dry_run_seen = true;
+        this.saveScratch();
+      } catch (e) {
+        this.state.dry_run = {status: "failed", error: String(e)};
+      }
+      if (btn) btn.disabled = false;
+      this.render();
+    },
+    async finalize(skip) {
+      const choices = {
+        language: this.state.language || "en",
+        theme: this.state.theme || "dark",
+        admin_authorised: !!this.state.admin_authorised,
+        inventory_seen: !!this.state.inventory_seen,
+        dry_run_seen: !!this.state.dry_run_seen,
+        skipped: !!skip,
+        step: this.currentIdx + 1,
+      };
+      try {
+        await api.post("/onboarding/complete", choices);
+      } catch (e) { console.warn("wizard finalize:", e); }
+      this.clearScratch();
+      $("#wizard-modal").classList.add("hidden");
+      // If user clicked a "where to find" link on step 6, hop to that view.
+      if (this.targetView) {
+        try { ui.show(this.targetView); } catch {}
+        this.targetView = null;
+      } else {
+        try { ui.show("overview"); } catch {}
+      }
+    },
+  },
+  // Legacy alias: some external integrations still call ui.finishWizard().
+  async finishWizard(skip) {
+    await ui.wizard.finalize(skip);
   },
 
   async checkRebootBanner() {
@@ -1520,10 +2230,18 @@ $("#sudo-cancel").addEventListener("click", () => sudoMgr.close(false));
 sudoMgr.refreshIndicator();
 setInterval(() => sudoMgr.refreshIndicator(), 30000);
 
-// First-run wizard
+// First-run wizard — step-router controls
 document.addEventListener("click", e => {
-  if (e.target.id === "wizard-finish") ui.finishWizard(false);
-  if (e.target.id === "wizard-skip")   ui.finishWizard(true);
+  if (!ui.wizard) return;
+  // Skip button (top-right of wizard header).
+  if (e.target.id === "wizard-skip-top") { ui.wizard.finalize(true); return; }
+  // Next / Finish (footer): role flips on the last step.
+  if (e.target.id === "wizard-next") {
+    if (e.target.dataset.role === "finish") ui.wizard.finalize(false);
+    else ui.wizard.advance();
+    return;
+  }
+  if (e.target.id === "wizard-back") { ui.wizard.back(); return; }
 });
 
 // Reboot banner

@@ -74,43 +74,33 @@
 
   <main>
     <!-- First-run wizard modal -->
-    <div id="wizard-modal" class="modal hidden" role="dialog" aria-modal="true">
-      <div class="modal-card" style="max-width:520px">
-        <h3 data-i18n="wizard.title">Welcome to Ascendo</h3>
-        <p class="dim" data-i18n="wizard.intro">A few quick choices and you're done.</p>
-        <div id="wizard-step0">
-          <h4 data-i18n="wizard.lang_q">Pick your language</h4>
-          <label><input type="radio" name="wiz-lang" value="en" checked> English</label>
-          &nbsp;
-          <label><input type="radio" name="wiz-lang" value="pl"> Polski</label>
-        </div>
-        <div id="wizard-step1">
-          <h4 data-i18n="wizard.profile_q">Pick your default profile</h4>
-          <label><input type="radio" name="wiz-profile" value="quick"> <b>quick</b> - read-only check (~15s)</label><br>
-          <label><input type="radio" name="wiz-profile" value="safe" checked> <b>safe</b> - full pipeline, no driver changes</label><br>
-          <label><input type="radio" name="wiz-profile" value="full"> <b>full</b> - everything incl. NVIDIA/firmware</label>
-        </div>
-        <div id="wizard-step2" style="margin-top:0.8rem">
-          <h4 data-i18n="wizard.schedule_q">Schedule a weekly run?</h4>
-          <label><input type="checkbox" id="wiz-schedule" checked> <span data-i18n="wizard.schedule_on">Yes, every Sunday 03:00</span></label>
-        </div>
-        <div id="wizard-step3" style="margin-top:0.8rem">
-          <h4 data-i18n="wizard.snapshot_q">Snapshot before each apply?</h4>
-          <label><input type="checkbox" id="wiz-snapshot" checked> <span data-i18n="wizard.snapshot_on">Yes (timeshift / etckeeper fallback)</span></label>
-        </div>
-        <div id="wizard-step5" style="margin-top:0.8rem">
-          <h4 data-i18n="wizard.theme.title">Pick your theme</h4>
-          <p class="dim" style="margin:0.2rem 0 0.4rem" data-i18n="wizard.theme.body">You can change this later in Settings.</p>
-          <div class="theme-picker">
-            <label><input type="radio" name="wiz-theme" value="auto" checked> <span data-i18n="wizard.theme.auto">Auto (system)</span></label>
-            <label><input type="radio" name="wiz-theme" value="dark"> <span data-i18n="wizard.theme.dark">Dark</span></label>
-            <label><input type="radio" name="wiz-theme" value="light"> <span data-i18n="wizard.theme.light">Light</span></label>
+    <!-- 6-step step-router. Inner content is rebuilt by ui.wizard.render()
+         from a steps[] array in app.js so adding/removing a step is one
+         data change, not 6 places to edit. The wizard host stays in the
+         DOM all the time; visibility is controlled via .hidden on the
+         outer .modal element. -->
+    <div id="wizard-modal" class="modal hidden" role="dialog" aria-modal="true"
+         aria-labelledby="wizard-title">
+      <div class="modal-card wizard-card">
+        <header class="wizard-header">
+          <div class="wizard-brand">
+            <img class="brand-mark brand-img brand-img--dark"  src="/assets/logo-mark.svg"       alt="" aria-hidden="true">
+            <img class="brand-mark brand-img brand-img--light" src="/assets/logo-mark-light.svg" alt="" aria-hidden="true">
+            <span class="brand-name">Ascendo</span>
           </div>
-        </div>
-        <div class="modal-actions">
-          <button id="wizard-finish" data-i18n="wizard.finish">Finish</button>
-          <button id="wizard-skip" type="button" class="secondary" data-i18n="wizard.skip">Skip</button>
-        </div>
+          <button id="wizard-skip-top" type="button" class="wizard-skip-btn"
+                  title="" data-i18n="wizard.skip"
+                  data-i18n-title="wizard.skip_title">Skip</button>
+        </header>
+        <ol id="wizard-breadcrumb" class="wizard-breadcrumb" aria-label="Steps"></ol>
+        <div id="wizard-step-host" class="wizard-step-host"
+             aria-live="polite"></div>
+        <footer class="wizard-footer">
+          <button id="wizard-back" type="button" class="secondary"
+                  data-i18n="wizard.back">Back</button>
+          <span class="wizard-spacer"></span>
+          <button id="wizard-next" type="button" data-i18n="wizard.next">Next</button>
+        </footer>
       </div>
     </div>
 
