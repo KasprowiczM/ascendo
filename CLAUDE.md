@@ -1,94 +1,121 @@
-# CLAUDE.md — Ubuntu_Aktualizacje
+# CLAUDE.md — Ascendo
 
-Cel: jednokomendowy pakiet aktualizacyjny Ubuntu 24.04 dla Dell Precision 5520 (mk-uP5520).
-Obsługuje APT, Snap, Homebrew, npm, pip/pipx, Flatpak, sterowniki NVIDIA i firmware.
+Cross-platform unified-updates app: one repo for **CLI + Web (FastAPI dashboard) + Desktop (Tauri 2.x)** across **Windows, Ubuntu, macOS**. Monorepo with shared `core/` + per-OS `adapters/`.
 
-## Stack
-- Bash (`update-all.sh`, `scripts/update-*.sh`, `lib/*.sh`)
-- Konfiguracja pakietów w `config/*.list` (jedyne źródło prawdy – nie hardcoduj pakietów w skryptach)
-- CI GitHub Actions (`.github/workflows/validate.yml`)
+---
 
-## Komendy
-```bash
-./update-all.sh                        # pełna aktualizacja (full profile, NVIDIA held)
-                                       # sudo password ONCE — askpass dla wszystkich faz
-bin/ascendo apps detect                # raport: tracked/detected/missing (kolorowa tabela)
-bin/ascendo apps add <pkg> --category <cat>   # dodaj do config/*.list
-bin/ascendo apps install-missing       # zainstaluj wszystko z .list co brak na dysku
-bin/ascendo profile list               # dostępne szablony profili (dev/media/minimal)
-bin/ascendo profile import <name> [--dry-run]  # zaimportuj szablon do config/*.list
-bin/ascendo health --json              # post-run audit: failed units, dmesg, disk, reboot
-bin/ascendo settings export <file>     # tar.gz konfiguracji do przeniesienia
-bin/ascendo settings import <file>     # przywróć konfigurację z tar.gz
-bin/ascendo exclusions {list|add|remove} <cat:pkg>   # per-user opt-out z apply
-bash packaging/build-deb.sh            # buduje dist/ascendo_<ver>_all.deb
-bash scripts/maintenance/prune-logs.sh --keep 50 --days 30  # log retention
-curl -X POST http://127.0.0.1:8765/auth/generate-token       # opt-in token auth
-curl http://127.0.0.1:8765/metrics                           # Prometheus
-curl http://127.0.0.1:8765/runs/<id>/report.md               # MD raport
-./update-all.sh --profile quick        # tylko check (read-only sweep, ~15s)
-./update-all.sh --profile safe         # bez drivers/firmware
-./update-all.sh --dry-run              # podgląd bez wykonania
-./update-all.sh --only brew --phase apply
-ORCH_QUIET=1 ./update-all.sh ...       # zakneblowany output (tylko sumaryczny)
-bash -n update-all.sh && bash -n scripts/*/*.sh && bash -n lib/*.sh
-python3 tests/validate_phase_json.py   # walidacja sidecarów JSON v1
-bats tests/bash/test_json_emit.bats    # testy emittera (jeśli bats zainstalowany)
-bash lib/git-push.sh push main
-PYTHONDONTWRITEBYTECODE=1 python3 tests/test_dev_sync_safety.py -v
-bash scripts/preflight.sh              # read-only host/recovery readiness
-bash scripts/verify-state.sh           # repo/dev-sync/systemd verification
+## Repository layout
 
-# Dashboard (Etap 2)
-pip install --user fastapi uvicorn pydantic
-python3 -m app.backend                 # http://127.0.0.1:8765
-bash systemd/user/install-dashboard.sh # instaluje user-service + ikonę Ascendo + .desktop
-# CLI runs (./update-all.sh) automatycznie pojawiają się w History — backend
-# reconciluje logs/runs/<id>/run.json z SQLite przy każdym /runs i na startup.
-
-# Snapshot / scheduler / pluginy (Etap 3)
-bash scripts/snapshot/create.sh "before apt apply"
-bash scripts/scheduler/install.sh --calendar "Sun *-*-* 03:00:00" --profile safe
-bash scripts/scheduler/install.sh --status
-bash scripts/scheduler/install.sh --remove
+```
+core/                    # platform-agnostic Python: ascendo CLI, dashboard, schemas, models
+adapters/
+  windows/               # winget / msstore / registry_arp / windows_update / snapshot / scheduler / elevation
+  ubuntu/                # apt / snap / brew / npm / pip / flatpak / drivers / firmware (legacy app/ being migrated here)
+  macos/                 # brew / mas / time-machine / launchd  (stub — to be built)
+ui/
+  desktop-tauri/         # Tauri 2.x shell (one binary, all platforms) — Python sidecar = core dashboard
+  frontend/              # vanilla SPA served by FastAPI dashboard (Inter Tight + JetBrains Mono, self-hosted)
+plugins/                 # third-party phase scripts (e.g. dell-driver-update)
+bin/                     # PowerShell + bash scripts (launch, install, validate, run-tag-release, build-installer)
+packaging/
+  msi/   pyinstaller/    # Windows installer artifacts
+  deb/   homebrew-tap/   # Linux + macOS distribution
+  winget-manifest/  pkg/ # winget submission, macOS .pkg
+schemas/                 # JSON-Schema phase-result/v1, run/v1, plugin manifest
+docs/superpowers/specs/  # design docs and per-session handoffs
 ```
 
-## Dev Sync
-- GitHub przechowuje pliki śledzone.
-- Proton/rclone przechowuje tylko prywatny overlay ignorowany przez Git (`.env.local`, `.dev_sync_config.json`, lokalne klucze, lokalne ustawienia agentów).
-- Nie wysyłaj do Proton plików odtwarzalnych: `APPS.md`, `logs/`, backupów configów, cache, dependency/build output.
-- Używaj `bash dev-sync-export.sh --dry-run --verbose` przed realnym exportem.
-- `dev-sync` pozostaje oddzielony od `update-all.sh`.
-- Fresh clone flow: `bash scripts/preflight.sh`, `bash dev-sync/provider_setup.sh`, `bash scripts/restore-from-proton.sh --dry-run --verbose`, `bash scripts/bootstrap.sh --skip-sync`, `bash scripts/verify-state.sh`.
-- `config/restore-manifest.json` definiuje prywatny overlay i pliki odtwarzalne.
+Legacy Linux-only top-level paths (`app/`, `lib/`, `scripts/`, `update-all.sh`, `setup.sh`) are still present for transitional reasons and will fold into `adapters/ubuntu/` over time.
 
-## Profile Agentów
-- `default` — `gpt-5.3-codex`, `medium`
-- `orchestrator` — `gpt-5.3-codex`, `high`
-- `advisor` — `gpt-5.4`, `high`, `read-only`
-- `worker-fast` — `gpt-5.4-mini`, `medium`
-- `worker-tests` — `gpt-5.4-mini`, `medium`
+## CRITICAL workflow rule — NO new worktrees
 
-Konfiguracja profili jest projektowa: `.codex.local/config.toml` i `.codex.local/agents/*.toml`.
+**Always work directly in `D:/Dev_Env/Ascendo` on `main`.** Do not run `git worktree add` or otherwise spawn `.claude/worktrees/<name>/`. Earlier sessions accidentally created three parallel worktrees that had to be reconciled by hand. The rule is: one repo, one branch (`main`), commits go straight there and `git push origin main`.
 
-## PLANNING RULE (NIEZMIENIALNA)
-Nie wprowadzaj żadnych zmian w kodzie, dopóki nie poznasz kodu i wymagań na tyle, aby mieć co najmniej 95% pewności, co trzeba zbudować. W trybie planowania eksploruj kod, zadawaj pytania i kilkukrotnie weryfikuj założenia.
+If you need isolation for an experimental change, create a topic branch in the primary worktree and switch back to `main` when done. Never check it out elsewhere.
 
-## Kontrola kontekstu i logów
-- Monitoruj wypełnienie kontekstu; przy ~60% podsumuj historię roboczą.
-- Nie wklejaj długich logów do kontekstu — zapisuj do pliku i czytaj `head`/`tail`/`grep`.
-- Nie commituj `APPS.md` ani `.env.local`.
+## Active branch + remote
 
-## Referencje (Progressive Disclosure)
-- @MIGRATION.md — **świeża maszyna Ubuntu: instalacja, ikona Ascendo, sanity checks**
-- @RUN.md — **uruchomienie + weryfikacja od zera (CLI, dashboard, scheduler, snapshot)**
-- @docs/agents/hybrid-mode.md — **hybrid CLI/dashboard, 3 ścieżki tego samego use-case**
-- @docs/agents/architecture.md — architektura skryptów, menedżery pakietów, quirks systemu
-- @docs/agents/contract.md — **5-fazowy kontrakt skryptów + JSON sidecar (schema v1)**
-- @docs/agents/workflow.md — workflow agentów, profile modeli, delegowanie
-- @docs/agents/style_guide.md — zasady stylu kodu Bash
-- @docs/agents/testing_rules.md — walidacja i testowanie zmian
-- @docs/agents/security.md — bezpieczeństwo, sekrety, autoryzacja
-- @docs/agents/handoff.md — kompresja kontekstu, przekazywanie pracy między sesjami
-- @docs/last-run-review.md — ostatni pełny run, status pakietów i znane ostrzeżenia
-- @app/README.md — dashboard (FastAPI + vanilla SPA), REST API, instalacja
+- `main` is canonical. Origin: `https://github.com/KasprowiczM/ascendo.git`.
+- `claude/windows-end-to-end-2026-05-02` is preserved on origin as a safety snapshot of the Windows MVP work; not for active development.
+- `restructure/monorepo` is a historical anchor (the v0.0.7-alpha tag commit). Do not commit to it.
+
+## Forward roadmap
+
+Read these in order when picking up:
+
+1. [PLAN.md](./PLAN.md) — what's next (single source of truth)
+2. [HANDOFF.md](./HANDOFF.md) — session log (what already shipped)
+3. Latest dated handoff in `docs/superpowers/specs/` — most recent context
+4. [WINDOWS_QUICKSTART.md](./WINDOWS_QUICKSTART.md) — operator install + first run
+5. [WINDOWS_TESTING.md](./WINDOWS_TESTING.md) — full test matrix
+
+## Commands (Windows-first; Ubuntu/macOS commands live in their adapter docs)
+
+```powershell
+# Dev install (idempotent — safe to re-run after git pull)
+.\bin\install-dev.ps1                  # core + adapters/windows + venv + smoke
+.\bin\install-shortcut.ps1             # Desktop + Start menu icons
+
+# CLI
+python -m ascendo doctor                                                    # 5-component health
+python -m ascendo run --category winget --phase check                       # one cat × one phase
+python -m ascendo run --categories winget,msstore --phases check,plan       # multi
+python -m ascendo runs list -n 10
+python -m ascendo runs show <id>
+python -m ascendo runs json <id> --pretty                                   # consolidated ascendo/run/v1
+python -m ascendo snapshot {create|list|restore}
+python -m ascendo schedule {install|remove|list|trigger}
+python -m ascendo dashboard [--background] [--port 8765]
+
+# Web
+xdg-open http://127.0.0.1:8765    # or just open in a browser
+
+# Desktop (Tauri 2.x, native window)
+.\bin\launch-desktop.ps1                # dev (cargo run)
+.\bin\launch-desktop.ps1 -Build         # produces target\release\bundle\{msi,nsis}\
+
+# End-to-end smoke (real Windows hardware)
+.\bin\validate-windows.ps1 -DashboardPort 8768
+.\bin\run-tag-release.ps1 -WhatIf       # plan only, no mutation
+.\bin\run-tag-release.ps1               # interactive 'apply' gate
+```
+
+## Phase contract (schema v1)
+
+Every category × {check, plan, apply, verify, cleanup} script writes a JSON sidecar at
+`logs/runs/<run-id>/<source>/<phase>__<source>.json` validated against
+`schemas/phase-result.schema.json`. The orchestrator aggregates per-run summaries
+into `run.json` (schema `ascendo/run/v1`). See [docs/agents/contract.md](./docs/agents/contract.md).
+
+Exit codes (Windows: per `adapters/windows/lib/AscendoJson.psm1`):
+0 ok · 1 warn · 2 bad-usage · 10 precondition · 11 lock · 12 timeout · 20 apply-fail-known · 30 apply-fail-unknown · 75 needs-reboot.
+
+## Permission model
+
+- **Windows:** Administrator elevation via `adapters/windows/ascendo_windows/managers/elevation.py` (UAC); SPA caches an in-memory elevation token after the user provides Administrator credentials, helper passes `RUN_AS_ADMIN=1` env var down to PowerShell phase scripts. **Do not refer to "sudo" in user-facing copy on Windows** — use "Administrator" / "Administrator elevation".
+- **Ubuntu:** sudo cache via askpass helper in `$XDG_RUNTIME_DIR/ascendo/askpass-*.sh`.
+- **macOS:** sudo + osascript (TBD when adapter built out).
+
+## Planning rule (immutable)
+
+Do not change code until you understand the request and the affected code well enough to be ≥95% certain what to build. In planning mode, read code, ask questions, validate assumptions multiple times.
+
+## Context + log control
+
+- Watch context fill; at ~60% summarise the working session into the latest handoff in `docs/superpowers/specs/<date>-*.md` and trim.
+- Don't paste long logs into context — write to a file and `head`/`tail`/`grep` it.
+- Don't commit `APPS.md` or `.env.local` (already gitignored).
+
+## References
+
+- @PLAN.md — forward roadmap (read first when resuming)
+- @HANDOFF.md — historical session log
+- @WINDOWS_QUICKSTART.md — Windows operator install + first run
+- @WINDOWS_TESTING.md — full Windows test matrix
+- @docs/agents/contract.md — 5-phase JSON sidecar contract
+- @docs/agents/architecture.md — overall architecture
+- @docs/agents/security.md — secrets, elevation, dev-sync rules
+- @adapters/windows/README.md — Windows adapter internals
+- @adapters/ubuntu/README.md — Ubuntu adapter internals (legacy, in migration)
+- @ui/desktop-tauri/README.md — Tauri shell + Python sidecar
+- @app/README.md — FastAPI + SPA dashboard (frontend lives in `app/frontend/`, will move to `ui/frontend/`)
