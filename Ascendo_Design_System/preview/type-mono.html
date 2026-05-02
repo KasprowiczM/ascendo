@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;padding:24px;background:var(--bg-elev);display:flex;flex-direction:column;gap:14px;}
+  .meta{font:var(--fw-medium) 10px var(--font-mono);color:var(--fg-faint);text-transform:uppercase;letter-spacing:.12em;}
+  .term{background:#06080F;color:#F5F4EE;border-radius:8px;padding:14px 16px;font:var(--fw-regular) 13px/1.55 var(--font-mono);}
+  .term .dim{color:#7A8099;}
+  .term .ok{color:#C8FF4B;}
+  .term .warn{color:#E0A82E;}
+  .kbds{display:flex;gap:6px;align-items:center;}
+</style></head>
+<body>
+<div><div class="meta">code block · jetbrains mono 13</div>
+<pre class="term" style="margin:8px 0 0">$ ascendo run --profile=safe
+<span class="dim">[apt]</span>     check  <span class="ok">✓</span> 12 outdated
+<span class="dim">[snap]</span>    check  <span class="ok">✓</span> 3 outdated
+<span class="dim">[brew]</span>    check  <span class="warn">!</span> not installed (skip)
+<span class="dim">[drivers]</span> plan   <span class="dim">held</span> nvidia-driver-535</pre>
+</div>
+<div style="display:flex;gap:18px;align-items:center;">
+  <div class="meta" style="width:90px;">keys</div>
+  <div class="kbds"><span class="t-kbd">⌘</span><span class="t-kbd">K</span><span style="color:var(--fg-faint);font:var(--fw-regular) 12px var(--font-mono)">command palette</span></div>
+  <div class="kbds"><span class="t-kbd">↵</span><span style="color:var(--fg-faint);font:var(--fw-regular) 12px var(--font-mono)">start run</span></div>
+</div>
+</body></html>

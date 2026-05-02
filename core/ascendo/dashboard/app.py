@@ -163,6 +163,9 @@ def create_app(
         _spa_assets: tuple[tuple[str, str], ...] = (
             ("app.js", "application/javascript"),
             ("style.css", "text/css"),
+            # Design system tokens (colors, type, spacing, radii, shadows,
+            # motion). Must load before style.css per index.html.
+            ("colors_and_type.css", "text/css"),
             ("i18n.js", "application/javascript"),
             ("icons.js", "application/javascript"),
             ("favicon.svg", "image/svg+xml"),
@@ -187,6 +190,35 @@ def create_app(
                 methods=["GET"],
                 include_in_schema=False,
             )
+
+        # Brand assets (logo wordmarks + marks). Lives at ``app/frontend/
+        # assets/`` and is referenced from index.html via ``/assets/...``
+        # absolute paths so the favicon link tag works.
+        assets_dir = frontend_dir / "assets"
+        if assets_dir.is_dir():
+            @app.get("/assets/{filename}", include_in_schema=False)
+            async def _spa_brand_asset(filename: str) -> FileResponse:
+                from fastapi import HTTPException
+
+                # Restrict to a known suffix set — defense in depth against
+                # ``../`` traversal even though Path normalises.
+                if "/" in filename or "\\" in filename or ".." in filename:
+                    raise HTTPException(status_code=404)
+                target = (assets_dir / filename).resolve()
+                if not target.is_file() or assets_dir not in target.parents:
+                    raise HTTPException(status_code=404)
+                # Pick a sane Content-Type by suffix.
+                suffix = target.suffix.lower()
+                media = {
+                    ".svg":  "image/svg+xml",
+                    ".png":  "image/png",
+                    ".jpg":  "image/jpeg",
+                    ".jpeg": "image/jpeg",
+                    ".webp": "image/webp",
+                    ".ico":  "image/x-icon",
+                }.get(suffix, "application/octet-stream")
+                return FileResponse(target, media_type=media)
+
         # Also mount a /static/ subtree so any future relative imports
         # (``/static/foo.js``) work without further plumbing.
         app.mount(

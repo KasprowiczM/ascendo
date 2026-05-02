@@ -1,0 +1,59 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;}
+  .pane{padding:22px 20px;display:grid;grid-template-columns:1fr 1fr;gap:14px;align-content:start;}
+  .pane.light{background:#EDEFF4;}
+  .pane.dark{background:#06080F;}
+  .ttl{grid-column:1/-1;font:var(--fw-medium) 10px var(--font-mono);text-transform:uppercase;letter-spacing:.14em;opacity:.55;margin:0;}
+  .pane.light .ttl{color:#495078;}
+  .pane.dark .ttl{color:#A8ADC2;}
+  .card{border-radius:8px;padding:16px;}
+  .pane.light .card{background:#FBFAF5;border:1px solid rgba(11,16,32,.08);box-shadow:0 1px 0 rgba(11,16,32,.04),0 6px 14px rgba(11,16,32,.06);}
+  .pane.dark .card{background:#131A2E;border:1px solid rgba(214,217,227,.06);}
+  .eye{font:var(--fw-medium) 10px var(--font-mono);text-transform:uppercase;letter-spacing:.12em;margin:0 0 8px;}
+  .pane.light .eye{color:#495078;}
+  .pane.dark .eye{color:#A8ADC2;}
+  .big{font:var(--fw-bold) 24px var(--font-sans);letter-spacing:-.02em;margin:0;}
+  .pane.light .big{color:#0B1020;}
+  .pane.dark .big{color:#F5F4EE;}
+  .meta{font:var(--fw-regular) 11.5px var(--font-mono);margin-top:6px;}
+  .pane.light .meta{color:#7A8099;}
+  .pane.dark .meta{color:#7A8099;}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;font:var(--fw-semibold) 10.5px var(--font-mono);background:#E5F5EC;color:#15803d;margin-top:10px;}
+  .pill::before{content:"";width:6px;height:6px;border-radius:50%;background:#3EBF7A;}
+  .pane.dark .pill{background:rgba(62,191,122,.14);color:#5fd697;}
+</style></head>
+<body>
+<div class="grid">
+  <div class="pane light">
+    <p class="ttl">Light · paper</p>
+    <div class="card">
+      <p class="eye">Last run</p>
+      <p class="big">2h 14m ago</p>
+      <p class="meta">profile=safe · 23 pkgs · 0 fail</p>
+      <span class="pill">Healthy</span>
+    </div>
+    <div class="card">
+      <p class="eye">System health</p>
+      <p class="big" style="color:#3EBF7A;">96 / 100</p>
+      <p class="meta">disk 42% · 1 advisory</p>
+    </div>
+  </div>
+  <div class="pane dark">
+    <p class="ttl">Dark · ink</p>
+    <div class="card">
+      <p class="eye">Last run</p>
+      <p class="big">2h 14m ago</p>
+      <p class="meta">profile=safe · 23 pkgs · 0 fail</p>
+      <span class="pill">Healthy</span>
+    </div>
+    <div class="card">
+      <p class="eye">System health</p>
+      <p class="big" style="color:#5fd697;">96 / 100</p>
+      <p class="meta">disk 42% · 1 advisory</p>
+    </div>
+  </div>
+</div>
+</body></html>

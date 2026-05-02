@@ -47,6 +47,8 @@ def test_spa_index_html_served_at_root(client: TestClient) -> None:
     [
         ("/app.js", "Ubuntu_Aktualizacje dashboard"),  # comment in app.js
         ("/style.css", "{"),  # any rule body
+        # Design-system tokens. Must load before style.css per index.html.
+        ("/colors_and_type.css", "--accent"),
         ("/i18n.js", ""),
         ("/icons.js", ""),
         ("/favicon.svg", "<svg"),
@@ -57,6 +59,54 @@ def test_spa_assets_served(client: TestClient, path: str, expected_substring: st
     assert r.status_code == 200, f"{path}: {r.status_code} {r.text[:80]}"
     if expected_substring:
         assert expected_substring in r.text
+
+
+# -- design-system brand assets (logo wordmarks + marks) --------------------
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "logo-mark.svg",
+        "logo-mark-light.svg",
+        "logo-mark-mono.svg",
+        "logo-wordmark.svg",
+        "logo-wordmark-dark.svg",
+    ],
+)
+def test_spa_brand_assets_served(client: TestClient, filename: str) -> None:
+    r = client.get(f"/assets/{filename}")
+    assert r.status_code == 200, f"/assets/{filename}: {r.status_code} {r.text[:80]}"
+    assert r.headers["content-type"] == "image/svg+xml"
+    assert "<svg" in r.text
+
+
+def test_spa_brand_asset_traversal_blocked(client: TestClient) -> None:
+    """Defense in depth: /assets/{filename} must reject path traversal."""
+    for bad in ("../style.css", "..\\\\style.css", "subdir/x.svg"):
+        r = client.get(f"/assets/{bad}")
+        assert r.status_code == 404, f"/assets/{bad}: leaked through with {r.status_code}"
+
+
+def test_spa_index_pins_dark_theme_by_default(client: TestClient) -> None:
+    """index.html must bootstrap with data-theme=dark before paint.
+
+    The Ascendo design system uses light as its CSS-default theme; dark is
+    activated via :root[data-theme="dark"]. The SPA must explicitly opt in
+    on the <html> element so the first paint is dark, not light.
+    """
+    r = client.get("/")
+    assert r.status_code == 200
+    body = r.text.lower()
+    # Must include design tokens stylesheet ordered before style.css.
+    tokens_pos = body.find("colors_and_type.css")
+    style_pos = body.find("style.css")
+    assert tokens_pos != -1, "index.html does not load colors_and_type.css"
+    assert style_pos != -1
+    assert tokens_pos < style_pos, "colors_and_type.css must load before style.css"
+    # Dark is pinned at parse time (either as <html data-theme="dark"> or
+    # via the inline pre-paint script in index.html).
+    assert 'data-theme="dark"' in body or 'documentelement.dataset.theme = "dark"' in body
 
 
 # -- existing endpoints not shadowed ---------------------------------------
@@ -208,3 +258,51 @@ def test_spa_stub_inventory_summary_shape(client: TestClient) -> None:
     for k in ("ok", "outdated", "missing", "total"):
         assert k in body["totals"]
     assert "categories" in body
+
+
+# -- design-system brand assets (logo wordmarks + marks) --------------------
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "logo-mark.svg",
+        "logo-mark-light.svg",
+        "logo-mark-mono.svg",
+        "logo-wordmark.svg",
+        "logo-wordmark-dark.svg",
+    ],
+)
+def test_spa_brand_assets_served(client: TestClient, filename: str) -> None:
+    r = client.get(f"/assets/{filename}")
+    assert r.status_code == 200, f"/assets/{filename}: {r.status_code} {r.text[:80]}"
+    assert r.headers["content-type"] == "image/svg+xml"
+    assert "<svg" in r.text
+
+
+def test_spa_brand_asset_traversal_blocked(client: TestClient) -> None:
+    """Defense in depth: /assets/{filename} must reject path traversal."""
+    for bad in ("../style.css", "..\\style.css", "subdir/x.svg"):
+        r = client.get(f"/assets/{bad}")
+        assert r.status_code == 404, f"/assets/{bad}: leaked through with {r.status_code}"
+
+
+def test_spa_index_pins_dark_theme_by_default(client: TestClient) -> None:
+    """index.html must bootstrap with data-theme=dark before paint.
+
+    The Ascendo design system uses light as its CSS-default theme; dark is
+    activated via :root[data-theme="dark"]. The SPA must explicitly opt in
+    on the <html> element so the first paint is dark, not light.
+    """
+    r = client.get("/")
+    assert r.status_code == 200
+    body = r.text.lower()
+    # Must include design tokens stylesheet ordered before style.css.
+    tokens_pos = body.find("colors_and_type.css")
+    style_pos = body.find("style.css")
+    assert tokens_pos != -1, "index.html does not load colors_and_type.css"
+    assert style_pos != -1
+    assert tokens_pos < style_pos, "colors_and_type.css must load before style.css"
+    # Dark is pinned at parse time (either as <html data-theme="dark"> or
+    # via the inline pre-paint script in index.html).
+    assert 'data-theme="dark"' in body or 'documentelement.dataset.theme = "dark"' in body

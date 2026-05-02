@@ -1,0 +1,58 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;}
+  .pane{padding:22px;display:flex;flex-direction:column;gap:14px;align-items:flex-start;}
+  .light{background:var(--paper-25);}
+  .dark{background:var(--ink-900);}
+  .ttl{font:var(--fw-medium) 10px var(--font-mono);text-transform:uppercase;letter-spacing:.14em;margin:0;}
+  .light .ttl{color:#495078;}.dark .ttl{color:#A8ADC2;}
+  .nav{border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:2px;width:240px;}
+  .light .nav{background:#FBFAF5;border:1px solid rgba(11,16,32,.08);box-shadow:0 6px 14px rgba(11,16,32,.06);}
+  .dark .nav{background:#0B1020;}
+  a.l{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:7px;text-decoration:none;font:var(--fw-medium) 13px var(--font-sans);}
+  .light a.l{color:#495078;}.light a.l:hover{background:rgba(11,16,32,.04);color:#0B1020;}
+  .light a.l.active{background:rgba(200,255,75,.25);color:#0B1020;}
+  .dark a.l{color:#A8ADC2;}.dark a.l:hover{background:rgba(255,255,255,.05);color:#F5F4EE;}
+  .dark a.l.active{background:rgba(200,255,75,.12);color:#F5F4EE;}
+  a.l .ic{width:14px;height:14px;border-radius:3px;background:currentColor;opacity:.55;}
+  a.l.active .ic{background:#94B81F;opacity:1;}
+  .dark a.l.active .ic{background:#C8FF4B;}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 10px 14px;margin-bottom:6px;}
+  .light .brand{border-bottom:1px solid rgba(11,16,32,.08);}
+  .dark .brand{border-bottom:1px solid rgba(255,255,255,.08);}
+  .bn{font:var(--fw-bold) 16px var(--font-sans);letter-spacing:-.02em;}
+  .light .bn{color:#0B1020;}.dark .bn{color:#F5F4EE;}
+  .tag{font:var(--fw-medium) 9px var(--font-mono);text-transform:uppercase;letter-spacing:.14em;color:#7A8099;}
+</style></head>
+<body>
+<div class="grid">
+  <div class="pane light">
+    <p class="ttl">Light · paper sidebar</p>
+    <nav class="nav">
+      <div class="brand">
+        <svg viewBox="0 0 64 64" width="28" height="28"><rect width="64" height="64" rx="14" fill="#0B1020"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#C8FF4B"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#C8FF4B"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#C8FF4B"/></svg>
+        <div><div class="bn">Ascendo</div><div class="tag">unified updates</div></div>
+      </div>
+      <a class="l active"><span class="ic"></span>Overview</a>
+      <a class="l"><span class="ic"></span>Run center</a>
+      <a class="l"><span class="ic"></span>History</a>
+      <a class="l"><span class="ic"></span>Settings</a>
+    </nav>
+  </div>
+  <div class="pane dark">
+    <p class="ttl">Dark · ink sidebar</p>
+    <nav class="nav">
+      <div class="brand">
+        <svg viewBox="0 0 64 64" width="28" height="28"><rect width="64" height="64" rx="14" fill="#C8FF4B"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#0B1020"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#0B1020"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#0B1020"/></svg>
+        <div><div class="bn">Ascendo</div><div class="tag">unified updates</div></div>
+      </div>
+      <a class="l active"><span class="ic"></span>Overview</a>
+      <a class="l"><span class="ic"></span>Run center</a>
+      <a class="l"><span class="ic"></span>History</a>
+      <a class="l"><span class="ic"></span>Settings</a>
+    </nav>
+  </div>
+</div>
+</body></html>

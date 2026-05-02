@@ -1,4 +1,4 @@
-// Ubuntu_Aktualizacje — i18n strings (vanilla, no framework).
+// Ubuntu_Aktualizacje - i18n strings (vanilla, no framework).
 // Add a key here, then sprinkle `data-i18n="path.to.key"` in index.html.
 window.I18N = {
   en: {
@@ -19,7 +19,7 @@ window.I18N = {
     },
     suggest: {
       title:        "Smart Suggestions",
-      hint:         "Heuristic + optional AI advice based on your inventory and run history. Always shown as a diff — nothing is applied without your click.",
+      hint:         "Heuristic + optional AI advice based on your inventory and run history. Always shown as a diff - nothing is applied without your click.",
       empty:        "No suggestions right now. Run a Quick check first or revisit later.",
       btn_refresh:  "Re-analyse",
       btn_apply:    "Apply",
@@ -85,7 +85,7 @@ window.I18N = {
       btn_reboot_now: "Restart now",
       reboot_confirm: "Restart the computer now? Any unsaved work will be lost.",
       reboot_no_sudo: "sudo password required to restart",
-      reboot_scheduled: "reboot scheduled in 5s — saving your work now is recommended",
+      reboot_scheduled: "reboot scheduled in 5s - saving your work now is recommended",
       inventory:    "Inventory",
       refresh:      "Refresh",
       status_donut: "Status (all categories)",
@@ -157,11 +157,11 @@ window.I18N = {
       btn_export_dry: "Export (dry-run)",
       btn_export_real: "Export (real)",
       output:   "Output",
-      hint_fetch_b: "Fetch", hint_fetch:   " — pulls remote changes without modifying your working copy. Safe, read-only info.",
-      hint_pull_b:  "Pull (ff-only)", hint_pull: " — fetch + fast-forward merge only when local is clean. Stops on conflict.",
-      hint_push_b:  "Push",  hint_push:   " — sends your commits to origin (never --force). Requires remote write access.",
-      hint_dry_b:   "Export (dry-run)", hint_dry: " — shows what would be written to the cloud, WITHOUT touching files.",
-      hint_real_b:  "Export (real)", hint_real: " — performs the real write of the private overlay (.env.local, keys) to the configured cloud.",
+      hint_fetch_b: "Fetch", hint_fetch:   " - pulls remote changes without modifying your working copy. Safe, read-only info.",
+      hint_pull_b:  "Pull (ff-only)", hint_pull: " - fetch + fast-forward merge only when local is clean. Stops on conflict.",
+      hint_push_b:  "Push",  hint_push:   " - sends your commits to origin (never --force). Requires remote write access.",
+      hint_dry_b:   "Export (dry-run)", hint_dry: " - shows what would be written to the cloud, WITHOUT touching files.",
+      hint_real_b:  "Export (real)", hint_real: " - performs the real write of the private overlay (.env.local, keys) to the configured cloud.",
       provider:     "Cloud provider",
       provider_hint: "dev-sync writes the private overlay (.env.local, agent settings, keys) to a cloud provider via rclone. Pick provider, set remote path, then run provider_setup.sh in a terminal to authenticate (rclone needs a TTY for OAuth).",
       provider_kind: "Provider",
@@ -178,7 +178,7 @@ window.I18N = {
     hosts: {
       title:        "Hosts",
       hint:         "Read-only SSH preflight across machines in",
-      hint_ssh:     "Each host id must match a Host entry in ~/.ssh/config with key auth (BatchMode=yes — no prompts).",
+      hint_ssh:     "Each host id must match a Host entry in ~/.ssh/config with key auth (BatchMode=yes - no prompts).",
       btn_refresh:  "Refresh all",
       btn_add:      "+ Add host",
       btn_save:     "Save",
@@ -218,9 +218,9 @@ window.I18N = {
       desktop_notif:   "Desktop notifications",
       ui:              "Appearance",
       theme:           "Theme",
-      theme_auto:      "auto (system)",
+      theme_dark:      "dark (default)",
       theme_light:     "light",
-      theme_dark:      "dark",
+      theme_hint:      "Dark is the Ascendo design-system primary surface; light is the alternate.",
       language:        "Language",
       lang_auto:       "auto (browser)",
       lang_en:         "English",
@@ -269,7 +269,7 @@ window.I18N = {
     },
     suggest: {
       title:        "Inteligentne sugestie",
-      hint:         "Heurystyki + opcjonalne AI, na bazie inwentarza i historii. Zawsze jako diff — nic nie zostanie zastosowane bez Twojego kliknięcia.",
+      hint:         "Heurystyki + opcjonalne AI, na bazie inwentarza i historii. Zawsze jako diff - nic nie zostanie zastosowane bez Twojego kliknięcia.",
       empty:        "Brak sugestii. Wykonaj quick check lub wróć później.",
       btn_refresh:  "Przeanalizuj ponownie",
       btn_apply:    "Zastosuj",
@@ -335,7 +335,7 @@ window.I18N = {
       btn_reboot_now: "Uruchom ponownie teraz",
       reboot_confirm: "Uruchomić komputer ponownie teraz? Niezapisane zmiany zostaną utracone.",
       reboot_no_sudo: "wymagane hasło sudo aby zrestartować",
-      reboot_scheduled: "restart za 5s — zapisz pracę",
+      reboot_scheduled: "restart za 5s - zapisz pracę",
       inventory:    "Inwentarz",
       refresh:      "Odśwież",
       status_donut: "Status (wszystkie kategorie)",
@@ -398,11 +398,11 @@ window.I18N = {
       btn_export_dry: "Eksport (symulacja)",
       btn_export_real: "Eksport (realny)",
       output:   "Wynik",
-      hint_fetch_b: "Pobierz", hint_fetch:   " — pobiera zmiany z origin bez modyfikacji Twojej kopii. Bezpieczne, czytelne info.",
-      hint_pull_b:  "Pull (ff-only)", hint_pull: " — fetch + fast-forward merge tylko gdy local jest czysty. Zatrzymuje się przy konflikcie.",
-      hint_push_b:  "Wyślij", hint_push: " — wysyła Twoje commity do origin (nigdy --force). Wymaga uprawnień zapisu.",
-      hint_dry_b:   "Eksport (symulacja)", hint_dry: " — pokazuje co zostałoby zapisane do chmury, BEZ wpływu na pliki.",
-      hint_real_b:  "Eksport (realny)", hint_real: " — wykonuje rzeczywisty zapis prywatnego overlay (.env.local, klucze) do skonfigurowanej chmury.",
+      hint_fetch_b: "Pobierz", hint_fetch:   " - pobiera zmiany z origin bez modyfikacji Twojej kopii. Bezpieczne, czytelne info.",
+      hint_pull_b:  "Pull (ff-only)", hint_pull: " - fetch + fast-forward merge tylko gdy local jest czysty. Zatrzymuje się przy konflikcie.",
+      hint_push_b:  "Wyślij", hint_push: " - wysyła Twoje commity do origin (nigdy --force). Wymaga uprawnień zapisu.",
+      hint_dry_b:   "Eksport (symulacja)", hint_dry: " - pokazuje co zostałoby zapisane do chmury, BEZ wpływu na pliki.",
+      hint_real_b:  "Eksport (realny)", hint_real: " - wykonuje rzeczywisty zapis prywatnego overlay (.env.local, klucze) do skonfigurowanej chmury.",
       provider:     "Provider chmury",
       provider_hint: "dev-sync zapisuje prywatny overlay (.env.local, ustawienia agentów, klucze) do chmury przez rclone. Wybierz providera, ustaw zdalną ścieżkę, potem wykonaj provider_setup.sh w terminalu aby autoryzować (rclone wymaga TTY dla OAuth).",
       provider_kind: "Provider",
@@ -419,7 +419,7 @@ window.I18N = {
     hosts: {
       title:        "Hosty",
       hint:         "Read-only preflight SSH na maszynach z",
-      hint_ssh:     "Każde id hosta musi pasować do wpisu Host w ~/.ssh/config z autoryzacją kluczem (BatchMode=yes — bez promptów).",
+      hint_ssh:     "Każde id hosta musi pasować do wpisu Host w ~/.ssh/config z autoryzacją kluczem (BatchMode=yes - bez promptów).",
       btn_refresh:  "Odśwież wszystkie",
       btn_add:      "+ Dodaj host",
       btn_save:     "Zapisz",
@@ -468,9 +468,9 @@ window.I18N = {
       desktop_notif:   "Powiadomienia desktopowe",
       ui:              "Wygląd",
       theme:           "Motyw",
-      theme_auto:      "auto (system)",
+      theme_dark:      "ciemny (domyślny)",
       theme_light:     "jasny",
-      theme_dark:      "ciemny",
+      theme_hint:      "Tryb ciemny to podstawowy widok systemu Ascendo; jasny jest alternatywny.",
       language:        "Język",
       lang_auto:       "auto (przeglądarka)",
       lang_en:         "English",
@@ -545,10 +545,13 @@ window.detectLanguage = function detectLanguage() {
 };
 
 window.applyTheme = function applyTheme(themePref) {
+  // Dark-first: any unrecognised or legacy "auto" preference resolves to
+  // dark. Only an explicit "light" flips to the secondary theme. Without
+  // this, the design system's CSS-default light theme would leak through
+  // when localStorage holds a stale value.
   const root = document.documentElement;
-  let mode = themePref;
-  if (mode === "auto" || !mode) {
-    mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  }
+  const mode = themePref === "light" ? "light" : "dark";
   root.setAttribute("data-theme", mode);
+  // Keep the preference dataset in sync so the cycle resumes correctly.
+  root.dataset.themePref = mode;
 };

@@ -1,0 +1,32 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;padding:30px;background:#EDEFF4;}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;}
+  .item{display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px 12px;border-radius:12px;}
+  .lbl{font:var(--fw-medium) 10px var(--font-mono);color:#495078;text-transform:uppercase;letter-spacing:.12em;text-align:center;}
+  .item.dark .lbl{color:#A8ADC2;}
+  .item.paper{background:#FBFAF5;border:1px solid rgba(11,16,32,.08);}
+  .item.ink{background:#0B1020;}
+  .item.lime{background:#C8FF4B;}
+</style></head>
+<body>
+<div class="grid">
+  <div class="item paper">
+    <svg viewBox="0 0 64 64" width="72" height="72"><rect width="64" height="64" rx="14" fill="#0B1020"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#C8FF4B"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#C8FF4B"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#C8FF4B"/></svg>
+    <span class="lbl">primary · ink + lime</span>
+  </div>
+  <div class="item ink dark">
+    <svg viewBox="0 0 64 64" width="72" height="72"><rect width="64" height="64" rx="14" fill="#C8FF4B"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#0B1020"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#0B1020"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#0B1020"/></svg>
+    <span class="lbl">on dark · lime fill</span>
+  </div>
+  <div class="item lime">
+    <svg viewBox="0 0 64 64" width="72" height="72"><rect width="64" height="64" rx="14" fill="#0B1020"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#C8FF4B"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#C8FF4B"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#C8FF4B"/></svg>
+    <span class="lbl" style="color:#1a2400">on lime · accent bg</span>
+  </div>
+  <div class="item paper">
+    <svg viewBox="0 0 64 64" width="72" height="72" style="color:#0B1020"><rect x="14" y="36" width="8" height="16" rx="2" fill="currentColor"/><rect x="28" y="26" width="8" height="26" rx="2" fill="currentColor"/><rect x="42" y="14" width="8" height="38" rx="2" fill="currentColor"/></svg>
+    <span class="lbl">monochrome · 1-color</span>
+  </div>
+</div>
+</body></html>

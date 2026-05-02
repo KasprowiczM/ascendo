@@ -1,24 +1,38 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Ascendo - Unified Updates</title>
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <!-- Pin the dark theme synchronously before paint to avoid the first-frame
+       flash of the design system's light default when localStorage already
+       holds a user preference. -->
+  <script>
+    (function () {
+      try {
+        var pref = localStorage.getItem("ui-theme");
+        // Treat legacy "auto" as a fresh install -> default to dark.
+        if (!pref || pref === "auto") pref = "dark";
+        document.documentElement.dataset.theme = pref;
+        document.documentElement.dataset.themePref = pref;
+      } catch (_) {
+        document.documentElement.dataset.theme = "dark";
+      }
+    })();
+  </script>
+  <link rel="icon" type="image/svg+xml" href="/assets/logo-mark.svg" />
+  <!-- Design tokens (colors, type, spacing, radii, shadows, motion).
+       Loaded BEFORE style.css so component styles can reference them. -->
+  <link rel="stylesheet" href="/colors_and_type.css" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body class="layout-shell">
-  <!-- Mobile topbar (hidden on desktop) — hamburger + brand + theme/lang/font switchers -->
+  <!-- Mobile topbar (hidden on desktop) - hamburger + brand + theme/lang/font switchers -->
   <header class="topbar">
     <button id="sidebar-toggle" class="icon-btn" aria-label="Toggle menu" title="Menu"></button>
     <div class="topbar-brand">
-      <svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true" class="brand-mark">
-        <defs><linearGradient id="ag2" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#22c55e"/><stop offset="100%" stop-color="#0ea5e9"/>
-        </linearGradient></defs>
-        <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#ag2)"/>
-        <path d="M16 44 L32 22 L48 44" fill="none" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
+      <img class="brand-mark brand-img brand-img--dark"  src="/assets/logo-mark.svg"       alt="" aria-hidden="true">
+      <img class="brand-mark brand-img brand-img--light" src="/assets/logo-mark-light.svg" alt="" aria-hidden="true">
       <span class="brand-name">Ascendo</span>
     </div>
     <div class="topbar-actions">
@@ -28,16 +42,11 @@
     </div>
   </header>
 
-  <!-- Sidebar (left) — primary navigation -->
+  <!-- Sidebar (left) - primary navigation -->
   <aside id="sidebar" class="sidebar" aria-label="Primary navigation">
     <div class="sidebar-brand">
-      <svg viewBox="0 0 64 64" width="36" height="36" aria-hidden="true" class="brand-mark">
-        <defs><linearGradient id="ag" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#22c55e"/><stop offset="100%" stop-color="#0ea5e9"/>
-        </linearGradient></defs>
-        <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#ag)"/>
-        <path d="M16 44 L32 22 L48 44" fill="none" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
+      <img class="brand-mark brand-img brand-img--dark"  src="/assets/logo-mark.svg"       alt="" aria-hidden="true">
+      <img class="brand-mark brand-img brand-img--light" src="/assets/logo-mark-light.svg" alt="" aria-hidden="true">
       <div class="brand-text">
         <span class="brand-name">Ascendo</span>
         <span class="brand-tagline" data-i18n="brand.tagline">unified updates</span>
@@ -77,9 +86,9 @@
         </div>
         <div id="wizard-step1">
           <h4 data-i18n="wizard.profile_q">Pick your default profile</h4>
-          <label><input type="radio" name="wiz-profile" value="quick"> <b>quick</b> — read-only check (~15s)</label><br>
-          <label><input type="radio" name="wiz-profile" value="safe" checked> <b>safe</b> — full pipeline, no driver changes</label><br>
-          <label><input type="radio" name="wiz-profile" value="full"> <b>full</b> — everything incl. NVIDIA/firmware</label>
+          <label><input type="radio" name="wiz-profile" value="quick"> <b>quick</b> - read-only check (~15s)</label><br>
+          <label><input type="radio" name="wiz-profile" value="safe" checked> <b>safe</b> - full pipeline, no driver changes</label><br>
+          <label><input type="radio" name="wiz-profile" value="full"> <b>full</b> - everything incl. NVIDIA/firmware</label>
         </div>
         <div id="wizard-step2" style="margin-top:0.8rem">
           <h4 data-i18n="wizard.schedule_q">Schedule a weekly run?</h4>
@@ -131,7 +140,7 @@
           <button data-quick='{"profile":"safe"}'  data-i18n="overview.btn_safe">Safe update</button>
           <button data-quick='{"profile":"full"}'  data-i18n="overview.btn_full">Full update</button>
           <button data-quick='{"profile":"full","dry_run":true}' data-i18n="overview.btn_dry">Full dry-run</button>
-          <button data-quick='{"profile":"full","extra_args":["--nvidia"]}' style="background:linear-gradient(90deg,#76b900,#5b9100);color:#fff" title="Apply NVIDIA driver upgrade (held by default)">⚡ Update NVIDIA</button>
+          <button data-quick='{"profile":"full","extra_args":["--nvidia"]}' data-icon-prefix="nvidia" class="btn-nvidia" title="Apply NVIDIA driver upgrade (held by default)">Update NVIDIA</button>
           <button data-quick='{"only":"drivers","phase":"apply","extra_args":["--nvidia"]}' class="secondary" title="Apply only the NVIDIA driver category">drivers only · with NVIDIA</button>
         </div>
         <div class="card">
@@ -188,7 +197,7 @@
         5 phases independently.</p>
       <div id="cats-add-widget" class="cats-add-widget">
         <select id="cats-add-cat" aria-label="Category">
-          <option value="">— category —</option>
+          <option value="">- category -</option>
         </select>
         <input id="cats-add-pkg" type="text" placeholder="package name (e.g. snap-store)" autocomplete="off" />
         <button id="cats-add-btn" type="button">+ Add to config</button>
@@ -289,9 +298,9 @@
           <h3 data-i18n="sync.git">Git</h3>
           <div id="sync-git">…</div>
           <p class="dim" style="font-size:0.82rem;margin:0.4rem 0">
-            <b data-i18n="sync.hint_fetch_b">Fetch</b><span data-i18n="sync.hint_fetch"> — pobiera zmiany z origin bez modyfikacji Twojej kopii. Bezpieczne, czytelne info.</span><br>
-            <b data-i18n="sync.hint_pull_b">Pull (ff-only)</b><span data-i18n="sync.hint_pull"> — fetch + fast-forward merge tylko gdy local jest czysty. Zatrzymuje się przy konflikcie.</span><br>
-            <b data-i18n="sync.hint_push_b">Push</b><span data-i18n="sync.hint_push"> — wysyła Twoje commity do origin (nigdy --force). Wymaga remote write access.</span>
+            <b data-i18n="sync.hint_fetch_b">Fetch</b><span data-i18n="sync.hint_fetch"> - pobiera zmiany z origin bez modyfikacji Twojej kopii. Bezpieczne, czytelne info.</span><br>
+            <b data-i18n="sync.hint_pull_b">Pull (ff-only)</b><span data-i18n="sync.hint_pull"> - fetch + fast-forward merge tylko gdy local jest czysty. Zatrzymuje się przy konflikcie.</span><br>
+            <b data-i18n="sync.hint_push_b">Push</b><span data-i18n="sync.hint_push"> - wysyła Twoje commity do origin (nigdy --force). Wymaga remote write access.</span>
           </p>
           <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
             <button id="git-fetch-btn" data-i18n="sync.btn_fetch">Fetch</button>
@@ -303,8 +312,8 @@
           <h3 data-i18n="sync.cloud">Cloud overlay (dev-sync)</h3>
           <div id="sync-cloud">…</div>
           <p class="dim" style="font-size:0.82rem;margin:0.4rem 0">
-            <b data-i18n="sync.hint_dry_b">Export (dry-run)</b><span data-i18n="sync.hint_dry"> — pokazuje co zostałoby zapisane do chmury, BEZ wpływu na pliki.</span><br>
-            <b data-i18n="sync.hint_real_b">Export (real)</b><span data-i18n="sync.hint_real"> — wykonuje rzeczywisty zapis prywatnego overlay (.env.local, klucze) do skonfigurowanej chmury.</span>
+            <b data-i18n="sync.hint_dry_b">Export (dry-run)</b><span data-i18n="sync.hint_dry"> - pokazuje co zostałoby zapisane do chmury, BEZ wpływu na pliki.</span><br>
+            <b data-i18n="sync.hint_real_b">Export (real)</b><span data-i18n="sync.hint_real"> - wykonuje rzeczywisty zapis prywatnego overlay (.env.local, klucze) do skonfigurowanej chmury.</span>
           </p>
           <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
             <button id="sync-export-dry-btn" data-i18n="sync.btn_export_dry">Export (dry-run)</button>
@@ -385,7 +394,7 @@
       </h2>
       <p class="dim" data-i18n="suggest.hint">
         Heuristic + optional AI advice based on your inventory and run history.
-        Always shown as a diff — nothing is applied without your click.
+        Always shown as a diff - nothing is applied without your click.
       </p>
       <div id="suggest-list">…</div>
 
@@ -428,7 +437,7 @@
       <p class="dim">
         <span data-i18n="hosts.hint">Read-only SSH preflight across machines in</span>
         <code>config/hosts.toml</code>.
-        <span data-i18n="hosts.hint_ssh">Each host id must match a Host entry in <code>~/.ssh/config</code> with key auth (BatchMode=yes — no prompts).</span>
+        <span data-i18n="hosts.hint_ssh">Each host id must match a Host entry in <code>~/.ssh/config</code> with key auth (BatchMode=yes - no prompts).</span>
       </p>
       <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.7rem">
         <button id="hosts-refresh-btn" data-i18n="hosts.btn_refresh">Refresh all</button>
@@ -503,10 +512,10 @@
             <h3 data-i18n="settings.ui">Appearance</h3>
             <label><span data-i18n="settings.theme">Theme</span>
               <select name="ui_theme" id="ui-theme-select">
-                <option value="auto"  data-i18n="settings.theme_auto">auto (system)</option>
+                <option value="dark"  data-i18n="settings.theme_dark">dark (default)</option>
                 <option value="light" data-i18n="settings.theme_light">light</option>
-                <option value="dark"  data-i18n="settings.theme_dark">dark</option>
               </select>
+              <small class="dim" data-i18n="settings.theme_hint">Dark is the Ascendo design-system primary surface; light is the alternate.</small>
             </label>
             <label><span data-i18n="settings.language">Language</span>
               <select name="ui_language" id="ui-language-select">
@@ -607,17 +616,17 @@
       <article class="help-doc card">
         <h3 id="help-install">1. Install</h3>
         <p>Three install paths, pick whichever fits:</p>
-        <pre><code># A — fresh machine (one-liner)
+        <pre><code># A - fresh machine (one-liner)
 git clone https://github.com/KasprowiczM/Ubuntu_Aktualizacje ~/Dev_Env/Ubuntu_Aktualizacje
 cd ~/Dev_Env/Ubuntu_Aktualizacje
 bash scripts/fresh-machine.sh
 
-# B — Debian package (.deb)
+# B - Debian package (.deb)
 bash packaging/build-deb.sh
 sudo dpkg -i dist/ascendo_*_all.deb
 ascendo --help
 
-# C — manual setup (advanced)
+# C - manual setup (advanced)
 bash setup.sh
 bash app/install.sh                       # creates app/.venv with FastAPI
 bash systemd/user/install-dashboard.sh    # autostart dashboard at login</code></pre>
@@ -663,7 +672,7 @@ ascendo exclusions list / add / remove cat:pkg</code></pre>
             <tr><td><code>scripts/pip/*.sh</code></td><td>pip user packages + pipx <code>upgrade-all</code>; respects PEP-668 by routing system-managed Python through pipx.</td></tr>
             <tr><td><code>scripts/flatpak/*.sh</code></td><td>flatpak update + cleanup of unused runtimes.</td></tr>
             <tr><td><code>scripts/drivers/*.sh</code></td><td>NVIDIA driver (held unless <code>--nvidia</code>), fwupd metadata refresh + manual update advisory.</td></tr>
-            <tr><td><code>scripts/inventory/*.sh</code></td><td>Regenerates <code>APPS.md</code> (gitignored) — installed packages by category.</td></tr>
+            <tr><td><code>scripts/inventory/*.sh</code></td><td>Regenerates <code>APPS.md</code> (gitignored) - installed packages by category.</td></tr>
             <tr><td><code>scripts/snapshot/create.sh</code></td><td>Pre-apply snapshot: timeshift (300s timeout) → etckeeper fallback. Never blocks the run.</td></tr>
             <tr><td><code>scripts/scheduler/install.sh</code></td><td>Installs systemd timer <code>ubuntu-aktualizacje@%i.timer</code> with <code>ExecStartPre=should-run.sh</code>.</td></tr>
             <tr><td><code>scripts/scheduler/should-run.sh</code></td><td>Pre-flight gate: defers if on battery (<code>UA_REQUIRE_AC=1</code>), outside maintenance window (<code>UA_MAINTENANCE_WINDOW=02:00-05:00</code>), or apt/dpkg busy.</td></tr>
@@ -677,12 +686,12 @@ ascendo exclusions list / add / remove cat:pkg</code></pre>
 
         <h3 id="help-config">5. Configuration files</h3>
         <ul>
-          <li><code>config/&lt;cat&gt;-packages.list</code> — source of truth for tracked packages.</li>
-          <li><code>config/exclusions.list</code> — per-user opt-out (<code>cat:pkg</code> per line).</li>
-          <li><code>config/categories.toml</code> / <code>config/profiles.toml</code> — taxonomy + profiles.</li>
-          <li><code>config/hosts.toml</code> — multi-host registry (read-only SSH preflight).</li>
-          <li><code>~/.config/ubuntu-aktualizacje/settings.json</code> — UI defaults, AI provider, scheduler.</li>
-          <li><code>~/.config/ascendo/lang</code> — CLI language preference (en/pl).</li>
+          <li><code>config/&lt;cat&gt;-packages.list</code> - source of truth for tracked packages.</li>
+          <li><code>config/exclusions.list</code> - per-user opt-out (<code>cat:pkg</code> per line).</li>
+          <li><code>config/categories.toml</code> / <code>config/profiles.toml</code> - taxonomy + profiles.</li>
+          <li><code>config/hosts.toml</code> - multi-host registry (read-only SSH preflight).</li>
+          <li><code>~/.config/ubuntu-aktualizacje/settings.json</code> - UI defaults, AI provider, scheduler.</li>
+          <li><code>~/.config/ascendo/lang</code> - CLI language preference (en/pl).</li>
         </ul>
 
         <h3 id="help-dashboard">6. Dashboard tour</h3>
@@ -707,7 +716,7 @@ UA_RESPECT_FOCUS=1</code></pre>
         <h3 id="help-snapshots">8. Snapshots &amp; rollback</h3>
         <p>With <code>--snapshot</code> (or the toggle in Settings), Ascendo
         creates a timeshift snapshot before apply. timeshift hangs without a
-        TTY are bounded by a 300s timeout — the run never stalls. To roll back:
+        TTY are bounded by a 300s timeout - the run never stalls. To roll back:
         <code>POST /snapshots/restore</code> with <code>{"id":"&lt;snap-id&gt;","confirm":"RESTORE"}</code>
         or <code>ascendo snapshot list</code> &amp; <code>scripts/snapshot/restore.sh &lt;id&gt;</code>.</p>
 
@@ -722,7 +731,7 @@ UA_RESPECT_FOCUS=1</code></pre>
 
         <h3 id="help-ai">10. AI Suggestions</h3>
         <p>Heuristic engine runs free, deterministic rules over inventory + run
-        history. Optional LLM step *enriches* rationales — never edits files
+        history. Optional LLM step *enriches* rationales - never edits files
         autonomously. Supports Anthropic (Claude), OpenAI, Google Gemini,
         Ollama (local), LM Studio (local), or any OpenAI-compatible endpoint.
         Local providers need no API key; just set the Base URL (e.g. Ollama:
@@ -731,11 +740,11 @@ UA_RESPECT_FOCUS=1</code></pre>
 
         <h3 id="help-troubleshoot">11. Troubleshooting</h3>
         <ul>
-          <li><b>"a run is already in progress" 409</b> — <code>POST /runs/active/stop</code> or remove stale lock <code>$XDG_RUNTIME_DIR/ubuntu-aktualizacje.lock</code> after verifying no process holds it.</li>
-          <li><b>NVIDIA DKMS sypie po upgrade</b> — <code>bash scripts/rebuild-dkms.sh &amp;&amp; reboot</code>.</li>
-          <li><b>apt-get update failuje</b> — najczęściej duplikat <code>*.list</code> + <code>*.sources</code>; lib/repos.sh łapie i naprawia automatycznie.</li>
-          <li><b>Snap firefox blocked</b> — close Firefox, then <code>--only snap --phase apply</code>; or accept the <code>--ignore-running</code> fallback (forces refresh while running).</li>
-          <li><b>Frontend pusta strona</b> — Ctrl+Shift+R, sprawdź <code>/health</code> w curl, sprawdź <code>journalctl --user -u ubuntu-aktualizacje-dashboard</code>.</li>
+          <li><b>"a run is already in progress" 409</b> - <code>POST /runs/active/stop</code> or remove stale lock <code>$XDG_RUNTIME_DIR/ubuntu-aktualizacje.lock</code> after verifying no process holds it.</li>
+          <li><b>NVIDIA DKMS sypie po upgrade</b> - <code>bash scripts/rebuild-dkms.sh &amp;&amp; reboot</code>.</li>
+          <li><b>apt-get update failuje</b> - najczęściej duplikat <code>*.list</code> + <code>*.sources</code>; lib/repos.sh łapie i naprawia automatycznie.</li>
+          <li><b>Snap firefox blocked</b> - close Firefox, then <code>--only snap --phase apply</code>; or accept the <code>--ignore-running</code> fallback (forces refresh while running).</li>
+          <li><b>Frontend pusta strona</b> - Ctrl+Shift+R, sprawdź <code>/health</code> w curl, sprawdź <code>journalctl --user -u ubuntu-aktualizacje-dashboard</code>.</li>
         </ul>
       </article>
     </section>
@@ -790,3 +799,5 @@ UA_RESPECT_FOCUS=1</code></pre>
   <script src="/app.js"></script>
 </body>
 </html>
+        </div>
+        <div id

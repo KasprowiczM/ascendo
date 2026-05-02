@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ascendo — Unified Updates</title>
+<link rel="stylesheet" href="../../colors_and_type.css">
+<style>
+  body{background:var(--bg);color:var(--fg);}
+  .nav{display:flex;align-items:center;justify-content:space-between;padding:20px 48px;border-bottom:1px solid var(--border);}
+  .nav-left{display:flex;align-items:center;gap:32px;}
+  .brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;}
+  .brand-name{font:var(--fw-bold) 18px var(--font-sans);letter-spacing:-.02em;}
+  .nav a.link{color:var(--fg-muted);text-decoration:none;font:var(--fw-medium) 14px var(--font-sans);}
+  .nav a.link:hover{color:var(--fg);}
+  .nav-right{display:flex;align-items:center;gap:14px;}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:6px;font:var(--fw-semibold) 13px var(--font-sans);text-decoration:none;border:1px solid transparent;cursor:pointer;transition:background var(--dur-2) var(--ease-out);}
+  .btn-primary{background:var(--accent);color:var(--accent-ink);}
+  .btn-primary:hover{background:var(--lime-300);}
+  .btn-ghost{color:var(--fg);border-color:var(--border-strong);}
+  .btn-ghost:hover{background:var(--bg-sunk);}
+
+  /* Hero */
+  .hero{padding:80px 48px 100px;max-width:1200px;margin:0 auto;}
+  .eyebrow{font:var(--fw-medium) 12px var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--fg-muted);display:inline-flex;align-items:center;gap:10px;margin-bottom:24px;}
+  .eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--accent-strong);box-shadow:0 0 0 4px rgba(200,255,75,.25);}
+  h1{font:var(--fw-bold) clamp(2.5rem,7vw + 1rem,5.5rem)/.95 var(--font-sans);letter-spacing:-.04em;margin:0 0 0;color:var(--fg);max-width:980px;}
+  h1 em{font-family:var(--font-display);font-style:italic;font-weight:400;letter-spacing:-.025em;color:var(--ink-700);}
+  .lead{font:var(--fw-regular) clamp(17px,1.4vw,20px)/1.5 var(--font-sans);color:var(--fg-muted);max-width:620px;margin:32px 0 36px;}
+  .cta-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;}
+  .install-pill{font:var(--fw-medium) 13px/1 var(--font-mono);background:var(--bg-sunk);border:1px solid var(--border);padding:11px 16px;border-radius:6px;color:var(--fg);}
+  .install-pill .prompt{color:var(--fg-faint);margin-right:8px;}
+
+  .meta-line{margin-top:48px;display:flex;gap:28px;align-items:center;flex-wrap:wrap;font:var(--fw-medium) 12px var(--font-mono);color:var(--fg-muted);letter-spacing:.04em;}
+  .meta-line .os{display:flex;align-items:center;gap:8px;}
+  .meta-line .os::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent-strong);}
+
+  /* OS tabs */
+  .os-card{margin-top:64px;background:var(--bg-elev);border:1px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:var(--shadow-md);}
+  .os-tabs{display:flex;border-bottom:1px solid var(--border);background:var(--bg-sunk);}
+  .os-tab{padding:14px 22px;font:var(--fw-semibold) 13px var(--font-mono);letter-spacing:.04em;text-transform:uppercase;color:var(--fg-muted);background:transparent;border:none;cursor:pointer;border-right:1px solid var(--border);}
+  .os-tab.active{color:var(--fg);background:var(--bg-elev);box-shadow:inset 0 -2px 0 var(--accent-strong);}
+  .os-body{padding:28px 32px;display:grid;grid-template-columns:1.2fr 1fr;gap:32px;}
+  .os-body code{display:block;background:var(--code-bg);color:var(--code-fg);padding:18px 20px;border-radius:8px;font:var(--fw-regular) 13px/1.6 var(--font-mono);overflow-x:auto;}
+  .os-body code .c{color:#7A8099;}
+  .os-body h3{font:var(--fw-semibold) 18px var(--font-sans);margin:0 0 8px;letter-spacing:-.01em;}
+  .os-body p{font:var(--fw-regular) 14px/1.55 var(--font-sans);color:var(--fg-muted);margin:0 0 14px;}
+  .os-body .meta{font:var(--fw-medium) 11px var(--font-mono);color:var(--fg-faint);text-transform:uppercase;letter-spacing:.12em;}
+  .pkg-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+  .pkg{font:var(--fw-medium) 11px var(--font-mono);padding:3px 9px;border-radius:4px;background:var(--ink-100);color:var(--ink-700);}
+
+  /* Features grid */
+  .features{max-width:1200px;margin:120px auto 0;padding:0 48px;}
+  .features h2{font:var(--fw-bold) clamp(2rem,3vw + 1rem,3rem)/1.05 var(--font-sans);letter-spacing:-.03em;margin:0 0 14px;max-width:780px;}
+  .features .sub{font:var(--fw-regular) 17px/1.5 var(--font-sans);color:var(--fg-muted);max-width:560px;margin:0 0 56px;}
+  .feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;}
+  .feat{padding:28px 26px;border:1px solid var(--border);border-radius:12px;background:var(--bg-elev);}
+  .feat .ic{width:36px;height:36px;border-radius:8px;background:var(--ink-800);color:var(--accent);display:flex;align-items:center;justify-content:center;margin-bottom:18px;}
+  .feat h3{font:var(--fw-semibold) 17px var(--font-sans);margin:0 0 8px;letter-spacing:-.01em;}
+  .feat p{font:var(--fw-regular) 14px/1.55 var(--font-sans);color:var(--fg-muted);margin:0;}
+
+  footer{margin-top:140px;padding:48px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;color:var(--fg-faint);font:var(--fw-regular) 13px var(--font-sans);}
+  footer .links{display:flex;gap:24px;}
+  footer a{color:var(--fg-muted);text-decoration:none;}
+  footer a:hover{color:var(--fg);}
+
+  @media(max-width:900px){
+    .nav{padding:16px 24px;}.hero{padding:48px 24px 64px;}
+    .feat-grid{grid-template-columns:1fr;}
+    .os-body{grid-template-columns:1fr;}
+    .features{padding:0 24px;}.nav-left .links{display:none;}
+  }
+</style></head>
+<body data-screen-label="Landing — Hero">
+
+<nav class="nav">
+  <div class="nav-left">
+    <a class="brand" href="#">
+      <svg viewBox="0 0 64 64" width="32" height="32"><rect width="64" height="64" rx="14" fill="#0B1020"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#C8FF4B"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#C8FF4B"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#C8FF4B"/></svg>
+      <span class="brand-name">Ascendo</span>
+    </a>
+    <div class="links" style="display:flex;gap:24px;">
+      <a href="#" class="link">Install</a>
+      <a href="#" class="link">Docs</a>
+      <a href="#" class="link">Plugins</a>
+      <a href="#" class="link">Changelog</a>
+    </div>
+  </div>
+  <div class="nav-right">
+    <a href="#" class="link" style="font-family:var(--font-mono);font-size:12px;">v0.1.0</a>
+    <a href="#" class="btn btn-ghost">GitHub</a>
+    <a href="#" class="btn btn-primary">Install →</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="eyebrow"><span class="dot"></span>v0.1.0 · pre-release · MIT licensed</div>
+  <h1>One tool to keep your machine <em>up to date.</em><br/>Everywhere.</h1>
+  <p class="lead">Ascendo unifies OS updates, package managers, app stores, dev tools, drivers, and AI agent CLIs behind one CLI and one local dashboard. Linux, Windows, macOS — same five-phase pipeline.</p>
+  <div class="cta-row">
+    <a href="#" class="btn btn-primary">Install for Linux →</a>
+    <span class="install-pill"><span class="prompt">$</span>brew install KasprowiczM/tap/ascendo</span>
+  </div>
+  <div class="meta-line">
+    <span class="os">Linux · apt · snap · flatpak</span>
+    <span class="os">Windows · winget · MS Store</span>
+    <span class="os">macOS · brew · App Store</span>
+  </div>
+
+  <div class="os-card">
+    <div class="os-tabs">
+      <button class="os-tab active">Linux</button>
+      <button class="os-tab">Windows</button>
+      <button class="os-tab">macOS</button>
+    </div>
+    <div class="os-body">
+      <div>
+        <span class="meta">Recommended install</span>
+        <code style="margin-top:8px;"><span class="c"># Debian / Ubuntu / Pop!_OS</span>
+wget https://github.com/KasprowiczM/ascendo/releases/latest/download/ascendo_amd64.deb
+sudo apt install ./ascendo_amd64.deb
+ascendo run --profile=safe</code>
+      </div>
+      <div>
+        <h3>Linux MVP, ready first</h3>
+        <p>Tested on Ubuntu 22.04 / 24.04, Debian 12, Pop!_OS. AUR build for Arch tracks main weekly. The Tauri shell wraps the same FastAPI backend used by the CLI.</p>
+        <span class="meta">Adapters covered</span>
+        <div class="pkg-list">
+          <span class="pkg">apt</span><span class="pkg">snap</span><span class="pkg">flatpak</span>
+          <span class="pkg">brew</span><span class="pkg">npm</span><span class="pkg">pip</span>
+          <span class="pkg">pipx</span><span class="pkg">fwupd</span><span class="pkg">nvidia</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="features">
+  <h2>Built for people who already know what <em style="font-family:var(--font-mono);font-style:normal;font-size:.85em;background:var(--bg-sunk);padding:.1em .3em;border-radius:4px;">apt full-upgrade</em> does.</h2>
+  <p class="sub">No marketing puff. Five phases, one orchestrator, JSON sidecar per phase. Read the code, write a plugin, hold the line on what gets installed.</p>
+  <div class="feat-grid">
+    <div class="feat">
+      <div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg></div>
+      <h3>Five-phase pipeline</h3>
+      <p>check → plan → apply → verify → cleanup. Every category emits a JSON sidecar (schema v1) so dashboards, scripts, and CI can read state.</p>
+    </div>
+    <div class="feat">
+      <div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg></div>
+      <h3>Snapshot before apply</h3>
+      <p>timeshift on Linux, etckeeper fallback. Bounded by a 300s timeout — the run never stalls. Roll back from <span class="t-mono" style="background:var(--bg-sunk);padding:.1em .3em;border-radius:3px;">ascendo snapshot list</span>.</p>
+    </div>
+    <div class="feat">
+      <div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
+      <h3>Plugin-first</h3>
+      <p>Tier-1 plugins ship with the binary (NVIDIA, Dell, agent CLIs). Tier-2 lives in <span class="t-mono" style="background:var(--bg-sunk);padding:.1em .3em;border-radius:3px;">contrib/</span>. Author guide is one page.</p>
+    </div>
+    <div class="feat">
+      <div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></div>
+      <h3>Schedule on your terms</h3>
+      <p>systemd timer with maintenance windows, AC-only, focus-aware. The scheduler runs the same code path as your CLI — no duplicated logic.</p>
+    </div>
+    <div class="feat">
+      <div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></div>
+      <h3>Multi-host preflight</h3>
+      <p>Read-only SSH sweep across machines in <span class="t-mono" style="background:var(--bg-sunk);padding:.1em .3em;border-radius:3px;">config/hosts.toml</span>. See OS, kernel, last run at a glance — no agent required.</p>
+    </div>
+    <div class="feat">
+      <div class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l1.5 3 3 1.5-3 1.5L9 20l-1.5-3-3-1.5 3-1.5L9 11Z"/><path d="M18 5l.8 1.6 1.6.8-1.6.8L18 9.8l-.8-1.6-1.6-.8 1.6-.8L18 5Z"/></svg></div>
+      <h3>AI suggestions, not auto-apply</h3>
+      <p>Optional LLM enriches heuristic rules over your inventory. Always shown as a unified diff. Local providers (Ollama, LM Studio) supported. Never edits files autonomously.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div>© 2026 Ascendo · MIT</div>
+  <div class="links">
+    <a href="#">Docs</a><a href="#">GitHub</a><a href="#">Plugins</a><a href="#">Security</a>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll('.os-tab').forEach(t => t.addEventListener('click', e => {
+    document.querySelectorAll('.os-tab').forEach(x => x.classList.remove('active'));
+    e.currentTarget.classList.add('active');
+  }));
+</script>
+</body></html>

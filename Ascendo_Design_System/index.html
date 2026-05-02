@@ -1,0 +1,936 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ascendo · Design System</title>
+<link rel="stylesheet" href="colors_and_type.css">
+<style>
+  :root{
+    --paper:#EDEFF4;
+    --paper-elev:#F5F7FB;
+    --paper-sunk:#DDE1EA;
+    --ink:#0B1020;
+    --ink-deep:#06080F;
+    --ink-700:#131A2E;
+    --ink-600:#1C2440;
+    --lime:#C8FF4B;
+    --lime-300:#D7FF7A;
+    --bd-l:rgba(11,16,32,.10);
+    --bd-l-strong:rgba(11,16,32,.18);
+    --bd-d:rgba(214,217,227,.10);
+    --bd-d-strong:rgba(214,217,227,.18);
+    --mut-l:#495078;
+    --faint-l:#7A8099;
+    --mut-d:#A8ADC2;
+    --faint-d:#7A8099;
+  }
+  *,*::before,*::after{box-sizing:border-box;}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:"Inter Tight",system-ui,sans-serif;}
+
+  /* ─────────────────── PAGE CHROME ─────────────────── */
+  .page{max-width:1280px;margin:0 auto;padding:48px 32px 96px;}
+  .topbar{display:flex;align-items:center;gap:14px;padding-bottom:32px;border-bottom:1px solid var(--bd-l);margin-bottom:36px;}
+  .topbar svg{flex-shrink:0;}
+  .topbar .name{font-weight:700;font-size:24px;letter-spacing:-.02em;}
+  .topbar .meta{font:500 11px "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.14em;color:var(--faint-l);margin-left:4px;}
+  .topbar .right{margin-left:auto;display:flex;gap:8px;align-items:center;}
+  .topbar .pill{font:600 10px "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.14em;padding:5px 10px;border-radius:999px;background:var(--ink);color:var(--lime);}
+
+  /* ─────────────────── SECTIONS ─────────────────── */
+  section{margin-bottom:56px;}
+  .sec-hdr{display:flex;align-items:baseline;gap:14px;margin-bottom:18px;padding-bottom:8px;border-bottom:1px solid var(--bd-l);}
+  .sec-num{font:600 11px "JetBrains Mono",monospace;color:#94B81F;letter-spacing:.18em;}
+  .sec-title{font-weight:700;font-size:22px;letter-spacing:-.02em;margin:0;}
+  .sec-sub{margin-left:auto;font:400 12px "JetBrains Mono",monospace;color:var(--faint-l);}
+
+  /* ─────────────────── DUAL-PANE CARD (light + dark) ─────────────────── */
+  .dual{display:grid;grid-template-columns:1fr 1fr;border-radius:12px;overflow:hidden;border:1px solid var(--bd-l);box-shadow:0 1px 0 rgba(11,16,32,.04),0 6px 14px rgba(11,16,32,.05);margin-bottom:18px;}
+  .pane{padding:22px;min-height:160px;}
+  .pane.light{background:var(--paper-elev);color:var(--ink);}
+  .pane.dark{background:var(--ink-deep);color:var(--paper-elev);}
+  .pane-tag{font:600 10px "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.14em;margin:0 0 14px;display:flex;align-items:center;gap:8px;}
+  .pane.light .pane-tag{color:var(--faint-l);}
+  .pane.dark .pane-tag{color:var(--mut-d);}
+  .pane-tag::before{content:"";width:8px;height:8px;border-radius:50%;}
+  .pane.light .pane-tag::before{background:var(--paper-sunk);box-shadow:inset 0 0 0 1px var(--bd-l);}
+  .pane.dark .pane-tag::before{background:var(--ink);}
+
+  /* card title used inside dual */
+  .card-title{font:700 14px "Inter Tight",sans-serif;letter-spacing:-.01em;margin:0 0 4px;}
+  .card-desc{font:400 12px/1.55 "Inter Tight",sans-serif;margin:0 0 18px;}
+  .pane.light .card-desc{color:var(--mut-l);}
+  .pane.dark .card-desc{color:var(--mut-d);}
+
+  /* ─────────────────── COLOR SWATCHES ─────────────────── */
+  .swatches{display:flex;gap:10px;flex-wrap:wrap;}
+  .sw{display:flex;flex-direction:column;gap:5px;width:96px;}
+  .sw .chip{height:54px;border-radius:6px;border:1px solid var(--bd-l);}
+  .pane.dark .sw .chip{border-color:var(--bd-d);}
+  .sw .n{font:500 10.5px "JetBrains Mono",monospace;letter-spacing:.04em;}
+  .sw .h{font:400 9.5px "JetBrains Mono",monospace;}
+  .pane.light .sw .h{color:var(--faint-l);}
+  .pane.dark .sw .h{color:var(--faint-d);}
+
+  .scale-row{display:flex;gap:4px;}
+  .scale-row > div{flex:1;height:42px;border-radius:4px;border:1px solid var(--bd-l);position:relative;}
+  .pane.dark .scale-row > div{border-color:var(--bd-d);}
+  .scale-row > div span{position:absolute;bottom:-18px;left:0;font:500 9px "JetBrains Mono",monospace;}
+  .scale-section{margin-bottom:30px;}
+  .scale-section h5{font:600 10px "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.14em;margin:0 0 8px;}
+  .pane.light .scale-section h5{color:var(--faint-l);}
+  .pane.dark .scale-section h5{color:var(--mut-d);}
+
+  /* ─────────────────── STATUS ─────────────────── */
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .stat{padding:12px 14px;border-radius:8px;display:flex;flex-direction:column;gap:6px;}
+  .stat .lbl{font:600 12px "Inter Tight",sans-serif;display:flex;align-items:center;gap:6px;}
+  .stat .lbl::before{content:"";width:8px;height:8px;border-radius:50%;}
+  .stat .h{font:400 10.5px "JetBrains Mono",monospace;opacity:.8;}
+  .stat-ok{background:#E5F5EC;color:#0d5c34;}.stat-ok .lbl::before{background:#3EBF7A;}
+  .stat-warn{background:#FBF1DA;color:#8a5a09;}.stat-warn .lbl::before{background:#E0A82E;}
+  .stat-err{background:#FBE6E4;color:#9c1f17;}.stat-err .lbl::before{background:#DC4B43;}
+  .stat-info{background:#E2EBF8;color:#163d8b;}.stat-info .lbl::before{background:#4A7BC9;}
+  .pane.dark .stat-ok{background:rgba(62,191,122,.12);color:#7fd9a4;}
+  .pane.dark .stat-warn{background:rgba(224,168,46,.12);color:#f0c761;}
+  .pane.dark .stat-err{background:rgba(220,75,67,.12);color:#f08e87;}
+  .pane.dark .stat-info{background:rgba(74,123,201,.12);color:#9bbeed;}
+
+  /* ─────────────────── TYPE ─────────────────── */
+  .type-rows{display:flex;flex-direction:column;gap:14px;}
+  .type-row{display:flex;align-items:baseline;gap:18px;}
+  .type-row .meta{font:500 9.5px "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.12em;width:74px;flex:0 0 74px;}
+  .pane.light .type-row .meta{color:var(--faint-l);}
+  .pane.dark .type-row .meta{color:var(--faint-d);}
+  .t-disp{font:italic 400 44px/1 "Instrument Serif",serif;letter-spacing:-.02em;}
+  .t-h1{font:700 36px/1.05 "Inter Tight",sans-serif;letter-spacing:-.025em;}
+  .t-h2{font:700 26px/1.15 "Inter Tight",sans-serif;letter-spacing:-.015em;}
+  .t-h3{font:600 20px/1.2 "Inter Tight",sans-serif;letter-spacing:-.01em;}
+  .t-h4{font:600 16px/1.25 "Inter Tight",sans-serif;}
+  .t-lead{font:400 16px/1.5 "Inter Tight",sans-serif;max-width:42ch;}
+  .pane.light .t-lead{color:var(--mut-l);}
+  .pane.dark .t-lead{color:var(--mut-d);}
+  .t-body{font:400 13.5px/1.55 "Inter Tight",sans-serif;max-width:48ch;}
+  .t-eyebrow{font:500 10.5px/1.2 "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.14em;}
+  .pane.light .t-eyebrow{color:var(--mut-l);}
+  .pane.dark .t-eyebrow{color:var(--mut-d);}
+
+  /* ─────────────────── BUTTONS ─────────────────── */
+  .btn-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;}
+  .btn{font:600 13px "Inter Tight",sans-serif;padding:9px 14px;border-radius:6px;border:1px solid transparent;cursor:pointer;letter-spacing:-.005em;line-height:1;}
+  .btn.primary{background:var(--lime);color:var(--ink-deep);}
+  .btn.primary:hover{background:var(--lime-300);}
+  .pane.light .btn.secondary{background:var(--ink);color:var(--paper-elev);}
+  .pane.dark .btn.secondary{background:var(--paper-elev);color:var(--ink);}
+  .pane.light .btn.ghost{background:transparent;color:var(--ink);border-color:var(--bd-l-strong);}
+  .pane.light .btn.ghost:hover{background:rgba(11,16,32,.04);}
+  .pane.dark .btn.ghost{background:transparent;color:var(--paper-elev);border-color:var(--bd-d-strong);}
+  .pane.dark .btn.ghost:hover{background:rgba(245,247,251,.06);}
+  .btn.danger{background:#DC4B43;color:#fff;}
+  .btn.sm{padding:6px 11px;font-size:11px;}
+  .btn.icon{display:inline-flex;align-items:center;gap:7px;}
+  .btn.icon svg{width:13px;height:13px;}
+
+  .phase-pill{font-family:"JetBrains Mono",monospace;font-weight:500;letter-spacing:.02em;text-transform:lowercase;}
+  .pane.light .phase-pill.idle{background:var(--paper-sunk);color:var(--mut-l);border-color:transparent;}
+  .pane.dark .phase-pill.idle{background:rgba(255,255,255,.08);color:var(--mut-d);border-color:transparent;}
+  .phase-pill.run{background:rgba(200,255,75,.22);color:#3a4a06;border-color:transparent;}
+  .pane.dark .phase-pill.run{background:rgba(200,255,75,.16);color:var(--lime);}
+
+  /* ─────────────────── FORMS ─────────────────── */
+  .form-stack{display:flex;flex-direction:column;gap:12px;max-width:380px;}
+  .form-stack label{font:500 10px "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.1em;display:flex;flex-direction:column;gap:6px;}
+  .pane.light .form-stack label{color:var(--mut-l);}
+  .pane.dark .form-stack label{color:var(--mut-d);}
+  .form-stack input,.form-stack select{font:400 13.5px "Inter Tight",sans-serif;border-radius:6px;padding:8px 11px;outline:none;text-transform:none;letter-spacing:0;}
+  .pane.light .form-stack input,.pane.light .form-stack select{background:var(--paper-sunk);border:1px solid var(--bd-l-strong);color:var(--ink);}
+  .pane.dark .form-stack input,.pane.dark .form-stack select{background:var(--ink-700);border:1px solid var(--bd-d-strong);color:var(--paper-elev);}
+  .form-stack input:focus,.form-stack select:focus{border-color:var(--lime);box-shadow:0 0 0 3px rgba(200,255,75,.28);}
+  .check{display:flex;align-items:center;gap:8px;font:400 12.5px "Inter Tight",sans-serif;text-transform:none;letter-spacing:0;}
+  .pane.light .check{color:var(--ink);}
+  .pane.dark .check{color:var(--paper-elev);}
+  .check input{width:auto;padding:0;accent-color:var(--lime);}
+
+  /* ─────────────────── BADGES ─────────────────── */
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font:600 10.5px "JetBrains Mono",monospace;}
+  .pill::before{content:"";width:6px;height:6px;border-radius:50%;}
+  .pill.ok{background:#E5F5EC;color:#15803d;}.pill.ok::before{background:#3EBF7A;}
+  .pill.warn{background:#FBF1DA;color:#b45309;}.pill.warn::before{background:#E0A82E;}
+  .pill.err{background:#FBE6E4;color:#b91c1c;}.pill.err::before{background:#DC4B43;}
+  .pill.info{background:#E2EBF8;color:#1d4eb1;}.pill.info::before{background:#4A7BC9;}
+  .pill.skip{background:var(--paper-sunk);color:var(--mut-l);}.pill.skip::before{background:var(--faint-l);}
+  .pill.run{background:rgba(200,255,75,.22);color:#3a4a06;}.pill.run::before{background:#94B81F;animation:p 1s infinite;}
+  @keyframes p{50%{opacity:.4;}}
+  .pane.dark .pill.ok{background:rgba(62,191,122,.14);color:#5fd697;}
+  .pane.dark .pill.warn{background:rgba(224,168,46,.14);color:#f0c761;}
+  .pane.dark .pill.err{background:rgba(220,75,67,.14);color:#f08e87;}
+  .pane.dark .pill.info{background:rgba(74,123,201,.14);color:#7ba8e8;}
+  .pane.dark .pill.skip{background:rgba(214,217,227,.08);color:var(--mut-d);}
+  .pane.dark .pill.run{background:rgba(200,255,75,.14);color:var(--lime);}.pane.dark .pill.run::before{background:var(--lime);}
+  .tag{display:inline-flex;padding:2px 8px;border-radius:4px;font:500 11px "JetBrains Mono",monospace;}
+  .pane.light .tag{background:var(--ink);color:var(--lime);}
+  .pane.light .tag.alt{background:rgba(11,16,32,.06);color:var(--ink);}
+  .pane.dark .tag{background:var(--lime);color:var(--ink-deep);}
+  .pane.dark .tag.alt{background:rgba(214,217,227,.08);color:var(--paper-elev);}
+
+  /* ─────────────────── CARDS (stat) ─────────────────── */
+  .stat-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .stat-card{border-radius:8px;padding:14px;}
+  .pane.light .stat-card{background:var(--paper-elev);border:1px solid var(--bd-l);box-shadow:0 1px 0 rgba(11,16,32,.04),0 6px 14px rgba(11,16,32,.06);}
+  .pane.dark .stat-card{background:var(--ink-700);border:1px solid var(--bd-d);}
+  .stat-card .eye{font:500 10px "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.12em;margin:0 0 6px;}
+  .pane.light .stat-card .eye{color:var(--faint-l);}
+  .pane.dark .stat-card .eye{color:var(--mut-d);}
+  .stat-card .big{font:700 22px "Inter Tight",sans-serif;letter-spacing:-.02em;margin:0;}
+  .stat-card .meta{font:400 11px "JetBrains Mono",monospace;margin-top:4px;}
+  .pane.light .stat-card .meta{color:var(--faint-l);}
+  .pane.dark .stat-card .meta{color:var(--faint-d);}
+
+  /* ─────────────────── SIDEBAR NAV ─────────────────── */
+  .nav{border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:2px;width:240px;}
+  .pane.light .nav{background:var(--paper-elev);border:1px solid var(--bd-l);box-shadow:0 6px 14px rgba(11,16,32,.06);}
+  .pane.dark .nav{background:var(--ink);}
+  .nav-brand{display:flex;align-items:center;gap:10px;padding:6px 10px 14px;margin-bottom:6px;}
+  .pane.light .nav-brand{border-bottom:1px solid var(--bd-l);}
+  .pane.dark .nav-brand{border-bottom:1px solid rgba(255,255,255,.08);}
+  .nav-brand .nm{font:700 16px "Inter Tight",sans-serif;letter-spacing:-.02em;}
+  .pane.light .nav-brand .nm{color:var(--ink);}
+  .pane.dark .nav-brand .nm{color:var(--paper-elev);}
+  .nav-brand .tag2{font:500 9px "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.14em;color:var(--faint-l);}
+  .pane.dark .nav-brand .tag2{color:var(--faint-d);}
+  .nav a.l{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:7px;text-decoration:none;font:500 13px "Inter Tight",sans-serif;}
+  .pane.light .nav a.l{color:var(--mut-l);}
+  .pane.light .nav a.l:hover{background:rgba(11,16,32,.04);color:var(--ink);}
+  .pane.light .nav a.l.active{background:rgba(200,255,75,.25);color:var(--ink);}
+  .pane.dark .nav a.l{color:var(--mut-d);}
+  .pane.dark .nav a.l:hover{background:rgba(255,255,255,.05);color:var(--paper-elev);}
+  .pane.dark .nav a.l.active{background:rgba(200,255,75,.12);color:var(--paper-elev);}
+  .nav a.l .ic{width:14px;height:14px;border-radius:3px;background:currentColor;opacity:.55;}
+  .nav a.l.active .ic{opacity:1;}
+  .pane.light .nav a.l.active .ic{background:#94B81F;}
+  .pane.dark .nav a.l.active .ic{background:var(--lime);}
+
+  /* ─────────────────── ELEVATION ─────────────────── */
+  .elev-row{display:flex;gap:18px;align-items:center;justify-content:space-around;padding:18px 0;}
+  .elev{display:flex;flex-direction:column;align-items:center;gap:10px;}
+  .elev .box{width:78px;height:50px;border-radius:8px;}
+  .pane.light .elev .box{background:var(--paper-elev);border:1px solid var(--bd-l);}
+  .pane.dark .elev .box{background:var(--ink-700);border:1px solid var(--bd-d);}
+  .elev .lbl{font:500 10px "JetBrains Mono",monospace;}
+  .pane.light .elev .lbl{color:var(--mut-l);}
+  .pane.dark .elev .lbl{color:var(--mut-d);}
+  .pane.light .e1{box-shadow:0 1px 0 rgba(11,16,32,.04),0 1px 2px rgba(11,16,32,.04);}
+  .pane.light .e2{box-shadow:0 1px 0 rgba(11,16,32,.04),0 6px 14px rgba(11,16,32,.06);}
+  .pane.light .e3{box-shadow:0 10px 30px rgba(11,16,32,.10),0 2px 6px rgba(11,16,32,.04);}
+  .pane.light .e4{box-shadow:0 30px 60px rgba(11,16,32,.18),0 12px 24px rgba(11,16,32,.08);}
+  .pane.dark .e1{box-shadow:0 1px 0 rgba(0,0,0,.4),0 1px 2px rgba(0,0,0,.4);}
+  .pane.dark .e2{box-shadow:0 1px 0 rgba(0,0,0,.4),0 6px 14px rgba(0,0,0,.5);}
+  .pane.dark .e3{box-shadow:0 10px 30px rgba(0,0,0,.6),0 2px 6px rgba(0,0,0,.4);}
+  .pane.dark .e4{box-shadow:0 30px 60px rgba(0,0,0,.7),0 12px 24px rgba(0,0,0,.5);}
+
+  /* ─────────────────── RADII ─────────────────── */
+  .radii-row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;}
+  .radii{display:flex;flex-direction:column;align-items:center;gap:8px;}
+  .radii .r{width:78px;height:52px;}
+  .pane.light .radii .r{background:var(--ink);border:1px solid var(--bd-l);}
+  .pane.dark .radii .r{background:var(--paper-elev);border:1px solid var(--bd-d);}
+  .radii .lbl{font:500 10px "JetBrains Mono",monospace;}
+  .pane.light .radii .lbl{color:var(--mut-l);}
+  .pane.dark .radii .lbl{color:var(--mut-d);}
+
+  /* ─────────────────── SPACING ─────────────────── */
+  .space-row{display:grid;grid-template-columns:64px 70px 1fr;align-items:center;gap:12px;padding:6px 0;}
+  .pane.light .space-row{border-top:1px solid var(--bd-l);}
+  .pane.dark .space-row{border-top:1px solid var(--bd-d);}
+  .space-row:first-of-type{border-top:0;}
+  .space-row .tok{font:600 12px "JetBrains Mono",monospace;}
+  .space-row .px{font:400 11px "JetBrains Mono",monospace;}
+  .pane.light .space-row .px{color:var(--faint-l);}
+  .pane.dark .space-row .px{color:var(--faint-d);}
+  .space-row .bar{height:14px;border-radius:3px;}
+  .pane.light .space-row .bar{background:var(--ink);}
+  .pane.dark .space-row .bar{background:var(--paper-elev);}
+  .pane.light .space-row .bar.ac{background:var(--lime);}
+  .pane.dark .space-row .bar.ac{background:var(--lime);}
+
+  /* ─────────────────── TERMINAL ─────────────────── */
+  .term{background:var(--ink-deep);color:var(--paper-elev);border-radius:8px;padding:14px 16px;font:400 12.5px/1.55 "JetBrains Mono",monospace;border:1px solid rgba(255,255,255,.06);}
+  .term .dim{color:var(--faint-l);}
+  .term .ok{color:var(--lime);}
+  .term .warn{color:#E0A82E;}
+
+  /* ─────────────────── BRAND TILES ─────────────────── */
+  .brand-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+  .brand-tile{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:18px 12px;border-radius:12px;}
+  .brand-tile.t-paper{background:var(--paper-elev);border:1px solid var(--bd-l);}
+  .brand-tile.t-ink{background:var(--ink);}
+  .brand-tile.t-lime{background:var(--lime);}
+  .brand-tile.t-mid{background:var(--ink-700);}
+  .brand-tile .lbl{font:500 9.5px "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.12em;text-align:center;}
+  .brand-tile.t-paper .lbl{color:var(--mut-l);}
+  .brand-tile.t-ink .lbl{color:var(--mut-d);}
+  .brand-tile.t-lime .lbl{color:#1a2400;}
+  .brand-tile.t-mid .lbl{color:var(--mut-d);}
+
+  /* ─────────────────── ICON GRID ─────────────────── */
+  .icon-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;}
+  .ic{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;border-radius:6px;padding:6px 4px;}
+  .pane.light .ic{background:var(--paper-elev);border:1px solid var(--bd-l);color:var(--ink);}
+  .pane.dark .ic{background:var(--ink-700);border:1px solid var(--bd-d);color:var(--paper-elev);}
+  .ic svg{width:18px;height:18px;}
+  .ic .lbl{font:500 8.5px "JetBrains Mono",monospace;letter-spacing:.04em;}
+  .pane.light .ic .lbl{color:var(--faint-l);}
+  .pane.dark .ic .lbl{color:var(--mut-d);}
+
+  /* ─────────────────── FONT ALTS ─────────────────── */
+  .font-row{display:grid;grid-template-columns:140px 1fr;gap:16px;align-items:center;padding:9px 0;}
+  .pane.light .font-row{border-top:1px dashed var(--bd-l);}
+  .pane.dark .font-row{border-top:1px dashed var(--bd-d);}
+  .font-row:first-of-type{border-top:0;}
+  .font-name{font:600 12px "Inter Tight",sans-serif;letter-spacing:-.01em;}
+  .font-name.cur::after{content:"current";font:500 8px "JetBrains Mono",monospace;background:var(--lime);color:var(--ink-deep);padding:2px 5px;border-radius:3px;margin-left:6px;letter-spacing:.1em;text-transform:uppercase;vertical-align:middle;}
+  .font-desc{font:400 10px "JetBrains Mono",monospace;display:block;}
+  .pane.light .font-desc{color:var(--faint-l);}
+  .pane.dark .font-desc{color:var(--faint-d);}
+
+  .f-instr{font-family:"Instrument Serif",serif;font-style:italic;font-size:32px;line-height:1;letter-spacing:-.02em;}
+  .f-fraunces{font-family:"Fraunces",serif;font-style:italic;font-size:32px;line-height:1;letter-spacing:-.02em;}
+  .f-cormorant{font-family:"Cormorant Garamond",serif;font-style:italic;font-size:32px;line-height:1;}
+  .f-newsreader{font-family:"Newsreader",serif;font-style:italic;font-size:32px;line-height:1;letter-spacing:-.01em;}
+  .f-inter{font-family:"Inter Tight",sans-serif;font-size:14px;font-weight:600;letter-spacing:-.01em;}
+  .f-geist{font-family:"Geist",sans-serif;font-size:14px;font-weight:600;}
+  .f-grotesk{font-family:"Space Grotesk",sans-serif;font-size:14px;font-weight:600;}
+  .f-dm{font-family:"DM Sans",sans-serif;font-size:14px;font-weight:600;}
+  .f-jet{font-family:"JetBrains Mono",monospace;font-size:12px;}
+  .f-plex{font-family:"IBM Plex Mono",monospace;font-size:12px;}
+  .f-geistm{font-family:"Geist Mono",monospace;font-size:12px;}
+  .f-fira{font-family:"Fira Code",monospace;font-size:12px;}
+  .accent{color:#94B81F;}
+  .pane.dark .accent{color:var(--lime);}
+
+  /* ─────────────────── HANDOFF FOOTER ─────────────────── */
+  .handoff{margin-top:64px;padding:32px;border-radius:12px;background:var(--ink);color:var(--paper-elev);}
+  .handoff h3{font:700 18px "Inter Tight",sans-serif;margin:0 0 14px;letter-spacing:-.01em;}
+  .handoff p{font:400 13.5px/1.55 "Inter Tight",sans-serif;color:var(--mut-d);max-width:64ch;margin:0 0 18px;}
+  .handoff .files{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:14px;}
+  .handoff .file{background:var(--ink-700);border:1px solid var(--bd-d);border-radius:8px;padding:12px 14px;}
+  .handoff .file code{font:600 12px "JetBrains Mono",monospace;color:var(--lime);display:block;margin-bottom:4px;}
+  .handoff .file span{font:400 11px "JetBrains Mono",monospace;color:var(--mut-d);}
+
+  @media (max-width:900px){
+    .dual{grid-template-columns:1fr;}
+    .icon-grid{grid-template-columns:repeat(4,1fr);}
+    .brand-grid{grid-template-columns:repeat(2,1fr);}
+    .stat-cards{grid-template-columns:1fr;}
+    .handoff .files{grid-template-columns:1fr;}
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=Fraunces:ital@0;1&family=Cormorant+Garamond:ital@0;1&family=Newsreader:ital@0;1&family=Geist:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Fira+Code:wght@400;500;600&display=swap">
+</head>
+<body>
+<div class="page">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <svg viewBox="0 0 64 64" width="44" height="44">
+      <rect width="64" height="64" rx="14" fill="#0B1020"/>
+      <rect x="14" y="36" width="8" height="16" rx="2" fill="#C8FF4B"/>
+      <rect x="28" y="26" width="8" height="26" rx="2" fill="#C8FF4B"/>
+      <rect x="42" y="14" width="8" height="38" rx="2" fill="#C8FF4B"/>
+    </svg>
+    <div>
+      <div class="name">Ascendo</div>
+      <div class="meta" style="margin-top:3px;">design system · v0.1.0 · light + dark</div>
+    </div>
+    <div class="right">
+      <span class="pill">handoff</span>
+    </div>
+  </header>
+
+  <!-- ═══════════════════ 01 BRAND ═══════════════════ -->
+  <section>
+    <div class="sec-hdr">
+      <span class="sec-num">01</span>
+      <h2 class="sec-title">Brand mark</h2>
+      <span class="sec-sub">3 ascending bars · 18px corner · ink + lime</span>
+    </div>
+    <div class="dual">
+      <div class="pane light">
+        <p class="pane-tag">light surfaces</p>
+        <div class="brand-grid">
+          <div class="brand-tile t-paper">
+            <svg viewBox="0 0 64 64" width="60" height="60"><rect width="64" height="64" rx="14" fill="#0B1020"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#C8FF4B"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#C8FF4B"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#C8FF4B"/></svg>
+            <span class="lbl">primary · on paper</span>
+          </div>
+          <div class="brand-tile t-lime">
+            <svg viewBox="0 0 64 64" width="60" height="60"><rect width="64" height="64" rx="14" fill="#0B1020"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#C8FF4B"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#C8FF4B"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#C8FF4B"/></svg>
+            <span class="lbl">on lime accent</span>
+          </div>
+          <div class="brand-tile t-paper">
+            <svg viewBox="0 0 64 64" width="60" height="60" style="color:#0B1020"><rect x="14" y="36" width="8" height="16" rx="2" fill="currentColor"/><rect x="28" y="26" width="8" height="26" rx="2" fill="currentColor"/><rect x="42" y="14" width="8" height="38" rx="2" fill="currentColor"/></svg>
+            <span class="lbl">monochrome</span>
+          </div>
+          <div class="brand-tile t-paper" style="flex-direction:row;justify-content:center;gap:10px;">
+            <svg viewBox="0 0 64 64" width="32" height="32"><rect width="64" height="64" rx="14" fill="#0B1020"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#C8FF4B"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#C8FF4B"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#C8FF4B"/></svg>
+            <span style="font:700 22px 'Inter Tight',sans-serif;letter-spacing:-.025em;color:#0B1020;">Ascendo</span>
+          </div>
+        </div>
+      </div>
+      <div class="pane dark">
+        <p class="pane-tag">dark surfaces</p>
+        <div class="brand-grid">
+          <div class="brand-tile t-mid">
+            <svg viewBox="0 0 64 64" width="60" height="60"><rect width="64" height="64" rx="14" fill="#C8FF4B"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#0B1020"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#0B1020"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#0B1020"/></svg>
+            <span class="lbl">primary · on ink</span>
+          </div>
+          <div class="brand-tile t-mid">
+            <svg viewBox="0 0 64 64" width="60" height="60"><rect width="64" height="64" rx="14" fill="#0B1020"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#C8FF4B"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#C8FF4B"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#C8FF4B"/></svg>
+            <span class="lbl">subtle · on ink</span>
+          </div>
+          <div class="brand-tile t-mid">
+            <svg viewBox="0 0 64 64" width="60" height="60" style="color:#F5F7FB"><rect x="14" y="36" width="8" height="16" rx="2" fill="currentColor"/><rect x="28" y="26" width="8" height="26" rx="2" fill="currentColor"/><rect x="42" y="14" width="8" height="38" rx="2" fill="currentColor"/></svg>
+            <span class="lbl">monochrome</span>
+          </div>
+          <div class="brand-tile t-mid" style="flex-direction:row;justify-content:center;gap:10px;">
+            <svg viewBox="0 0 64 64" width="32" height="32"><rect width="64" height="64" rx="14" fill="#C8FF4B"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#0B1020"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#0B1020"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#0B1020"/></svg>
+            <span style="font:700 22px 'Inter Tight',sans-serif;letter-spacing:-.025em;color:#F5F7FB;">Ascendo</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ 02 COLORS ═══════════════════ -->
+  <section>
+    <div class="sec-hdr">
+      <span class="sec-num">02</span>
+      <h2 class="sec-title">Color · brand swatches</h2>
+      <span class="sec-sub">ink anchor · cool grey paper · single lime accent</span>
+    </div>
+    <div class="dual">
+      <div class="pane light">
+        <p class="pane-tag">brand swatches</p>
+        <div class="swatches">
+          <div class="sw"><div class="chip" style="background:#0B1020"></div><span class="n">Ink 800</span><span class="h">#0B1020</span></div>
+          <div class="sw"><div class="chip" style="background:#06080F"></div><span class="n">Ink 900</span><span class="h">#06080F</span></div>
+          <div class="sw"><div class="chip" style="background:#EDEFF4"></div><span class="n">Paper 25</span><span class="h">#EDEFF4</span></div>
+          <div class="sw"><div class="chip" style="background:#F5F7FB"></div><span class="n">Paper 0</span><span class="h">#F5F7FB</span></div>
+          <div class="sw"><div class="chip" style="background:#C8FF4B"></div><span class="n">Lime 400</span><span class="h">#C8FF4B</span></div>
+          <div class="sw"><div class="chip" style="background:#FF6A3D"></div><span class="n">Blaze 500</span><span class="h">#FF6A3D</span></div>
+        </div>
+      </div>
+      <div class="pane dark">
+        <p class="pane-tag">brand swatches</p>
+        <div class="swatches">
+          <div class="sw"><div class="chip" style="background:#0B1020"></div><span class="n">Ink 800</span><span class="h">#0B1020</span></div>
+          <div class="sw"><div class="chip" style="background:#06080F"></div><span class="n">Ink 900</span><span class="h">#06080F</span></div>
+          <div class="sw"><div class="chip" style="background:#EDEFF4"></div><span class="n">Paper 25</span><span class="h">#EDEFF4</span></div>
+          <div class="sw"><div class="chip" style="background:#F5F7FB"></div><span class="n">Paper 0</span><span class="h">#F5F7FB</span></div>
+          <div class="sw"><div class="chip" style="background:#C8FF4B"></div><span class="n">Lime 400</span><span class="h">#C8FF4B</span></div>
+          <div class="sw"><div class="chip" style="background:#FF6A3D"></div><span class="n">Blaze 500</span><span class="h">#FF6A3D</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dual">
+      <div class="pane light">
+        <p class="pane-tag">scales</p>
+        <div class="scale-section">
+          <h5>Ink scale</h5>
+          <div class="scale-row">
+            <div style="background:#06080F"><span>900</span></div><div style="background:#0B1020"><span>800</span></div><div style="background:#131A2E"><span>700</span></div>
+            <div style="background:#1C2440"><span>600</span></div><div style="background:#2A3354"><span>500</span></div><div style="background:#495078"><span>400</span></div>
+            <div style="background:#7A8099"><span>300</span></div><div style="background:#A8ADC2"><span>200</span></div><div style="background:#D6D9E3"><span>100</span></div><div style="background:#EDEFF4"><span>50</span></div>
+          </div>
+        </div>
+        <div class="scale-section" style="margin-top:30px;">
+          <h5>Paper scale (cool grey)</h5>
+          <div class="scale-row">
+            <div style="background:#131A2E"><span>900</span></div><div style="background:#DDE1EA"><span>100</span></div><div style="background:#E3E6EE"><span>50</span></div><div style="background:#EDEFF4"><span>25 ★</span></div><div style="background:#F5F7FB"><span>0</span></div>
+          </div>
+        </div>
+        <div class="scale-section" style="margin-top:30px;">
+          <h5>Lime scale (accent)</h5>
+          <div class="scale-row">
+            <div style="background:#6B8C12"><span>700</span></div><div style="background:#94B81F"><span>600</span></div><div style="background:#B8E033"><span>500</span></div><div style="background:#C8FF4B"><span>400 ★</span></div><div style="background:#D7FF7A"><span>300</span></div><div style="background:#E5FFA6"><span>200</span></div><div style="background:#F0FFCD"><span>100</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="pane dark">
+        <p class="pane-tag">scales</p>
+        <div class="scale-section">
+          <h5>Ink scale</h5>
+          <div class="scale-row">
+            <div style="background:#06080F"><span>900</span></div><div style="background:#0B1020"><span>800</span></div><div style="background:#131A2E"><span>700</span></div>
+            <div style="background:#1C2440"><span>600</span></div><div style="background:#2A3354"><span>500</span></div><div style="background:#495078"><span>400</span></div>
+            <div style="background:#7A8099"><span>300</span></div><div style="background:#A8ADC2"><span>200</span></div><div style="background:#D6D9E3"><span>100</span></div><div style="background:#EDEFF4"><span>50</span></div>
+          </div>
+        </div>
+        <div class="scale-section" style="margin-top:30px;">
+          <h5>Paper scale (cool grey)</h5>
+          <div class="scale-row">
+            <div style="background:#131A2E"><span>900</span></div><div style="background:#DDE1EA"><span>100</span></div><div style="background:#E3E6EE"><span>50</span></div><div style="background:#EDEFF4"><span>25 ★</span></div><div style="background:#F5F7FB"><span>0</span></div>
+          </div>
+        </div>
+        <div class="scale-section" style="margin-top:30px;">
+          <h5>Lime scale (accent)</h5>
+          <div class="scale-row">
+            <div style="background:#6B8C12"><span>700</span></div><div style="background:#94B81F"><span>600</span></div><div style="background:#B8E033"><span>500</span></div><div style="background:#C8FF4B"><span>400 ★</span></div><div style="background:#D7FF7A"><span>300</span></div><div style="background:#E5FFA6"><span>200</span></div><div style="background:#F0FFCD"><span>100</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dual">
+      <div class="pane light">
+        <p class="pane-tag">status colors</p>
+        <div class="stat-grid">
+          <div class="stat stat-ok"><span class="lbl">OK · success</span><span class="h">#3EBF7A on #E5F5EC</span></div>
+          <div class="stat stat-warn"><span class="lbl">Warn · attention</span><span class="h">#E0A82E on #FBF1DA</span></div>
+          <div class="stat stat-err"><span class="lbl">Err · failure</span><span class="h">#DC4B43 on #FBE6E4</span></div>
+          <div class="stat stat-info"><span class="lbl">Info · neutral</span><span class="h">#4A7BC9 on #E2EBF8</span></div>
+        </div>
+      </div>
+      <div class="pane dark">
+        <p class="pane-tag">status colors</p>
+        <div class="stat-grid">
+          <div class="stat stat-ok"><span class="lbl">OK · success</span><span class="h">moss · 14% bg</span></div>
+          <div class="stat stat-warn"><span class="lbl">Warn · attention</span><span class="h">ochre · 14% bg</span></div>
+          <div class="stat stat-err"><span class="lbl">Err · failure</span><span class="h">terracotta · 14% bg</span></div>
+          <div class="stat stat-info"><span class="lbl">Info · neutral</span><span class="h">dusty blue · 14% bg</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ 03 TYPE ═══════════════════ -->
+  <section>
+    <div class="sec-hdr">
+      <span class="sec-num">03</span>
+      <h2 class="sec-title">Typography</h2>
+      <span class="sec-sub">Inter Tight · JetBrains Mono · Instrument Serif</span>
+    </div>
+    <div class="dual">
+      <div class="pane light">
+        <p class="pane-tag">display + headlines</p>
+        <div class="type-rows">
+          <div class="type-row"><span class="meta">display</span><span class="t-disp">ascend<span class="accent">.</span></span></div>
+          <div class="type-row"><span class="meta">h1 / 36</span><span class="t-h1">One tool. Three OSes.</span></div>
+          <div class="type-row"><span class="meta">h2 / 26</span><span class="t-h2">Every update, one place</span></div>
+          <div class="type-row"><span class="meta">h3 / 20</span><span class="t-h3">Run center</span></div>
+          <div class="type-row"><span class="meta">h4 / 16</span><span class="t-h4">Quick actions</span></div>
+        </div>
+      </div>
+      <div class="pane dark">
+        <p class="pane-tag">display + headlines</p>
+        <div class="type-rows">
+          <div class="type-row"><span class="meta">display</span><span class="t-disp">ascend<span class="accent">.</span></span></div>
+          <div class="type-row"><span class="meta">h1 / 36</span><span class="t-h1">One tool. Three OSes.</span></div>
+          <div class="type-row"><span class="meta">h2 / 26</span><span class="t-h2">Every update, one place</span></div>
+          <div class="type-row"><span class="meta">h3 / 20</span><span class="t-h3">Run center</span></div>
+          <div class="type-row"><span class="meta">h4 / 16</span><span class="t-h4">Quick actions</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dual">
+      <div class="pane light">
+        <p class="pane-tag">body · lead · eyebrow · caption</p>
+        <div class="type-rows">
+          <div class="type-row"><span class="meta">eyebrow</span><span class="t-eyebrow">v0.1.0 · MIT · linux/win/mac</span></div>
+          <div class="type-row"><span class="meta">lead 16</span><span class="t-lead">Manage OS updates, package managers, app stores, and dev tools through one CLI.</span></div>
+          <div class="type-row"><span class="meta">body 13.5</span><span class="t-body">Five phases per category — check, plan, apply, verify, cleanup. Each phase emits a JSON sidecar.</span></div>
+          <div class="type-row"><span class="meta">caption</span><span style="font:400 11px 'Inter Tight';color:var(--faint-l);">Required for apt / drivers apply phases.</span></div>
+        </div>
+      </div>
+      <div class="pane dark">
+        <p class="pane-tag">body · lead · eyebrow · caption</p>
+        <div class="type-rows">
+          <div class="type-row"><span class="meta">eyebrow</span><span class="t-eyebrow">v0.1.0 · MIT · linux/win/mac</span></div>
+          <div class="type-row"><span class="meta">lead 16</span><span class="t-lead">Manage OS updates, package managers, app stores, and dev tools through one CLI.</span></div>
+          <div class="type-row"><span class="meta">body 13.5</span><span class="t-body">Five phases per category — check, plan, apply, verify, cleanup. Each phase emits a JSON sidecar.</span></div>
+          <div class="type-row"><span class="meta">caption</span><span style="font:400 11px 'Inter Tight';color:var(--faint-d);">Required for apt / drivers apply phases.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dual">
+      <div class="pane light">
+        <p class="pane-tag">code / terminal output</p>
+        <pre class="term" style="margin:0;">$ ascendo run --profile=safe
+<span class="dim">[apt]</span>     check  <span class="ok">✓</span> 12 outdated
+<span class="dim">[snap]</span>    check  <span class="ok">✓</span> 3 outdated
+<span class="dim">[brew]</span>    check  <span class="warn">!</span> not installed (skip)
+<span class="dim">[drivers]</span> plan   <span class="dim">held</span> nvidia-driver-535</pre>
+      </div>
+      <div class="pane dark">
+        <p class="pane-tag">code / terminal output</p>
+        <pre class="term" style="margin:0;">$ ascendo run --profile=safe
+<span class="dim">[apt]</span>     check  <span class="ok">✓</span> 12 outdated
+<span class="dim">[snap]</span>    check  <span class="ok">✓</span> 3 outdated
+<span class="dim">[brew]</span>    check  <span class="warn">!</span> not installed (skip)
+<span class="dim">[drivers]</span> plan   <span class="dim">held</span> nvidia-driver-535</pre>
+      </div>
+    </div>
+
+    <div class="dual">
+      <div class="pane light">
+        <p class="pane-tag">font alternatives · pick one per row</p>
+        <div class="font-row"><div><div class="font-name cur">Instrument Serif</div><span class="font-desc">tall, sharp · display</span></div><span class="f-instr">ascend<span class="accent">.</span></span></div>
+        <div class="font-row"><div><div class="font-name">Fraunces</div><span class="font-desc">friendlier body</span></div><span class="f-fraunces">ascend<span class="accent">.</span></span></div>
+        <div class="font-row"><div><div class="font-name">Cormorant Garamond</div><span class="font-desc">classical, editorial</span></div><span class="f-cormorant">ascend<span class="accent">.</span></span></div>
+        <div class="font-row"><div><div class="font-name">Newsreader</div><span class="font-desc">modern, neutral italic</span></div><span class="f-newsreader">ascend<span class="accent">.</span></span></div>
+        <div style="height:14px;"></div>
+        <div class="font-row"><div><div class="font-name cur">Inter Tight</div><span class="font-desc">tight, opinionated · ui</span></div><span class="f-inter">Every update, one place</span></div>
+        <div class="font-row"><div><div class="font-name">Geist</div><span class="font-desc">geometric, neutral</span></div><span class="f-geist">Every update, one place</span></div>
+        <div class="font-row"><div><div class="font-name">Space Grotesk</div><span class="font-desc">technical, distinctive</span></div><span class="f-grotesk">Every update, one place</span></div>
+        <div class="font-row"><div><div class="font-name">DM Sans</div><span class="font-desc">round, soft</span></div><span class="f-dm">Every update, one place</span></div>
+        <div style="height:14px;"></div>
+        <div class="font-row"><div><div class="font-name cur">JetBrains Mono</div><span class="font-desc">developer default · mono</span></div><span class="f-jet">[apt] check ✓ 12 outdated</span></div>
+        <div class="font-row"><div><div class="font-name">IBM Plex Mono</div><span class="font-desc">warm, slight serifs</span></div><span class="f-plex">[apt] check ✓ 12 outdated</span></div>
+        <div class="font-row"><div><div class="font-name">Geist Mono</div><span class="font-desc">tight, modern</span></div><span class="f-geistm">[apt] check ✓ 12 outdated</span></div>
+        <div class="font-row"><div><div class="font-name">Fira Code</div><span class="font-desc">ligatures, classic</span></div><span class="f-fira">[apt] check ✓ 12 outdated</span></div>
+      </div>
+      <div class="pane dark">
+        <p class="pane-tag">same fonts · dark</p>
+        <div class="font-row"><div><div class="font-name cur">Instrument Serif</div><span class="font-desc">tall, sharp · display</span></div><span class="f-instr">ascend<span class="accent">.</span></span></div>
+        <div class="font-row"><div><div class="font-name">Fraunces</div><span class="font-desc">friendlier body</span></div><span class="f-fraunces">ascend<span class="accent">.</span></span></div>
+        <div class="font-row"><div><div class="font-name">Cormorant Garamond</div><span class="font-desc">classical, editorial</span></div><span class="f-cormorant">ascend<span class="accent">.</span></span></div>
+        <div class="font-row"><div><div class="font-name">Newsreader</div><span class="font-desc">modern, neutral italic</span></div><span class="f-newsreader">ascend<span class="accent">.</span></span></div>
+        <div style="height:14px;"></div>
+        <div class="font-row"><div><div class="font-name cur">Inter Tight</div><span class="font-desc">tight, opinionated · ui</span></div><span class="f-inter">Every update, one place</span></div>
+        <div class="font-row"><div><div class="font-name">Geist</div><span class="font-desc">geometric, neutral</span></div><span class="f-geist">Every update, one place</span></div>
+        <div class="font-row"><div><div class="font-name">Space Grotesk</div><span class="font-desc">technical, distinctive</span></div><span class="f-grotesk">Every update, one place</span></div>
+        <div class="font-row"><div><div class="font-name">DM Sans</div><span class="font-desc">round, soft</span></div><span class="f-dm">Every update, one place</span></div>
+        <div style="height:14px;"></div>
+        <div class="font-row"><div><div class="font-name cur">JetBrains Mono</div><span class="font-desc">developer default · mono</span></div><span class="f-jet">[apt] check ✓ 12 outdated</span></div>
+        <div class="font-row"><div><div class="font-name">IBM Plex Mono</div><span class="font-desc">warm, slight serifs</span></div><span class="f-plex">[apt] check ✓ 12 outdated</span></div>
+        <div class="font-row"><div><div class="font-name">Geist Mono</div><span class="font-desc">tight, modern</span></div><span class="f-geistm">[apt] check ✓ 12 outdated</span></div>
+        <div class="font-row"><div><div class="font-name">Fira Code</div><span class="font-desc">ligatures, classic</span></div><span class="f-fira">[apt] check ✓ 12 outdated</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ 04 BUTTONS ═══════════════════ -->
+  <section>
+    <div class="sec-hdr">
+      <span class="sec-num">04</span>
+      <h2 class="sec-title">Buttons</h2>
+      <span class="sec-sub">primary · secondary · ghost · danger · phase pills</span>
+    </div>
+    <div class="dual">
+      <div class="pane light">
+        <p class="pane-tag">primary actions</p>
+        <div class="btn-row">
+          <button class="btn primary">Start run</button>
+          <button class="btn secondary">Open dashboard</button>
+          <button class="btn ghost">Cancel</button>
+          <button class="btn danger">Stop</button>
+        </div>
+        <div class="btn-row">
+          <button class="btn primary icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/></svg>Run safe</button>
+          <button class="btn ghost icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><polyline points="21 3 21 8 16 8"/></svg>Re-run</button>
+        </div>
+        <p class="pane-tag" style="margin-top:14px;">small · phase pills</p>
+        <div class="btn-row">
+          <button class="btn primary sm">+ Add target</button>
+          <button class="btn ghost sm phase-pill idle">check</button>
+          <button class="btn ghost sm phase-pill idle">plan</button>
+          <button class="btn ghost sm phase-pill run">apply ●</button>
+          <button class="btn ghost sm phase-pill idle">verify</button>
+        </div>
+      </div>
+      <div class="pane dark">
+        <p class="pane-tag">primary actions</p>
+        <div class="btn-row">
+          <button class="btn primary">Start run</button>
+          <button class="btn secondary">Open dashboard</button>
+          <button class="btn ghost">Cancel</button>
+          <button class="btn danger">Stop</button>
+        </div>
+        <div class="btn-row">
+          <button class="btn primary icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/></svg>Run safe</button>
+          <button class="btn ghost icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><polyline points="21 3 21 8 16 8"/></svg>Re-run</button>
+        </div>
+        <p class="pane-tag" style="margin-top:14px;">small · phase pills</p>
+        <div class="btn-row">
+          <button class="btn primary sm">+ Add target</button>
+          <button class="btn ghost sm phase-pill idle">check</button>
+          <button class="btn ghost sm phase-pill idle">plan</button>
+          <button class="btn ghost sm phase-pill run">apply ●</button>
+          <button class="btn ghost sm phase-pill idle">verify</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ 05 FORMS ═══════════════════ -->
+  <section>
+    <div class="sec-hdr">
+      <span class="sec-num">05</span>
+      <h2 class="sec-title">Form fields</h2>
+      <span class="sec-sub">selects · text · checkbox · lime focus ring</span>
+    </div>
+    <div class="dual">
+      <div class="pane light">
+        <p class="pane-tag">profile config</p>
+        <div class="form-stack">
+          <div style="display:flex;gap:10px;"><label style="flex:1;">Profile<select><option>safe</option><option>quick</option><option>full</option></select></label>
+          <label style="flex:1;">Phase<select><option>(default)</option><option>check</option><option>plan</option><option>apply</option></select></label></div>
+          <label>Repo path<input value="~/Dev_Env/ascendo" /></label>
+          <label class="check"><input type="checkbox" checked />Snapshot before each apply</label>
+          <label class="check"><input type="checkbox" />Skip drivers phase</label>
+        </div>
+      </div>
+      <div class="pane dark">
+        <p class="pane-tag">profile config</p>
+        <div class="form-stack">
+          <div style="display:flex;gap:10px;"><label style="flex:1;">Profile<select><option>safe</option><option>quick</option><option>full</option></select></label>
+          <label style="flex:1;">Phase<select><option>(default)</option><option>check</option><option>plan</option><option>apply</option></select></label></div>
+          <label>Repo path<input value="~/Dev_Env/ascendo" /></label>
+          <label class="check"><input type="checkbox" checked />Snapshot before each apply</label>
+          <label class="check"><input type="checkbox" />Skip drivers phase</label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ 06 BADGES ═══════════════════ -->
+  <section>
+    <div class="sec-hdr">
+      <span class="sec-num">06</span>
+      <h2 class="sec-title">Badges &amp; tags</h2>
+      <span class="sec-sub">6 status pills · inline mono tags</span>
+    </div>
+    <div class="dual">
+      <div class="pane light">
+        <p class="pane-tag">status pills</p>
+        <div class="row">
+          <span class="pill ok">OK</span><span class="pill warn">Warning</span><span class="pill err">Failed</span>
+          <span class="pill info">Dry run</span><span class="pill skip">Skipped</span><span class="pill run">Running</span>
+        </div>
+        <p class="pane-tag" style="margin-top:14px;">inline tags</p>
+        <div class="row">
+          <span class="tag">v0.1.0</span><span class="tag alt">profile:safe</span><span class="tag alt">apt</span><span class="tag alt">snap</span><span class="tag alt">brew</span><span class="tag alt">winget</span>
+        </div>
+      </div>
+      <div class="pane dark">
+        <p class="pane-tag">status pills</p>
+        <div class="row">
+          <span class="pill ok">OK</span><span class="pill warn">Warning</span><span class="pill err">Failed</span>
+          <span class="pill info">Dry run</span><span class="pill skip">Skipped</span><span class="pill run">Running</span>
+        </div>
+        <p class="pane-tag" style="margin-top:14px;">inline tags</p>
+        <div class="row">
+          <span class="tag">v0.1.0</span><span class="tag alt">profile:safe</span><span class="tag alt">apt</span><span class="tag alt">snap</span><span class="tag alt">brew</span><span class="tag alt">winget</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ 07 CARDS ═══════════════════ -->
+  <section>
+    <div class="sec-hdr">
+      <span class="sec-num">07</span>
+      <h2 class="sec-title">Stat cards</h2>
+      <span class="sec-sub">eyebrow + big value + meta · 8px radius · md elevation</span>
+    </div>
+    <div class="dual">
+      <div class="pane light">
+        <p class="pane-tag">overview</p>
+        <div class="stat-cards">
+          <div class="stat-card"><p class="eye">Last run</p><p class="big">2h 14m ago</p><p class="meta">profile=safe · 23 pkgs · 0 fail</p><span class="pill ok" style="margin-top:8px;">Healthy</span></div>
+          <div class="stat-card"><p class="eye">System health</p><p class="big" style="color:#3EBF7A;">96 / 100</p><p class="meta">disk 42% · 1 advisory</p></div>
+        </div>
+      </div>
+      <div class="pane dark">
+        <p class="pane-tag">overview</p>
+        <div class="stat-cards">
+          <div class="stat-card"><p class="eye">Last run</p><p class="big">2h 14m ago</p><p class="meta">profile=safe · 23 pkgs · 0 fail</p><span class="pill ok" style="margin-top:8px;">Healthy</span></div>
+          <div class="stat-card"><p class="eye">System health</p><p class="big" style="color:#5fd697;">96 / 100</p><p class="meta">disk 42% · 1 advisory</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ 08 SIDEBAR ═══════════════════ -->
+  <section>
+    <div class="sec-hdr">
+      <span class="sec-num">08</span>
+      <h2 class="sec-title">Sidebar nav</h2>
+      <span class="sec-sub">240px · brand lockup + 4 items · lime accent on active</span>
+    </div>
+    <div class="dual">
+      <div class="pane light" style="display:flex;align-items:flex-start;">
+        <nav class="nav">
+          <div class="nav-brand">
+            <svg viewBox="0 0 64 64" width="28" height="28"><rect width="64" height="64" rx="14" fill="#0B1020"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#C8FF4B"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#C8FF4B"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#C8FF4B"/></svg>
+            <div><div class="nm">Ascendo</div><div class="tag2">unified updates</div></div>
+          </div>
+          <a class="l active"><span class="ic"></span>Overview</a>
+          <a class="l"><span class="ic"></span>Run center</a>
+          <a class="l"><span class="ic"></span>History</a>
+          <a class="l"><span class="ic"></span>Settings</a>
+        </nav>
+      </div>
+      <div class="pane dark" style="display:flex;align-items:flex-start;">
+        <nav class="nav">
+          <div class="nav-brand">
+            <svg viewBox="0 0 64 64" width="28" height="28"><rect width="64" height="64" rx="14" fill="#C8FF4B"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#0B1020"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#0B1020"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#0B1020"/></svg>
+            <div><div class="nm">Ascendo</div><div class="tag2">unified updates</div></div>
+          </div>
+          <a class="l active"><span class="ic"></span>Overview</a>
+          <a class="l"><span class="ic"></span>Run center</a>
+          <a class="l"><span class="ic"></span>History</a>
+          <a class="l"><span class="ic"></span>Settings</a>
+        </nav>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ 09 SPACING ═══════════════════ -->
+  <section>
+    <div class="sec-hdr">
+      <span class="sec-num">09</span>
+      <h2 class="sec-title">Spacing · radii · elevation</h2>
+      <span class="sec-sub">4px ramp · crisp corners · 4-step shadow</span>
+    </div>
+    <div class="dual">
+      <div class="pane light">
+        <p class="pane-tag">spacing scale</p>
+        <div class="space-row"><span class="tok">--space-1</span><span class="px">4 px</span><div class="bar" style="width:4px"></div></div>
+        <div class="space-row"><span class="tok">--space-2</span><span class="px">8 px</span><div class="bar" style="width:8px"></div></div>
+        <div class="space-row"><span class="tok">--space-3</span><span class="px">12 px</span><div class="bar" style="width:12px"></div></div>
+        <div class="space-row"><span class="tok">--space-4</span><span class="px">16 px</span><div class="bar ac" style="width:16px"></div></div>
+        <div class="space-row"><span class="tok">--space-5</span><span class="px">24 px</span><div class="bar" style="width:24px"></div></div>
+        <div class="space-row"><span class="tok">--space-6</span><span class="px">32 px</span><div class="bar ac" style="width:32px"></div></div>
+        <div class="space-row"><span class="tok">--space-7</span><span class="px">48 px</span><div class="bar" style="width:48px"></div></div>
+        <div class="space-row"><span class="tok">--space-8</span><span class="px">64 px</span><div class="bar" style="width:64px"></div></div>
+      </div>
+      <div class="pane dark">
+        <p class="pane-tag">spacing scale</p>
+        <div class="space-row"><span class="tok">--space-1</span><span class="px">4 px</span><div class="bar" style="width:4px"></div></div>
+        <div class="space-row"><span class="tok">--space-2</span><span class="px">8 px</span><div class="bar" style="width:8px"></div></div>
+        <div class="space-row"><span class="tok">--space-3</span><span class="px">12 px</span><div class="bar" style="width:12px"></div></div>
+        <div class="space-row"><span class="tok">--space-4</span><span class="px">16 px</span><div class="bar ac" style="width:16px"></div></div>
+        <div class="space-row"><span class="tok">--space-5</span><span class="px">24 px</span><div class="bar" style="width:24px"></div></div>
+        <div class="space-row"><span class="tok">--space-6</span><span class="px">32 px</span><div class="bar ac" style="width:32px"></div></div>
+        <div class="space-row"><span class="tok">--space-7</span><span class="px">48 px</span><div class="bar" style="width:48px"></div></div>
+        <div class="space-row"><span class="tok">--space-8</span><span class="px">64 px</span><div class="bar" style="width:64px"></div></div>
+      </div>
+    </div>
+
+    <div class="dual">
+      <div class="pane light">
+        <p class="pane-tag">radii</p>
+        <div class="radii-row">
+          <div class="radii"><div class="r" style="border-radius:4px"></div><span class="lbl">xs · 4</span></div>
+          <div class="radii"><div class="r" style="border-radius:6px"></div><span class="lbl">sm · 6</span></div>
+          <div class="radii"><div class="r" style="border-radius:8px"></div><span class="lbl">md · 8</span></div>
+          <div class="radii"><div class="r" style="border-radius:12px"></div><span class="lbl">lg · 12</span></div>
+          <div class="radii"><div class="r" style="border-radius:18px"></div><span class="lbl">xl · 18</span></div>
+          <div class="radii"><div class="r" style="border-radius:999px;width:50px;"></div><span class="lbl">pill</span></div>
+        </div>
+      </div>
+      <div class="pane dark">
+        <p class="pane-tag">radii</p>
+        <div class="radii-row">
+          <div class="radii"><div class="r" style="border-radius:4px"></div><span class="lbl">xs · 4</span></div>
+          <div class="radii"><div class="r" style="border-radius:6px"></div><span class="lbl">sm · 6</span></div>
+          <div class="radii"><div class="r" style="border-radius:8px"></div><span class="lbl">md · 8</span></div>
+          <div class="radii"><div class="r" style="border-radius:12px"></div><span class="lbl">lg · 12</span></div>
+          <div class="radii"><div class="r" style="border-radius:18px"></div><span class="lbl">xl · 18</span></div>
+          <div class="radii"><div class="r" style="border-radius:999px;width:50px;"></div><span class="lbl">pill</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dual">
+      <div class="pane light">
+        <p class="pane-tag">elevation</p>
+        <div class="elev-row">
+          <div class="elev"><div class="box e1"></div><span class="lbl">sm · flush</span></div>
+          <div class="elev"><div class="box e2"></div><span class="lbl">md · cards</span></div>
+          <div class="elev"><div class="box e3"></div><span class="lbl">lg · popover</span></div>
+          <div class="elev"><div class="box e4"></div><span class="lbl">xl · modal</span></div>
+        </div>
+      </div>
+      <div class="pane dark">
+        <p class="pane-tag">elevation</p>
+        <div class="elev-row">
+          <div class="elev"><div class="box e1"></div><span class="lbl">sm · flush</span></div>
+          <div class="elev"><div class="box e2"></div><span class="lbl">md · cards</span></div>
+          <div class="elev"><div class="box e3"></div><span class="lbl">lg · popover</span></div>
+          <div class="elev"><div class="box e4"></div><span class="lbl">xl · modal</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ 10 ICONS ═══════════════════ -->
+  <section>
+    <div class="sec-hdr">
+      <span class="sec-num">10</span>
+      <h2 class="sec-title">Iconography</h2>
+      <span class="sec-sub">Lucide-style · 24×24 · 1.8 stroke · currentColor</span>
+    </div>
+    <div class="dual">
+      <div class="pane light">
+        <p class="pane-tag">app icon set</p>
+        <div class="icon-grid">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M3 12a9 9 0 0 1 18 0"/></svg><span class="lbl">overview</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/></svg><span class="lbl">categories</span></div>
+          <div class="ic" style="background:#0B1020;color:#C8FF4B;border-color:#0B1020;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/></svg><span class="lbl" style="color:#A8ADC2;">run</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg><span class="lbl">history</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/></svg><span class="lbl">logs</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span class="lbl">apps</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="lbl">settings</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span class="lbl">add</span></div>
+          <div class="ic" style="color:#3EBF7A;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span class="lbl" style="color:#3EBF7A;">ok</span></div>
+          <div class="ic" style="color:#E0A82E;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span class="lbl" style="color:#E0A82E;">warn</span></div>
+          <div class="ic" style="color:#DC4B43;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg><span class="lbl" style="color:#DC4B43;">fail</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span class="lbl">sync</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/></svg><span class="lbl">sun</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg><span class="lbl">moon</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg><span class="lbl">locale</span></div>
+        </div>
+      </div>
+      <div class="pane dark">
+        <p class="pane-tag">app icon set</p>
+        <div class="icon-grid">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M3 12a9 9 0 0 1 18 0"/></svg><span class="lbl">overview</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/></svg><span class="lbl">categories</span></div>
+          <div class="ic" style="background:#C8FF4B;color:#0B1020;border-color:#C8FF4B;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/></svg><span class="lbl" style="color:#0B1020;">run</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg><span class="lbl">history</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/></svg><span class="lbl">logs</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span class="lbl">apps</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="lbl">settings</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span class="lbl">add</span></div>
+          <div class="ic" style="color:#5fd697;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span class="lbl" style="color:#5fd697;">ok</span></div>
+          <div class="ic" style="color:#f0c761;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><span class="lbl" style="color:#f0c761;">warn</span></div>
+          <div class="ic" style="color:#f08e87;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg><span class="lbl" style="color:#f08e87;">fail</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg><span class="lbl">sync</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/></svg><span class="lbl">sun</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg><span class="lbl">moon</span></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg><span class="lbl">locale</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ HANDOFF ═══════════════════ -->
+  <div class="handoff">
+    <h3>Hand off to Claude Code</h3>
+    <p>The complete system lives in <code style="color:var(--lime);">colors_and_type.css</code> + <code style="color:var(--lime);">HANDOFF.md</code>. Drop both into your Ascendo repo at <code style="color:var(--lime);">app/frontend/</code>, link the CSS once at the top of <code style="color:var(--lime);">index.html</code>, and replace existing color/type rules with the semantic tokens (<code style="color:var(--lime);">var(--bg)</code>, <code style="color:var(--lime);">var(--accent)</code>, <code style="color:var(--lime);">var(--fg-muted)</code>, etc.). Light is the default; <code style="color:var(--lime);">data-theme="dark"</code> on <code style="color:var(--lime);">&lt;html&gt;</code> flips it. See HANDOFF.md for the full migration map.</p>
+    <div class="files">
+      <div class="file"><code>colors_and_type.css</code><span>tokens · light + dark · type · radii · shadow · motion</span></div>
+      <div class="file"><code>HANDOFF.md</code><span>file-by-file migration map for app/frontend/</span></div>
+      <div class="file"><code>assets/logo-*.svg</code><span>5 brand-mark variants (paper, ink, mono, lockups)</span></div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

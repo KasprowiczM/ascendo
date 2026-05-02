@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ascendo Desktop — Run Center</title>
+<link rel="stylesheet" href="../../colors_and_type.css">
+<style>
+  body{background:linear-gradient(135deg,#1a1f33 0%,#0a0e1c 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;color:var(--paper-25);}
+
+  /* macOS window chrome */
+  .win{width:1080px;background:var(--ink-900);border-radius:11px;overflow:hidden;box-shadow:0 32px 80px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.08);}
+  .titlebar{display:flex;align-items:center;height:38px;background:linear-gradient(180deg,#1a1f33,#141828);padding:0 14px;border-bottom:1px solid rgba(255,255,255,.06);}
+  .lights{display:flex;gap:8px;}
+  .lights span{width:12px;height:12px;border-radius:50%;border:.5px solid rgba(0,0,0,.18);}
+  .lights span:nth-child(1){background:#ff5f57;}
+  .lights span:nth-child(2){background:#febc2e;}
+  .lights span:nth-child(3){background:#28c940;}
+  .title{flex:1;text-align:center;font:var(--fw-semibold) 13px var(--font-sans);color:var(--ink-200);letter-spacing:-.01em;}
+  .titlebar .right{display:flex;gap:14px;color:var(--ink-300);font:var(--fw-medium) 12px var(--font-mono);}
+
+  /* Toolbar */
+  .toolbar{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.05);background:rgba(255,255,255,.015);}
+  .seg{display:flex;background:rgba(255,255,255,.04);border-radius:7px;padding:2px;}
+  .seg button{padding:5px 12px;border-radius:5px;background:transparent;border:0;color:var(--ink-200);font:var(--fw-semibold) 12px var(--font-sans);cursor:pointer;}
+  .seg button.on{background:rgba(255,255,255,.10);color:var(--paper-25);}
+  .toolbar .spacer{flex:1;}
+  .pillbar{display:flex;align-items:center;gap:8px;font:var(--fw-medium) 11px var(--font-mono);color:var(--ink-300);}
+  .pillbar .dot{width:6px;height:6px;border-radius:50%;background:var(--lime-400);box-shadow:0 0 0 4px rgba(200,255,75,.18);}
+  .iconbtn{width:28px;height:28px;border-radius:6px;border:0;background:rgba(255,255,255,.04);color:var(--ink-200);cursor:pointer;display:inline-grid;place-items:center;}
+
+  /* Run center body */
+  .body{padding:22px 24px 24px;display:grid;grid-template-columns:300px 1fr;gap:20px;}
+
+  .phases{display:flex;flex-direction:column;gap:10px;}
+  .phase{display:flex;gap:12px;padding:14px;background:var(--ink-800);border:1px solid rgba(255,255,255,.05);border-radius:9px;}
+  .phase .num{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.04);color:var(--ink-300);display:grid;place-items:center;font:var(--fw-semibold) 12px var(--font-mono);flex-shrink:0;}
+  .phase.done .num{background:rgba(62,191,122,.18);color:#7ed99e;}
+  .phase.live{border-color:rgba(200,255,75,.4);background:rgba(200,255,75,.04);}
+  .phase.live .num{background:var(--lime-400);color:var(--ink-900);}
+  .phase .name{font:var(--fw-semibold) 13px var(--font-sans);color:var(--paper-25);margin:0 0 4px;letter-spacing:-.01em;}
+  .phase .desc{font:var(--fw-regular) 11px var(--font-mono);color:var(--ink-300);margin:0;letter-spacing:0;}
+  .phase .desc b{color:var(--ink-200);font-weight:600;}
+
+  .stream{background:var(--ink-950, #0a0e1c);border:1px solid rgba(255,255,255,.06);border-radius:9px;display:flex;flex-direction:column;height:540px;}
+  .stream .head{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06);}
+  .stream .head .label{font:var(--fw-semibold) 12px var(--font-mono);color:var(--paper-25);text-transform:uppercase;letter-spacing:.08em;}
+  .stream .head .meta{margin-left:auto;font:var(--fw-medium) 11px var(--font-mono);color:var(--ink-300);}
+  .progress{height:3px;background:rgba(255,255,255,.06);position:relative;overflow:hidden;}
+  .progress::after{content:"";position:absolute;left:0;top:0;height:100%;width:62%;background:var(--lime-400);}
+
+  .log{flex:1;overflow:auto;padding:14px 16px;font:var(--fw-regular) 12.5px/1.65 var(--font-mono);color:var(--ink-200);}
+  .log .l{display:flex;gap:12px;}
+  .log .ts{color:var(--ink-300);user-select:none;flex-shrink:0;}
+  .log .lv{flex-shrink:0;width:50px;text-transform:uppercase;font-weight:600;letter-spacing:.04em;font-size:10px;padding-top:2px;}
+  .log .lv.info{color:var(--ink-300);}
+  .log .lv.ok{color:#7ed99e;}
+  .log .lv.warn{color:#f0c773;}
+  .log .lv.act{color:var(--lime-400);}
+  .log .msg .pkg{color:var(--paper-25);}
+  .log .msg .arrow{color:var(--ink-300);}
+
+  .footer{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid rgba(255,255,255,.06);}
+  .btn{padding:7px 12px;border-radius:6px;border:1px solid rgba(255,255,255,.10);background:transparent;color:var(--paper-25);font:var(--fw-semibold) 12px var(--font-sans);cursor:pointer;}
+  .btn:hover{background:rgba(255,255,255,.05);}
+  .btn.danger{color:#ff8a82;border-color:rgba(255,138,130,.3);}
+  .btn.primary{background:var(--lime-400);color:var(--ink-900);border-color:transparent;}
+
+  /* Bottom: tray notification preview */
+  .tray-preview{position:fixed;top:48px;right:48px;width:340px;background:rgba(20,24,40,.85);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:14px 16px;box-shadow:0 16px 40px rgba(0,0,0,.4);}
+  .tray-preview .app{display:flex;align-items:center;gap:8px;font:var(--fw-medium) 11px var(--font-mono);color:var(--ink-300);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;}
+  .tray-preview .app .ic{width:18px;height:18px;border-radius:5px;background:var(--lime-400);display:grid;place-items:center;color:var(--ink-900);font:var(--fw-bold) 10px var(--font-sans);}
+  .tray-preview .ttl{font:var(--fw-semibold) 14px var(--font-sans);color:var(--paper-25);margin:0 0 4px;letter-spacing:-.01em;}
+  .tray-preview .body-t{font:var(--fw-regular) 12.5px/1.4 var(--font-sans);color:var(--ink-200);margin:0 0 10px;}
+  .tray-preview .acts{display:flex;gap:6px;}
+  .tray-preview .acts button{flex:1;padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--paper-25);font:var(--fw-semibold) 11px var(--font-sans);cursor:pointer;}
+</style></head>
+<body data-screen-label="Desktop App — Run Center">
+
+<div class="win">
+  <div class="titlebar">
+    <div class="lights"><span></span><span></span><span></span></div>
+    <div class="title">Ascendo · safe-update · running</div>
+    <div class="right"><span>2/5</span><span>elapsed 01:24</span></div>
+  </div>
+
+  <div class="toolbar">
+    <div class="seg">
+      <button>Overview</button>
+      <button class="on">Run center</button>
+      <button>History</button>
+      <button>Suggestions</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="pillbar"><span class="dot"></span>profile=safe · linux · ubuntu 24.04</div>
+    <button class="iconbtn" title="Settings">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4"/></svg>
+    </button>
+  </div>
+
+  <div class="body">
+    <div class="phases">
+      <div class="phase done"><div class="num">✓</div><div><p class="name">check</p><p class="desc">8 categories scanned · <b>23 updates</b></p></div></div>
+      <div class="phase live"><div class="num">2</div><div><p class="name">plan</p><p class="desc">Resolving graph · holds applied: <b>nvidia-driver-535</b></p></div></div>
+      <div class="phase"><div class="num">3</div><div><p class="name">apply</p><p class="desc">snapshot → install · streaming logs to JSON sidecar</p></div></div>
+      <div class="phase"><div class="num">4</div><div><p class="name">verify</p><p class="desc">post-install checks · service health · failed-units scan</p></div></div>
+      <div class="phase"><div class="num">5</div><div><p class="name">cleanup</p><p class="desc">apt autoremove · journal vacuum · git push (if clean)</p></div></div>
+    </div>
+
+    <div class="stream">
+      <div class="head">
+        <span class="label">live · phase 2 · plan</span>
+        <span class="meta">62% · 14/23 resolved</span>
+      </div>
+      <div class="progress"></div>
+      <div class="log">
+        <div class="l"><span class="ts">10:42:11</span><span class="lv ok">DONE</span><span class="msg">phase=check · 8 categories scanned in 9.4s</span></div>
+        <div class="l"><span class="ts">10:42:12</span><span class="lv info">INFO</span><span class="msg">writing sidecar <span class="pkg">/var/lib/ascendo/runs/2026-05-01T10-42/check.json</span></span></div>
+        <div class="l"><span class="ts">10:42:14</span><span class="lv act">PLAN</span><span class="msg">apt: <span class="pkg">firefox</span> <span class="arrow">123.0.1 → 124.0.2</span></span></div>
+        <div class="l"><span class="ts">10:42:14</span><span class="lv act">PLAN</span><span class="msg">apt: <span class="pkg">linux-headers-generic</span> <span class="arrow">6.8.0-31 → 6.8.0-40</span></span></div>
+        <div class="l"><span class="ts">10:42:14</span><span class="lv act">PLAN</span><span class="msg">snap: <span class="pkg">code</span> <span class="arrow">175 → 180</span></span></div>
+        <div class="l"><span class="ts">10:42:15</span><span class="lv warn">HOLD</span><span class="msg"><span class="pkg">nvidia-driver-535</span> · pinned by config/holds.toml (reason: prod-recording)</span></div>
+        <div class="l"><span class="ts">10:42:15</span><span class="lv act">PLAN</span><span class="msg">npm: <span class="pkg">@anthropic-ai/claude-code</span> <span class="arrow">2.1.4 → 2.3.0</span></span></div>
+        <div class="l"><span class="ts">10:42:16</span><span class="lv info">INFO</span><span class="msg">snapshot.timeshift queued · timeout=300s · path=/run/timeshift/backup</span></div>
+        <div class="l"><span class="ts">10:42:18</span><span class="lv ok">OK</span><span class="msg">snapshot created in 2.1s · id=snap-1714555338</span></div>
+        <div class="l"><span class="ts">10:42:19</span><span class="lv act">PLAN</span><span class="msg">flatpak: 7 packages staged · estimated download 412 MB</span></div>
+        <div class="l"><span class="ts">10:42:21</span><span class="lv info">INFO</span><span class="msg">resolving 14 / 23 ░░░░░░░░░░░░░░░░░░░░░░ <span class="pkg">62%</span></span></div>
+      </div>
+      <div class="footer">
+        <button class="btn danger">Cancel</button>
+        <button class="btn">Pause after phase</button>
+        <span style="flex:1;"></span>
+        <button class="btn">Open sidecar</button>
+        <button class="btn primary">Continue to apply →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tray-preview">
+  <div class="app"><div class="ic">A</div>Ascendo · system tray</div>
+  <p class="ttl">Safe update finished · 23 packages</p>
+  <p class="body-t">All phases passed. 1 advisory: nvidia-driver-535 held by config. Snapshot retained for 7 days.</p>
+  <div class="acts"><button>View report</button><button>Dismiss</button></div>
+</div>
+
+</body></html>

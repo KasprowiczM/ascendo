@@ -1,5 +1,131 @@
 # Handoff
 
+## 2026-05-01 (Sesja 12) — Windows MVP feature-complete (M3.12 + M3.13 + M3.14 + M3.15)
+
+### Co poszło na produkcję
+
+- **M3.12 VSS snapshot** — `ISnapshot` impl pod Windows. Manager Python (`managers/snapshot.py`) + driver PS (`scripts/snapshot/snapshot.ps1`). `create` używa `Checkpoint-Computer` (System Restore wraps VSS shadow copies); `list` enumeruje `Win32_ShadowCopy` przez `Get-CimInstance`. Label/notes round-trip przez `%ProgramData%\Ascendo\snapshots\registry.json`. Restore intencjonalnie poza interface'em — destruktywna operacja z reboot, gated na explicit user gesture.
+- **M3.13 Task Scheduler** — `IScheduler` impl. Manager (`managers/scheduler.py`) + driver PS (`scripts/scheduler/scheduler.ps1`). Tasks pod `\Ascendo\<name>`. Parser wyrażeń: `DAILY HH:MM`, `WEEKLY <DAY> HH:MM`, `MONTHLY HH:MM`, `HOURLY HH:MM`, `MINUTE <N>` + passthrough do schtasks. Akcja zawsze: `ascendo run --profile <profile>` z fallbackem `python -m ascendo`.
+- **M3.14 UAC elevation** — `IElevation` impl. Pure stdlib (`ctypes` + `subprocess` + `tempfile`), bez pywin32. Dwie ścieżki: bezpośredni spawn gdy już elevated, `ShellExecuteEx(runas)` + cmd.exe redirection do tempfile gdy nie. Argv-only kontrakt enforced przez basename allow-list (T4 mitigation per ADR-0005). `ERROR_CANCELLED (1223)` → `ElevationDenied` gdy user kliknie "Nie".
+- **M3.15 Dell Driver Update plugin** — pierwszy oficjalny plugin. `plugins/dell-driver-update/manifest.toml` (manifest v1 per ADR-0007) + `windows/{check,plan,apply,verify,cleanup}.ps1` opakowuje `dcu-cli.exe`. DCU exit codes mapowane: 0=success, 1=reboot pending (needs_reboot=true), 500=no updates.
+- **WindowsAdapter** teraz deklaruje `PACKAGE_MANAGEMENT | INVENTORY | SNAPSHOTS | SCHEDULING | ELEVATION`. `snapshot()/scheduler()/elevation()` zwracają instancje (były `None`).
+
+### Pliki
+
+- New: `adapters/windows/ascendo_windows/managers/{snapshot,scheduler,elevation}.py`, `adapters/windows/scripts/{snapshot,scheduler}/*.ps1`, `adapters/windows/tests/test_m3_12_to_14_smoke.py`, `plugins/dell-driver-update/manifest.toml`, `plugins/dell-driver-update/windows/*.ps1`
+- Modified: `adapters/windows/ascendo_windows/adapter.py`, `HANDOFF.md`, `docs/agents/handoff.md`
+
+### Walidacja
+
+- Python AST OK na wszystkich zmienionych plikach (snapshot/scheduler/elevation/adapter/tests).
+- 13 nowych testów smoke w `test_m3_12_to_14_smoke.py`: identity, availability, allow-list normalisation (basename + case), denial paths (non-Windows / empty argv / not-allowlisted), adapter wiring assertion.
+- E2E (real `vssadmin` / `schtasks` / UAC dialog / `dcu-cli`) deferred do M3.16.
+
+### M3 status
+
+| Item | Status |
+|---|---|
+| M3.1-M3.11 | ✅ |
+| **M3.12 VSS snapshot** | ✅ Sesja 12 |
+| **M3.13 Task Scheduler** | ✅ Sesja 12 |
+| **M3.14 UAC elevation** | ✅ Sesja 12 |
+| **M3.15 Dell DCU plugin** | ✅ Sesja 12 |
+| M3.16 real-hardware validation | ⏳ user-side |
+
+**Windows MVP feature-complete.** Pozostaje tylko M3.16.
+
+### Następne kroki
+
+1. **M3.16** — user na DP5520WMK: `bin/validate-windows.ps1` + manualny test snapshotów + scheduler + UAC dialog. ~30 min.
+2. **M4** — MSI installer (WiX), winget manifest, GitHub Releases pipeline, Tauri 2.x shell, code signing. ~2-3 tygodnie.
+3. **M5** — macOS adapter (`adapters/macos/`), brew + mas + softwareupdate + LaunchServices. ~3 tygodnie.
+4. **v0.1.0-alpha tag** po M3.16 + M4.
+
+### Krok 4w (commit block w `HANDOFF.md`)
+
+---
+
+## 2026-05-01 (Sesja 11) — CLI parity + SPA async + M3.8/M3.9 + visual polish
+
+### Co poszło na produkcję
+
+- **CLI parity**. `core/ascendo/cli/__init__.py` rozszerzone:
+  - `ascendo dashboard --background` / `-b` — detached uvicorn (cross-platform: `CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS` na Windows, `start_new_session` na Unix).
+  - `ascendo runs list [--limit N] [--status STATE]` — czyta sidecary z `~/.ascendo/runs/`, sortuje newest-first.
+  - `ascendo runs show <run-id>` — overall + per-phase per-category, z exit code mapowanym na overall status.
+- **SPA async + SSE wiring** (M2.10). `startRunWithSudo` woła `POST /runs/async` (HTTP 202 + run_id), fallback do legacy `/runs` przy 404/405. `attachStream` subskrybuje `/runs/{id}/events` i renderuje per-(phase, category) wiersze z eventów `status` / `sidecar` / `sidecar_error` / `done`. Klasyczny `prefers-color-scheme` listener usunięty.
+- **M3.8 Microsoft Store manager**. `managers/msstore.py` dziedziczy po WingetManager, 5 skryptów PS pod `scripts/msstore/` (check/plan/apply/verify/cleanup) opartych na `winget --source msstore`.
+- **M3.9 MSI/Registry ARP manager**. `managers/arp.py` (też dziedziczy po WingetManager) skanuje trzy gałęzie `Uninstall\*` w rejestrze (HKLM, WOW6432Node, HKCU), filtruje system-components + child entries. `is_available()` zmienione — ARP nie potrzebuje winget. Apply używa `QuietUninstallString` lub `UninstallString` przez `cmd.exe /c`, exit `0` i `3010` traktowane jako success.
+- **WindowsAdapter** teraz zwraca `[Winget, MSStore, Arp, WindowsUpdate]` w `package_managers()`.
+- **Polish wizualny pod mockup webapp/index.html**:
+  - sidebar brand 17px / -0.02em (było 20px)
+  - tagline 9px mono / 0.14em / `--fg-faint` (było jaśniejsze)
+  - card radius 10px + padding 18px, plus `.eye` / `.big` / `.meta` sub-elements
+  - status pills `3px 10px` padding, `6px` gap, dot `6×6` — mockup ma więcej powietrza
+  - desktop topbar utilities w pływającej kapsule (top-right, `--bg-elev` + `--border` + `--shadow-sm`) — wcześniej były na transparentnym pasku i niewidoczne
+
+### Pilne fixy w środku sesji
+
+- `dashboard/app.py` miał osierocony duplikat trasy `/assets/{filename}` na poziomie modułu (IndentationError z poprzedniej recovery sesji 10) — usunięte.
+- `app/frontend/index.html` był obcięty na końcu, brakowało zamykających tagów + 3 `<script>` tagów. Po przywróceniu nawigacja, theme/lang/font switchery działają.
+- Wprowadzono `--accent-fg` (theme-aware alias) — bright lime na dark, lime-600 na light — żeby tekst akcentu zachował kontrast AA na obu motywach.
+
+### Pliki
+
+- New: `core/ascendo/cli/__init__.py` (extended), `adapters/windows/ascendo_windows/managers/{msstore,arp}.py`, `adapters/windows/scripts/{msstore,arp}/*.ps1`, `adapters/windows/tests/test_msstore_arp_smoke.py`
+- Modified: `core/ascendo/dashboard/app.py`, `adapters/windows/ascendo_windows/adapter.py`, `app/frontend/{index.html, style.css, app.js, i18n.js}`, `tests/contract/test_dashboard_spa.py`, `HANDOFF.md`, `docs/agents/handoff.md`
+
+### Walidacja
+
+- `python3 ast` parse: `dashboard/app.py`, `cli/__init__.py`, `managers/{msstore,arp}.py`, `adapter.py`, `tests/test_msstore_arp_smoke.py`, `tests/contract/test_dashboard_spa.py` — wszystkie OK.
+- `node --check`: `app.js`, `i18n.js`, `icons.js` — OK.
+- `style.css`: 571 linii, brace balance 0, UTF-8 OK.
+- `index.html`: 12 view sections, 4 script tags, zamyka się poprawnie.
+- Pytest run deferred do user (sandbox = Python 3.10, projekt = 3.11+). Spodziewane: 158 → 169 contract tests passing.
+
+### Otwarte ryzyka / follow-ups
+
+1. M3.12 VSS snapshot — wpięcie do `ascendo snapshot` CLI placeholder.
+2. M3.13 Task Scheduler — wpięcie do `ascendo schedule` CLI placeholder.
+3. M3.14 UAC elevation — `runas` / ShellExecute verb=runas.
+4. M3.15 Dell DCU plugin — pierwszy oficjalny plugin w `plugins/dell-driver-update/`.
+5. Migracja `app/frontend/` → `ui/frontend/` (M4).
+6. Self-host woff2 dla Inter Tight + JetBrains Mono (offline Tauri).
+
+---
+
+## 2026-05-01 (Sesja 10) — Ascendo design system integrated, dark theme primary
+
+### What shipped
+
+- `Ascendo_Design_System/colors_and_type.css` adopted as the SPA's design-token source. Loaded before `style.css` in `app/frontend/index.html`. Defines all colors, type (Inter Tight / JetBrains Mono / Instrument Serif), spacing (4px ramp), radii, shadows, motion — with both light and dark variants gated on `:root[data-theme="dark"]`.
+- Dark theme is now the primary surface: `<html data-theme="dark">` literal + inline pre-paint `<script>` reads `localStorage.ui-theme` and pins dark before paint. Theme switcher cycles binary dark ↔ light, default dark. The legacy `auto` track and `prefers-color-scheme` listener were removed.
+- `style.css` reskinned around tokens. Legacy variable names (`--panel`, `--text`, `--dim`, `--mono`) kept as aliases so existing component selectors continue working without a markup rewrite. New `--accent-fg` alias gives foreground-accent text the bright lime on dark and the readable `--accent-strong` (lime-600) on light, dodging the lime-on-paper AA-contrast trap.
+- Brand assets replaced: green→blue gradient SVG dropped. New `app/frontend/assets/{logo-mark, logo-mark-light, logo-mark-mono, logo-wordmark, logo-wordmark-dark}.svg` ship the design-system marks. Favicon = `/assets/logo-mark.svg`. HTML uses an `<img class="brand-img--dark|--light">` pair, swapped via CSS on `[data-theme="light"]`.
+- `core/ascendo/dashboard/app.py` adds `/colors_and_type.css` to `_spa_assets` and a new `/assets/{filename}` route streaming SVGs/PNGs from `app/frontend/assets/` with explicit `..` traversal blocking.
+- `tests/contract/test_dashboard_spa.py` extended with: `/colors_and_type.css` mount assertion, brand-asset round-trip on every SVG, traversal-block test, dark-pin-by-default assertion.
+
+### Pliki
+
+- New: `app/frontend/colors_and_type.css`, `app/frontend/assets/*.svg`
+- Modified: `app/frontend/{index.html, style.css, app.js, i18n.js}`, `core/ascendo/dashboard/app.py`, `tests/contract/test_dashboard_spa.py`, `HANDOFF.md`, `docs/agents/handoff.md`
+
+### Walidacja
+
+- `python3 ast` parse OK na zmienionych `.py`.
+- `node --check` OK na `app.js` + `i18n.js`.
+- `style.css`: 562 linie, brace balance 0, UTF-8 OK, 226 `var()` refs, 46 unique tokens, 0 unmapped.
+- `index.html`: tokens-before-style.css ✓, `<html data-theme="dark">` ✓, pre-paint script ✓.
+- Pytest run deferred to Linux box (sandbox tu ma Python 3.10, projekt wymaga 3.11+). Expected: +7 contract tests, 158 → 165 passing.
+
+### Otwarte ryzyka / follow-ups
+
+1. Tauri desktop shell + landing page — kit ma `ui_kits/desktop/` i `ui_kits/landing/`, do zaadoptowania w M4.
+2. Lekka kontrola kontrastu primary button text na lime (manual review).
+3. Self-host woff2 fonts w `app/frontend/fonts/` dla offline Tauri — obecnie z Google Fonts CDN.
+
+---
+
 ## 2026-04-30 (Etap 12) — Inventory false-positive outdated fix + unified title
 
 ### Bug

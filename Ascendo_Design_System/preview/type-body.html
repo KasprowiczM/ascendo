@@ -1,0 +1,35 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;}
+  .pane{padding:26px 24px;display:flex;flex-direction:column;gap:14px;}
+  .light{background:var(--paper-25);color:#0B1020;--mut:#495078;--faint:#7A8099;}
+  .dark{background:var(--ink-900);color:#F5F4EE;--mut:#A8ADC2;--faint:#7A8099;}
+  .pane > div p{margin:0;}
+  .stack > div + div{margin-top:14px;}
+  .meta{font:var(--fw-medium) 10px var(--font-mono);color:var(--faint);text-transform:uppercase;letter-spacing:.12em;margin-bottom:4px;}
+  .ttl{font:var(--fw-medium) 10px var(--font-mono);text-transform:uppercase;letter-spacing:.14em;color:var(--mut);margin:0 0 -2px;}
+  .lead{font:400 17px/1.55 "Inter Tight",sans-serif;color:var(--mut);max-width:38ch;}
+  .body{font:400 14px/1.6 "Inter Tight",sans-serif;max-width:46ch;}
+  .cap{font:400 12px/1.4 "Inter Tight",sans-serif;color:var(--faint);}
+  .eyebrow{font:500 11px/1.2 "JetBrains Mono",monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.12em;}
+</style></head>
+<body>
+<div class="grid">
+  <div class="pane light stack">
+    <p class="ttl">Light</p>
+    <div><div class="meta">eyebrow · mono 11</div><span class="eyebrow">v0.1.0 · MIT · linux/win/mac</span></div>
+    <div><div class="meta">lead · 17</div><p class="lead">Manage OS updates, package managers, app stores, and dev tools through one CLI.</p></div>
+    <div><div class="meta">body · 14</div><p class="body">Five phases per category — check, plan, apply, verify, cleanup — emit a JSON sidecar per phase.</p></div>
+    <div><div class="meta">caption · 12</div><span class="cap">Required for apt / drivers apply phases.</span></div>
+  </div>
+  <div class="pane dark stack">
+    <p class="ttl">Dark</p>
+    <div><div class="meta">eyebrow · mono 11</div><span class="eyebrow">v0.1.0 · MIT · linux/win/mac</span></div>
+    <div><div class="meta">lead · 17</div><p class="lead">Manage OS updates, package managers, app stores, and dev tools through one CLI.</p></div>
+    <div><div class="meta">body · 14</div><p class="body">Five phases per category — check, plan, apply, verify, cleanup — emit a JSON sidecar per phase.</p></div>
+    <div><div class="meta">caption · 12</div><span class="cap">Required for apt / drivers apply phases.</span></div>
+  </div>
+</div>
+</body></html>

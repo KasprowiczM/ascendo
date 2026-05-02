@@ -1,0 +1,53 @@
+# Dell Driver Update plugin — manifest v1 per ADR-0007.
+#
+# This plugin wraps the official Dell Command Update CLI (`dcu-cli.exe`)
+# and emits an ascendo/v1 sidecar per phase. It is the first official
+# Ascendo plugin and serves as the reference implementation for OEM
+# driver-update plugins (Lenovo Vantage, HP Support Assistant, etc.).
+schema = "ascendo-plugin/v1"
+
+id            = "dell-driver-update"
+display_name  = "Dell Driver Update"
+description   = "Drives Dell Command Update (dcu-cli.exe) to scan + apply driver and BIOS updates from Dell's catalog."
+version       = "0.1.0"
+maintainer    = "Ascendo"
+license       = "MIT"
+tier          = "official"
+
+# Privilege model: dcu-cli requires elevation for /applyUpdates. Scan is
+# read-only and works under a standard user token. The orchestrator gates
+# apply-phase invocations through the WindowsElevation IElevation impl
+# (M3.14) using the allow-list ["dcu-cli.exe"].
+privilege     = "admin"
+risk          = "medium"
+manual_confirm = true
+
+# Per-phase timeouts (seconds). DCU's apply phase can take 30+ minutes for
+# BIOS + multiple driver bundles, so the budget is generous.
+[timeouts]
+check   = 300
+plan    = 300
+apply   = 3600
+verify  = 300
+cleanup = 60
+
+# OS support — Dell Command Update is Windows-only.
+supported_oses = ["windows"]
+
+# Phase script map (relative to plugin root). Each script must accept the
+# standard Ascendo phase params (-RunId / -Trigger / -Profile / -OutputDir
+# / -DryRun / -ItemFilter) and emit `<phase>__dell_driver_update.json`.
+[phases.windows]
+check   = "windows/check.ps1"
+plan    = "windows/plan.ps1"
+apply   = "windows/apply.ps1"
+verify  = "windows/verify.ps1"
+cleanup = "windows/cleanup.ps1"
+
+[dependencies]
+binaries = ["dcu-cli.exe"]
+python_modules = []
+plugins = []
+
+[reporting]
+sidecar_category = "dell_driver_update"

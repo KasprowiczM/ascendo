@@ -1,46 +1,44 @@
+/* ============================================================
+   Ascendo SPA Ã¢ÂÂ application styles.
+
+   Color, type, spacing, radii, shadow and motion tokens come from
+   /colors_and_type.css (loaded BEFORE this file in index.html).
+
+   Theme model: dark is the primary surface. The design tokens flip
+   on  :root[data-theme="dark"]  and the SPA bootstraps with that
+   attribute set explicitly. Light is reachable via the theme
+   switcher (binary cycle, persisted in localStorage).
+
+   This file is layout shell + components + legacy aliases that
+   keep older component selectors working without rewriting them
+   one-by-one.
+   ============================================================ */
+
+/* Legacy variable aliases. Older selectors still reference --panel,
+   --text, --dim, --mono Ã¢ÂÂ pipe them to the design tokens so the
+   visual language stays unified without a wholesale markup rewrite.
+
+   --accent-fg is the accent color used for FOREGROUND text/icons. On
+   dark surfaces the bright lime reads cleanly; on light surfaces the
+   bright lime fails AA contrast, so it falls back to the darker
+   --accent-strong (lime-600) which reads on paper. */
 :root {
-  --bg: #0f1115;
-  --panel: #161922;
-  --border: #232838;
-  --text: #d8dcea;
-  --dim: #8892a8;
-  --ok: #34c270;
-  --warn: #e5a23a;
-  --err: #e3614e;
-  --accent: #7aa6ff;
-  --mono: ui-monospace, "JetBrains Mono", Menlo, monospace;
-  /* Tell the UA to render native widgets (scrollbar, select dropdown popup,
-     checkbox) using the active palette. Without this, WebView2/WebKitGTK
-     renders selects with a white system background even in dark mode. */
-  color-scheme: dark;
-}
-:root[data-theme="light"] { color-scheme: light; }
-:root[data-theme="dark"]  { color-scheme: dark;  }
-/* Auto from OS preference (only when no explicit theme is set by JS) */
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme]) {
-    --bg: #f7f8fb;
-    --panel: #ffffff;
-    --border: #e0e3ee;
-    --text: #1a1d29;
-    --dim: #687085;
-  }
-}
-/* Explicit theme overrides */
-:root[data-theme="light"] {
-  --bg: #f7f8fb;
-  --panel: #ffffff;
-  --border: #e0e3ee;
-  --text: #1a1d29;
-  --dim: #687085;
+  --panel: var(--bg-elev);
+  --text:  var(--fg);
+  --dim:   var(--fg-muted);
+  --mono:  var(--font-mono);
+  --accent-fg: var(--accent-strong);
 }
 :root[data-theme="dark"] {
-  --bg: #0f1115;
-  --panel: #161922;
-  --border: #232838;
-  --text: #d8dcea;
-  --dim: #8892a8;
+  --accent-fg: var(--accent);
 }
+
+/* Native widget palette (scrollbar, native <select> popup) follows the
+   active theme. Without color-scheme, WebView2 / WebKitGTK render
+   selects with a white system background even on dark surfaces. */
+:root                     { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"]  { color-scheme: dark;  }
 * { box-sizing: border-box; }
 :root {
   --sidebar-w: 240px;
@@ -58,7 +56,7 @@ html, body {
   min-height: 100vh;
 }
 
-/* ── Layout shell: sidebar (left) + main ────────────────────────────── */
+/* Ã¢ÂÂÃ¢ÂÂ Layout shell: sidebar (left) + main Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 .layout-shell { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
 .sidebar {
   position: sticky; top: 0; height: 100vh; overflow: hidden auto;
@@ -72,15 +70,29 @@ html, body {
 }
 .sidebar-brand .brand-text { display: flex; flex-direction: column; line-height: 1.05; }
 .sidebar-brand .brand-name {
-  font-size: 1.25rem; font-weight: 700;
-  background: linear-gradient(90deg, #22c55e 0%, #0ea5e9 100%);
-  -webkit-background-clip: text; background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-family: var(--font-sans);
+  font-size: 17px; font-weight: var(--fw-bold);
+  letter-spacing: -0.02em;
+  color: var(--fg);
 }
 .sidebar-brand .brand-tagline {
-  font-size: 0.7rem; font-weight: 500; color: var(--dim);
-  letter-spacing: 0.04em; text-transform: lowercase; margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 9px; font-weight: var(--fw-medium); color: var(--fg-faint);
+  letter-spacing: 0.14em; text-transform: uppercase; margin-top: 4px;
 }
+/* Theme-aware wordmark + mark images. Both variants are placed in
+   markup; CSS chooses which is shown based on the active theme. The
+   default state (no [data-theme] attribute, e.g. before the pre-paint
+   script settles) shows the dark-on-ink mark Ã¢ÂÂ same as data-theme=dark.
+   This guarantees only one mark is ever visible even if the theme
+   bootstrap fails. */
+.brand-img { height: 28px; width: auto; }
+.brand-img--dark  { display: block; }
+.brand-img--light { display: none; }
+:root[data-theme="light"] .brand-img--dark  { display: none; }
+:root[data-theme="light"] .brand-img--light { display: block; }
+.sidebar-brand .brand-mark { width: 36px; height: 36px; border-radius: var(--radius-md); }
+.topbar-brand .brand-mark { width: 22px; height: 22px; border-radius: var(--radius-sm); }
 .sidebar-nav { display: flex; flex-direction: column; gap: 0.15rem; flex: 1; }
 .sidebar-nav .nav-link {
   display: flex; align-items: center; gap: 0.7rem;
@@ -92,19 +104,19 @@ html, body {
   display: inline-flex; width: 18px; height: 18px; flex: 0 0 auto;
   color: var(--dim);
 }
-.sidebar-nav .nav-link:hover { background: var(--border); color: var(--text); }
-.sidebar-nav .nav-link:hover .nav-icon { color: var(--text); }
+.sidebar-nav .nav-link:hover { background: var(--bg-sunk); color: var(--fg); }
+.sidebar-nav .nav-link:hover .nav-icon { color: var(--fg); }
 .sidebar-nav .nav-link.active {
-  background: linear-gradient(90deg, rgba(34,197,94,0.12), rgba(14,165,233,0.12));
-  color: var(--text);
+  background: var(--accent-soft);
+  color: var(--fg);
 }
-.sidebar-nav .nav-link.active .nav-icon { color: var(--accent); }
+.sidebar-nav .nav-link.active .nav-icon { color: var(--accent-fg); }
 .sidebar-footer {
   border-top: 1px solid var(--border); padding-top: 0.6rem;
   font-size: 0.72rem; font-family: var(--mono);
 }
 
-/* ── Topbar (mobile only by default; visible on desktop too as utilities) ── */
+/* Ã¢ÂÂÃ¢ÂÂ Topbar (mobile only by default; visible on desktop too as utilities) Ã¢ÂÂÃ¢ÂÂ */
 .topbar {
   position: sticky; top: 0; z-index: 50;
   display: none; align-items: center; gap: 0.5rem;
@@ -112,23 +124,23 @@ html, body {
   background: var(--panel); border-bottom: 1px solid var(--border);
   height: var(--topbar-h);
 }
-.topbar-brand { display: flex; align-items: center; gap: 0.4rem; font-weight: 700; }
+.topbar-brand { display: flex; align-items: center; gap: 0.4rem; font-weight: var(--fw-bold); }
 .topbar-brand .brand-name {
-  background: linear-gradient(90deg, #22c55e 0%, #0ea5e9 100%);
-  -webkit-background-clip: text; background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-family: var(--font-sans);
+  letter-spacing: var(--tr-tight);
+  color: var(--fg);
 }
 .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 0.25rem; }
 
-/* Tiny icon button (32px) — used for hamburger + theme/lang/font switchers */
+/* Tiny icon button (32px) Ã¢ÂÂ used for hamburger + theme/lang/font switchers */
 .icon-btn {
   width: 34px; height: 34px; padding: 0; border: 0; background: transparent;
   border-radius: 7px; color: var(--dim); cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
 }
-.icon-btn:hover { background: var(--border); color: var(--text); }
-.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.icon-btn[aria-pressed="true"] { color: var(--accent); background: rgba(122,166,255,0.1); }
+.icon-btn:hover { background: var(--bg-sunk); color: var(--fg); }
+.icon-btn:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+.icon-btn[aria-pressed="true"] { color: var(--accent-fg); background: var(--accent-soft); }
 
 /* Sidebar mobile drawer */
 .sidebar-backdrop {
@@ -140,7 +152,7 @@ main { padding: 1.25rem; min-width: 0; }
 .view.hidden { display: none; }
 .view h2 { margin-top: 0; }
 
-/* ── Responsive: < 1024 narrows; < 768 collapses sidebar to drawer ────── */
+/* Ã¢ÂÂÃ¢ÂÂ Responsive: < 1024 narrows; < 768 collapses sidebar to drawer Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 @media (max-width: 1024px) {
   :root { --sidebar-w: 200px; }
   main { padding: 1rem; }
@@ -163,14 +175,27 @@ main { padding: 1.25rem; min-width: 0; }
   form#run-form label { width: 100%; }
 }
 @media (min-width: 769px) {
-  /* On desktop, still expose the topbar utilities (lang/theme/font) */
-  .topbar { display: flex; height: 44px; padding: 0.25rem 1rem;
-            position: fixed; top: 0; right: 0; left: var(--sidebar-w);
-            background: transparent; border-bottom: 0; z-index: 5; }
+  /* Desktop: floating utilities capsule pinned top-right of viewport.
+     The capsule must always be on top of any view content, with explicit
+     dimensions so flex never collapses it to 0 width when icons inject
+     late. */
+  .topbar {
+    display: inline-flex; align-items: center;
+    height: 44px; padding: 6px 10px;
+    position: fixed; top: 12px; right: 16px; left: auto; bottom: auto;
+    width: auto; min-width: 132px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    z-index: 100;
+    pointer-events: auto;
+  }
   .topbar #sidebar-toggle { display: none; }
   .topbar-brand          { display: none; }
-  .topbar-actions        { margin-left: auto; }
-  main { padding-top: calc(44px + 1.25rem); }
+  .topbar-actions        { margin-left: 0; display: inline-flex; gap: 4px; align-items: center; }
+  /* Reserve a thin margin under the floating capsule so view headings
+     don't crowd it. */
+  main { padding-top: 1.5rem; }
 }
 
 .grid {
@@ -179,17 +204,48 @@ main { padding: 1.25rem; min-width: 0; }
 }
 .card {
   background: var(--panel); border: 1px solid var(--border);
-  border-radius: 8px; padding: 1rem;
+  border-radius: 10px; padding: 18px;
 }
-.card h3 { margin: 0 0 0.5rem; font-size: 0.85rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; }
+/* Card eyebrow header â mockup .eye class. Mono, dark grey, wide tracking,
+   uppercase. Applied to .card h3 + the explicit .eye class so old + new
+   markup both render the same. */
+.card h3, .card .eye {
+  margin: 0 0 10px;
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: var(--fw-medium);
+  color: var(--fg-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+/* Big single-number readout used inside cards (mockup .big). */
+.card .big {
+  font-family: var(--font-sans);
+  font-size: 26px; font-weight: var(--fw-bold);
+  color: var(--fg); letter-spacing: -0.02em;
+  margin: 0;
+}
+.card .meta {
+  font-family: var(--font-mono);
+  font-size: 12px; color: var(--fg-faint);
+  margin-top: 6px;
+}
 .card button { display: block; width: 100%; margin-bottom: 0.5rem; }
 
 button {
-  background: var(--accent); color: #0a0e18; border: 0; border-radius: 6px;
-  padding: 0.5rem 0.85rem; font-weight: 600; cursor: pointer;
+  background: var(--accent); color: var(--accent-ink); border: 0;
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.85rem; font-weight: var(--fw-semibold); cursor: pointer;
+  font-family: var(--font-sans);
+  transition: background var(--dur-1) var(--ease-out), filter var(--dur-1) var(--ease-out);
 }
+button:hover { filter: brightness(1.05); }
+button:active { filter: brightness(0.96); }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
-button.secondary { background: var(--border); color: var(--text); }
+button.secondary {
+  background: transparent; color: var(--fg);
+  border: 1px solid var(--border-strong);
+}
+button.secondary:hover { background: var(--bg-sunk); }
 
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 0.45rem 0.6rem; text-align: left; border-bottom: 1px solid var(--border); }
@@ -203,7 +259,7 @@ form#run-form {
 }
 form label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--dim); }
 form label.inline { flex-direction: row; align-items: center; gap: 0.4rem; color: var(--text); }
-/* Form controls: explicit colours for both themes — Tauri's webkit renderer
+/* Form controls: explicit colours for both themes Ã¢ÂÂ Tauri's webkit renderer
    does not always pick up our CSS variables for native widgets. */
 select, input[type="text"], input[type="password"], input[type="search"], textarea {
   background: var(--bg);
@@ -243,16 +299,43 @@ input[type="checkbox"] {
 }
 
 pre#live-log {
-  background: #08090d; color: #cdd2e0; padding: 0.85rem 1rem;
-  border-radius: 8px; height: 60vh; overflow-y: auto;
-  font-family: var(--mono); font-size: 12px; line-height: 1.4; white-space: pre-wrap;
+  background: var(--code-bg); color: var(--code-fg); padding: 0.85rem 1rem;
+  border-radius: var(--radius-md); height: 60vh; overflow-y: auto;
+  font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.45; white-space: pre-wrap;
+  border: 1px solid var(--border);
 }
 
-.badge { display: inline-block; padding: 0.1em 0.5em; border-radius: 999px; font-size: 0.75rem; }
-.badge.ok    { background: rgba(52, 194, 112, 0.18); color: var(--ok); }
-.badge.warn  { background: rgba(229, 162, 58, 0.18); color: var(--warn); }
-.badge.fail, .badge.failed, .badge.error { background: rgba(227, 97, 78, 0.18); color: var(--err); }
-.badge.running { background: rgba(122, 166, 255, 0.18); color: var(--accent); }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 0.18em 0.65em;
+         border-radius: var(--radius-pill); font-size: var(--fs-xs);
+         font-family: var(--font-mono); font-weight: var(--fw-semibold);
+         letter-spacing: var(--tr-wide); }
+.badge.ok    { background: var(--ok-bg);   color: var(--ok); }
+.badge.warn  { background: var(--warn-bg); color: var(--warn); }
+.badge.fail, .badge.failed, .badge.error { background: var(--err-bg); color: var(--err); }
+.badge.running { background: var(--accent-soft); color: var(--accent-strong); }
+:root[data-theme="dark"] .badge.running { color: var(--accent-fg); }
+/* Running indicator: subtle pulse on the dot prefix to signal "live". */
+.badge.running::before {
+  content: ""; display: inline-block; width: 6px; height: 6px;
+  margin-right: 6px; border-radius: 50%; background: var(--accent);
+  animation: ascendo-pulse 1.4s var(--ease-out) infinite;
+  vertical-align: middle;
+}
+@keyframes ascendo-pulse {
+  0%   { box-shadow: 0 0 0 0 var(--accent-soft); opacity: 1; }
+  70%  { box-shadow: 0 0 0 6px transparent;     opacity: 0.6; }
+  100% { box-shadow: 0 0 0 0 transparent;       opacity: 1; }
+}
+
+/* NVIDIA quick-action button â keeps the brand-green chip but uses
+   design tokens for radius / typography / spacing so it slots in
+   with the rest of the button row. */
+button.btn-nvidia {
+  background: linear-gradient(90deg, #76b900, #5b9100);
+  color: #fff; border: 0;
+  font-weight: var(--fw-semibold);
+}
+button.btn-nvidia:hover { filter: brightness(1.08); }
 
 footer {
   position: fixed; bottom: 0; right: 0; left: var(--sidebar-w);
@@ -289,7 +372,7 @@ footer {
 .dim { color: var(--dim); }
 .mono { font-family: var(--mono); }
 
-/* ── Charts (pure SVG) ─────────────────────────────────────────────────── */
+/* Ã¢ÂÂÃ¢ÂÂ Charts (pure SVG) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 .chart-card { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
 .chart-card svg { max-width: 100%; height: auto; }
 .donut-wrap { position: relative; line-height: 0; }
@@ -310,7 +393,7 @@ footer {
 .bar-row .bar-fill-missing  { background: var(--err);  height: 100%; }
 .bar-row .bar-counts { width: 8rem; text-align: right; color: var(--dim); font-family: var(--mono); font-size: 0.8rem; }
 
-/* ── Inventory table ────────────────────────────────────────────────────── */
+/* Ã¢ÂÂÃ¢ÂÂ Inventory table Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 .inv-table { font-size: 0.85rem; }
 .inv-table td { padding: 0.3rem 0.6rem; }
 .inv-table tr.status-outdated { background: rgba(229, 162, 58, 0.06); }
@@ -330,52 +413,58 @@ footer {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── Reboot banner ──────────────────────────────────────────────────────── */
+/* Ã¢ÂÂÃ¢ÂÂ Reboot banner Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 .reboot-banner {
   position: sticky; top: 0; z-index: 50;
   display: flex; align-items: center; gap: 0.7rem;
   padding: 0.6rem 1rem;
-  background: linear-gradient(90deg, #f59f00 0%, #e8590c 100%);
-  color: #fff; font-weight: 500; font-size: 0.95rem;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  background: var(--warn); color: var(--ink-900);
+  font-weight: var(--fw-semibold); font-size: 0.95rem;
+  border-bottom: 1px solid rgba(11, 16, 32, 0.18);
+  box-shadow: var(--shadow-sm);
 }
 .reboot-banner.hidden { display: none; }
 .reboot-banner-icon { font-size: 1.2rem; }
 .reboot-now-btn {
   margin-left: auto; padding: 0.35rem 0.9rem;
-  background: rgba(255,255,255,0.2);
-  border: 1px solid rgba(255,255,255,0.6);
-  color: #fff; font-weight: 600; border-radius: 4px; cursor: pointer;
+  background: var(--ink-900); color: var(--paper-25);
+  border: 1px solid var(--ink-900);
+  font-weight: var(--fw-semibold); border-radius: var(--radius-sm); cursor: pointer;
+  font-family: var(--font-sans);
+  transition: filter var(--dur-1) var(--ease-out);
 }
-.reboot-now-btn:hover { background: rgba(255,255,255,0.3); }
+.reboot-now-btn:hover { filter: brightness(1.15); }
 .reboot-dismiss {
-  background: transparent; border: none; color: rgba(255,255,255,0.85);
-  font-size: 1.4rem; cursor: pointer; padding: 0 0.3rem;
+  background: transparent; border: none; color: var(--ink-900);
+  opacity: 0.75; font-size: 1.4rem; cursor: pointer; padding: 0 0.3rem;
 }
+.reboot-dismiss:hover { opacity: 1; }
 
-/* ── Brand header ──────────────────────────────────────────────────────── */
+/* Ã¢ÂÂÃ¢ÂÂ Brand header (legacy in-page heading; mostly superseded by sidebar
+   wordmark, kept here for any view that still uses an inline brand). Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 header h1.brand {
   display: flex; align-items: center; gap: 0.6rem;
-  font-size: 1.15rem; font-weight: 700; margin: 0;
-  letter-spacing: -0.01em;
+  font-size: 1.15rem; font-weight: var(--fw-bold); margin: 0;
+  letter-spacing: var(--tr-tight);
 }
 header h1.brand svg { flex: 0 0 auto; }
 header h1.brand .brand-text {
   display: flex; flex-direction: column; line-height: 1.05;
 }
 header h1.brand .brand-name {
-  font-size: 1.15rem; font-weight: 700;
-  background: linear-gradient(90deg, #22c55e 0%, #0ea5e9 100%);
-  -webkit-background-clip: text; background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-family: var(--font-sans);
+  font-size: 1.15rem; font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-tight);
+  color: var(--fg);
 }
 header h1.brand .brand-tagline {
-  font-size: 0.66rem; font-weight: 500;
-  color: var(--dim); letter-spacing: 0.06em;
-  text-transform: lowercase; margin-top: 1px;
+  font-family: var(--font-mono);
+  font-size: 0.62rem; font-weight: var(--fw-medium);
+  color: var(--fg-muted); letter-spacing: var(--tr-wider);
+  text-transform: uppercase; margin-top: 2px;
 }
 
-/* ── Live progress bar (Run Center, parsed from PROGRESS|… markers) ───── */
+/* Ã¢ÂÂÃ¢ÂÂ Live progress bar (Run Center, parsed from PROGRESS|Ã¢ÂÂ¦ markers) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 .run-progress {
   margin: 0.6rem 0; padding: 0.7rem 0.9rem;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
@@ -385,7 +474,7 @@ header h1.brand .brand-tagline {
   display: flex; justify-content: space-between; align-items: baseline;
   font-size: 0.85rem; margin-bottom: 0.4rem;
 }
-.run-progress-label b { color: var(--accent); }
+.run-progress-label b { color: var(--accent-fg); }
 .run-progress-bar {
   height: 0.55rem; background: var(--bg); border-radius: 999px; overflow: hidden;
 }
@@ -401,12 +490,12 @@ header h1.brand .brand-tagline {
 .run-progress-recent .warn  { color: var(--warn); }
 .run-progress-recent .err   { color: var(--err); }
 
-/* ── Help doc styling ──────────────────────────────────────────────────── */
+/* Ã¢ÂÂÃ¢ÂÂ Help doc styling Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 .help-toc { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; font-size: 1rem; }
-.help-toc a { color: var(--accent); text-decoration: none; padding: 0.2rem 0; }
+.help-toc a { color: var(--accent-fg); text-decoration: none; padding: 0.2rem 0; }
 .help-toc a:hover { text-decoration: underline; }
 .help-doc { font-size: 1rem; line-height: 1.6; }
-.help-doc h3 { margin-top: 2rem; padding-top: 0.8rem; border-top: 1px solid var(--border); color: var(--accent); font-size: 1.25rem; }
+.help-doc h3 { margin-top: 2rem; padding-top: 0.8rem; border-top: 1px solid var(--border); color: var(--accent-fg); font-size: 1.25rem; }
 .help-doc h3:first-child { margin-top: 0.4rem; padding-top: 0; border-top: 0; }
 .help-doc p { font-size: 1rem; }
 .help-doc pre { background: var(--bg); padding: 0.85rem 1rem; border-radius: 6px;
@@ -418,18 +507,18 @@ header h1.brand .brand-tagline {
 .help-doc table.tbl td { padding: 0.5rem 0.7rem; vertical-align: top; }
 .help-doc table.tbl td code { font-size: 0.88em; }
 
-/* ── About markdown render ─────────────────────────────────────────────── */
+/* Ã¢ÂÂÃ¢ÂÂ About markdown render Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 #about-app, #about-system { font-size: 1rem; line-height: 1.7; }
 #about-app div, #about-system div { padding: 0.15rem 0; }
 #about-release { font-size: 0.95rem; line-height: 1.55; }
-#about-release h2 { font-size: 1.2rem; color: var(--accent); margin-top: 1.2rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--border); }
+#about-release h2 { font-size: 1.2rem; color: var(--accent-fg); margin-top: 1.2rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--border); }
 #about-release h3 { font-size: 1.05rem; margin-top: 0.8rem; color: var(--text); }
 #about-release h4 { font-size: 0.92rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; margin: 0.6rem 0 0.25rem; }
 #about-release ul { padding-left: 1.5rem; }
 #about-release li { margin: 0.25rem 0; font-size: 0.95rem; }
 #about-release code { background: var(--bg); padding: 0.05em 0.35em; border-radius: 3px; font-family: var(--mono); font-size: 0.9em; }
 
-/* ── Per-category add widget ──────────────────────────────────────────── */
+/* Ã¢ÂÂÃ¢ÂÂ Per-category add widget Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 .cats-add-widget {
   display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
   padding: 0.7rem 0.8rem; margin: 0 0 1rem;
@@ -441,22 +530,24 @@ header h1.brand .brand-tagline {
   .cats-add-widget input[type="text"], .cats-add-widget select { width: 100%; }
 }
 
-/* ── Per-category action group (Categories table) ─────────────────────── */
+/* Ã¢ÂÂÃ¢ÂÂ Per-category action group (Categories table) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 .cat-actions { display: inline-flex; gap: 0.25rem; flex-wrap: wrap; }
 .cat-actions button {
   padding: 0.2rem 0.5rem; font-size: 0.72rem; font-weight: 600;
 }
-.cat-actions .phase-apply, .cat-actions .phase-cleanup { background: var(--warn); color: #1a1d29; }
-.cat-actions .phase-check, .cat-actions .phase-plan, .cat-actions .phase-verify { background: var(--border); color: var(--text); }
-.cat-actions .phase-all { background: var(--accent); color: #0a0e18; }
+.cat-actions .phase-apply, .cat-actions .phase-cleanup { background: var(--warn); color: var(--ink-900); }
+.cat-actions .phase-check, .cat-actions .phase-plan, .cat-actions .phase-verify {
+  background: transparent; color: var(--fg); border: 1px solid var(--border-strong);
+}
+.cat-actions .phase-all { background: var(--accent); color: var(--accent-ink); }
 
-/* ── Apps tab: exclusion checkbox column ──────────────────────────────── */
+/* Ã¢ÂÂÃ¢ÂÂ Apps tab: exclusion checkbox column Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 .excl-toggle { cursor: pointer; }
 .excl-toggle input[type="checkbox"] { transform: scale(1.1); }
 tr.excluded td { opacity: 0.55; }
 tr.excluded td.pkg-name { text-decoration: line-through; }
 
-/* ── AI suggestions panel ─────────────────────────────────────────────── */
+/* Ã¢ÂÂÃ¢ÂÂ AI suggestions panel Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 .suggestion {
   border: 1px solid var(--border); border-radius: 8px;
   padding: 0.75rem 1rem; margin-bottom: 0.75rem; background: var(--panel);
@@ -475,47 +566,53 @@ tr.excluded td.pkg-name { text-decoration: line-through; }
 .suggestion.confidence-med  { border-left: 3px solid var(--warn); }
 .suggestion.confidence-low  { border-left: 3px solid var(--dim); }
 
-/* ── Health card ──────────────────────────────────────────────────────── */
+/* === Health card =================================================== */
 .health-score {
-  font-size: 2.4rem; font-weight: 700; text-align: center; margin: 0.4rem 0;
+  font-size: 2.4rem; font-weight: var(--fw-bold); text-align: center; margin: 0.4rem 0;
+  font-family: var(--font-sans); letter-spacing: -0.02em;
 }
 .health-score.good { color: var(--ok); }
 .health-score.warn { color: var(--warn); }
 .health-score.bad  { color: var(--err); }
-.health-issues { font-size: 0.82rem; color: var(--dim); margin-top: 0.3rem; }
+.health-issues { font-size: var(--fs-sm); color: var(--fg-muted); margin-top: 0.3rem; }
 .health-issues li { margin: 0.15rem 0; }
 
-/* ── ETA + duration column on history ─────────────────────────────────── */
-td.duration, td.eta { font-family: var(--mono); font-size: 0.78rem; color: var(--dim); }
+/* === ETA + duration column on history ============================== */
+td.duration, td.eta { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--fg-muted); }
 
-/* ── Status table (used by Apps, Sync results, Audit, Snapshots) ───────── */
+/* === Status table (Apps, Sync, Audit, Snapshots) ==================== */
 .tbl {
-  width: 100%; border-collapse: collapse; font-size: 0.85rem;
-  border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+  width: 100%; border-collapse: collapse; font-size: var(--fs-sm);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden;
 }
 .tbl thead th {
-  background: var(--panel); padding: 0.45rem 0.7rem;
-  text-align: left; font-weight: 600; color: var(--dim);
+  background: var(--bg-elev); padding: 0.45rem 0.7rem;
+  text-align: left; font-weight: var(--fw-semibold); color: var(--fg-muted);
+  font-family: var(--font-mono); font-size: var(--fs-xs);
+  letter-spacing: 0.04em; text-transform: uppercase;
   border-bottom: 1px solid var(--border);
 }
 .tbl tbody td { padding: 0.4rem 0.7rem; border-top: 1px solid var(--border); }
-.tbl tbody tr:hover { background: var(--panel); }
-.tbl .col-mono { font-family: var(--mono); }
+.tbl tbody tr:hover { background: var(--bg-sunk); }
+.tbl .col-mono { font-family: var(--font-mono); }
 .tbl .col-num  { text-align: right; font-variant-numeric: tabular-nums; }
 
+/* === Status pills (mockup-aligned spacing) ========================== */
 .st-pill {
-  display: inline-flex; align-items: center; gap: 0.3rem;
-  padding: 0.1rem 0.55rem; border-radius: 999px;
-  font-size: 0.72rem; font-weight: 600; line-height: 1.4;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: var(--radius-pill);
+  font-family: var(--font-mono); font-size: 11px;
+  font-weight: var(--fw-semibold); line-height: 1.4;
+  letter-spacing: 0.04em;
 }
-.st-pill::before { content: ""; width: 0.5em; height: 0.5em; border-radius: 50%; }
-.st-ok    { background: rgba(34,197,94,0.15);  color: #15803d; }
-.st-ok::before    { background: #22c55e; }
-.st-warn  { background: rgba(245,158,11,0.18); color: #b45309; }
-.st-warn::before  { background: #f59e0b; }
-.st-err   { background: rgba(239,68,68,0.18);  color: #b91c1c; }
-.st-err::before   { background: #ef4444; }
-.st-skip  { background: rgba(100,116,139,0.18);color: #475569; }
-.st-skip::before  { background: #64748b; }
-.st-info  { background: rgba(14,165,233,0.18); color: #0369a1; }
-.st-info::before  { background: #0ea5e9; }
+.st-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; }
+.st-ok    { background: var(--ok-bg);   color: var(--ok); }
+.st-ok::before    { background: var(--ok); }
+.st-warn  { background: var(--warn-bg); color: var(--warn); }
+.st-warn::before  { background: var(--warn); }
+.st-err   { background: var(--err-bg);  color: var(--err); }
+.st-err::before   { background: var(--err); }
+.st-skip  { background: var(--bg-sunk); color: var(--fg-muted); }
+.st-skip::before  { background: var(--fg-faint); }
+.st-info  { background: var(--info-bg); color: var(--info); }
+.st-info::before  { background: var(--info); }

@@ -1,0 +1,56 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;}
+  .pane{padding:22px;display:flex;flex-direction:column;gap:10px;}
+  .light{background:var(--paper-25);}
+  .dark{background:var(--ink-900);}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font:var(--fw-semibold) 11px var(--font-mono);}
+  .pill::before{content:"";width:6px;height:6px;border-radius:50%;}
+  .ok{background:#E5F5EC;color:#15803d;}.ok::before{background:#3EBF7A;}
+  .warn{background:#FBF1DA;color:#b45309;}.warn::before{background:#E0A82E;}
+  .err{background:#FBE6E4;color:#b91c1c;}.err::before{background:#DC4B43;}
+  .info{background:#E2EBF8;color:#1d4eb1;}.info::before{background:#4A7BC9;}
+  .skip{background:#EDEFF4;color:#495078;}.skip::before{background:#7A8099;}
+  .running{background:rgba(200,255,75,.22);color:#3a4a06;}.running::before{background:#94B81F;animation:p 1s infinite;}
+  @keyframes p{50%{opacity:.4;}}
+  .dark .ok{background:rgba(62,191,122,.14);color:#5fd697;}
+  .dark .warn{background:rgba(224,168,46,.14);color:#f0c761;}
+  .dark .err{background:rgba(220,75,67,.14);color:#f08e87;}
+  .dark .info{background:rgba(74,123,201,.14);color:#7ba8e8;}
+  .dark .skip{background:rgba(214,217,227,.08);color:#A8ADC2;}
+  .dark .running{background:rgba(200,255,75,.14);color:#C8FF4B;}.dark .running::before{background:#C8FF4B;}
+  .tag{display:inline-flex;padding:2px 8px;border-radius:4px;font:var(--fw-medium) 11px var(--font-mono);}
+  .light .tag{background:#0B1020;color:#C8FF4B;}.light .tag.alt{background:rgba(11,16,32,.06);color:#0B1020;}
+  .dark .tag{background:#C8FF4B;color:#06080F;}.dark .tag.alt{background:rgba(214,217,227,.08);color:#F5F4EE;}
+  .lbl{font:var(--fw-medium) 10px var(--font-mono);text-transform:uppercase;letter-spacing:.12em;}
+  .light .lbl{color:#7A8099;}.dark .lbl{color:#7A8099;}
+</style></head>
+<body>
+<div class="grid">
+  <div class="pane light">
+    <span class="lbl">Status pills · light</span>
+    <div class="row">
+      <span class="pill ok">OK</span><span class="pill warn">Warning</span><span class="pill err">Failed</span>
+      <span class="pill info">Dry run</span><span class="pill skip">Skipped</span><span class="pill running">Running</span>
+    </div>
+    <span class="lbl">Inline tags</span>
+    <div class="row">
+      <span class="tag">v0.1.0</span><span class="tag alt">profile:safe</span><span class="tag alt">apt</span><span class="tag alt">brew</span>
+    </div>
+  </div>
+  <div class="pane dark">
+    <span class="lbl">Status pills · dark</span>
+    <div class="row">
+      <span class="pill ok">OK</span><span class="pill warn">Warning</span><span class="pill err">Failed</span>
+      <span class="pill info">Dry run</span><span class="pill skip">Skipped</span><span class="pill running">Running</span>
+    </div>
+    <span class="lbl">Inline tags</span>
+    <div class="row">
+      <span class="tag">v0.1.0</span><span class="tag alt">profile:safe</span><span class="tag alt">apt</span><span class="tag alt">brew</span>
+    </div>
+  </div>
+</div>
+</body></html>

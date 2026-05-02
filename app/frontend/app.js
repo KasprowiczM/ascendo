@@ -1,4 +1,4 @@
-// Ubuntu_Aktualizacje dashboard — vanilla SPA
+// Ubuntu_Aktualizacje dashboard - vanilla SPA
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -25,7 +25,7 @@ const api = {
   },
 };
 
-// ── sudo modal ──────────────────────────────────────────────────────────────
+// -- sudo modal --------------------------------------------------------------
 const sudoMgr = {
   pending: null,  // resolve() of in-flight prompt
   open(reason) {
@@ -58,7 +58,7 @@ const sudoMgr = {
   async ensure() {
     const s = await api.get("/sudo/status");
     if (s.cached) return true;
-    return this.open("sudo cache empty — enter password to authenticate");
+    return this.open("sudo cache empty - enter password to authenticate");
   },
 };
 
@@ -69,7 +69,7 @@ const ui = {
     $$("a[data-view]").forEach(a => a.classList.toggle("active", a.dataset.view === view));
     location.hash = view;
     // Lazy-load on first visit only. Subsequent tab switches reuse the cached
-    // data — user explicitly clicks "Refresh" (or finishes a run, which calls
+    // data - user explicitly clicks "Refresh" (or finishes a run, which calls
     // ui.invalidateCaches()) to re-fetch. This avoids the per-visit spinner
     // for slow scans (inventory takes seconds).
     ui._loaded = ui._loaded || {};
@@ -153,7 +153,7 @@ const ui = {
     if (!ok) { ui.status(tr("overview.reboot_no_sudo") || "sudo required"); return; }
     try {
       await api.post("/system/reboot?delay=5", {});
-      ui.status(tr("overview.reboot_scheduled") || "reboot scheduled in 5s — saving your work now is recommended");
+      ui.status(tr("overview.reboot_scheduled") || "reboot scheduled in 5s - saving your work now is recommended");
       $("#reboot-banner").innerHTML =
         `<span class="reboot-banner-icon">⏻</span> rebooting in 5 seconds…`;
     } catch (e) { ui.status(String(e)); }
@@ -164,7 +164,7 @@ const ui = {
     return `<span class="badge ${cls}">${status || "?"}</span>`;
   },
   fmtTime(s) {
-    if (!s) return "—";
+    if (!s) return "-";
     const d = new Date(s);
     if (isNaN(d.getTime())) return s;
     return d.toLocaleString();
@@ -265,7 +265,7 @@ const ui = {
       $("#last-run").innerHTML = last
         ? `${ui.badge(last.status)} <code>${last.id}</code><br>
            <span class="dim">${ui.fmtTime(last.started_at)} → ${ui.fmtTime(last.ended_at)}</span><br>
-           profile: ${last.profile || "—"}, dry-run: ${last.dry_run ? "yes" : "no"}<br>
+           profile: ${last.profile || "-"}, dry-run: ${last.dry_run ? "yes" : "no"}<br>
            ${last.needs_reboot ? `<b>${tr("overview.reboot_required")}</b>` : ""}`
         : `<span class='dim'>${tr("overview.no_runs")}</span>`;
     } catch (e) { $("#last-run").textContent = String(e); }
@@ -285,12 +285,12 @@ const ui = {
     ui.loadHealth();
   },
 
-  // ── SVG donut + bar charts (pure DOM, no chart libs) ─────────────────
+  // -- SVG donut + bar charts (pure DOM, no chart libs) -----------------
   renderDonut(elId, segments) {
     const total = segments.reduce((a, s) => a + (s.value||0), 0);
     const host = $("#"+elId);
     if (total === 0) {
-      host.innerHTML = `<p class="dim" style="text-align:center;padding:2rem">—</p>`;
+      host.innerHTML = `<p class="dim" style="text-align:center;padding:2rem">-</p>`;
       return;
     }
     // Bigger, anti-aliased donut with rounded line caps + visible center
@@ -404,7 +404,7 @@ const ui = {
       wrap.innerHTML = `
         <table class="tbl">
           <thead><tr><th>Category</th><th>Package</th><th>State</th><th>Auto-update</th><th>Action</th></tr></thead>
-          <tbody>${rows||"<tr><td colspan='5' class='dim'>—</td></tr>"}</tbody>
+          <tbody>${rows||"<tr><td colspan='5' class='dim'>-</td></tr>"}</tbody>
         </table>`;
     } catch (e) {
       wrap.textContent = String(e);
@@ -466,8 +466,8 @@ const ui = {
               <tr class="status-outdated">
                 <td>${u.cat}</td>
                 <td class="pkg-name">${u.name}</td>
-                <td class="dim mono">${u.installed||"—"}</td>
-                <td class="mono"><b>${u.candidate||"—"}</b></td>
+                <td class="dim mono">${u.installed||"-"}</td>
+                <td class="mono"><b>${u.candidate||"-"}</b></td>
                 <td class="dim">${u.source||""}</td>
               </tr>`).join("")}
             </tbody>
@@ -536,7 +536,7 @@ const ui = {
         ui.show("run");
         ui.attachStream(r.run_id);
         $("#stop-btn").disabled = false;
-        ui.status(`run ${r.run_id} started — ${body.only}/${body.phase || "all phases"}`);
+        ui.status(`run ${r.run_id} started - ${body.only}/${body.phase || "all phases"}`);
       } catch (err) { ui.status(String(err)); }
     }));
   },
@@ -567,16 +567,16 @@ const ui = {
             ${items.map(it => `
               <tr class="status-${it.status}">
                 <td class="pkg-name">${it.name}</td>
-                <td class="mono">${it.installed||"—"}</td>
-                <td class="mono">${it.candidate||"—"}</td>
+                <td class="mono">${it.installed||"-"}</td>
+                <td class="mono">${it.candidate||"-"}</td>
                 <td>${ui.badge(it.status)}</td>
                 <td class="dim">${it.source||""}</td>
-                <td>${it.in_config ? "✔" : "<span class='dim'>—</span>"}</td>
+                <td>${it.in_config ? "✔" : "<span class='dim'>-</span>"}</td>
                 <td>
                   ${it.in_config
                     ? `<button class="secondary" data-cat-rm data-pkg="${it.name}" data-cat="${cat}" title="Remove from config (does NOT uninstall)">remove</button>`
                     : `<button class="secondary" data-cat-add data-pkg="${it.name}" data-cat="${cat}" title="Add to config so future updates include it">+ add</button>`}
-                  ${cat === "apt" && it.installed && it.installed !== "—"
+                  ${cat === "apt" && it.installed && it.installed !== "-"
                     ? ` <button class="secondary" data-apt-downgrade data-pkg="${it.name}" data-ver="${it.installed}" title="Roll back / pin to a specific older version (apt --allow-downgrades)" style="font-size:0.72rem">↓ rollback</button>`
                     : ""}
                 </td>
@@ -595,7 +595,7 @@ const ui = {
       for (const p of profs) {
         const opt = document.createElement("option");
         opt.value = p.id;
-        opt.textContent = `${p.id} — ${p.description}`;
+        opt.textContent = `${p.id} - ${p.description}`;
         sel.appendChild(opt);
       }
       const cats = (await api.get("/categories")).categories;
@@ -634,8 +634,8 @@ const ui = {
     for (const r of rows) {
       const tr = document.createElement("tr");
       const phaseSummary = r.summary && r.summary.phases
-        ? `${r.summary.phases.length} phase(s)` : "—";
-      let durStr = "—";
+        ? `${r.summary.phases.length} phase(s)` : "-";
+      let durStr = "-";
       if (r.started_at && r.ended_at) {
         try {
           const a = new Date(r.started_at), b = new Date(r.ended_at);
@@ -648,11 +648,11 @@ const ui = {
         : "";
       tr.innerHTML = `
         <td>${ui.fmtTime(r.started_at)}</td>
-        <td>${r.profile || "—"}${r.dry_run ? " <span class='dim'>(dry)</span>":""}${srcTag}</td>
+        <td>${r.profile || "-"}${r.dry_run ? " <span class='dim'>(dry)</span>":""}${srcTag}</td>
         <td>${ui.badge(r.status)}</td>
         <td class="duration">${durStr}</td>
         <td>${phaseSummary}</td>
-        <td>${r.needs_reboot ? "yes" : "—"}</td>
+        <td>${r.needs_reboot ? "yes" : "-"}</td>
         <td><a href="#logs" data-run="${r.id}">${r.id}</a></td>`;
       tb.appendChild(tr);
     }
@@ -667,7 +667,7 @@ const ui = {
     try {
       const r = (await api.get(`/runs/${runId}`)).run;
       const phases = r.phases || (r.run && r.run.phases) || [];
-      let html = `<h3><code>${r.id || runId}</code> — ${ui.badge(r.status)}</h3>
+      let html = `<h3><code>${r.id || runId}</code> - ${ui.badge(r.status)}</h3>
         <p class="dim">${ui.fmtTime(r.started_at)} → ${ui.fmtTime(r.ended_at)}</p>
         <table><thead><tr>
           <th>Category</th><th>Phase</th><th>Exit</th><th>OK</th><th>Warn</th><th>Err</th><th>Sidecar</th>
@@ -678,10 +678,10 @@ const ui = {
         html += `<tr>
           <td>${cat}</td>
           <td>${ph}</td>
-          <td>${p.exit_code ?? "—"}</td>
-          <td>${s.ok ?? "—"}</td>
-          <td>${s.warn ?? "—"}</td>
-          <td>${s.err ?? "—"}</td>
+          <td>${p.exit_code ?? "-"}</td>
+          <td>${s.ok ?? "-"}</td>
+          <td>${s.warn ?? "-"}</td>
+          <td>${s.err ?? "-"}</td>
           <td>
             <a href="/runs/${runId}/phase/${cat}/${ph}" target="_blank">json</a> ·
             <a href="/runs/${runId}/phase/${cat}/${ph}/log" target="_blank">log</a>
@@ -713,12 +713,12 @@ const ui = {
           <td>${ui.badge("running")}</td>`;
         tb.appendChild(tr);
         api.get(`/hosts/${encodeURIComponent(h.id)}/preflight`).then(p => {
-          const lastRun = p.last_run ? `${p.last_run.status || "?"} (${p.last_run.run_id || ""})` : "—";
+          const lastRun = p.last_run ? `${p.last_run.status || "?"} (${p.last_run.run_id || ""})` : "-";
           tr.innerHTML = `
             <td><b>${h.id}</b><br><span class="dim">${h.display_name}</span></td>
-            <td>${p.hostname || "—"}</td>
-            <td>${p.os || "—"}</td>
-            <td>${p.kernel || "—"}</td>
+            <td>${p.hostname || "-"}</td>
+            <td>${p.os || "-"}</td>
+            <td>${p.kernel || "-"}</td>
             <td>${p.repo_present ? `<span class='badge ok'>${p.git_head||""}</span>` : "<span class='badge warn'>missing</span>"}</td>
             <td>${lastRun}</td>
             <td>${p.ok ? ui.badge("ok") : ui.badge("fail")}<br><span class="dim">${(p.error||"").slice(0,80)}</span></td>`;
@@ -742,7 +742,7 @@ const ui = {
       }
       wrap.innerHTML = r.items.map(t => `
         <div style="border:1px solid var(--border);border-radius:6px;padding:0.5rem 0.7rem;margin:0.4rem 0">
-          <div><b>${t.name}</b> <span class="dim">— ${t.lines} pkg(s)</span></div>
+          <div><b>${t.name}</b> <span class="dim">- ${t.lines} pkg(s)</span></div>
           <div class="dim" style="font-size:0.78rem;margin:0.2rem 0">${t.summary || ""}</div>
           <div style="display:flex;gap:0.3rem">
             <button class="secondary" data-profile-import="${t.name}" data-dry="1" style="font-size:0.78rem">Preview</button>
@@ -850,7 +850,7 @@ const ui = {
       if (kind === "start") {
         const total = +parts[3]; const label = parts[4] || parts[2];
         prog.classList.remove("hidden");
-        lbl.innerHTML = `<span><b>${label}</b> — 0/${total}</span><span class="dim">running…</span>`;
+        lbl.innerHTML = `<span><b>${label}</b> - 0/${total}</span><span class="dim">running…</span>`;
         fill.style.width = "0%";
         rec.innerHTML = "";
         prog._total = total;
@@ -858,7 +858,7 @@ const ui = {
         const n = +parts[3], total = +parts[4], status = parts[5], msg = parts.slice(6).join("|");
         const pct = total > 0 ? Math.round((n/total) * 100) : 0;
         fill.style.width = pct + "%";
-        lbl.innerHTML = `<span><b>${parts[2]}</b> — ${n}/${total}</span><span class="dim">${pct}%</span>`;
+        lbl.innerHTML = `<span><b>${parts[2]}</b> - ${n}/${total}</span><span class="dim">${pct}%</span>`;
         const div = document.createElement("div");
         div.className = status;
         div.textContent = `[${n}/${total}] ${msg}`;
@@ -867,7 +867,7 @@ const ui = {
         while (rec.children.length > 12) rec.removeChild(rec.lastChild);
       } else if (kind === "done") {
         const ok = +parts[3], warn = +parts[4], err = +parts[5];
-        lbl.innerHTML = `<span><b>${parts[2]}</b> — done</span>` +
+        lbl.innerHTML = `<span><b>${parts[2]}</b> - done</span>` +
           `<span><span class="badge ok">${ok}</span> ` +
           `<span class="badge ${warn?"warn":"ok"}">${warn} warn</span> ` +
           `<span class="badge ${err?"fail":"ok"}">${err} err</span></span>`;
@@ -878,35 +878,62 @@ const ui = {
       return true;
     }
 
-    const es = new EventSource(`/runs/active/stream`);
-    es.addEventListener("log", e => {
-      const m = JSON.parse(e.data);
-      const ln = m.line || "";
-      if (!handleMarker(ln)) {
-        log.textContent += ln + "\n";
-        log.scrollTop = log.scrollHeight;
-      }
-    });
+    // M2.10: subscribe to per-run /runs/{id}/events. Falls back to legacy
+    // /runs/active/stream if the per-run URL 404s (older backend).
+    const perRunUrl = `/runs/${encodeURIComponent(runId)}/events`;
+    let es = new EventSource(perRunUrl);
+    let usingLegacy = false;
+    const phaseRows = new Map();
+    function ensureProgVisible() { prog.classList.remove("hidden"); }
+    function renderSidecar(sc) {
+      ensureProgVisible();
+      const key = `${sc.phase}__${sc.category}`;
+      const summary = sc.summary || {};
+      const total   = summary.total ?? (sc.items || []).length;
+      const failed  = summary.failed ?? 0;
+      const status  = sc.status || "running";
+      const cls = status === "success" ? "ok"
+                : status === "failed"  ? "fail"
+                : status === "partial" ? "warn"
+                : status === "skipped" ? "dim" : "running";
+      const text = `[${sc.phase}:${sc.category}] ${status} - ${total} items, ${failed} failed`;
+      let row = phaseRows.get(key);
+      if (!row) { row = document.createElement("div"); rec.prepend(row); phaseRows.set(key, row);
+                  while (rec.children.length > 14) rec.removeChild(rec.lastChild); }
+      row.className = cls; row.textContent = text;
+      lbl.innerHTML = `<span><b>${sc.phase}</b> · ${sc.category}</span><span class="dim">${phaseRows.size} sidecars</span>`;
+    }
+    es.addEventListener("status", e => { try { const m=JSON.parse(e.data); ui.status(`run ${runId}: ${m.status}`); if(m.status==="running") ensureProgVisible(); } catch {} });
+    es.addEventListener("sidecar", e => { try { const sc=JSON.parse(e.data); renderSidecar(sc); log.textContent += `[${sc.phase}:${sc.category}] ${sc.status}\n`; log.scrollTop=log.scrollHeight; } catch {} });
+    es.addEventListener("sidecar_error", e => { try { const m=JSON.parse(e.data); log.textContent += `[sidecar parse error] ${m.path}: ${m.error}\n`; } catch {} });
     es.addEventListener("done", e => {
-      const m = JSON.parse(e.data);
-      log.textContent += `\n[done — exit ${m.exit_code}]\n`;
-      ui.status(`run ${runId} done (exit ${m.exit_code})`);
-      $("#stop-btn").disabled = true;
-      prog.classList.add("hidden");
-      es.close();
-      ui.invalidateCaches();
-      ui.checkRebootBanner();
-      ui.loadHealth();
+      let p = {}; try { p = JSON.parse(e.data); } catch {}
+      const status = p.status || "completed";
+      const ms = p.duration_ms;
+      log.textContent += `\n[done - ${status}${ms ? ` in ${(ms/1000).toFixed(1)}s` : ""}]\n`;
+      ui.status(`run ${runId} ${status}${ms ? ` (${(ms/1000).toFixed(1)}s)` : ""}`);
+      const stopBtn = $("#stop-btn"); if (stopBtn) stopBtn.disabled = true;
+      fill.style.width = "100%"; es.close();
+      ui.invalidateCaches(); ui.checkRebootBanner(); ui.loadHealth();
     });
-    es.onerror = () => { es.close(); };
+    es.addEventListener("log", e => { try { const m=JSON.parse(e.data); const ln=m.line||""; if (!handleMarker(ln)) { log.textContent += ln + "\n"; log.scrollTop=log.scrollHeight; } } catch {} });
+    es.onerror = () => {
+      if (!usingLegacy) {
+        usingLegacy = true; try { es.close(); } catch {}
+        es = new EventSource(`/runs/active/stream`);
+        es.addEventListener("log", e => { try { const m=JSON.parse(e.data); const ln=m.line||""; if (!handleMarker(ln)) { log.textContent += ln + "\n"; log.scrollTop=log.scrollHeight; } } catch {} });
+        es.addEventListener("done", e => { let m={}; try{m=JSON.parse(e.data);}catch{} log.textContent += `\n[done - exit ${m.exit_code}]\n`; es.close(); ui.invalidateCaches(); ui.checkRebootBanner(); ui.loadHealth(); });
+        es.onerror = () => { try { es.close(); } catch {} };
+      }
+    };
   },
 };
 
-// ── Logs tab: dropdown of runs + per-phase plain log viewer ─────────────────
+// -- Logs tab: dropdown of runs + per-phase plain log viewer -----------------
 ui.loadLogsList = async function() {
   const sel = $("#logs-run-select");
   const runs = (await api.get("/runs?limit=100")).runs || [];
-  sel.innerHTML = `<option value="">— pick a run —</option>` +
+  sel.innerHTML = `<option value="">- pick a run -</option>` +
     runs.map(r => `<option value="${r.id}">${ui.fmtTime(r.started_at)} · ${r.profile||"?"} · ${r.status||"?"} · ${r.id}</option>`).join("");
 };
 ui.openPhaseLog = async function(runId, cat, phase) {
@@ -960,12 +987,12 @@ ui.loadRunDetail = async function(runId) {
   });
 };
 
-// ── About tab: version + system + release notes ─────────────────────────────
+// -- About tab: version + system + release notes -----------------------------
 ui.loadAbout = async function() {
   try {
     const a = await api.get("/about");
     $("#about-app").innerHTML = `
-      <div><b>${a.name}</b> <span class="dim">— ${a.tagline}</span></div>
+      <div><b>${a.name}</b> <span class="dim">- ${a.tagline}</span></div>
       <div>Version: <code>${a.version}</code> <span class="dim">git ${a.git_head||"?"}</span></div>
       <div class="dim">Python: ${a.python}</div>
     `;
@@ -990,7 +1017,7 @@ ui.loadAbout = async function() {
   }
 };
 
-// ── Hosts tab: add/edit/delete + form binding ───────────────────────────────
+// -- Hosts tab: add/edit/delete + form binding -------------------------------
 const _origLoadHosts = ui.loadHosts;
 ui.loadHosts = async function() {
   await _origLoadHosts.call(this);
@@ -1061,7 +1088,7 @@ document.addEventListener("submit", async e => {
   }
 });
 
-// ── Sync provider form ──────────────────────────────────────────────────────
+// -- Sync provider form ------------------------------------------------------
 async function _loadSyncProvider() {
   const f = $("#sync-provider-form");
   if (!f) return;
@@ -1228,21 +1255,27 @@ document.addEventListener("click", e => {
   ui.show(a.dataset.view);
 });
 
-// Helper that retries a /runs POST after sudo modal if 401 SUDO-REQUIRED
+// Helper that posts to /runs/async (M2.10) with legacy /runs fallback.
 async function startRunWithSudo(body) {
   const mutating = !body.dry_run && (!body.phase || ["apply","cleanup"].includes(body.phase));
   if (mutating) {
     const ok = await sudoMgr.ensure();
     if (!ok) throw new Error("sudo authentication cancelled");
   }
-  try {
-    return await api.post("/runs", body);
-  } catch (e) {
-    if (e.status === 401 && String(e.body || "").includes("SUDO-REQUIRED")) {
-      const ok = await sudoMgr.open("sudo cache expired — re-authenticate");
-      if (!ok) throw new Error("sudo authentication cancelled");
-      return await api.post("/runs", body);
+  const tryEndpoint = async (url) => {
+    try { return await api.post(url, body); }
+    catch (e) {
+      if (e.status === 401 && String(e.body || "").includes("SUDO-REQUIRED")) {
+        const ok = await sudoMgr.open("sudo cache expired - re-authenticate");
+        if (!ok) throw new Error("sudo authentication cancelled");
+        return await api.post(url, body);
+      }
+      throw e;
     }
+  };
+  try { return await tryEndpoint("/runs/async"); }
+  catch (e) {
+    if (e.status === 404 || e.status === 405) return await tryEndpoint("/runs");
     throw e;
   }
 }
@@ -1460,7 +1493,7 @@ document.addEventListener("click", async e => {
   if (pi) {
     const name = pi.dataset.profileImport;
     const dry = pi.dataset.dry === "1";
-    if (!dry && !confirm(`Apply profile '${name}' — will append packages to your config/*.list files?`)) return;
+    if (!dry && !confirm(`Apply profile '${name}' - will append packages to your config/*.list files?`)) return;
     try {
       const r = await api.post("/profiles/import", {name, dry_run: dry});
       ui.status(dry ? `preview: ${name}` : `imported: ${name}`);
@@ -1472,11 +1505,11 @@ document.addEventListener("click", async e => {
     out.textContent = "checking…";
     try {
       const r = await api.get("/updates/check");
-      if (!r.enabled) { out.textContent = "disabled — set GitHub repo first."; return; }
+      if (!r.enabled) { out.textContent = "disabled - set GitHub repo first."; return; }
       if (r.error) { out.textContent = `error: ${r.error}`; return; }
       out.textContent = r.newer_available
-        ? `📦 newer release available: ${r.latest} (current ${r.current}) — ${r.url}`
-        : `up to date — current ${r.current}, latest ${r.latest||"?"}`;
+        ? `📦 newer release available: ${r.latest} (current ${r.current}) - ${r.url}`
+        : `up to date - current ${r.current}, latest ${r.latest||"?"}`;
     } catch (err) { out.textContent = String(err); }
   }
 });
@@ -1499,10 +1532,9 @@ document.addEventListener("click", async e => {
   }
 });
 
-// ── Inject inline icons into nav + topbar buttons ──────────────────────
+// -- Inject inline icons into nav + topbar buttons ----------------------
 function injectIcons() {
   if (!window.ICONS) return;
-  // Map data-icon values to ICONS keys (handles aliases / hyphens).
   const map = { "help": "help", "about": "about" };
   document.querySelectorAll("[data-icon]").forEach(el => {
     const slot = el.querySelector(".nav-icon");
@@ -1510,6 +1542,17 @@ function injectIcons() {
     const key = map[el.dataset.icon] || el.dataset.icon;
     const ic = window.ICONS[key];
     if (ic) target.innerHTML = ic;
+  });
+  // data-icon-prefix=<key>: prepend the icon to the existing button text.
+  document.querySelectorAll("[data-icon-prefix]").forEach(el => {
+    if (el.querySelector(".icon-prefix")) return;
+    const ic = window.ICONS[el.dataset.iconPrefix];
+    if (!ic) return;
+    const wrap = document.createElement("span");
+    wrap.className = "icon-prefix";
+    wrap.style.cssText = "display:inline-flex;align-items:center;margin-right:6px;vertical-align:-3px;";
+    wrap.innerHTML = ic;
+    el.insertAdjacentElement("afterbegin", wrap);
   });
   // Topbar buttons get icons that reflect current state.
   const setBtn = (id, key) => {
@@ -1522,7 +1565,7 @@ function injectIcons() {
   setBtn("font-switcher",  "type");
 }
 
-// ── Sidebar drawer (mobile) ────────────────────────────────────────────
+// -- Sidebar drawer (mobile) --------------------------------------------
 function bindSidebar() {
   const shell = document.body;
   const open  = () => { shell.classList.add("sidebar-open"); $("#sidebar-backdrop")?.classList.remove("hidden"); };
@@ -1537,28 +1580,26 @@ function bindSidebar() {
   });
 }
 
-// ── Topbar switchers: theme / language / font-size ─────────────────────
+// -- Topbar switchers: theme / language / font-size ---------------------
 function bindSwitchers() {
   const root = document.documentElement;
-  // Theme cycle: auto → light → dark → auto. We must track the *preference*
-  // (which can be "auto"), not the resolved data-theme attribute (always
-  // "dark" or "light" after applyTheme). Store in dataset.themePref +
-  // localStorage so the next click cycles correctly.
+  // Theme cycle: dark <-> light (binary). Dark is the primary theme of
+  // the Ascendo design system; light is the alternate. Any legacy "auto"
+  // value (carried over from older builds) is treated as dark on read.
+  const normalizePref = (p) => (p === "light" ? "light" : "dark");
   const repaintThemeIcon = (pref) => {
     if (!window.ICONS) return;
-    // auto = monitor (follows OS), light = sun, dark = moon.
-    const k = pref === "dark" ? "moon" : pref === "light" ? "sun" : "monitor";
+    const k = pref === "light" ? "sun" : "moon";
     const b = $("#theme-switcher"); if (b) b.innerHTML = window.ICONS[k];
     if (b) b.title = `Theme: ${pref}`;
   };
   $("#theme-switcher")?.addEventListener("click", () => {
-    const order = ["auto", "light", "dark"];
-    const cur = root.dataset.themePref || (window.SETTINGS_CACHE?.ui?.theme) || "auto";
-    const next = order[(order.indexOf(cur) + 1) % order.length];
+    const cur  = normalizePref(root.dataset.themePref
+                  || (window.SETTINGS_CACHE?.ui?.theme));
+    const next = cur === "dark" ? "light" : "dark";
     root.dataset.themePref = next;
     try { localStorage.setItem("ui-theme", next); } catch {}
     window.applyTheme(next);
-    // Update cache + persist (fire-and-forget)
     window.SETTINGS_CACHE = window.SETTINGS_CACHE || {};
     window.SETTINGS_CACHE.ui = {...(window.SETTINGS_CACHE.ui || {}), theme: next};
     fetch("/settings", {method:"PUT", headers:{"content-type":"application/json"},
@@ -1566,9 +1607,8 @@ function bindSwitchers() {
     repaintThemeIcon(next);
     ui.status(`theme: ${next}`);
   });
-  // Restore initial theme icon.
-  const initial = root.dataset.themePref
-    || (() => { try { return localStorage.getItem("ui-theme") || "auto"; } catch { return "auto"; } })();
+  const initial = normalizePref(root.dataset.themePref
+    || (() => { try { return localStorage.getItem("ui-theme"); } catch { return null; } })());
   root.dataset.themePref = initial;
   repaintThemeIcon(initial);
   // Language cycle: en ↔ pl
@@ -1597,7 +1637,7 @@ function bindSwitchers() {
   } catch { root.dataset.font = "md"; }
 }
 
-// ── Categories add-widget: append package to a config list ─────────────
+// -- Categories add-widget: append package to a config list -------------
 async function bindCatsAddWidget() {
   // Populate <select> with categories.
   try {
@@ -1685,7 +1725,7 @@ async function bootstrap() {
   try {
     const s = await api.get("/settings");
     window.SETTINGS_CACHE = s;
-    const themePref = (s.ui && s.ui.theme) || "auto";
+    const themePref = (s.ui && s.ui.theme) || "dark";
     const langPref  = (s.ui && s.ui.language) || "auto";
     window.applyTheme(themePref);
     window.UI_LANG = (langPref === "en" || langPref === "pl")
@@ -1693,7 +1733,7 @@ async function bootstrap() {
       : window.detectLanguage();
     window.applyI18n();
   } catch {
-    window.applyTheme("auto");
+    window.applyTheme("dark");
     window.UI_LANG = window.detectLanguage();
     window.applyI18n();
   }
@@ -1705,13 +1745,9 @@ async function bootstrap() {
   ui.show(start);
   ui.checkRebootBanner();
   ui.maybeShowWizard();
-  // React to OS theme switch when user picks "auto"
-  if (window.matchMedia) {
-    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-      const cur = (window.SETTINGS_CACHE && window.SETTINGS_CACHE.ui && window.SETTINGS_CACHE.ui.theme) || "auto";
-      if (cur === "auto") window.applyTheme("auto");
-    });
-  }
+  // OS-theme listener removed: dark/light is now an explicit binary
+  // preference (no "auto" track). prefers-color-scheme no longer drives
+  // the SPA - the design system sets dark as the deliberate default.
 }
 
 // Apply settings live when the user changes theme/language in the form

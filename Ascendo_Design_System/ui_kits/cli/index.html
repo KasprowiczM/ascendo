@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ascendo CLI</title>
+<link rel="stylesheet" href="../../colors_and_type.css">
+<style>
+  body{background:#0a0e1c;color:#cfd3e3;padding:48px;font:var(--fw-regular) 14px/1.6 var(--font-mono);}
+  .term{max-width:980px;margin:0 auto;background:#0b1020;border-radius:10px;border:1px solid rgba(255,255,255,.08);overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.5);}
+  .tbar{display:flex;align-items:center;gap:10px;padding:9px 14px;background:#141a2e;border-bottom:1px solid rgba(255,255,255,.06);}
+  .tbar .l{display:flex;gap:7px;}
+  .tbar .l span{width:11px;height:11px;border-radius:50%;}
+  .tbar .l span:nth-child(1){background:#ff5f57;}.tbar .l span:nth-child(2){background:#febc2e;}.tbar .l span:nth-child(3){background:#28c940;}
+  .tbar .t{flex:1;text-align:center;font:var(--fw-medium) 12px var(--font-mono);color:var(--ink-300);}
+  pre{margin:0;padding:24px 28px;color:#cfd3e3;font:inherit;white-space:pre-wrap;}
+  .lime{color:#C8FF4B;}
+  .lime-d{color:#9DCB28;}
+  .green{color:#3EBF7A;}
+  .yellow{color:#E0A82E;}
+  .red{color:#DC4B43;}
+  .blue{color:#7BA7E0;}
+  .dim{color:#7A8099;}
+  .b{font-weight:700;color:#F5F4EE;}
+  .head{color:#F5F4EE;font-weight:600;}
+  .hr{color:#3a4055;}
+  .pill-ok{color:#0B1020;background:#3EBF7A;padding:1px 7px;border-radius:3px;font-weight:600;}
+  .pill-warn{color:#0B1020;background:#E0A82E;padding:1px 7px;border-radius:3px;font-weight:600;}
+  .pill-run{color:#0B1020;background:#C8FF4B;padding:1px 7px;border-radius:3px;font-weight:600;}
+</style></head>
+<body data-screen-label="CLI">
+
+<div class="term">
+  <div class="tbar"><div class="l"><span></span><span></span><span></span></div><div class="t">kasper@x1: ~ — ascendo run --profile=safe</div></div>
+<pre>
+<span class="dim">$</span> ascendo run --profile=safe
+
+<span class="lime b">  ▁▃▅</span><span class="b">  ascendo</span> <span class="dim">v0.1.0</span>  <span class="hr">·</span> profile=<span class="b">safe</span>  <span class="hr">·</span> host=<span class="b">kasper-x1</span>  <span class="hr">·</span> ubuntu 24.04
+<span class="hr">  ─────────────────────────────────────────────────────────────────────────</span>
+
+  <span class="head">phase 1/5 · check</span>                                               <span class="dim">9.4s</span>
+  <span class="green">  ✔</span> apt          <span class="dim">52 ok · </span><span class="yellow">8 outdated</span><span class="dim"> · </span><span class="red">3 missing</span>
+  <span class="green">  ✔</span> snap         <span class="dim">18 ok · </span><span class="yellow">2 outdated</span>
+  <span class="green">  ✔</span> flatpak      <span class="dim">12 ok · </span><span class="yellow">7 outdated</span>
+  <span class="green">  ✔</span> npm          <span class="dim">14 ok · </span><span class="yellow">3 outdated</span><span class="dim"> · </span><span class="red">2 missing</span>
+  <span class="green">  ✔</span> pipx         <span class="dim">8 ok · </span><span class="red">1 missing</span>
+  <span class="green">  ✔</span> drivers      <span class="dim">2 ok · </span><span class="yellow">2 outdated</span>
+  <span class="dim">  → sidecar /var/lib/ascendo/runs/2026-05-01T10-42/check.json</span>
+
+  <span class="head">phase 2/5 · plan</span>                                                <span class="dim">2.1s</span>
+  <span class="lime">  ▸</span> firefox                  <span class="dim">apt    </span> 123.0.1 <span class="dim">→</span> <span class="b">124.0.2</span>
+  <span class="lime">  ▸</span> linux-headers-generic    <span class="dim">apt    </span> 6.8.0-31 <span class="dim">→</span> <span class="b">6.8.0-40</span>
+  <span class="lime">  ▸</span> code                     <span class="dim">snap   </span> 175 <span class="dim">→</span> <span class="b">180</span>
+  <span class="lime">  ▸</span> @anthropic-ai/claude-code <span class="dim">npm   </span> 2.1.4 <span class="dim">→</span> <span class="b">2.3.0</span>
+  <span class="yellow">  ⚑</span> nvidia-driver-535        <span class="dim">drv    </span> <span class="dim">held · config/holds.toml :: prod-recording</span>
+  <span class="dim">  + 18 more (run with --verbose to list)</span>
+
+  <span class="head">phase 3/5 · apply</span>                                              <span class="pill-run">RUNNING</span>
+  <span class="green">  ✔</span> snapshot.timeshift   <span class="dim">id=snap-1714555338  2.1s</span>
+  <span class="green">  ✔</span> apt.update           <span class="dim">cached 1.2 GB  4.7s</span>
+  <span class="lime-d">  ●</span> apt.upgrade          <span class="dim">installing  </span><span class="lime">████████████░░░░░░░░</span><span class="dim">  62% · 14/23</span>
+  <span class="dim">  ○</span> snap.refresh         <span class="dim">queued</span>
+  <span class="dim">  ○</span> flatpak.update       <span class="dim">queued · 412 MB</span>
+  <span class="dim">  ○</span> npm.upgrade-globals  <span class="dim">queued</span>
+
+  <span class="dim">  press </span><span class="b">p</span><span class="dim"> to pause after phase · </span><span class="b">c</span><span class="dim"> to cancel · </span><span class="b">v</span><span class="dim"> to toggle verbose</span>
+
+</pre>
+</div>
+
+<div class="term" style="margin-top:32px;">
+  <div class="tbar"><div class="l"><span></span><span></span><span></span></div><div class="t">summary</div></div>
+<pre>
+  <span class="head">summary</span>                                                    <span class="dim">elapsed 04:38</span>
+  <span class="hr">  ─────────────────────────────────────────────────────────────────────────</span>
+
+    23 packages updated     <span class="pill-ok">PASS</span>
+     1 held by config       <span class="pill-warn">SKIP</span>   nvidia-driver-535
+     0 failed
+
+  <span class="head">  next</span>
+    <span class="lime">▸</span> review snapshot          <span class="dim">ascendo snapshot show snap-1714555338</span>
+    <span class="lime">▸</span> push run report          <span class="dim">ascendo sync push --runs</span>
+    <span class="lime">▸</span> open dashboard           <span class="blue">http://localhost:7842</span>
+
+  <span class="dim">  full log: /var/lib/ascendo/runs/2026-05-01T10-42/run.log</span>
+</pre>
+</div>
+
+</body></html>

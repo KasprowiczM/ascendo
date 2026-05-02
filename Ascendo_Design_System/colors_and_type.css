@@ -1,0 +1,311 @@
+/* ============================================================
+   ASCENDO — Design Tokens
+   colors_and_type.css
+
+   Loaded once per surface. Defines:
+     1. Color primitives (raw scale)
+     2. Semantic color vars (bg, fg, accent, status…)
+     3. Type primitives (families + fluid sizes)
+     4. Semantic type classes (h1, body, code, caption…)
+     5. Radii, shadow, motion
+   Both light + dark themes are defined.  Pick by setting
+   data-theme="dark" on <html> or letting the prefers-color-scheme
+   media query take over.
+   ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap");
+
+/* ────────────────────────────────────────────────────────────
+   1. PRIMITIVES — color scale.
+   Use these only inside semantic vars below, never directly
+   in components.  This keeps theming centralized.
+   ──────────────────────────────────────────────────────────── */
+:root {
+  /* Ink (near-black, slight blue cast — terminal feel without being cold) */
+  --ink-900: #06080F;
+  --ink-800: #0B1020;
+  --ink-700: #131A2E;
+  --ink-600: #1C2440;
+  --ink-500: #2A3354;
+  --ink-400: #495078;
+  --ink-300: #7A8099;
+  --ink-200: #A8ADC2;
+  --ink-100: #D6D9E3;
+  --ink-50:  #EDEFF4;
+
+  /* Paper — cool greys (system feels engineered, not cozy).
+     Keeps "paper-*" naming so all components and docs continue to map. */
+  --paper-900: #131A2E;     /* deepest cool, used as inverse of paper-50 in dark mode */
+  --paper-100: #DDE1EA;     /* sunken (inputs, code-block bg in light) */
+  --paper-50:  #E3E6EE;     /* slight lift from base */
+  --paper-25:  #EDEFF4;     /* PRIMARY light surface — was warm cream, now cool grey */
+  --paper-0:   #F5F7FB;     /* elev cards, top of stack */
+
+  /* Lime — primary accent ("ascending signal", terminal cursor) */
+  --lime-700: #6B8C12;
+  --lime-600: #94B81F;
+  --lime-500: #B8E033;
+  --lime-400: #C8FF4B;     /* hero accent */
+  --lime-300: #D7FF7A;
+  --lime-200: #E5FFA6;
+  --lime-100: #F0FFCD;
+
+  /* Blaze — secondary warm (rare; for highlights, never dominant) */
+  --blaze-500: #FF6A3D;
+  --blaze-300: #FFB593;
+
+  /* Status — muted, professional (no Tailwind clichés) */
+  --status-ok:    #3EBF7A;     /* moss, not emerald */
+  --status-ok-bg: #E5F5EC;
+  --status-warn:    #E0A82E;   /* amber-ochre */
+  --status-warn-bg: #FBF1DA;
+  --status-err:    #DC4B43;    /* terracotta */
+  --status-err-bg: #FBE6E4;
+  --status-info:    #4A7BC9;
+  --status-info-bg: #E2EBF8;
+}
+
+/* ────────────────────────────────────────────────────────────
+   2. SEMANTICS — light theme (default)
+   ──────────────────────────────────────────────────────────── */
+:root {
+  /* Surfaces */
+  --bg:        var(--paper-25);
+  --bg-elev:   var(--paper-0);     /* cards above bg */
+  --bg-sunk:   var(--paper-100);   /* code blocks, inputs */
+  --bg-inverse: var(--ink-800);
+
+  /* Foreground (3 levels) */
+  --fg:        var(--ink-800);
+  --fg-muted:  var(--ink-400);
+  --fg-faint:  var(--ink-300);
+  --fg-inverse: var(--paper-25);
+
+  /* Borders */
+  --border:        rgba(11, 16, 32, 0.10);
+  --border-strong: rgba(11, 16, 32, 0.18);
+  --border-focus:  var(--ink-800);
+
+  /* Accent */
+  --accent:        var(--lime-400);
+  --accent-ink:    var(--ink-900);     /* foreground on accent */
+  --accent-soft:   var(--lime-100);
+  --accent-strong: var(--lime-600);
+
+  /* Status */
+  --ok: var(--status-ok);     --ok-bg: var(--status-ok-bg);
+  --warn: var(--status-warn); --warn-bg: var(--status-warn-bg);
+  --err: var(--status-err);   --err-bg: var(--status-err-bg);
+  --info: var(--status-info); --info-bg: var(--status-info-bg);
+
+  /* Code surface (always dark, regardless of theme — the terminal stays a terminal) */
+  --code-bg:  var(--ink-900);
+  --code-fg:  var(--paper-0);
+  --code-dim: var(--ink-300);
+}
+
+/* Dark theme */
+:root[data-theme="dark"] {
+  --bg:        var(--ink-900);
+  --bg-elev:   var(--ink-800);
+  --bg-sunk:   var(--ink-700);
+  --bg-inverse: var(--paper-25);
+
+  --fg:        var(--paper-0);
+  --fg-muted:  var(--ink-200);
+  --fg-faint:  var(--ink-300);
+  --fg-inverse: var(--ink-900);
+
+  --border:        rgba(214, 217, 227, 0.10);
+  --border-strong: rgba(214, 217, 227, 0.18);
+  --border-focus:  var(--lime-400);
+
+  --accent-soft:   rgba(200, 255, 75, 0.14);
+
+  --ok-bg:   rgba(62, 191, 122, 0.14);
+  --warn-bg: rgba(224, 168, 46, 0.14);
+  --err-bg:  rgba(220, 75, 67, 0.14);
+  --info-bg: rgba(74, 123, 201, 0.14);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg:        var(--ink-900);
+    --bg-elev:   var(--ink-800);
+    --bg-sunk:   var(--ink-700);
+    --bg-inverse: var(--paper-25);
+    --fg:        var(--paper-0);
+    --fg-muted:  var(--ink-200);
+    --fg-faint:  var(--ink-300);
+    --fg-inverse: var(--ink-900);
+    --border:        rgba(214, 217, 227, 0.10);
+    --border-strong: rgba(214, 217, 227, 0.18);
+    --border-focus:  var(--lime-400);
+    --accent-soft:   rgba(200, 255, 75, 0.14);
+  }
+}
+
+/* ────────────────────────────────────────────────────────────
+   3. TYPE PRIMITIVES
+   ──────────────────────────────────────────────────────────── */
+:root {
+  --font-display: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --font-sans:    "Inter Tight", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Fluid scale — 14px base mobile → 16px desktop.
+     Use clamp() everywhere except utility/dense UI text. */
+  --fs-xs:   0.75rem;       /* 12 — captions, micro-labels */
+  --fs-sm:   0.8125rem;     /* 13 — secondary UI */
+  --fs-base: 0.9375rem;     /* 15 — body */
+  --fs-md:   1rem;          /* 16 — slightly larger body */
+  --fs-lg:   1.125rem;      /* 18 — lead */
+  --fs-xl:   1.375rem;      /* 22 — h4 */
+  --fs-2xl:  1.75rem;       /* 28 — h3 */
+  --fs-3xl:  2.25rem;       /* 36 — h2 */
+  --fs-4xl:  clamp(2.5rem, 4vw + 1rem, 4rem);     /* h1 */
+  --fs-5xl:  clamp(3rem, 6vw + 1rem, 5.5rem);     /* display */
+  --fs-hero: clamp(3.5rem, 8vw + 1rem, 7.5rem);   /* landing hero */
+
+  /* Line-heights */
+  --lh-tight:   1.05;
+  --lh-snug:    1.18;
+  --lh-normal:  1.45;
+  --lh-relaxed: 1.6;
+
+  /* Weights */
+  --fw-regular: 400;
+  --fw-medium:  500;
+  --fw-semibold:600;
+  --fw-bold:    700;
+  --fw-black:   800;
+
+  /* Tracking */
+  --tr-tight:   -0.03em;
+  --tr-snug:    -0.015em;
+  --tr-normal:   0;
+  --tr-wide:     0.04em;
+  --tr-wider:    0.12em;     /* eyebrow / mono micro labels */
+}
+
+/* ────────────────────────────────────────────────────────────
+   4. SEMANTIC TYPE — apply via class
+   ──────────────────────────────────────────────────────────── */
+.t-eyebrow {
+  font: var(--fw-medium) var(--fs-xs)/1.2 var(--font-mono);
+  letter-spacing: var(--tr-wider);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.t-display {
+  font: var(--fw-regular) var(--fs-hero)/var(--lh-tight) var(--font-display);
+  letter-spacing: var(--tr-tight);
+  font-style: italic;
+}
+.t-h1 {
+  font: var(--fw-bold) var(--fs-4xl)/var(--lh-tight) var(--font-sans);
+  letter-spacing: var(--tr-tight);
+}
+.t-h2 {
+  font: var(--fw-bold) var(--fs-3xl)/var(--lh-snug) var(--font-sans);
+  letter-spacing: var(--tr-snug);
+}
+.t-h3 {
+  font: var(--fw-semibold) var(--fs-2xl)/var(--lh-snug) var(--font-sans);
+  letter-spacing: var(--tr-snug);
+}
+.t-h4 {
+  font: var(--fw-semibold) var(--fs-xl)/var(--lh-snug) var(--font-sans);
+  letter-spacing: var(--tr-snug);
+}
+.t-lead {
+  font: var(--fw-regular) var(--fs-lg)/var(--lh-relaxed) var(--font-sans);
+  color: var(--fg-muted);
+  text-wrap: pretty;
+}
+.t-body {
+  font: var(--fw-regular) var(--fs-base)/var(--lh-relaxed) var(--font-sans);
+  text-wrap: pretty;
+}
+.t-body-sm {
+  font: var(--fw-regular) var(--fs-sm)/var(--lh-relaxed) var(--font-sans);
+}
+.t-caption {
+  font: var(--fw-regular) var(--fs-xs)/1.4 var(--font-sans);
+  color: var(--fg-faint);
+}
+.t-mono {
+  font: var(--fw-regular) var(--fs-sm)/1.5 var(--font-mono);
+}
+.t-code-block {
+  font: var(--fw-regular) var(--fs-sm)/1.55 var(--font-mono);
+  background: var(--code-bg);
+  color: var(--code-fg);
+  padding: 1rem 1.1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.t-kbd {
+  font: var(--fw-medium) 0.78em/1 var(--font-mono);
+  padding: 0.18em 0.48em;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg-elev);
+  color: var(--fg);
+}
+
+/* ────────────────────────────────────────────────────────────
+   5. SHAPE, ELEVATION, MOTION
+   ──────────────────────────────────────────────────────────── */
+:root {
+  /* Radii — small + crisp, never pill except for badges */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 18px;
+  --radius-pill: 999px;
+
+  /* Spacing — 4px ramp */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+  --space-10: 128px;
+
+  /* Shadows — flat by default; small lift on float, strong only on modals */
+  --shadow-sm:    0 1px 0 rgba(11,16,32,0.04), 0 1px 2px rgba(11,16,32,0.04);
+  --shadow-md:    0 1px 0 rgba(11,16,32,0.04), 0 6px 14px rgba(11,16,32,0.06);
+  --shadow-lg:    0 10px 30px rgba(11,16,32,0.10), 0 2px 6px rgba(11,16,32,0.04);
+  --shadow-xl:    0 30px 60px rgba(11,16,32,0.18), 0 12px 24px rgba(11,16,32,0.08);
+  --shadow-inner: inset 0 0 0 1px rgba(11,16,32,0.06);
+
+  /* Motion */
+  --ease-out:     cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out:  cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring:  cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --dur-1: 90ms;
+  --dur-2: 160ms;
+  --dur-3: 240ms;
+  --dur-4: 420ms;
+}
+
+/* Base resets — non-invasive, opt-in via class */
+*, *::before, *::after { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: var(--lh-relaxed);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+::selection { background: var(--accent); color: var(--accent-ink); }

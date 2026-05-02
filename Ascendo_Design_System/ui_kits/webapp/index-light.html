@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ascendo — Dashboard (light)</title>
+<link rel="stylesheet" href="../../colors_and_type.css">
+<style>
+  html,body{height:100%;}
+  body{background:#F5F4EE;color:#0B1020;display:grid;grid-template-columns:240px 1fr;font-family:var(--font-sans);}
+  aside{background:#EFEDE5;border-right:1px solid rgba(11,16,32,.08);padding:18px 12px;display:flex;flex-direction:column;gap:4px;}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 14px;border-bottom:1px solid rgba(11,16,32,.08);margin-bottom:10px;}
+  .bn{font:var(--fw-bold) 17px var(--font-sans);letter-spacing:-.02em;color:#0B1020;}
+  .tag{font:var(--fw-medium) 9px var(--font-mono);color:#7A8099;text-transform:uppercase;letter-spacing:.14em;}
+  nav a{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:6px;color:#3a4055;text-decoration:none;font:var(--fw-medium) 13px var(--font-sans);}
+  nav a:hover{background:rgba(11,16,32,.04);color:#0B1020;}
+  nav a.active{background:#0B1020;color:#F5F4EE;}
+  nav a.active svg{color:#C8FF4B;}
+  nav svg{width:16px;height:16px;color:#7A8099;}
+  .sidebar-foot{margin-top:auto;padding-top:14px;border-top:1px solid rgba(11,16,32,.08);font:var(--fw-regular) 11px var(--font-mono);color:#7A8099;}
+
+  main{padding:28px 36px;overflow:auto;}
+  .h{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;}
+  .h h1{font:var(--fw-bold) 28px var(--font-sans);letter-spacing:-.02em;margin:0;color:#0B1020;}
+  .h .meta{font:var(--fw-medium) 11px var(--font-mono);color:#7A8099;text-transform:uppercase;letter-spacing:.12em;}
+  .actions{display:flex;gap:8px;}
+  .btn{padding:8px 14px;border-radius:6px;border:1px solid rgba(11,16,32,.14);background:#fff;color:#0B1020;font:var(--fw-semibold) 13px var(--font-sans);cursor:pointer;}
+  .btn:hover{background:#EFEDE5;}
+  .btn.primary{background:#0B1020;color:#C8FF4B;border-color:transparent;}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;}
+  .card{background:#fff;border:1px solid rgba(11,16,32,.08);border-radius:10px;padding:18px;}
+  .card .eye{font:var(--fw-medium) 10px var(--font-mono);color:#7A8099;text-transform:uppercase;letter-spacing:.12em;margin:0 0 10px;}
+  .card .big{font:var(--fw-bold) 26px var(--font-sans);color:#0B1020;letter-spacing:-.02em;margin:0;}
+  .card .meta{font:var(--fw-regular) 12px var(--font-mono);color:#7A8099;margin-top:6px;}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font:var(--fw-semibold) 11px var(--font-mono);}
+  .pill::before{content:"";width:6px;height:6px;border-radius:50%;}
+  .pill.ok{background:rgba(62,191,122,.14);color:#1F7A4A;}.pill.ok::before{background:#3EBF7A;}
+  .pill.warn{background:rgba(224,168,46,.16);color:#7a5a14;}.pill.warn::before{background:#E0A82E;}
+  .pill.run{background:rgba(11,16,32,.06);color:#0B1020;}.pill.run::before{background:#C8FF4B;animation:pulse 1s infinite;box-shadow:0 0 0 3px rgba(200,255,75,.3);}
+  @keyframes pulse{50%{opacity:.4;}}
+
+  .qa{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .qa button{padding:9px 12px;border-radius:6px;border:1px solid rgba(11,16,32,.10);background:#fff;color:#0B1020;font:var(--fw-semibold) 12px var(--font-sans);cursor:pointer;text-align:left;}
+  .qa button:hover{background:#EFEDE5;}
+  .qa button.hl{background:#0B1020;color:#C8FF4B;border-color:transparent;}
+
+  h3.section{font:var(--fw-semibold) 16px var(--font-sans);margin:32px 0 14px;color:#0B1020;letter-spacing:-.01em;}
+
+  .bars .row{display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid rgba(11,16,32,.06);font:var(--fw-medium) 12px var(--font-mono);color:#3a4055;}
+  .bars .row:first-child{border-top:0;}
+  .bars .label{width:80px;color:#7A8099;}
+  .bars .track{flex:1;height:8px;background:rgba(11,16,32,.06);border-radius:99px;overflow:hidden;display:flex;}
+  .bars .track .ok{background:#3EBF7A;}.bars .track .warn{background:#E0A82E;}.bars .track .err{background:#DC4B43;}
+  .bars .counts{width:90px;text-align:right;color:#7A8099;font-size:11px;}
+
+  .donut{display:flex;align-items:center;justify-content:center;}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:8px;font:var(--fw-medium) 11px var(--font-mono);color:#3a4055;}
+  .legend span::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px;}
+  .lg-ok::before{background:#3EBF7A;}.lg-warn::before{background:#E0A82E;}.lg-err::before{background:#DC4B43;}
+
+  table.upd{width:100%;border-collapse:collapse;font-size:13px;}
+  table.upd th{text-align:left;font:var(--fw-medium) 11px var(--font-mono);color:#7A8099;text-transform:uppercase;letter-spacing:.08em;padding:8px 10px;border-bottom:1px solid rgba(11,16,32,.10);}
+  table.upd td{padding:9px 10px;border-bottom:1px solid rgba(11,16,32,.06);font:var(--fw-regular) 13px var(--font-sans);color:#0B1020;}
+  table.upd td .pkg{font-family:var(--font-mono);font-size:12px;}
+  table.upd td .ver{font-family:var(--font-mono);font-size:12px;color:#7A8099;}
+  table.upd tr:hover td{background:#FAF9F4;}
+</style></head>
+<body data-screen-label="Web App — Overview (light)">
+<aside>
+  <div class="brand">
+    <svg viewBox="0 0 64 64" width="30" height="30"><rect width="64" height="64" rx="14" fill="#0B1020"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#C8FF4B"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#C8FF4B"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#C8FF4B"/></svg>
+    <div><div class="bn">Ascendo</div><div class="tag">unified updates</div></div>
+  </div>
+  <nav>
+    <a class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M3 12a9 9 0 0 1 18 0"/></svg>Overview</a>
+    <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/></svg>Categories</a>
+    <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>Run center</a>
+    <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>History</a>
+    <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Logs</a>
+    <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/></svg>Sync</a>
+    <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Apps</a>
+    <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M9 11l1.5 3 3 1.5-3 1.5L9 20l-1.5-3-3-1.5 3-1.5L9 11Z"/></svg>Suggestions</a>
+    <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="6" rx="1.5"/><rect x="2" y="13" width="20" height="6" rx="1.5"/></svg>Hosts</a>
+    <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/></svg>Settings</a>
+  </nav>
+  <div class="sidebar-foot">host: kasper-x1 · ubuntu 24.04</div>
+</aside>
+
+<main>
+  <div class="h">
+    <div>
+      <div class="meta">overview · last refresh 12s ago</div>
+      <h1 style="margin-top:6px;">Good morning, Kasper.</h1>
+    </div>
+    <div class="actions">
+      <button class="btn">Refresh</button>
+      <button class="btn primary">Start safe run →</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <p class="eye">Last run</p>
+      <p class="big">2h 14m ago</p>
+      <p class="meta">profile=safe · 23 packages · 0 failed</p>
+      <span class="pill ok" style="margin-top:12px;">Healthy</span>
+    </div>
+    <div class="card">
+      <p class="eye">System health</p>
+      <p class="big" style="color:#1F7A4A;">96 / 100</p>
+      <p class="meta">no failed units · disk 42% · 1 advisory</p>
+    </div>
+    <div class="card">
+      <p class="eye">Git</p>
+      <p class="big" style="font-size:18px;">main · clean</p>
+      <p class="meta">1 commit ahead origin/main</p>
+      <span class="pill warn" style="margin-top:12px;">Push pending</span>
+    </div>
+    <div class="card">
+      <p class="eye">Quick actions</p>
+      <div class="qa" style="margin-top:8px;">
+        <button>Quick check</button>
+        <button class="hl">Safe update</button>
+        <button>Full update</button>
+        <button>Dry run</button>
+      </div>
+    </div>
+  </div>
+
+  <h3 class="section">Inventory</h3>
+  <div class="grid">
+    <div class="card donut" style="flex-direction:column;">
+      <p class="eye" style="align-self:flex-start;">Status (all categories)</p>
+      <svg viewBox="0 0 120 120" width="160" height="160">
+        <circle cx="60" cy="60" r="46" fill="none" stroke="rgba(11,16,32,.06)" stroke-width="14"/>
+        <circle cx="60" cy="60" r="46" fill="none" stroke="#3EBF7A" stroke-width="14" stroke-dasharray="216 289" transform="rotate(-90 60 60)"/>
+        <circle cx="60" cy="60" r="46" fill="none" stroke="#E0A82E" stroke-width="14" stroke-dasharray="46 289" stroke-dashoffset="-216" transform="rotate(-90 60 60)"/>
+        <circle cx="60" cy="60" r="46" fill="none" stroke="#DC4B43" stroke-width="14" stroke-dasharray="14 289" stroke-dashoffset="-262" transform="rotate(-90 60 60)"/>
+        <text x="60" y="58" text-anchor="middle" font-family="Inter Tight" font-weight="700" font-size="22" fill="#0B1020">142</text>
+        <text x="60" y="74" text-anchor="middle" font-family="JetBrains Mono" font-size="9" fill="#7A8099">tracked</text>
+      </svg>
+      <div class="legend">
+        <span class="lg-ok">108 ok</span><span class="lg-warn">23 outdated</span><span class="lg-err">11 missing</span>
+      </div>
+    </div>
+    <div class="card">
+      <p class="eye">Per category</p>
+      <div class="bars" style="margin-top:8px;">
+        <div class="row"><span class="label">apt</span><div class="track"><div class="ok" style="width:68%"></div><div class="warn" style="width:18%"></div><div class="err" style="width:6%"></div></div><span class="counts">52 / 8 / 3</span></div>
+        <div class="row"><span class="label">snap</span><div class="track"><div class="ok" style="width:88%"></div><div class="warn" style="width:8%"></div></div><span class="counts">18 / 2 / 0</span></div>
+        <div class="row"><span class="label">flatpak</span><div class="track"><div class="ok" style="width:60%"></div><div class="warn" style="width:35%"></div></div><span class="counts">12 / 7 / 0</span></div>
+        <div class="row"><span class="label">npm</span><div class="track"><div class="ok" style="width:75%"></div><div class="warn" style="width:15%"></div><div class="err" style="width:10%"></div></div><span class="counts">14 / 3 / 2</span></div>
+        <div class="row"><span class="label">pipx</span><div class="track"><div class="ok" style="width:90%"></div><div class="err" style="width:10%"></div></div><span class="counts">8 / 0 / 1</span></div>
+        <div class="row"><span class="label">drivers</span><div class="track"><div class="ok" style="width:50%"></div><div class="warn" style="width:50%"></div></div><span class="counts">2 / 2 / 0</span></div>
+      </div>
+    </div>
+    <div class="card" style="grid-column:1 / -1;">
+      <p class="eye">Available updates · 23</p>
+      <table class="upd">
+        <thead><tr><th>Category</th><th>Package</th><th>Current</th><th>Available</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>apt</td><td><span class="pkg">firefox</span></td><td><span class="ver">123.0.1</span></td><td><span class="ver">124.0.2</span></td><td><span class="pill warn">outdated</span></td></tr>
+          <tr><td>apt</td><td><span class="pkg">linux-headers-generic</span></td><td><span class="ver">6.8.0-31</span></td><td><span class="ver">6.8.0-40</span></td><td><span class="pill warn">outdated</span></td></tr>
+          <tr><td>snap</td><td><span class="pkg">code</span></td><td><span class="ver">175</span></td><td><span class="ver">180</span></td><td><span class="pill warn">outdated</span></td></tr>
+          <tr><td>npm</td><td><span class="pkg">@anthropic-ai/claude-code</span></td><td><span class="ver">2.1.4</span></td><td><span class="ver">2.3.0</span></td><td><span class="pill run">running</span></td></tr>
+          <tr><td>drivers</td><td><span class="pkg">nvidia-driver-535</span></td><td><span class="ver">535.161</span></td><td><span class="ver">550.78</span></td><td><span class="pill" style="background:rgba(11,16,32,.05);color:#7A8099;">held</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+</body></html>

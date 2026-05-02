@@ -25,6 +25,11 @@ from ascendo.interfaces import (
 from ascendo.models.host import ElevationMethod, HostInfo, OperatingSystem
 
 from .inventory import WindowsInventory
+from .managers.arp import ArpManager
+from .managers.elevation import WindowsElevation
+from .managers.msstore import MSStoreManager
+from .managers.scheduler import WindowsScheduler
+from .managers.snapshot import WindowsSnapshot
 from .managers.winget import WingetManager
 from .managers.windows_update import WindowsUpdateManager
 
@@ -61,11 +66,16 @@ class WindowsAdapter(IAdapter):
         return (
             AdapterCapability.PACKAGE_MANAGEMENT
             | AdapterCapability.INVENTORY
+            | AdapterCapability.SNAPSHOTS
+            | AdapterCapability.SCHEDULING
+            | AdapterCapability.ELEVATION
         )
 
     def package_managers(self, host: HostInfo) -> list[IPackageManager]:
         return [
             WingetManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
+            MSStoreManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
+            ArpManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
             WindowsUpdateManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
         ]
 
@@ -76,16 +86,16 @@ class WindowsAdapter(IAdapter):
         )
 
     def snapshot(self) -> ISnapshot | None:
-        return None
+        return WindowsSnapshot(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR)
 
     def scheduler(self) -> IScheduler | None:
-        return None
+        return WindowsScheduler(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR)
 
     def source(self) -> ISource | None:
         return None
 
     def elevation(self) -> IElevation | None:
-        return None
+        return WindowsElevation()
 
     def detect_host(self) -> HostInfo:
         if self._cached_host is not None:

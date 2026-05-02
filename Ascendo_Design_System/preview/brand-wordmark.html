@@ -1,0 +1,53 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;padding:24px;background:#EDEFF4;display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .lbl{font:var(--fw-medium) 10px var(--font-mono);color:#495078;text-transform:uppercase;letter-spacing:.12em;}
+  .tile{padding:20px 22px;border-radius:12px;display:flex;flex-direction:column;gap:14px;align-items:flex-start;}
+  .tile.paper{background:#FBFAF5;border:1px solid rgba(11,16,32,.08);}
+  .tile.ink{background:#0B1020;}
+  .tile.ink .lbl{color:#A8ADC2;}
+  .lockup{display:flex;align-items:center;gap:14px;}
+  .name{font:var(--fw-bold) 30px "Inter Tight",sans-serif;letter-spacing:-.03em;}
+  .paper .name{color:#0B1020;}
+  .ink .name{color:#F5F4EE;}
+  .stack{display:flex;flex-direction:column;align-items:flex-start;gap:8px;}
+  .stack .name{font-size:26px;}
+  .stack .tag{font:var(--fw-medium) 10px var(--font-mono);color:#7A8099;text-transform:uppercase;letter-spacing:.16em;}
+</style></head>
+<body>
+<div class="tile paper">
+  <span class="lbl">horizontal · paper</span>
+  <div class="lockup">
+    <svg viewBox="0 0 64 64" width="44" height="44"><rect width="64" height="64" rx="14" fill="#0B1020"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#C8FF4B"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#C8FF4B"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#C8FF4B"/></svg>
+    <span class="name">Ascendo</span>
+  </div>
+</div>
+<div class="tile ink">
+  <span class="lbl">horizontal · ink</span>
+  <div class="lockup">
+    <svg viewBox="0 0 64 64" width="44" height="44"><rect width="64" height="64" rx="14" fill="#C8FF4B"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#0B1020"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#0B1020"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#0B1020"/></svg>
+    <span class="name">Ascendo</span>
+  </div>
+</div>
+<div class="tile paper">
+  <span class="lbl">stacked · with tagline</span>
+  <div class="stack">
+    <div class="lockup" style="gap:10px;">
+      <svg viewBox="0 0 64 64" width="36" height="36"><rect width="64" height="64" rx="14" fill="#0B1020"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#C8FF4B"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#C8FF4B"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#C8FF4B"/></svg>
+      <span class="name">Ascendo</span>
+    </div>
+    <span class="tag">unified updates · v0.1.0</span>
+  </div>
+</div>
+<div class="tile ink">
+  <span class="lbl">stacked · ink</span>
+  <div class="stack">
+    <div class="lockup" style="gap:10px;">
+      <svg viewBox="0 0 64 64" width="36" height="36"><rect width="64" height="64" rx="14" fill="#C8FF4B"/><rect x="14" y="36" width="8" height="16" rx="2" fill="#0B1020"/><rect x="28" y="26" width="8" height="26" rx="2" fill="#0B1020"/><rect x="42" y="14" width="8" height="38" rx="2" fill="#0B1020"/></svg>
+      <span class="name">Ascendo</span>
+    </div>
+    <span class="tag">unified updates · v0.1.0</span>
+  </div>
+</div>
+</body></html>

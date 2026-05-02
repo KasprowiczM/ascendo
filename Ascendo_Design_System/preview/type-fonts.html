@@ -1,0 +1,130 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Geist:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Fraunces:ital,wght@0,400;1,400&family=Cormorant+Garamond:ital,wght@0,400;1,400&family=Newsreader:ital,wght@0,400;1,400&family=IBM+Plex+Mono:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Fira+Code:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;padding:26px 24px;background:var(--paper-25);color:#0B1020;}
+  h1{font:var(--fw-medium) 11px var(--font-mono);text-transform:uppercase;letter-spacing:.14em;color:#495078;margin:0 0 6px;}
+  .sub{font:400 13px/1.5 var(--font-sans);color:#7A8099;margin:0 0 24px;max-width:60ch;}
+  .group{margin-bottom:28px;}
+  .ghdr{display:flex;align-items:baseline;gap:12px;border-bottom:1px solid rgba(11,16,32,.1);padding-bottom:8px;margin-bottom:14px;}
+  .gtag{font:600 10px var(--font-mono);text-transform:uppercase;letter-spacing:.14em;color:#94B81F;}
+  .gname{font:var(--fw-bold) 16px var(--font-sans);letter-spacing:-.02em;}
+  .ghint{font:400 12px var(--font-mono);color:#7A8099;margin-left:auto;}
+  .row{display:grid;grid-template-columns:130px 1fr;gap:18px;align-items:center;padding:10px 0;border-bottom:1px dashed rgba(11,16,32,.07);}
+  .row:last-child{border-bottom:0;}
+  .row .meta{display:flex;flex-direction:column;gap:2px;}
+  .name{font:600 13px var(--font-sans);color:#0B1020;letter-spacing:-.01em;}
+  .pick{font:500 9px var(--font-mono);text-transform:uppercase;letter-spacing:.14em;color:#94B81F;}
+  .name.current::after{content:"current";font:500 9px var(--font-mono);color:#fff;background:#0B1020;padding:2px 6px;border-radius:3px;margin-left:8px;letter-spacing:.1em;text-transform:uppercase;vertical-align:middle;}
+  .desc{font:400 11px var(--font-mono);color:#7A8099;}
+
+  /* Display row sample */
+  .s-disp{font-size:38px;line-height:1;letter-spacing:-.02em;color:#0B1020;}
+  .s-disp .alt{color:#94B81F;}
+  /* Sans body sample */
+  .s-sans{font-size:15px;line-height:1.5;color:#0B1020;}
+  .s-sans .lab{font-weight:700;letter-spacing:-.01em;display:block;margin-bottom:2px;}
+  /* Mono code sample */
+  .s-mono{font-size:13px;line-height:1.5;color:#0B1020;background:#E8E5DA;padding:8px 12px;border-radius:6px;display:inline-block;}
+  .s-mono .dim{color:#7A8099;}
+  .s-mono .ok{color:#6B8C12;}
+
+  .f-instr{font-family:"Instrument Serif",serif;font-style:italic;}
+  .f-fraunces{font-family:"Fraunces",serif;font-style:italic;font-variation-settings:"SOFT" 30,"WONK" 1;}
+  .f-cormorant{font-family:"Cormorant Garamond",serif;font-style:italic;}
+  .f-newsreader{font-family:"Newsreader",serif;font-style:italic;}
+
+  .f-inter{font-family:"Inter Tight",sans-serif;}
+  .f-geist{font-family:"Geist",sans-serif;}
+  .f-grotesk{font-family:"Space Grotesk",sans-serif;}
+  .f-dm{font-family:"DM Sans",sans-serif;}
+
+  .f-jet{font-family:"JetBrains Mono",monospace;}
+  .f-plex{font-family:"IBM Plex Mono",monospace;}
+  .f-geistm{font-family:"Geist Mono",monospace;}
+  .f-fira{font-family:"Fira Code",monospace;}
+</style></head>
+<body>
+
+<h1>Font alternatives</h1>
+<p class="sub">Three families in play — display serif, sans body, mono. Pick one from each row, or stay with current. Same word/phrase repeated so the only thing that changes is the typeface.</p>
+
+<!-- DISPLAY -->
+<div class="group">
+  <div class="ghdr">
+    <span class="gtag">01 · display</span>
+    <span class="gname">Italic serif accent</span>
+    <span class="ghint">used in hero ("ascend.") · single-word moments</span>
+  </div>
+  <div class="row">
+    <div class="meta"><span class="name current">Instrument Serif</span><span class="desc">tall, sharp, dramatic</span></div>
+    <span class="s-disp f-instr">ascend<span class="alt">.</span></span>
+  </div>
+  <div class="row">
+    <div class="meta"><span class="name">Fraunces <span class="pick">soft</span></span><span class="desc">friendlier, more body</span></div>
+    <span class="s-disp f-fraunces">ascend<span class="alt">.</span></span>
+  </div>
+  <div class="row">
+    <div class="meta"><span class="name">Cormorant Garamond</span><span class="desc">classical, editorial</span></div>
+    <span class="s-disp f-cormorant">ascend<span class="alt">.</span></span>
+  </div>
+  <div class="row">
+    <div class="meta"><span class="name">Newsreader</span><span class="desc">modern, neutral italic</span></div>
+    <span class="s-disp f-newsreader">ascend<span class="alt">.</span></span>
+  </div>
+</div>
+
+<!-- SANS -->
+<div class="group">
+  <div class="ghdr">
+    <span class="gtag">02 · sans body</span>
+    <span class="gname">UI + headings</span>
+    <span class="ghint">used everywhere — buttons, cards, headings</span>
+  </div>
+  <div class="row">
+    <div class="meta"><span class="name current">Inter Tight</span><span class="desc">tight, opinionated</span></div>
+    <span class="s-sans f-inter"><span class="lab">Every update, one place</span>Five phases per category — check, plan, apply, verify, cleanup.</span>
+  </div>
+  <div class="row">
+    <div class="meta"><span class="name">Geist</span><span class="desc">geometric, neutral</span></div>
+    <span class="s-sans f-geist"><span class="lab">Every update, one place</span>Five phases per category — check, plan, apply, verify, cleanup.</span>
+  </div>
+  <div class="row">
+    <div class="meta"><span class="name">Space Grotesk</span><span class="desc">quirky, technical</span></div>
+    <span class="s-sans f-grotesk"><span class="lab">Every update, one place</span>Five phases per category — check, plan, apply, verify, cleanup.</span>
+  </div>
+  <div class="row">
+    <div class="meta"><span class="name">DM Sans</span><span class="desc">round, soft</span></div>
+    <span class="s-sans f-dm"><span class="lab">Every update, one place</span>Five phases per category — check, plan, apply, verify, cleanup.</span>
+  </div>
+</div>
+
+<!-- MONO -->
+<div class="group">
+  <div class="ghdr">
+    <span class="gtag">03 · mono</span>
+    <span class="gname">Code, eyebrows, tags</span>
+    <span class="ghint">terminal output, micro-labels, kbd</span>
+  </div>
+  <div class="row">
+    <div class="meta"><span class="name current">JetBrains Mono</span><span class="desc">developer default</span></div>
+    <span class="s-mono f-jet">$ ascendo run --profile=safe<br><span class="dim">[apt]</span> check  <span class="ok">✓</span> 12 outdated</span>
+  </div>
+  <div class="row">
+    <div class="meta"><span class="name">IBM Plex Mono</span><span class="desc">warmer, has serifs</span></div>
+    <span class="s-mono f-plex">$ ascendo run --profile=safe<br><span class="dim">[apt]</span> check  <span class="ok">✓</span> 12 outdated</span>
+  </div>
+  <div class="row">
+    <div class="meta"><span class="name">Geist Mono</span><span class="desc">tight, modern</span></div>
+    <span class="s-mono f-geistm">$ ascendo run --profile=safe<br><span class="dim">[apt]</span> check  <span class="ok">✓</span> 12 outdated</span>
+  </div>
+  <div class="row">
+    <div class="meta"><span class="name">Fira Code</span><span class="desc">ligatures, classic</span></div>
+    <span class="s-mono f-fira">$ ascendo run --profile=safe<br><span class="dim">[apt]</span> check  <span class="ok">✓</span> 12 outdated</span>
+  </div>
+</div>
+
+</body></html>

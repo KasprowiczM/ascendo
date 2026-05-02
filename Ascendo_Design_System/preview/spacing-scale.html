@@ -1,0 +1,32 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;padding:28px;background:#F5F4EE;color:#0B1020;font-family:var(--font-sans);}
+  h2{font:var(--fw-semibold) 13px var(--font-mono);text-transform:uppercase;letter-spacing:.12em;color:#7A8099;margin:0 0 6px;}
+  .meta{font:var(--fw-medium) 11px var(--font-mono);color:#7A8099;margin:0 0 22px;}
+  .meta b{color:#0B1020;font-weight:600;}
+  .scale{display:flex;flex-direction:column;gap:10px;}
+  .row{display:grid;grid-template-columns:60px 80px 1fr;align-items:center;gap:14px;padding:8px 0;border-top:1px solid rgba(11,16,32,.08);}
+  .row:first-child{border-top:0;}
+  .tok{font:var(--fw-semibold) 13px var(--font-mono);color:#0B1020;}
+  .px{font:var(--fw-regular) 12px var(--font-mono);color:#7A8099;}
+  .bar{height:18px;background:#0B1020;border-radius:3px;}
+  .bar.accent{background:#C8FF4B;}
+</style></head>
+<body>
+<h2>Spacing scale · 4px ramp</h2>
+<p class="meta">Token <b>--space-N</b>. Used for padding, gap, and margin throughout the system. Bars below are drawn at exact pixel widths.</p>
+
+<div class="scale">
+  <div class="row"><span class="tok">--space-1</span><span class="px">4 px</span><div class="bar" style="width:4px"></div></div>
+  <div class="row"><span class="tok">--space-2</span><span class="px">8 px</span><div class="bar" style="width:8px"></div></div>
+  <div class="row"><span class="tok">--space-3</span><span class="px">12 px</span><div class="bar" style="width:12px"></div></div>
+  <div class="row"><span class="tok">--space-4</span><span class="px">16 px</span><div class="bar accent" style="width:16px"></div></div>
+  <div class="row"><span class="tok">--space-5</span><span class="px">24 px</span><div class="bar" style="width:24px"></div></div>
+  <div class="row"><span class="tok">--space-6</span><span class="px">32 px</span><div class="bar accent" style="width:32px"></div></div>
+  <div class="row"><span class="tok">--space-7</span><span class="px">48 px</span><div class="bar" style="width:48px"></div></div>
+  <div class="row"><span class="tok">--space-8</span><span class="px">64 px</span><div class="bar" style="width:64px"></div></div>
+  <div class="row"><span class="tok">--space-9</span><span class="px">96 px</span><div class="bar" style="width:96px"></div></div>
+  <div class="row"><span class="tok">--space-10</span><span class="px">128 px</span><div class="bar" style="width:128px"></div></div>
+</div>
+</body></html>

@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body{margin:0;padding:24px;background:var(--bg-elev);display:flex;flex-direction:column;gap:14px;}
+  .row{display:flex;gap:10px;}
+  .item{flex:1;border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;}
+  .dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:middle;}
+  .label{font:var(--fw-semibold) var(--fs-sm) var(--font-sans);color:var(--fg);}
+  .hex{font:var(--fw-regular) 11px var(--font-mono);color:var(--fg-faint);}
+  .pill{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font:var(--fw-semibold) 11px var(--font-mono);width:fit-content;}
+</style></head>
+<body>
+<div class="row">
+  <div class="item" style="background:#E5F5EC"><span class="label"><span class="dot" style="background:#3EBF7A"></span>OK · success</span><span class="hex">fg #3EBF7A · bg #E5F5EC</span><span class="pill" style="background:#3EBF7A;color:#fff;">Apply succeeded</span></div>
+  <div class="item" style="background:#FBF1DA"><span class="label"><span class="dot" style="background:#E0A82E"></span>Warn · attention</span><span class="hex">fg #E0A82E · bg #FBF1DA</span><span class="pill" style="background:#E0A82E;color:#fff;">Restart pending</span></div>
+</div>
+<div class="row">
+  <div class="item" style="background:#FBE6E4"><span class="label"><span class="dot" style="background:#DC4B43"></span>Err · failure</span><span class="hex">fg #DC4B43 · bg #FBE6E4</span><span class="pill" style="background:#DC4B43;color:#fff;">Phase failed</span></div>
+  <div class="item" style="background:#E2EBF8"><span class="label"><span class="dot" style="background:#4A7BC9"></span>Info · neutral</span><span class="hex">fg #4A7BC9 · bg #E2EBF8</span><span class="pill" style="background:#4A7BC9;color:#fff;">Dry run</span></div>
+</div>
+</body></html>

@@ -1,12 +1,50 @@
 # Ascendo — Implementation Handoff
 
-> **Single source of truth dla resumowania pracy nad Ascendo.**
-> Jeśli sesja Cowork crashuje, jeśli wracasz po przerwie, jeśli nowy Claude
-> zaczyna od zera — **przeczytaj ten plik najpierw**. Wszystko czego
-> potrzebujesz do kontynuacji jest tutaj.
->
-> **Aktualizuj** ten plik po każdej sesji w sekcji `## Session Log`
-> i `## Current State`.
+> **Historical session log + current state.** Forward roadmap is in
+> [`PLAN.md`](./PLAN.md) — read that first if you're picking up after a break.
+> This file is the chronological history; PLAN.md is "what's next".
+
+---
+
+## ⚡ FAST RESUME (2026-05-01, post-Sesja 12)
+
+**Where we are:** v0.0.7-alpha-rc. **Windows MVP feature-complete.** Real-hardware validated on DP5520WMK end-to-end.
+
+**Verified working on real Windows:**
+- `python -m ascendo doctor --verbose` → 5 capabilities declared.
+- `python -m ascendo run --phase check` → 4/4 success, 137 items inventoried (winget + msstore + registry_arp + windows_update).
+- `python -m ascendo run --phase plan` → 4/4 success, 1 winget package upgrade pending.
+- `python -m ascendo run --phase apply --dry-run` → 4/4 success.
+- `python -m ascendo run --phase verify` → 4/4 success.
+
+**Remaining 30-min path to v0.0.7-alpha tag:** see [`PLAN.md`](./PLAN.md) §Immediate next steps. Run real apply on the 1 pending winget package from Admin shell, smoke-test dashboard, tag.
+
+**Branch:** `restructure/monorepo`. **Origin:** `https://github.com/KasprowiczM/ascendo.git`.
+
+**Layout that matters:**
+- `core/ascendo/` — Python core (interfaces, orchestrator, dashboard, CLI)
+- `adapters/windows/{ascendo_windows,lib,scripts,tests}/` — Tier-1 Windows adapter
+- `app/frontend/` — SPA (will move to `ui/frontend/` in M4)
+- `plugins/dell-driver-update/` — first plugin (manifest + 5 PS scripts; scripts still need same StrictMode-safe fixes msstore got)
+- `Ascendo_Design_System/` — design tokens + UI kits (dark primary)
+- `~/.ascendo/runs/<run-id>/` — sidecar storage
+- [`PLAN.md`](./PLAN.md) — forward roadmap
+- [`HANDOFF.md`](./HANDOFF.md) — this file (historical log)
+
+**Key design contracts (don't relearn):**
+- Sidecar JSON v1 — `core/ascendo/models/sidecar.py` + ADR-0003.
+- 6-layer architecture — ADR-0005.
+- Plugin manifest v1 — ADR-0007.
+- PowerShell scripts MUST: `[Alias('Profile')] [string] $ProfileName`, `Set-StrictMode -Version Latest`-safe property access via `PSObject.Properties[name]`, splat via `$_var = @{...}; New-Sidecar @_var` (NEVER inline `New-Sidecar @{...}`), `Save-Sidecar -OutputDir $OutputDir` (writes to `<OutputDir>/<RunId>/<phase>__<category>.json` automatically), `Add-SidecarMessage -Text` not `-Message`. **Always copy `scripts/winget/check.ps1` line-by-line as the template.**
+- AscendoJson.psm1 exports: `New-Sidecar / Add-SidecarItem / Add-SidecarMessage / Save-Sidecar`. `New-Sidecar` mandatory params: `-RunId -Trigger -ProfileName -Phase -Category -ToolName -ToolVersion`.
+- AscendoWinget.psm1 exports: `Initialize-WingetEnvironment / Restore-WingetEnvironment / Get-WingetUpgradable / Get-WingetInstalled / Convert-WingetExitCode / Resolve-WingetId`. **NOT exported:** `Get-WingetVersion / Get-WingetBinaryPath / Read-WingetTabularOutput` — each script defines its own helper.
+
+**Most recent debugging hard-won lessons (don't repeat):**
+1. `Set-StrictMode -Version Latest` will throw on missing properties — always use `PSObject.Properties[name]` checks.
+2. `New-Sidecar @{...}` is NOT splatting; it's a positional hashtable arg. PowerShell needs `$var = @{...}; New-Sidecar @var`.
+3. `Get-WingetUpgradable` doesn't accept `-Source`; filter results post-hoc with `Where-Object { $_.Source -ieq 'msstore' }`.
+4. The Edit tool truncates very long replacement strings — prefer `Write` for >100-line writes; for `Edit`, keep `new_string` short or do many small focused edits.
+5. UTF-8 box-drawing characters (─, —) in comments survive most edits but occasionally get mangled into Latin-1 by some tools — replaced all with plain ASCII (- and =).
 
 ---
 
@@ -219,7 +257,425 @@ python_modules, plugins), `scripts` (per OS, per phase), `config`,
 ## Current State (UPDATE this section after each session)
 
 ### Last updated
-2026-05-01 — **v0.0.1-alpha SHIPPED.** End-to-end validated on real DP5520WMK. ALL CHECKS PASSED.
+2026-05-01 — **v0.0.7-alpha — Windows MVP capability set complete.** Sesja 12 ships M3.12 (VSS snapshots), M3.13 (Task Scheduler), M3.14 (UAC elevation), M3.15 (Dell Driver Update plugin). `WindowsAdapter` now declares the full capability flag set: `PACKAGE_MANAGEMENT | INVENTORY | SNAPSHOTS | SCHEDULING | ELEVATION`.
+
+### 🪟 v0.0.7-alpha — Sesja 12 — Windows MVP capability completion
+
+**Shipped this session (2026-05-01, late):**
+
+**M3.12 — VSS snapshot interface.** `adapters/windows/ascendo_windows/managers/snapshot.py` (220 LOC) implements `ISnapshot` via Volume Shadow Copy Service. Drives a single PowerShell driver script `adapters/windows/scripts/snapshot/snapshot.ps1` (170 LOC) with two actions: `create` (uses `Checkpoint-Computer` to register a System Restore point that bundles VSS shadow copies on every protected volume) and `list` (enumerates `Win32_ShadowCopy` via `Get-CimInstance`). Operator-supplied `label` + `notes` round-trip through a JSON registry under `%ProgramData%\Ascendo\snapshots\` because System Restore stores Description but no free-form notes. Restore is intentionally NOT in the interface — that's a destructive-with-reboot operation gated behind explicit user gestures (CLI `ascendo snapshot restore` will land later via `vssadmin revert` + UAC). `is_available()` checks for `vssadmin` on PATH; create/delete need elevation but list works on a standard token.
+
+**M3.13 — Task Scheduler interface.** `adapters/windows/ascendo_windows/managers/scheduler.py` (180 LOC) implements `IScheduler` for Windows Task Scheduler. Driver script `adapters/windows/scripts/scheduler/scheduler.ps1` (220 LOC) handles `install / uninstall / list / trigger` with a best-effort schedule-expression parser: `DAILY HH:MM`, `WEEKLY <DAY> HH:MM`, `MONTHLY HH:MM`, `HOURLY HH:MM`, `MINUTE <N>`, plus passthrough for advanced schtasks specs. Tasks live under `\Ascendo\<name>` so list operations enumerate only Ascendo-owned entries. Each task's action is `ascendo run --profile <profile>`. `Get-Command 'ascendo'` resolves the installed CLI shim; falls back to `python -m ascendo`.
+
+**M3.14 — UAC elevation interface.** `adapters/windows/ascendo_windows/managers/elevation.py` (290 LOC) implements `IElevation` via `ShellExecuteW` with `lpVerb='runas'`. Pure-stdlib (`ctypes` + `subprocess` + `tempfile`) — no pywin32 dependency. Two execution paths:
+1. **Already-elevated** (`IsUserAnAdmin()` returns true): direct `subprocess.run` with full stdio capture, no UAC prompt.
+2. **Elevation needed**: `ShellExecuteEx(SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NO_CONSOLE, 'runas', cmd.exe, '/c "<exe>" <params> > stdout 2> stderr & echo %ERRORLEVEL% > exit')` and tempfile-based stdio capture (UAC isolates child token from parent's pipes). `WaitForSingleObject` for the synchronous wait; `GetExitCodeProcess` for exit code. Catches `ERROR_CANCELLED (1223)` for "user clicked No on UAC" → `ElevationDenied`.
+3. **Argv-only contract enforced (T4 mitigation)**: `register_allowlist()` normalises to lowercase basenames; `run()` rejects with `ElevationDenied` if the head argv element is not in the allow-list. Shell strings never accepted.
+
+**M3.15 — Dell Driver Update plugin (first official plugin).** `plugins/dell-driver-update/`:
+- `manifest.toml` — first manifest-v1 instance per ADR-0007. Declares: `tier=official`, `privilege=admin`, `risk=medium`, `manual_confirm=true`, `supported_oses=["windows"]`, `dependencies.binaries=["dcu-cli.exe"]`, `reporting.sidecar_category="dell_driver_update"`.
+- `windows/check.ps1` — `dcu-cli.exe /scan -silent -report=<xml>` then parses the XML report and emits one `planned` item per pending update.
+- `windows/plan.ps1` — re-uses check; copies its sidecar with `phase=plan`.
+- `windows/apply.ps1` — `dcu-cli.exe /applyUpdates -silent -reboot=disable -outputLog=<file>`. Maps DCU exit codes (0=success, 1=reboot pending, 500=no updates, others=fail). Surfaces `needs_reboot` on the sidecar when DCU returns 1.
+- `windows/verify.ps1` — re-scans; any still-pending update is a verify failure.
+- `windows/cleanup.ps1` — no-op (Dell manages its own staging cache).
+
+Plugin scripts dot-source the `AscendoJson.psm1` from the Windows adapter's `lib/` so the sidecar emit pattern is identical to the in-tree managers — no plugin-specific drift.
+
+**WindowsAdapter wiring.** `capabilities` property now declares `PACKAGE_MANAGEMENT | INVENTORY | SNAPSHOTS | SCHEDULING | ELEVATION`. The previously-`None`-returning `snapshot()` / `scheduler()` / `elevation()` accessors now construct and return the new managers. `source()` remains `None` (M3.17 work).
+
+**Tests.** `adapters/windows/tests/test_m3_12_to_14_smoke.py` adds 13 smoke tests covering: backend identity, availability matrix (Windows-only), schtasks dispatch shape, allow-list normalisation (basename + case), denial-without-allowlist, denial-on-non-Windows, denial-on-empty-argv, plus an adapter wiring assertion that all three new capability flags surface and all three accessors return non-None.
+
+### Files touched (Sesja 12)
+
+- New: `adapters/windows/ascendo_windows/managers/{snapshot,scheduler,elevation}.py`, `adapters/windows/scripts/{snapshot/snapshot.ps1,scheduler/scheduler.ps1}`, `adapters/windows/tests/test_m3_12_to_14_smoke.py`, `plugins/dell-driver-update/manifest.toml`, `plugins/dell-driver-update/windows/{check,plan,apply,verify,cleanup}.ps1`
+- Modified: `adapters/windows/ascendo_windows/adapter.py`, `HANDOFF.md`, `docs/agents/handoff.md`
+
+### Validation
+
+- `python3 ast` parse OK on every changed `.py` (snapshot/scheduler/elevation/adapter/tests).
+- PowerShell scripts: structurally complete (param blocks, action dispatch, sidecar emit pattern). Real `vssadmin` / `schtasks.exe` / UAC dialogs only fire on Windows — full e2e validation deferred to M3.16 user-side test.
+- WindowsAdapter wiring: `capabilities` flag enumerates all five flags; `snapshot()/scheduler()/elevation()` return non-None.
+
+### M3 status as of Sesja 12
+
+| Item | Status |
+|---|---|
+| M3.1–M3.7 winget | ✅ |
+| M3.8 msstore | ✅ Sesja 11 |
+| M3.9 registry ARP | ✅ Sesja 11 |
+| M3.10 PSWindowsUpdate | ✅ Sesja 10 |
+| M3.11 inventory | ✅ Sesja 10 |
+| **M3.12 VSS snapshot** | ✅ **Sesja 12** |
+| **M3.13 Task Scheduler** | ✅ **Sesja 12** |
+| **M3.14 UAC elevation** | ✅ **Sesja 12** |
+| **M3.15 Dell DCU plugin** | ✅ **Sesja 12** |
+| M3.16 real-hardware validation | ⏳ user-side |
+
+**Windows MVP is feature-complete.** Only M3.16 (real-hardware smoke tests on DP5520WMK) remains before v0.0.7-alpha can be tagged.
+
+### Next milestones
+
+1. **M3.16** — User runs `bin/validate-windows.ps1` against the new snapshot/scheduler/elevation managers + the Dell DCU plugin. ~30 min.
+2. **M4** — MSI installer (WiX), winget manifest, GitHub Releases pipeline, Tauri 2.x shell rebuild, code signing. ~2-3 weeks.
+3. **M5** — macOS adapter parity (`adapters/macos/`). ~3 weeks.
+4. **v0.1.0-alpha tag** after M3.16 + M4.
+
+### Krok 4w — User: commit Sesja 12
+
+```powershell
+cd D:\Dev_Env\ascendo
+
+# M3.12 — VSS snapshot
+git add adapters/windows/ascendo_windows/managers/snapshot.py
+git add adapters/windows/scripts/snapshot/
+
+# M3.13 — Task Scheduler
+git add adapters/windows/ascendo_windows/managers/scheduler.py
+git add adapters/windows/scripts/scheduler/
+
+# M3.14 — UAC elevation
+git add adapters/windows/ascendo_windows/managers/elevation.py
+
+# M3.15 — Dell DCU plugin
+git add plugins/dell-driver-update/manifest.toml
+git add plugins/dell-driver-update/windows/
+
+# Adapter wiring + tests + handoff
+git add adapters/windows/ascendo_windows/adapter.py
+git add adapters/windows/tests/test_m3_12_to_14_smoke.py
+git add HANDOFF.md docs/agents/handoff.md
+
+git status
+
+git commit -m "feat: v0.0.7-alpha — Windows MVP capability set complete (M3.12-M3.15)
+
+Sesja 12 batch:
+
+M3.12 — VSS snapshot interface (ISnapshot impl):
+  managers/snapshot.py drives scripts/snapshot/snapshot.ps1 with
+  create + list actions. Checkpoint-Computer for create (System
+  Restore point bundles VSS shadow copies on every protected
+  volume); Get-CimInstance Win32_ShadowCopy for list. Operator
+  label + notes round-trip via %ProgramData%\\Ascendo\\snapshots\\
+  registry.json (System Restore has no free-form notes channel).
+
+M3.13 — Task Scheduler interface (IScheduler impl):
+  managers/scheduler.py drives scripts/scheduler/scheduler.ps1
+  with install / uninstall / list / trigger. Tasks live under
+  \\Ascendo\\<name>. Schedule expression parser handles DAILY,
+  WEEKLY, MONTHLY, HOURLY, MINUTE plus passthrough for advanced
+  schtasks specs. Action resolves to ascendo CLI or python -m
+  ascendo fallback.
+
+M3.14 — UAC elevation interface (IElevation impl):
+  managers/elevation.py — pure-stdlib ctypes + subprocess. Two
+  paths: direct spawn when already elevated, ShellExecuteEx with
+  lpVerb=runas + cmd.exe redirection for tempfile-based stdio
+  capture across the UAC token boundary when not. ERROR_CANCELLED
+  -> ElevationDenied. Argv-only contract enforced via lowercase
+  basename allow-list (T4 threat-model mitigation per ADR-0005).
+
+M3.15 — Dell Driver Update plugin (first official plugin):
+  plugins/dell-driver-update/manifest.toml + windows/*.ps1.
+  Wraps Dell Command Update CLI (dcu-cli.exe). check + verify
+  call /scan + parse XML report; apply calls /applyUpdates with
+  -reboot=disable; cleanup is no-op. DCU exit-code mapping:
+  0=success, 1=reboot-pending (needs_reboot=true), 500=no-updates.
+
+WindowsAdapter wiring:
+  capabilities now declares PACKAGE_MANAGEMENT | INVENTORY |
+  SNAPSHOTS | SCHEDULING | ELEVATION. snapshot() / scheduler() /
+  elevation() return new manager instances (was None).
+
+Tests: +13 smoke tests in test_m3_12_to_14_smoke.py covering
+identity, availability, allow-list normalisation, denial paths,
+adapter wiring assertion.
+
+Refs ADR-0005 (six-layer arch), ADR-0007 (plugin manifest v1),
+M3.12, M3.13, M3.14, M3.15. Windows MVP feature-complete pending
+M3.16 real-hardware validation."
+
+git push
+```
+
+### 🚀 v0.0.6-alpha — Sesja 11 — CLI + SPA + M3.8/M3.9 + visual polish
+
+### 🚀 v0.0.6-alpha — Sesja 11 — CLI + SPA + M3.8/M3.9 + visual polish
+
+**Shipped this session (2026-05-01, late):**
+
+**CLI parity.** `core/ascendo/cli/__init__.py` extended with:
+- `ascendo dashboard --background` / `-b` — spawns uvicorn in a detached child process (cross-platform: `CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS` on Windows, `start_new_session` on Unix) and returns immediately. Stdout/stderr silenced.
+- `ascendo runs list [--limit N] [--status STATE]` — lists runs newest-first directly from `~/.ascendo/runs/`. Status filter accepts `success | partial | failed | skipped`. Color-coded status column.
+- `ascendo runs show <run-id>` — prints overall + per-phase + per-category status, started/finished/duration, total + failed item counts. Exit-code maps to overall status (0/1/2).
+
+**SPA async wiring (M2.10 integration).** `app/frontend/app.js`:
+- `startRunWithSudo` now POSTs to `/runs/async` (HTTP 202 + run_id) by default. Falls back to legacy synchronous `/runs` on 404/405 so older backends still work. Sudo 401-retry pattern preserved on both paths.
+- `attachStream(runId)` switched from the legacy global `/runs/active/stream` to per-run `/runs/{id}/events`. Listens for the M2.10 event types: `status`, `sidecar`, `sidecar_error`, `done`. Each `sidecar` renders a per-(phase, category) row in the run-progress widget. `done` carries `status` + `duration_ms` and triggers the standard cleanup chain (`invalidateCaches` → `checkRebootBanner` → `loadHealth`). Falls back to legacy stream on first SSE error.
+
+**M3.8 — Microsoft Store manager.** `adapters/windows/ascendo_windows/managers/msstore.py` inherits from `WingetManager` (re-using spawn / IPC / sidecar machinery) and overrides identity + script directory. Five PowerShell scripts under `adapters/windows/scripts/msstore/`:
+- `check.ps1` — calls `Get-WingetUpgradable -Source msstore` + `Get-WingetInstalled -Source msstore`, classifies each item as `planned` or `up_to_date`. Emits `ascendo/v1` sidecar.
+- `plan.ps1` — side-effect-free upgradable list only.
+- `apply.ps1` — `winget upgrade --source msstore --id <X> --silent` per item, exit-code mapping via `Convert-WingetExitCode`.
+- `verify.ps1` — re-runs check, any still-upgradable item = verify failure.
+- `cleanup.ps1` — no-op (Store manages its own staging).
+
+**M3.9 — MSI/Registry ARP manager.** `adapters/windows/ascendo_windows/managers/arp.py` (also inherits WingetManager) — scans three registry roots for ARP entries:
+- `HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*`
+- `HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*`
+- `HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*`
+
+Filters out `SystemComponent=1` and child entries (update bundles). `is_available()` overridden — ARP scanning needs only Windows + registry access, no winget. Five scripts under `adapters/windows/scripts/arp/`:
+- `check.ps1` — read-only enumeration with `Evidence`-rich items (`registry_version`, `publisher`).
+- `plan.ps1` — only emits items when `-ItemFilter` lists explicit removals.
+- `apply.ps1` — invokes `QuietUninstallString` (or `UninstallString`) per filter id via `cmd.exe /c`, treats exit `0` and `3010` as success.
+- `verify.ps1` — confirms the registry entries are gone.
+- `cleanup.ps1` — no-op.
+
+**WindowsAdapter wiring.** `adapters/windows/ascendo_windows/adapter.py` `package_managers()` now returns `[Winget, MSStore, Arp, WindowsUpdate]`. Manager dispatch order matters: winget runs first so it claims its own packages before the registry scanner sweeps everything else.
+
+**Design-system visual polish (continuation of Sesja 10).** Tightened the SPA visuals to match `Ascendo_Design_System/ui_kits/webapp/index.html` (dark mockup) more precisely:
+- `.sidebar-brand .brand-name` now `17px` (was 1.25rem ≈ 20px) with `letter-spacing: -0.02em`.
+- `.sidebar-brand .brand-tagline` now `9px` mono with `letter-spacing: 0.14em`, color `--fg-faint` (was `--fg-muted`).
+- `.card` border-radius `10px` (was 8px), padding `18px` (was 1rem). Cards now ship the mockup's `.eye / .big / .meta` sub-elements: 10px mono uppercase eyebrow with `letter-spacing: 0.12em`, 26px sans bold readout, 12px mono meta line. `.card h3` re-aliased so old markup gets the same eyebrow look.
+- `.st-pill` padding `3px 10px` with `gap: 6px` and dot `6×6` (was relative em sizing) — pills now breathe like the mockup.
+- Desktop topbar utilities (theme/lang/font) wrapped in a small floating capsule (top-right, `--bg-elev` background + `--border` outline + `--shadow-sm`) so the switchers actually read against the main view content. Previous build had them in a transparent strip that was effectively invisible.
+
+**Tests.** `adapters/windows/tests/test_msstore_arp_smoke.py` adds 11 contract tests covering identity, script-path mapping, availability matrix (Linux/macOS/Windows × winget-present/absent), and the WindowsAdapter wiring assertion. `tests/contract/test_dashboard_spa.py` retained (158 → 169 tests projected).
+
+### URGENT fixes inside Sesja 11
+
+- **Dashboard IndentationError** — `core/ascendo/dashboard/app.py` had an orphan duplicate `/assets/{filename}` route block at module-level (left over from a Sesja 10 truncation recovery). Removed the dead tail; AST now parses, `.\bin\Ascendo.cmd` launches.
+- **SPA broken after design system** — `app/frontend/index.html` was missing its closing tags + the three `<script>` tags (lost to the same truncation class). Restored the tail; nav, theme switcher, language switcher, font switcher all render again.
+- **Lime-on-light contrast fix** — added `--accent-fg` alias that maps to `--accent-strong` (lime-600) on light theme and bright `--accent` (lime-400) on dark. Foreground accent text rules switched to `--accent-fg`.
+- **Switcher capsule visibility (round 2)** — desktop topbar capsule now uses `inline-flex`, explicit `min-width: 132px`, `z-index: 100`, `pointer-events: auto`, and `box-shadow: var(--shadow-md)` so the lang/theme/font switchers always render visibly above any view content. Earlier `width: auto` could collapse to zero in some flex contexts.
+- **NVIDIA button emoji removed** — replaced `⚡` (forbidden by SKILL.md) with the Lucide `nvidia` glyph injected via new `data-icon-prefix` attribute support in `injectIcons()`. Added `.btn-nvidia` design-token-aware variant.
+- **Running pill pulse** — added `@keyframes ascendo-pulse` + `.badge.running::before` rule so live runs show the design-system's animated dot (was static text before).
+- **UTF-8 cleanup** — replaced all U+2500 box-drawing and U+2014 em-dash characters in CSS/JS/HTML comments with ASCII equivalents to dodge re-encoding corruption that hit the Edit tool repeatedly during long edits.
+
+### Visual polish — round 2 (mockup-aligned)
+
+After re-reading the design-system showcase (`Ascendo_Design_System/index.html`) and component previews, applied:
+- `.card`: `border-radius: 10px`, `padding: 18px`, plus `.eye / .big / .meta` sub-element rules so card eyebrows render as 10px mono uppercase with 0.12em tracking, big readouts as 26px sans bold with -0.02em tracking, meta lines as 12px mono.
+- Sidebar brand 17px / -0.02em tracking (was 1.25rem ≈ 20px). Tagline 9px mono, 0.14em tracking, `--fg-faint` color.
+- Status pill spacing now `padding: 3px 10px`, `gap: 6px`, `dot 6×6` — matches mockup's relaxed feel.
+
+### Files touched (Sesja 11)
+
+- New: `core/ascendo/cli/__init__.py` (extended), `adapters/windows/ascendo_windows/managers/msstore.py`, `adapters/windows/ascendo_windows/managers/arp.py`, `adapters/windows/scripts/msstore/{check,plan,apply,verify,cleanup}.ps1`, `adapters/windows/scripts/arp/{check,plan,apply,verify,cleanup}.ps1`, `adapters/windows/tests/test_msstore_arp_smoke.py`
+- Modified: `core/ascendo/dashboard/app.py`, `adapters/windows/ascendo_windows/adapter.py`, `app/frontend/{index.html, style.css, app.js, i18n.js}`, `tests/contract/test_dashboard_spa.py`, `HANDOFF.md`, `docs/agents/handoff.md`
+
+### Validation
+
+- `python3 ast` parse OK on every changed `.py`.
+- `node --check` OK on `app.js`, `i18n.js`, `icons.js`.
+- `style.css`: 571 lines, brace balance 0, UTF-8 OK.
+- `index.html`: 12 view sections, 4 script tags, closes properly.
+- Pytest run deferred to user's Linux + Windows boxes (sandbox here is Python 3.10; project requires 3.11+).
+
+### Known follow-ups (post-v0.0.6)
+
+1. **M3.12 VSS snapshot** — Windows snapshot interface, integrates with `ascendo snapshot` CLI placeholder.
+2. **M3.13 Task Scheduler** — Windows scheduled-task interface, integrates with `ascendo schedule` CLI placeholder.
+3. **M3.14 UAC elevation** — IElevation impl using `runas` / ShellExecute verb=`runas`.
+4. **M3.15 Dell DCU plugin** — first official plugin, manifest in `plugins/dell-driver-update/`.
+5. **Frontend SPA migration** — physical move from `app/frontend/` → `ui/frontend/` (M4).
+6. **Light-theme polish pass** — manual contrast review on every accent surface.
+7. **Self-host Inter Tight + JetBrains Mono woff2** for offline Tauri shipment.
+
+### Krok 4v — User: commit Sesja 11 (v0.0.6-alpha)
+
+```powershell
+cd D:\Dev_Env\ascendo
+
+# CLI parity
+git add core/ascendo/cli/__init__.py
+
+# SPA async wiring + design-system polish
+git add app/frontend/index.html app/frontend/style.css
+git add app/frontend/app.js  app/frontend/i18n.js
+
+# Dashboard urgent fix
+git add core/ascendo/dashboard/app.py
+
+# M3.8 + M3.9
+git add adapters/windows/ascendo_windows/adapter.py
+git add adapters/windows/ascendo_windows/managers/msstore.py
+git add adapters/windows/ascendo_windows/managers/arp.py
+git add adapters/windows/scripts/msstore/
+git add adapters/windows/scripts/arp/
+git add adapters/windows/tests/test_msstore_arp_smoke.py
+
+# Tests + handoff
+git add tests/contract/test_dashboard_spa.py
+git add HANDOFF.md docs/agents/handoff.md
+
+git status
+
+git commit -m "feat: v0.0.6-alpha — CLI parity, SPA async, M3.8/M3.9, design polish
+
+Sesja 11 batch:
+
+CLI parity:
+  ascendo dashboard --background  (detached uvicorn, cross-platform)
+  ascendo runs list [--limit N] [--status STATE]
+  ascendo runs show <run-id>
+
+SPA async wiring (M2.10 integration):
+  startRunWithSudo posts /runs/async (HTTP 202 + run_id), falls
+  back to legacy /runs on 404/405. attachStream subscribes to
+  /runs/{id}/events; consumes status, sidecar, sidecar_error,
+  done events. Sidecars render per-(phase, category) progress
+  rows. Done event carries status + duration_ms and triggers
+  the standard cleanup chain.
+
+M3.8 Microsoft Store manager:
+  managers/msstore.py inherits WingetManager. Five PowerShell
+  scripts under scripts/msstore/. Drives 'winget --source
+  msstore' for upgradable enumeration + per-id apply.
+
+M3.9 MSI/Registry ARP manager:
+  managers/arp.py inherits WingetManager. is_available()
+  overridden — needs only Windows + registry, no winget.
+  scripts/arp/* enumerate three Uninstall registry roots,
+  filter system-components + child entries, apply via
+  UninstallString or QuietUninstallString through cmd.exe.
+  3010 + 0 treated as success.
+
+Wired into WindowsAdapter.package_managers() in dispatch
+order: winget, msstore, arp, windows_update.
+
+Design-system visual polish:
+  Sidebar brand 17px (was 20px) with -0.02em tracking.
+  Tagline 9px mono with 0.14em tracking, color --fg-faint.
+  Card radius 10px + 18px padding to match mockup. .eye/.big/
+  .meta sub-element styling adopted.
+  Status pills: 3px 10px padding, 6px gap, 6×6 dot — match
+  mockup's spaciousness.
+  Desktop topbar utilities now in a floating capsule (top-
+  right, bg-elev + border + shadow-sm) so theme/lang/font
+  switchers are visible instead of vanishing into a
+  transparent strip.
+
+Urgent fixes:
+  dashboard/app.py: removed orphan duplicate /assets/{filename}
+  route block at module-level (caused IndentationError).
+  index.html: restored truncated tail (closing tags + 3 script
+  tags) — without them the SPA was effectively dead.
+  Added --accent-fg theme-aware alias so foreground accent
+  text reads on both light + dark surfaces.
+
+Tests:
+  +11 manager smoke tests (test_msstore_arp_smoke.py).
+  +4 dashboard SPA tests (colors_and_type.css mount, brand
+  asset round-trip, traversal block, dark-pin assertion).
+
+Refs ADR-0003 (sidecar contract), ADR-0005 (six-layer arch),
+M2.10 (async run + SSE), M3.8, M3.9."
+
+git push
+```
+
+### 🎨 v0.0.5-alpha — Design system integration (Sesja 10)
+
+**Shipped this session (2026-05-01):**
+
+- **Design tokens adopted** — `Ascendo_Design_System/colors_and_type.css` copied to `app/frontend/colors_and_type.css` and loaded by the SPA *before* `style.css`. Tokens: `--bg`, `--bg-elev`, `--bg-sunk`, `--fg`, `--fg-muted`, `--fg-faint`, `--border`, `--accent` (lime `#C8FF4B`), `--accent-soft`, `--accent-strong`, `--ok/--warn/--err/--info` + matching `*-bg` variants, `--code-bg/--code-fg`, full type system (`--font-sans = Inter Tight`, `--font-mono = JetBrains Mono`, `--font-display = Instrument Serif`), `--fs-*`, `--fw-*`, `--tr-*`, `--space-1..10`, `--radius-xs..pill`, `--shadow-sm..xl`, `--ease-*`, `--dur-*`. Google Fonts loaded once via `@import` in the tokens file.
+- **Dark theme primary, light theme secondary** — `<html data-theme="dark">` set as the literal default in `index.html`; an inline pre-paint `<script>` reads `localStorage.ui-theme` and pins dark before the first stylesheet evaluates so there is never a light-flash. The `prefers-color-scheme` listener and the `auto` track were removed: themes are now an explicit binary preference.
+- **Theme switcher** — cycle is now `dark ↔ light` (binary). Default = dark. Icon shows moon (dark) / sun (light). Legacy `auto` values in stored settings resolve to dark on read. Settings dropdown trimmed to two options + an explanatory hint string (en + pl).
+- **Brand assets** — replaced inline green→blue gradient SVG marks with the new logo wordmark + mark from `Ascendo_Design_System/assets/`. `<img class="brand-img--dark|--light">` pair swaps via CSS based on `[data-theme]`. Favicon is now `/assets/logo-mark.svg` (lime bars on ink-900). Five SVGs shipped: `logo-mark.svg`, `logo-mark-light.svg`, `logo-mark-mono.svg`, `logo-wordmark.svg`, `logo-wordmark-dark.svg`.
+- **`style.css` reskinned** — replaced the legacy color `:root` block with a thin alias layer (`--panel→--bg-elev`, `--text→--fg`, `--dim→--fg-muted`, `--mono→--font-mono`) so all existing component selectors keep working without a markup rewrite. Status pills (`.st-ok/.st-warn/.st-err/.st-skip/.st-info`), badges (`.badge.ok/.warn/.fail/.running`), progress bars, tables, buttons, and the reboot banner all flipped to design tokens. Removed every hardcoded hex color (the green→blue gradient, blue accent `#7aa6ff`, status hex literals).
+- **AA-contrast safe accent on light** — introduced `--accent-fg` alias that maps to bright lime (`--accent` = `--lime-400`) on dark and to darker readable lime (`--accent-strong` = `--lime-600`) on light. Used wherever the accent color is foreground text/icon (`.help-toc a`, `.help-doc h3`, `#about-release h2`, `.run-progress-label b`, `.sidebar-nav .nav-link.active .nav-icon`, `.icon-btn[aria-pressed="true"]`).
+- **FastAPI dashboard updates** — `core/ascendo/dashboard/app.py` now serves `/colors_and_type.css` via the `_spa_assets` tuple and adds a new `/assets/{filename}` route that streams SVGs/PNGs from `app/frontend/assets/` with explicit `..` path-traversal blocking.
+- **New contract tests** — `tests/contract/test_dashboard_spa.py` extended with: (a) `/colors_and_type.css` mount assertion, (b) round-trip on every brand SVG, (c) traversal-block test, (d) dark-pin-by-default assertion (verifies tokens load before style.css and `data-theme="dark"` appears in the HTML).
+
+### Files touched (Sesja 10)
+
+- New: `app/frontend/colors_and_type.css`, `app/frontend/assets/{logo-mark, logo-mark-light, logo-mark-mono, logo-wordmark, logo-wordmark-dark}.svg`
+- Modified: `app/frontend/{index.html, style.css, app.js, i18n.js}`, `core/ascendo/dashboard/app.py`, `tests/contract/test_dashboard_spa.py`, `HANDOFF.md`, `docs/agents/handoff.md`
+
+### Validation
+
+- `python3 ast` parse: dashboard/app.py + test_dashboard_spa.py → OK.
+- `node --check`: app.js + i18n.js → OK.
+- CSS brace balance: 0; UTF-8 decodes cleanly; 226 `var()` references, 46 unique tokens, 0 unmapped.
+- `index.html`: tokens load before style.css ✓; `<html data-theme="dark">` literal + pre-paint script ✓.
+- Pytest run on Linux mk-uP5520 deferred to user (sandbox here is Python 3.10; project requires 3.11+). Expected to add ~7 new contract tests, 158 → 165 passing.
+
+### Known follow-ups (not in scope this session)
+
+1. **Tauri desktop shell + landing page** — design system also has `ui_kits/desktop/` and `ui_kits/landing/`. Apply when the Tauri shell is rebuilt (M4) and the website goes up (M4).
+2. **Light-theme polish pass** — bright lime on light is mitigated via `--accent-fg`, but some surfaces (the primary button text on lime) could use a manual contrast review.
+3. **Inter Tight + JetBrains Mono webfont latency** — currently loaded via Google Fonts CDN. For offline-first Tauri shipment, self-host woff2 files in `app/frontend/fonts/`.
+
+### Krok 4u — User: commit Sesja 10 design-system integration
+
+```powershell
+cd D:\Dev_Env\ascendo
+git add app/frontend/colors_and_type.css
+git add app/frontend/assets/
+git add app/frontend/index.html
+git add app/frontend/style.css
+git add app/frontend/app.js
+git add app/frontend/i18n.js
+git add core/ascendo/dashboard/app.py
+git add tests/contract/test_dashboard_spa.py
+git add HANDOFF.md
+git add docs/agents/handoff.md
+
+git status
+
+git commit -m "feat(ui): integrate Ascendo design system, dark theme primary
+
+Sesja 10 — design system adoption.
+
+Tokens:
+  Drop Ascendo_Design_System/colors_and_type.css into app/frontend/.
+  Loaded BEFORE style.css per index.html.
+  Defines colors (ink/paper/lime + status), type (Inter Tight /
+  JetBrains Mono / Instrument Serif), spacing (4px ramp), radii,
+  shadows, motion. Both light + dark variants on the same selectors.
+
+Dark theme primary:
+  <html data-theme=\"dark\"> literal + inline pre-paint script that
+  reads localStorage.ui-theme before any stylesheet evaluates.
+  Theme switcher cycle is now binary dark ↔ light (default dark).
+  prefers-color-scheme listener and 'auto' track removed.
+  applyTheme() resolves anything-not-'light' to 'dark'.
+
+style.css reskin:
+  Legacy color vars (--panel/--text/--dim/--mono) aliased over the
+  new tokens so existing component selectors keep working.
+  --accent-fg added (theme-aware) so foreground accent text reads
+  on both surfaces (lime-400 on dark, lime-600 on light).
+  Brand gradient text replaced with sentence-case headings using
+  --fg + var(--font-sans). Status pills + badges + reboot banner
+  + buttons + tables + code blocks all flipped to tokens.
+  Zero remaining hardcoded hex colors.
+
+Brand assets:
+  app/frontend/assets/{logo-mark, logo-mark-light, logo-mark-mono,
+  logo-wordmark, logo-wordmark-dark}.svg shipped.
+  Favicon points at /assets/logo-mark.svg (ink-900 + lime-400).
+  HTML uses <img class=brand-img--dark|--light> pair, swapped
+  via CSS on [data-theme=light].
+
+Backend:
+  dashboard/app.py adds /colors_and_type.css to _spa_assets and a
+  new /assets/{filename} route serving SVGs/PNGs with explicit
+  '..' path-traversal blocking.
+
+Tests:
+  +/colors_and_type.css mount assertion.
+  +5 brand-asset round-trip tests (one per SVG).
+  +path-traversal block test.
+  +dark-pin-by-default index.html assertion.
+
+Refs Ascendo_Design_System/ (skill manifest in SKILL.md)."
+
+git push
+```
 
 ### 🎉 v0.0.4-alpha — Windows Update + SPA dashboard parity
 
