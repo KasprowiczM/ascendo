@@ -67,6 +67,23 @@ window.I18N = {
       snapshot_on:  "Yes (timeshift / etckeeper fallback)",
       finish:       "Finish",
       skip:         "Skip",
+      theme: {
+        title: "Pick your theme",
+        body:  "You can change this later in Settings.",
+        auto:  "Auto (system)",
+        dark:  "Dark",
+        light: "Light",
+      },
+    },
+    apply: {
+      cancelled: "apply cancelled",
+      modal: {
+        title:       "Confirm real apply",
+        warn:        "This will mutate your system. Target:",
+        instruction: "Type the word 'apply' below to enable the confirm button.",
+        cancel:      "Cancel",
+        confirm:     "Apply",
+      },
     },
     overview: {
       title:        "Overview",
@@ -317,6 +334,23 @@ window.I18N = {
       snapshot_on:  "Tak (timeshift / etckeeper fallback)",
       finish:       "Zakończ",
       skip:         "Pomiń",
+      theme: {
+        title: "Wybierz motyw",
+        body:  "Możesz to zmienić później w Ustawieniach.",
+        auto:  "Auto (zgodnie z systemem)",
+        dark:  "Ciemny",
+        light: "Jasny",
+      },
+    },
+    apply: {
+      cancelled: "anulowano apply",
+      modal: {
+        title:       "Potwierdź instalację",
+        warn:        "Ta operacja zmieni stan systemu. Wpisz słowo \"apply\" aby kontynuować. Cel:",
+        instruction: "Wpisz: apply",
+        cancel:      "Anuluj",
+        confirm:     "Zastosuj",
+      },
     },
     overview: {
       title:        "Przegląd",

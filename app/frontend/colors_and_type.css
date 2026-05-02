@@ -13,7 +13,38 @@
    media query take over.
    ============================================================ */
 
-@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap");
+/* Self-hosted webfonts (B6 — no Google Fonts CDN dependency).
+   Files live in app/frontend/fonts/ and are served via the dashboard's
+   /static/ mount, which exposes the entire frontend dir tree. Any future
+   weight/style additions: drop a woff2 in fonts/ and add a @font-face here. */
+@font-face {
+  font-family: "Inter Tight";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/inter-tight-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter Tight";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/static/fonts/inter-tight-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/jetbrains-mono-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/static/fonts/jetbrains-mono-600.woff2") format("woff2");
+}
 
 /* ────────────────────────────────────────────────────────────
    1. PRIMITIVES — color scale.

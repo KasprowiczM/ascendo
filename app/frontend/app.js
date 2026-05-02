@@ -103,16 +103,23 @@ const ui = {
   async finishWizard(skip) {
     const modal = $("#wizard-modal");
     const langPick = (document.querySelector("input[name=wiz-lang]:checked") || {}).value || "en";
+    const themePick = (document.querySelector("input[name=wiz-theme]:checked") || {}).value || "auto";
     const choices = skip ? {skipped: true} : {
       language:        langPick,
       default_profile: (document.querySelector("input[name=wiz-profile]:checked") || {}).value || "safe",
       schedule:        $("#wiz-schedule").checked,
       snapshot_before_apply: $("#wiz-snapshot").checked,
+      theme:           themePick,
     };
     if (!skip) {
       // Apply language change immediately so the rest of the dashboard switches.
       window.UI_LANG = langPick;
       try { window.applyI18n(); } catch {}
+      // Persist + apply theme choice straight away so the next paint reflects it.
+      try {
+        localStorage.setItem("ascendo_theme", themePick);
+        window.applyThemePref && window.applyThemePref(themePick);
+      } catch {}
     }
     try {
       await api.post("/onboarding/complete", choices);
@@ -524,19 +531,30 @@ const ui = {
       });
     });
     // Per-category phase buttons → start the run directly (with sudo for mutating).
+    // B4: ``apply`` (and unscoped "run all") gates on the apply-confirm modal —
+    // the user must type the literal word ``apply`` to proceed. ``check`` and
+    // ``plan`` are non-mutating, so we mark them ``dry_run`` to avoid sudo.
     $$("#cats-table button[data-cat-run]").forEach(b => b.addEventListener("click", async e => {
       e.stopPropagation();
+      const phase = b.dataset.phase || null;
+      const cat = b.dataset.only || null;
+      const isApply = phase === "apply" || phase === "" || phase === null;
+      const isReadOnly = phase === "check" || phase === "plan";
+      if (isApply) {
+        const ok = await confirmApply(cat || "all categories");
+        if (!ok) { ui.status(tr("apply.cancelled") || "apply cancelled"); return; }
+      }
       const body = {
-        only: b.dataset.only || null,
-        phase: b.dataset.phase || null,
-        dry_run: false,
+        only: cat,
+        phase: phase,
+        dry_run: isReadOnly,
       };
       try {
         const r = await startRunWithSudo(body);
         ui.show("run");
         ui.attachStream(r.run_id);
         $("#stop-btn").disabled = false;
-        ui.status(`run ${r.run_id} started - ${body.only}/${body.phase || "all phases"}`);
+        ui.status(`run ${r.run_id} started - ${cat}/${phase || "all phases"}`);
       } catch (err) { ui.status(String(err)); }
     }));
   },
@@ -1255,6 +1273,64 @@ document.addEventListener("click", e => {
   ui.show(a.dataset.view);
 });
 
+// B4 — Apply confirmation modal (mirrors bin/run-apply.ps1 gating).
+// Resolves true only when the user types the literal string "apply" and
+// clicks Confirm. Native <dialog> handles Esc/backdrop/focus-trap. Falls
+// back to window.confirm() if the browser predates <dialog>.
+async function confirmApply(targetLabel) {
+  const dlg = document.getElementById("apply-confirm-modal");
+  if (!dlg || typeof dlg.showModal !== "function") {
+    return window.confirm(
+      (tr("apply.modal.warn") || "This will mutate your system.") +
+      "\n\n" + (targetLabel || "all categories") +
+      "\n\n" + (tr("apply.modal.instruction") || "Type 'apply' to proceed.")
+    );
+  }
+  const label = document.getElementById("apply-modal-target");
+  const input = document.getElementById("apply-modal-input");
+  const ok    = document.getElementById("apply-modal-confirm");
+  if (label) label.textContent = targetLabel || "all categories";
+  if (input) { input.value = ""; }
+  if (ok)    { ok.disabled = true; }
+  if (input) {
+    input.oninput = () => { if (ok) ok.disabled = (input.value !== "apply"); };
+  }
+  return await new Promise(resolve => {
+    const onClose = () => {
+      dlg.removeEventListener("close", onClose);
+      const confirmed = dlg.returnValue === "confirm" && input && input.value === "apply";
+      resolve(!!confirmed);
+    };
+    dlg.addEventListener("close", onClose, { once: true });
+    try { dlg.showModal(); }
+    catch { resolve(false); }
+  });
+}
+
+// B5 — SSE stream consumer. Returns a teardown function that closes the
+// connection. ``onEvent(kind, data)`` fires on ``status`` / ``sidecar`` /
+// ``log``. ``onDone(data)`` fires on the terminal ``done`` event. ``onError``
+// fires once on connection drop, after which we close the EventSource so the
+// caller can decide whether to retry or fall back to polling /runs/active.
+function streamActiveRun(onEvent, onDone, onError) {
+  let es;
+  try { es = new EventSource("/runs/active/stream"); }
+  catch (e) { onError && onError(e); return () => {}; }
+  es.addEventListener("status",  e => { try { onEvent && onEvent("status",  JSON.parse(e.data)); } catch {} });
+  es.addEventListener("sidecar", e => { try { onEvent && onEvent("sidecar", JSON.parse(e.data)); } catch {} });
+  es.addEventListener("log",     e => { try { onEvent && onEvent("log",     JSON.parse(e.data)); } catch {} });
+  es.addEventListener("done",    e => {
+    let data = {}; try { data = JSON.parse(e.data); } catch {}
+    onDone && onDone(data);
+    try { es.close(); } catch {}
+  });
+  es.onerror = (e) => {
+    try { es.close(); } catch {}
+    onError && onError(e);
+  };
+  return () => { try { es.close(); } catch {} };
+}
+
 // Helper that posts to /runs/async (M2.10) with legacy /runs fallback.
 async function startRunWithSudo(body) {
   const mutating = !body.dry_run && (!body.phase || ["apply","cleanup"].includes(body.phase));
@@ -1720,20 +1796,41 @@ document.addEventListener("click", async e => {
   }
 });
 
+// B7 — Theme preference helper. Resolves "auto" against the OS via
+// matchMedia and forwards the concrete dark/light to the existing
+// applyTheme(). Persists to localStorage so the next paint can read it
+// synchronously before /settings comes back from the network.
+window.applyThemePref = function applyThemePref(value) {
+  const v = (value === "dark" || value === "light" || value === "auto") ? value : "auto";
+  const real = v === "auto"
+    ? (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
+    : v;
+  window.applyTheme(real);
+  document.documentElement.setAttribute("data-theme", real);
+};
+
 // Init: load settings first so theme/language are applied before paint flicker
 async function bootstrap() {
+  // B7 — read localStorage.ascendo_theme synchronously on first paint so the
+  // wizard's theme choice survives reload even before /settings resolves.
+  let lsTheme = null;
+  try { lsTheme = localStorage.getItem("ascendo_theme"); } catch {}
+  if (lsTheme) {
+    try { window.applyThemePref(lsTheme); } catch {}
+  }
   try {
     const s = await api.get("/settings");
     window.SETTINGS_CACHE = s;
-    const themePref = (s.ui && s.ui.theme) || "dark";
+    // localStorage wins over /settings — the wizard wrote it last.
+    const themePref = lsTheme || (s.ui && s.ui.theme) || "dark";
     const langPref  = (s.ui && s.ui.language) || "auto";
-    window.applyTheme(themePref);
+    window.applyThemePref(themePref);
     window.UI_LANG = (langPref === "en" || langPref === "pl")
       ? langPref
       : window.detectLanguage();
     window.applyI18n();
   } catch {
-    window.applyTheme("dark");
+    window.applyThemePref(lsTheme || "dark");
     window.UI_LANG = window.detectLanguage();
     window.applyI18n();
   }

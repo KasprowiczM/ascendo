@@ -98,6 +98,15 @@
           <h4 data-i18n="wizard.snapshot_q">Snapshot before each apply?</h4>
           <label><input type="checkbox" id="wiz-snapshot" checked> <span data-i18n="wizard.snapshot_on">Yes (timeshift / etckeeper fallback)</span></label>
         </div>
+        <div id="wizard-step5" style="margin-top:0.8rem">
+          <h4 data-i18n="wizard.theme.title">Pick your theme</h4>
+          <p class="dim" style="margin:0.2rem 0 0.4rem" data-i18n="wizard.theme.body">You can change this later in Settings.</p>
+          <div class="theme-picker">
+            <label><input type="radio" name="wiz-theme" value="auto" checked> <span data-i18n="wizard.theme.auto">Auto (system)</span></label>
+            <label><input type="radio" name="wiz-theme" value="dark"> <span data-i18n="wizard.theme.dark">Dark</span></label>
+            <label><input type="radio" name="wiz-theme" value="light"> <span data-i18n="wizard.theme.light">Light</span></label>
+          </div>
+        </div>
         <div class="modal-actions">
           <button id="wizard-finish" data-i18n="wizard.finish">Finish</button>
           <button id="wizard-skip" type="button" class="secondary" data-i18n="wizard.skip">Skip</button>
@@ -794,10 +803,30 @@ UA_RESPECT_FOCUS=1</code></pre>
     <span id="status-line" data-i18n="footer.ready">ready</span>
     <span id="sudo-indicator" class="dim" style="float:right"></span>
   </footer>
+  <!-- Apply confirmation modal (B4 — mirrors bin/run-apply.ps1).
+       Native <dialog> + form method="dialog" so Esc / backdrop / browser
+       semantics work without bespoke JS. The confirm button stays disabled
+       until the user types the literal string "apply" (case-sensitive). -->
+  <dialog id="apply-confirm-modal" class="modal-dialog">
+    <form method="dialog">
+      <h2 data-i18n="apply.modal.title">Confirm real apply</h2>
+      <p class="modal-body">
+        <span data-i18n="apply.modal.warn">This will mutate your system. Target:</span>
+        <code id="apply-modal-target"></code>
+      </p>
+      <p data-i18n="apply.modal.instruction">Type the word <code>apply</code> below to enable the confirm button.</p>
+      <input id="apply-modal-input" type="text" autocomplete="off" autocapitalize="off"
+             spellcheck="false" placeholder="apply" />
+      <div class="modal-actions">
+        <button value="cancel" type="submit" data-i18n="apply.modal.cancel">Cancel</button>
+        <button id="apply-modal-confirm" value="confirm" type="submit" disabled
+                data-i18n="apply.modal.confirm">Apply</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="/icons.js"></script>
   <script src="/i18n.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
-        </div>
-        <div id

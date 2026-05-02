@@ -369,6 +369,71 @@ footer {
 #sudo-error:empty { display: none; }
 #sudo-error { color: var(--err); margin-top: 0.6rem; font-size: 0.85rem; }
 #sudo-indicator { font-size: 11px; }
+
+/* B4 — Apply confirmation modal (native <dialog> variant). Distinct from
+   the legacy ``.modal`` overlay used by the sudo / wizard / browse modals;
+   the apply-confirm flow uses ``<dialog>`` so Esc / form-method=dialog /
+   browser focus-trap work without bespoke JS. */
+dialog.modal-dialog {
+  max-width: 520px;
+  padding: 1.5rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+dialog.modal-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+}
+dialog.modal-dialog h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.2rem;
+  color: var(--accent, var(--text));
+}
+dialog.modal-dialog code {
+  background: var(--bg, #08090d);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-family: var(--mono, monospace);
+}
+dialog.modal-dialog input[type="text"] {
+  width: 100%;
+  padding: 0.6rem;
+  margin: 0.6rem 0;
+  background: var(--bg, #08090d);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono, monospace);
+  font-size: 0.95rem;
+}
+dialog.modal-dialog .modal-body { margin: 0.4rem 0 0.7rem; }
+dialog.modal-dialog .modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.6rem;
+}
+dialog.modal-dialog #apply-modal-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Wizard theme picker (B7) */
+.theme-picker {
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-top: 0.4rem;
+}
+.theme-picker label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+}
 .dim { color: var(--dim); }
 .mono { font-family: var(--mono); }
 
