@@ -544,11 +544,15 @@ const ui = {
         const ok = await confirmApply(cat || "all categories");
         if (!ok) { ui.status(tr("apply.cancelled") || "apply cancelled"); return; }
       }
+      // Backend (RunRequest, Pydantic v2, ``extra='forbid'``) requires
+      // ``categories: list[SourceType]`` and ``phases: list[Phase]``.
+      // Pre-monorepo SPA used singular ``only``/``phase`` strings — those
+      // now produce HTTP 422 ``extra_forbidden`` errors. Translate here.
       const body = {
-        only: cat,
-        phase: phase,
         dry_run: isReadOnly,
       };
+      if (cat) body.categories = [cat];
+      if (phase) body.phases = [phase];
       try {
         const r = await startRunWithSudo(body);
         ui.show("run");
@@ -683,7 +687,43 @@ const ui = {
 
   async loadRunDetail(runId) {
     try {
-      const r = (await api.get(`/runs/${runId}`)).run;
+      // Backend ``GET /runs/{id}`` returns a list[Sidecar] (the raw
+      // sidecar dump). The pre-monorepo backend wrapped that in
+      // ``{run: {id, status, started_at, ended_at, phases: [...]}}`` so
+      // accept both shapes — synthesise the run-level fields from the
+      // list when needed, otherwise fall through to the legacy wrapper.
+      const raw = await api.get(`/runs/${runId}`);
+      let r;
+      if (Array.isArray(raw)) {
+        const list = raw.filter(sc => sc && !sc._recovery_stub);
+        const ords = {failed:4, partial:3, skipped:2, success:1, up_to_date:0};
+        const worst = list.reduce(
+          (a, s) => ((ords[s.status] ?? -1) > (ords[a] ?? -1) ? s.status : a),
+          list[0] && list[0].status,
+        );
+        const startedSorted = list.map(s => s.started_at).filter(Boolean).sort();
+        const endedSorted   = list.map(s => s.finished_at).filter(Boolean).sort();
+        r = {
+          id: runId,
+          status: worst || "unknown",
+          started_at: startedSorted[0] || null,
+          ended_at: endedSorted[endedSorted.length - 1] || null,
+          phases: list.map(sc => ({
+            category: sc.category,
+            phase: sc.phase,
+            exit_code: (sc.summary && sc.summary.exit_code) ?? null,
+            summary: {
+              ok:   ((sc.summary && sc.summary.success)    || 0)
+                  + ((sc.summary && sc.summary.up_to_date) || 0),
+              warn: ((sc.summary && sc.summary.partial)    || 0)
+                  + ((sc.summary && sc.summary.skipped)    || 0),
+              err:  (sc.summary && sc.summary.failed) || 0,
+            },
+          })),
+        };
+      } else {
+        r = (raw && raw.run) || raw;
+      }
       const phases = r.phases || (r.run && r.run.phases) || [];
       let html = `<h3><code>${r.id || runId}</code> - ${ui.badge(r.status)}</h3>
         <p class="dim">${ui.fmtTime(r.started_at)} → ${ui.fmtTime(r.ended_at)}</p>
@@ -1333,7 +1373,17 @@ function streamActiveRun(onEvent, onDone, onError) {
 
 // Helper that posts to /runs/async (M2.10) with legacy /runs fallback.
 async function startRunWithSudo(body) {
-  const mutating = !body.dry_run && (!body.phase || ["apply","cleanup"].includes(body.phase));
+  // Backend takes ``phases: list[Phase]``; legacy SPA also passed
+  // ``phase: string``. Accept both shapes here so the mutating-check
+  // works whichever payload key is present. Empty/absent phases means
+  // "all default phases", which DOES include apply+cleanup → mutating.
+  const phaseList = (Array.isArray(body.phases) && body.phases.length)
+    ? body.phases
+    : (body.phase ? [body.phase] : []);
+  const mutating = !body.dry_run && (
+    phaseList.length === 0
+    || phaseList.some(p => p === "apply" || p === "cleanup")
+  );
   if (mutating) {
     const ok = await sudoMgr.ensure();
     if (!ok) throw new Error("sudo authentication cancelled");
@@ -1356,17 +1406,44 @@ async function startRunWithSudo(body) {
   }
 }
 
+// Normalise a legacy ``data-quick`` body into the wire shape the new
+// monorepo backend accepts (RunRequest with ``extra='forbid'``):
+//   only:  string  → categories: list[string]
+//   phase: string  → phases:     list[string]
+// Anything not in the allowed set is dropped silently — the legacy
+// ``extra_args`` channel is not supported on the new backend, so we
+// neither send it nor 422 the user.
+function normaliseRunBody(raw) {
+  if (!raw || typeof raw !== "object") return {};
+  const ALLOWED = new Set([
+    "profile", "categories", "phases", "dry_run",
+    "item_filter", "stop_on_failure",
+  ]);
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (ALLOWED.has(k) && v !== null && v !== undefined) out[k] = v;
+  }
+  if (raw.only && !out.categories)  out.categories = [raw.only];
+  if (raw.phase && !out.phases)     out.phases     = [raw.phase];
+  return out;
+}
+
 // Quick-action buttons. Use delegation so dynamically-added buttons (e.g.
 // inside a re-rendered card) inherit the handler.
 document.addEventListener("click", async e => {
   const b = e.target.closest("[data-quick]");
   if (!b) return;
-  let body;
-  try { body = JSON.parse(b.dataset.quick); } catch { return; }
-  // Confirm destructive NVIDIA path.
-  if ((body.extra_args || []).includes("--nvidia")) {
+  let raw;
+  try { raw = JSON.parse(b.dataset.quick); } catch { return; }
+  // Confirm destructive NVIDIA path. We check the RAW body so the legacy
+  // ``extra_args=["--nvidia"]`` flag still gates the confirmation even
+  // though we drop it before posting (the new backend has no flag for it
+  // — the user must apt-upgrade NVIDIA explicitly via the drivers
+  // category instead).
+  if ((raw.extra_args || []).includes("--nvidia")) {
     if (!confirm("Apply NVIDIA driver upgrade?\n\nNVIDIA drivers are held by default because DKMS rebuilds can fail. The upgrade will run apt with --only-upgrade nvidia-driver-*, then verify nvidia-smi.")) return;
   }
+  const body = normaliseRunBody(raw);
   try {
     const r = await startRunWithSudo(body);
     ui.show("run");
@@ -1380,12 +1457,18 @@ document.addEventListener("click", async e => {
 $("#run-form").addEventListener("submit", async e => {
   e.preventDefault();
   const fd = new FormData(e.target);
-  const body = {
-    profile: fd.get("profile") || null,
-    only:    fd.get("only")    || null,
-    phase:   fd.get("phase")   || null,
-    dry_run: fd.get("dry_run") === "on",
-  };
+  // See note on the per-category buttons above: the backend rejects
+  // ``only``/``phase`` (singular) with HTTP 422 ``extra_forbidden``. Send
+  // the list-shaped fields the new RunRequest accepts, and only include
+  // them when the user actually selected a value (omit empty so the
+  // backend uses its defaults — all categories, all phases).
+  const profile = fd.get("profile");
+  const only    = fd.get("only");
+  const phase   = fd.get("phase");
+  const body    = { dry_run: fd.get("dry_run") === "on" };
+  if (profile) body.profile    = profile;
+  if (only)    body.categories = [only];
+  if (phase)   body.phases     = [phase];
   try {
     const r = await startRunWithSudo(body);
     ui.attachStream(r.run_id);

@@ -340,7 +340,18 @@ function Read-WingetTabularOutput {
         }
     }
 
-    return ,$rows.ToArray()
+    # Return the array directly. The leading comma form ``,$rows.ToArray()``
+    # was an over-wrap: it emitted a 1-element pipeline object containing
+    # the entire inner array, which downstream callers using ``@(...)``
+    # collected as a single super-element. PowerShell's implicit array→
+    # string coercion then joined every package's ``.Id`` (and ``.Name``,
+    # ``.Version`` …) with spaces, producing inventories that surfaced as
+    # one giant row whose name was a space-mash of every installed app.
+    # Without the comma, the array is enumerated through the pipeline as
+    # one object per row, which ``@(...)`` collects correctly. Empty case:
+    # ``ToArray()`` returns ``Object[0]`` and the pipeline emits nothing —
+    # callers see ``Count == 0``.
+    return $rows.ToArray()
 }
 
 # -----------------------------------------------------------------------------

@@ -134,13 +134,40 @@ class RunResponse(_WireBase):
 
 
 class RunListEntry(_WireBase):
-    """One row in the GET /runs index response."""
+    """One row in the GET /runs index response.
+
+    Includes legacy SPA-compatible fields (``id``, ``started_at``, ``status``,
+    …) populated from the first sidecar of each run dir, in addition to the
+    canonical ``run_id``/``sidecar_count``/``phases`` triple. The SPA's
+    History tab renders rows entirely from these fields, so they MUST be
+    present (the values may be ``None`` if no sidecar could be parsed).
+    """
 
     run_id: UUID
     sidecar_count: int
     phases: list[Phase] = Field(
         default_factory=list,
         description="Phases for which a sidecar exists in this run dir.",
+    )
+    # Legacy SPA aliases / enrichment ─ all optional so existing API
+    # consumers that only read run_id/sidecar_count/phases keep working.
+    id: UUID | None = Field(
+        default=None,
+        description="Alias for ``run_id`` so the legacy SPA's row.id keys still resolve.",
+    )
+    started_at: datetime | None = Field(default=None)
+    ended_at: datetime | None = Field(default=None)
+    status: PhaseStatus | None = Field(default=None)
+    profile: str | None = Field(default=None)
+    dry_run: bool | None = Field(default=None)
+    source: str | None = Field(
+        default=None,
+        description="Where the run originated (cli/dashboard/scheduler). Always None for new runs until M3+ tracks it.",
+    )
+    needs_reboot: bool | None = Field(default=None)
+    summary: dict | None = Field(
+        default=None,
+        description="``{'phases': [...]}`` shape consumed by the History tab; legacy SPA only checks ``.phases.length``.",
     )
 
 

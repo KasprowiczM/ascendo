@@ -298,8 +298,46 @@ try {
     }
     Write-Verbose ("Get-WingetInstalled returned {0} row(s)" -f $installed.Count)
 
-    # 5. Emit one item per installed package
-    $emittedIds = @{}
+    # 5. Emit one item per installed package, classified by source.
+    #
+    # ``winget list`` already returns Microsoft Store / MSIX packages and
+    # ARP-detected (Add-or-Remove-Programs) entries alongside true winget-
+    # source packages. Hard-coding ``Category='winget'`` for every row
+    # collapsed all of them into the dashboard's single ``winget`` bucket
+    # and hid the per-source inventory the user expects to see in the
+    # Categories tab.
+    #
+    # Classification (in order):
+    #   1. Source column says 'msstore' (case-insensitive)         -> msstore
+    #   2. Source column says 'winget'                              -> winget
+    #   3. Id starts with 'MSIX\'  (Store-installed AppX/MSIX)      -> msstore
+    #   4. Id starts with 'ARP\'   (Add/Remove Programs registry)   -> registry_arp
+    #   5. Otherwise                                                -> winget
+    #
+    # Items keep their winget-reported ``Source`` in ``SourceFeed`` for
+    # diagnostics; only the SourceType changes per the bucket.
+    function Resolve-InventoryCategory {
+        param(
+            [string] $Id,
+            [string] $Source
+        )
+        if ($Source) {
+            $s = $Source.Trim().ToLowerInvariant()
+            if ($s -eq 'msstore') { return 'msstore' }
+            if ($s -eq 'winget')  { return 'winget' }
+        }
+        if ($Id -like 'MSIX\*') { return 'msstore' }
+        if ($Id -like 'ARP\*')  { return 'registry_arp' }
+        return 'winget'
+    }
+
+    $emittedIds       = @{}
+    $perCategoryCount = @{
+        'winget'         = 0
+        'msstore'        = 0
+        'registry_arp'   = 0
+        'windows_update' = 0
+    }
     foreach ($pkg in $installed) {
         if (-not $pkg.Id) { continue }
         if ($emittedIds.ContainsKey($pkg.Id)) { continue }
@@ -315,16 +353,24 @@ try {
             }
         }
 
+        $sourceFeed = $null
+        if ($pkg.PSObject.Properties['Source'] -and $pkg.Source) {
+            $sourceFeed = [string]$pkg.Source
+        }
+
+        $itemCategory = Resolve-InventoryCategory -Id ([string]$pkg.Id) -Source $sourceFeed
+        $perCategoryCount[$itemCategory] = $perCategoryCount[$itemCategory] + 1
+
         $itemArgs = @{
             Sidecar    = $sidecar
             Id         = [string]$pkg.Id
             Name       = [string]$pkg.Name
-            Category   = 'winget'
-            SourceType = 'winget'
+            Category   = $itemCategory
+            SourceType = $itemCategory
             Status     = 'success'
         }
-        if ($pkg.PSObject.Properties['Source'] -and $pkg.Source) {
-            $itemArgs['SourceFeed'] = [string]$pkg.Source
+        if ($null -ne $sourceFeed) {
+            $itemArgs['SourceFeed'] = $sourceFeed
         }
         if ($null -ne $current) {
             $itemArgs['CurrentVersion'] = $current
@@ -335,7 +381,11 @@ try {
     }
 
     Add-SidecarMessage -Sidecar $sidecar -Level 'info' `
-        -Text ("Inventory enumerated {0} package(s)." -f $emittedIds.Count)
+        -Text ("Inventory enumerated {0} package(s): winget={1}, msstore={2}, registry_arp={3}." -f
+            $emittedIds.Count,
+            $perCategoryCount['winget'],
+            $perCategoryCount['msstore'],
+            $perCategoryCount['registry_arp'])
 
     if ($null -ne $itemFilterArray) {
         Add-SidecarMessage -Sidecar $sidecar -Level 'info' `

@@ -90,17 +90,117 @@ async def create_run(req: RunRequest, request: Request) -> RunResponse:
     return RunResponse.from_orchestrator(report)
 
 
+_STATUS_PRIORITY = {
+    "failed": 4,
+    "partial": 3,
+    "skipped": 2,
+    "success": 1,
+    "up_to_date": 0,
+}
+
+
+def _aggregate_status(statuses: list[str]) -> str | None:
+    """Return the worst per-sidecar status across a run.
+
+    The legacy SPA renders a single status pill per row (success/partial/
+    failed); collapse the set with a fixed precedence so e.g. one failed
+    sidecar wins over four successes.
+    """
+    if not statuses:
+        return None
+    return max(statuses, key=lambda s: _STATUS_PRIORITY.get(s, -1))
+
+
+def _read_run_metadata(run_dir: Path) -> dict:
+    """Best-effort enrichment for one run dir's sidecars.
+
+    Returns a dict with the legacy SPA fields the History tab consumes
+    (started_at / ended_at / status / profile / dry_run / needs_reboot /
+    summary). Each field is ``None`` if no sidecar could supply it; we
+    never raise from this helper because the History list MUST keep
+    rendering even when a single run dir has a corrupted sidecar.
+    """
+    paths = list_run_sidecars(run_dir)
+    if not paths:
+        return {}
+
+    started: list[datetime] = []
+    ended: list[datetime] = []
+    statuses: list[str] = []
+    profile: str | None = None
+    dry_run: bool | None = None
+    needs_reboot: bool = False
+    phase_rows: list[dict] = []
+
+    for p in paths:
+        try:
+            sc = read_sidecar(p)
+        except SidecarReadError:
+            continue
+        if sc.started_at is not None:
+            started.append(sc.started_at)
+        if sc.finished_at is not None:
+            ended.append(sc.finished_at)
+        statuses.append(sc.status.value)
+        if profile is None:
+            profile = sc.run.profile
+        if dry_run is None:
+            dry_run = sc.run.dry_run
+        # Sidecar.needs_reboot may not exist on every schema version.
+        if getattr(sc, "needs_reboot", False):
+            needs_reboot = True
+        summary = sc.summary
+        phase_rows.append(
+            {
+                "category": sc.category.value,
+                "phase": sc.phase.value,
+                "exit_code": getattr(summary, "exit_code", None),
+                "summary": {
+                    "ok": getattr(summary, "success", 0)
+                    + getattr(summary, "up_to_date", 0),
+                    "warn": getattr(summary, "partial", 0)
+                    + getattr(summary, "skipped", 0),
+                    "err": getattr(summary, "failed", 0),
+                    "total": getattr(summary, "total", 0),
+                },
+            },
+        )
+
+    return {
+        "started_at": min(started) if started else None,
+        "ended_at": max(ended) if ended else None,
+        "status": _aggregate_status(statuses),
+        "profile": profile,
+        "dry_run": dry_run,
+        "needs_reboot": needs_reboot if statuses else None,
+        "summary": {"phases": phase_rows} if phase_rows else None,
+    }
+
+
 @router.get("", response_model=RunListResponse)
 async def list_runs(request: Request) -> RunListResponse:
-    """List run-ids that have at least one sidecar on disk under runs_dir."""
+    """List run-ids that have at least one sidecar on disk under runs_dir.
+
+    Each entry is enriched (best-effort) with the legacy SPA fields the
+    History tab consumes — ``id`` (alias for ``run_id``), ``started_at``,
+    ``ended_at``, ``status``, ``profile``, ``dry_run``, ``needs_reboot``,
+    ``summary``. Reading sidecars per row is the price; for typical
+    inventories (few hundred runs × a handful of sidecars each) it stays
+    well under 100 ms wall-clock and keeps the schema additive — clients
+    that only consume ``run_id``/``sidecar_count``/``phases`` keep working.
+    """
     runs_dir: Path = request.app.state.runs_dir
     if not runs_dir.is_dir():
         return RunListResponse(runs=[], total=0)
 
     entries: list[RunListEntry] = []
-    for child in sorted(runs_dir.iterdir()):
-        if not child.is_dir():
-            continue
+    # Sort by mtime descending so the History tab shows newest runs first
+    # without the SPA needing to re-sort. Falls back to name order on
+    # filesystems whose mtime resolution coalesces fast back-to-back runs.
+    children = [c for c in runs_dir.iterdir() if c.is_dir()]
+    children.sort(key=lambda p: (p.stat().st_mtime, p.name), reverse=True)
+
+    for child in children:
         try:
             run_id = UUID(child.name)
         except ValueError:
@@ -116,11 +216,20 @@ async def list_runs(request: Request) -> RunListResponse:
             stem = p.stem  # e.g. "check__winget"
             if "__" in stem:
                 phases.add(stem.split("__", 1)[0])
+        meta = _read_run_metadata(child)
         entries.append(
             RunListEntry(
                 run_id=run_id,
+                id=run_id,
                 sidecar_count=len(sidecar_paths),
                 phases=sorted(phases),  # type: ignore[arg-type]  # Pydantic coerces str→Phase
+                started_at=meta.get("started_at"),
+                ended_at=meta.get("ended_at"),
+                status=meta.get("status"),
+                profile=meta.get("profile"),
+                dry_run=meta.get("dry_run"),
+                needs_reboot=meta.get("needs_reboot"),
+                summary=meta.get("summary"),
             ),
         )
 
