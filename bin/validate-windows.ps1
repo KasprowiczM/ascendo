@@ -219,13 +219,21 @@ try {
                     -Method Post -Body $body -ContentType 'application/json'
                 Test-Result "POST /runs/async returns run_id" ($async.run_id -match '^[0-9a-f-]{36}$') "run_id=$($async.run_id)"
 
+                # Poll up to 90s. A 'check' run across all 4 Windows package
+                # sources (winget+msstore+registry_arp+windows_update) is
+                # IO-bound and can take 20-60s on a healthy machine — the
+                # original 10s window only worked when winget was warm.
                 $pollOk = $false
-                for ($i = 0; $i -lt 40; $i++) {
+                $elapsedMs = 0
+                for ($i = 0; $i -lt 360; $i++) {
                     Start-Sleep -Milliseconds 250
-                    $s = Invoke-RestMethod "http://127.0.0.1:$DashboardPort/runs/$($async.run_id)/status"
+                    $elapsedMs += 250
+                    try {
+                        $s = Invoke-RestMethod "http://127.0.0.1:$DashboardPort/runs/$($async.run_id)/status"
+                    } catch { continue }
                     if ($s.status -eq 'completed' -or $s.status -eq 'failed') { $pollOk = $true; break }
                 }
-                Test-Result "GET /runs/{id}/status reaches completed/failed" $pollOk "status=$($s.status)"
+                Test-Result "GET /runs/{id}/status reaches completed/failed" $pollOk "status=$($s.status) after $([Math]::Round($elapsedMs/1000,1))s"
 
                 # New (Wave 2): real dashboard endpoints + SSE
                 Write-Host "[validate] checking real dashboard endpoints..." -ForegroundColor Cyan

@@ -6,11 +6,10 @@
   "build": {
     "beforeDevCommand": "",
     "beforeBuildCommand": "",
-    "devPath": "../src",
-    "distDir": "../src",
-    "withGlobalTauri": false
+    "frontendDist": "../src"
   },
   "app": {
+    "withGlobalTauri": false,
     "windows": [
       {
         "label": "main",

@@ -15,7 +15,8 @@
 #>
 param(
     [switch]$Build,
-    [switch]$SkipDeps
+    [switch]$SkipDeps,
+    [switch]$SkipPrereqCheck
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,6 +27,76 @@ $tauriDir = Join-Path $repoRoot "ui/desktop-tauri"
 
 if (-not (Test-Path $tauriDir)) {
     throw "ui/desktop-tauri not found at $tauriDir"
+}
+
+# ── Pre-flight: PATH refresh + toolchain detection ──────────────────────
+# Cargo / Rust often land in $USERPROFILE\.cargo\bin after a fresh
+# `winget install Rustlang.Rustup` but the shell that launched this
+# script may not yet have it on PATH. Inject it pre-emptively.
+$cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+if ((Test-Path $cargoBin) -and ($env:PATH -notlike "*$cargoBin*")) {
+    $env:PATH = "$cargoBin;$env:PATH"
+    Write-Host "[prereq] added $cargoBin to PATH for this session" -ForegroundColor DarkGray
+}
+
+if (-not $SkipPrereqCheck) {
+    $missing = @()
+
+    # Rust
+    & rustc --version *> $null
+    if ($LASTEXITCODE -ne 0) {
+        $missing += @{
+            name    = "Rust toolchain (rustc + cargo)"
+            install = "winget install Rustlang.Rustup; rustup default stable"
+            details = "After install, restart your shell so the new PATH takes effect."
+        }
+    }
+
+    # MSVC C++ build tools — `winget install Microsoft.VisualStudio.2022.BuildTools`
+    # alone installs ONLY the bootstrapper (no C++ workload). Tauri compiles
+    # native crates and needs cl.exe / link.exe / Windows SDK headers.
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    $hasMsvc = $false
+    if (Test-Path $vswhere) {
+        $msvc = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
+        if ($msvc) { $hasMsvc = $true }
+    }
+    if (-not $hasMsvc) {
+        $missing += @{
+            name    = "MSVC C++ build tools (Microsoft.VisualStudio.Workload.VCTools)"
+            install = 'winget install Microsoft.VisualStudio.2022.BuildTools --override "--passive --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"'
+            details = "The bare BuildTools package only ships the bootstrapper. The workload flag is required to actually install cl.exe + the Windows SDK."
+        }
+    }
+
+    # Node
+    & node --version *> $null
+    if ($LASTEXITCODE -ne 0) {
+        $missing += @{
+            name    = "Node.js 18+"
+            install = "winget install OpenJS.NodeJS.LTS"
+            details = ""
+        }
+    }
+
+    if ($missing.Count -gt 0) {
+        Write-Host "" -ForegroundColor Yellow
+        Write-Host "Missing prerequisites for the Tauri build:" -ForegroundColor Yellow
+        foreach ($m in $missing) {
+            Write-Host "" -ForegroundColor Yellow
+            Write-Host "  - $($m['name'])" -ForegroundColor Red
+            Write-Host "    install: $($m['install'])" -ForegroundColor White
+            if ($m['details']) {
+                Write-Host "    note:    $($m['details'])" -ForegroundColor DarkGray
+            }
+        }
+        Write-Host "" -ForegroundColor Yellow
+        Write-Host "Install everything above (the MSVC workload step takes ~5 min), restart your shell, then re-run this script." -ForegroundColor Yellow
+        Write-Host "To skip this check (e.g. you have an unconventional setup), pass -SkipPrereqCheck." -ForegroundColor DarkGray
+        exit 2
+    }
+
+    Write-Host "[prereq] rustc, cargo, MSVC, node all present" -ForegroundColor Green
 }
 
 Set-Location $tauriDir
