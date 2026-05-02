@@ -14,6 +14,8 @@ import typer
 
 from .. import __version__
 from ..adapter_factory import AdapterRegistry, NoAdapterAvailableError, select_adapter
+from ..interfaces.scheduler import ScheduleSpec, SchedulerError
+from ..interfaces.snapshot import SnapshotError
 from ..models.package import SourceType
 from ..models.run import Phase, PhaseStatus, RunInfo, Trigger
 from ..orchestrator import run_phases
@@ -29,6 +31,21 @@ runs_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(runs_app, name="runs")
+
+snapshot_app = typer.Typer(
+    name="snapshot",
+    help="Manage system snapshots (VSS on Windows, timeshift on Linux).",
+    no_args_is_help=True,
+)
+app.add_typer(snapshot_app, name="snapshot")
+
+schedule_app = typer.Typer(
+    name="schedule",
+    help="Manage scheduled runs (Task Scheduler on Windows, systemd timer on Linux).",
+    no_args_is_help=True,
+)
+app.add_typer(schedule_app, name="schedule")
+
 _log = logging.getLogger("ascendo")
 
 
@@ -130,7 +147,50 @@ def run(
     color = {PhaseStatus.SUCCESS: typer.colors.GREEN, PhaseStatus.SKIPPED: typer.colors.BLUE,
              PhaseStatus.PARTIAL: typer.colors.YELLOW, PhaseStatus.FAILED: typer.colors.RED}[overall]
     typer.secho(f"overall: {overall.value} ({len(report.sidecars)} sidecars, {report.total_items} items)", fg=color, bold=True)
-    raise typer.Exit({PhaseStatus.SUCCESS: 0, PhaseStatus.SKIPPED: 0, PhaseStatus.PARTIAL: 1, PhaseStatus.FAILED: 2}[overall])
+
+    # Reboot detection: Sidecar v1 dropped the legacy `needs_reboot` field
+    # (see core/ascendo/models/legacy.py). The convention used by the
+    # PowerShell apply scripts (winget, windows_update) is to emit a
+    # phase-level WARN message whose text starts with "Reboot required".
+    # We detect that signal and surface it as exit 75.
+    needs_reboot = _sidecars_need_reboot(report.sidecars)
+    if needs_reboot:
+        typer.secho(
+            "⚠ system reboot required to complete updates",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+
+    # Exit-code precedence:
+    #   FAILED  → 2  (always wins; reboot-pending failures still exit 2)
+    #   PARTIAL → 1  (reboot-pending partials still exit 1)
+    #   SUCCESS → 0, but bumped to 75 if any sidecar requested a reboot
+    #   SKIPPED → 0
+    exit_code = {
+        PhaseStatus.SUCCESS: 0,
+        PhaseStatus.SKIPPED: 0,
+        PhaseStatus.PARTIAL: 1,
+        PhaseStatus.FAILED:  2,
+    }[overall]
+    if needs_reboot and exit_code == 0:
+        exit_code = 75
+    raise typer.Exit(exit_code)
+
+
+def _sidecars_need_reboot(sidecars) -> bool:
+    """True if any sidecar in this run signals a pending reboot.
+
+    The Sidecar v1 schema does not have a dedicated ``needs_reboot``
+    field (see ``core/ascendo/models/legacy.py``). The Windows apply
+    scripts encode the signal as a phase-level WARN message with text
+    starting with "Reboot required" — we look for that here.
+    """
+    for sc in sidecars:
+        for msg in getattr(sc, "messages", ()):
+            text = (getattr(msg, "text", "") or "").lstrip()
+            if text.lower().startswith("reboot required"):
+                return True
+    return False
 
 
 @app.command()
@@ -162,16 +222,292 @@ def _planned(name: str, milestone: str) -> NoReturn:
     raise typer.Exit(64)
 
 
-@app.command()
-def schedule() -> None:
-    """[planned: M3.13] Manage periodic runs."""
-    _planned("ascendo schedule", "M3.13 (Task Scheduler)")
+# ── snapshot subcommands ──────────────────────────────────────────────────
+# These delegate to the adapter's ISnapshot implementation. The interface
+# (core/ascendo/interfaces/snapshot.py) deliberately exposes only
+# create / list / get — actual restore is documented as a user-only
+# operation that lives in the dashboard. The CLI's `restore` subcommand
+# is kept as a clear placeholder with exit 64 so users know it is not
+# yet implemented at the interface level.
 
 
-@app.command()
-def snapshot() -> None:
-    """[planned: M3.12] Snapshots."""
-    _planned("ascendo snapshot", "M3.12 (VSS / timeshift)")
+def _resolve_adapter_for_capability():
+    """Discover and select an adapter, mapping registry errors to exit codes.
+
+    Returns the selected adapter and its detected host. Exits 3 if no
+    adapter is available on this host (mirrors the pattern used by
+    :func:`run` and :func:`doctor`).
+    """
+    registry = AdapterRegistry()
+    registry.discover()
+    try:
+        adapter = select_adapter(registry=registry)
+    except NoAdapterAvailableError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(3) from None
+    host = adapter.detect_host()
+    return adapter, host
+
+
+@snapshot_app.command("create")
+def snapshot_create(
+    description: str | None = typer.Option(
+        None, "--description", "-d",
+        help="Free-form description stored with the snapshot.",
+    ),
+    label: str | None = typer.Option(
+        None, "--label",
+        help="Short label. Default: 'ascendo <iso-timestamp>'.",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Create a new system snapshot. Prints the new snapshot id."""
+    _setup_logging(verbose)
+    adapter, host = _resolve_adapter_for_capability()
+    snap_mgr = adapter.snapshot()
+    if snap_mgr is None:
+        typer.secho(
+            f"error: snapshot not supported on this adapter ({adapter.name}).",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(10)
+    if not snap_mgr.is_available(host):
+        typer.secho(
+            f"error: snapshot backend '{snap_mgr.backend}' is not operational on this host.",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(10)
+    effective_label = label or f"ascendo {datetime.now(timezone.utc).isoformat(timespec='seconds')}"
+    try:
+        info = snap_mgr.create(host, label=effective_label, notes=description)
+    except SnapshotError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(20) from None
+    typer.secho(f"snapshot created: {info.id}", fg=typer.colors.GREEN)
+    typer.echo(f"  backend:    {info.backend}")
+    typer.echo(f"  created_at: {info.created_at.isoformat()}")
+    if info.label:
+        typer.echo(f"  label:      {info.label}")
+    if info.notes:
+        typer.echo(f"  notes:      {info.notes}")
+
+
+@snapshot_app.command("list")
+def snapshot_list(
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """List system snapshots known to the adapter."""
+    _setup_logging(verbose)
+    adapter, host = _resolve_adapter_for_capability()
+    snap_mgr = adapter.snapshot()
+    if snap_mgr is None:
+        typer.secho(
+            f"error: snapshot not supported on this adapter ({adapter.name}).",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(10)
+    try:
+        items = snap_mgr.list(host)
+    except SnapshotError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(20) from None
+    if not items:
+        typer.secho("no snapshots.", fg=typer.colors.YELLOW)
+        return
+    typer.secho(
+        f"{'ID':<40s} {'CREATED':<25s} {'LABEL'}",
+        bold=True,
+    )
+    for s in items:
+        label = s.label or "—"
+        typer.echo(f"{s.id:<40s} {s.created_at.isoformat():<25s} {label}")
+
+
+@snapshot_app.command("restore")
+def snapshot_restore(
+    snapshot_id: str = typer.Argument(..., help="Snapshot id (from `ascendo snapshot list`)."),
+    confirm: str = typer.Option(
+        "", "--confirm",
+        help="Must be the literal string 'RESTORE' to proceed.",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Restore a snapshot.
+
+    The :class:`ISnapshot` interface intentionally does not expose a
+    ``restore`` method — restore is a deliberate user-only operation
+    that requires extra UI confirmation and lives in the dashboard.
+    The CLI carries this subcommand as a clear placeholder so users
+    know where to reach when interface coverage lands.
+    """
+    _setup_logging(verbose)
+    if confirm != "RESTORE":
+        typer.secho(
+            "error: refusing to restore without --confirm RESTORE",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(2)
+    adapter, _host = _resolve_adapter_for_capability()
+    snap_mgr = adapter.snapshot()
+    if snap_mgr is None:
+        typer.secho(
+            f"error: snapshot not supported on this adapter ({adapter.name}).",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(10)
+    typer.secho(
+        f"'ascendo snapshot restore {snapshot_id}' is not yet implemented at the "
+        f"interface level (ISnapshot exposes create/list/get only). "
+        f"Use the dashboard's snapshot tab for restore on this adapter "
+        f"({adapter.name}, backend={snap_mgr.backend}).",
+        fg=typer.colors.YELLOW, err=True,
+    )
+    raise typer.Exit(64)
+
+
+# ── schedule subcommands ──────────────────────────────────────────────────
+
+
+@schedule_app.command("install")
+def schedule_install(
+    calendar: str = typer.Option(
+        ..., "--calendar",
+        help="Schedule expression in backend-native syntax "
+             "(systemd OnCalendar / schtasks / launchd cron-like).",
+    ),
+    profile: str = typer.Option("safe", "--profile", help="Profile to run on schedule."),
+    name: str = typer.Option(
+        "ascendo-default", "--name",
+        help="Schedule slug (lowercase, dashes). Used by the backend as the entry id.",
+    ),
+    description: str | None = typer.Option(None, "--description"),
+    no_drivers: bool = typer.Option(False, "--no-drivers", help="(reserved for adapter use)"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Install or update a scheduled run entry. Idempotent."""
+    _setup_logging(verbose)
+    adapter, host = _resolve_adapter_for_capability()
+    sched_mgr = adapter.scheduler()
+    if sched_mgr is None:
+        typer.secho(
+            f"error: scheduler not supported on this adapter ({adapter.name}).",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(10)
+    if not sched_mgr.is_available(host):
+        typer.secho(
+            f"error: scheduler backend '{sched_mgr.backend}' is not operational on this host.",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(10)
+    # `no_drivers` is captured in the description so the underlying script
+    # can pick it up if/when it grows that knob; the public ScheduleSpec
+    # surface intentionally stays narrow.
+    desc = description or ""
+    if no_drivers and "no-drivers" not in desc:
+        desc = (desc + " [no-drivers]").strip()
+    try:
+        spec = ScheduleSpec(
+            name=name,
+            expression=calendar,
+            profile=profile,
+            enabled=True,
+            description=desc or None,
+        )
+        sched_mgr.install(host, spec)
+    except SchedulerError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(20) from None
+    typer.secho(
+        f"schedule installed: {spec.name} (backend={sched_mgr.backend})",
+        fg=typer.colors.GREEN,
+    )
+    typer.echo(f"  expression: {spec.expression}")
+    typer.echo(f"  profile:    {spec.profile}")
+    if spec.description:
+        typer.echo(f"  description: {spec.description}")
+
+
+@schedule_app.command("remove")
+def schedule_remove(
+    name: str = typer.Option(
+        "ascendo-default", "--name", help="Schedule slug to remove.",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Uninstall a scheduled run entry. No-op if it does not exist."""
+    _setup_logging(verbose)
+    adapter, host = _resolve_adapter_for_capability()
+    sched_mgr = adapter.scheduler()
+    if sched_mgr is None:
+        typer.secho(
+            f"error: scheduler not supported on this adapter ({adapter.name}).",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(10)
+    try:
+        sched_mgr.uninstall(host, name)
+    except SchedulerError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(20) from None
+    typer.secho(f"schedule removed: {name}", fg=typer.colors.GREEN)
+
+
+@schedule_app.command("list")
+def schedule_list(
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """List Ascendo's scheduled run entries."""
+    _setup_logging(verbose)
+    adapter, host = _resolve_adapter_for_capability()
+    sched_mgr = adapter.scheduler()
+    if sched_mgr is None:
+        typer.secho(
+            f"error: scheduler not supported on this adapter ({adapter.name}).",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(10)
+    try:
+        items = sched_mgr.list(host)
+    except SchedulerError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(20) from None
+    if not items:
+        typer.secho("no schedule entries.", fg=typer.colors.YELLOW)
+        return
+    typer.secho(
+        f"{'NAME':<32s} {'PROFILE':<10s} {'ENABLED':<8s} {'EXPRESSION'}",
+        bold=True,
+    )
+    for s in items:
+        typer.echo(
+            f"{s.name:<32s} {s.profile:<10s} {('yes' if s.enabled else 'no'):<8s} {s.expression}"
+        )
+
+
+@schedule_app.command("trigger")
+def schedule_trigger(
+    name: str = typer.Option(
+        "ascendo-default", "--name", help="Schedule slug to trigger now.",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Run the named schedule entry immediately."""
+    _setup_logging(verbose)
+    adapter, host = _resolve_adapter_for_capability()
+    sched_mgr = adapter.scheduler()
+    if sched_mgr is None:
+        typer.secho(
+            f"error: scheduler not supported on this adapter ({adapter.name}).",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(10)
+    try:
+        sched_mgr.trigger(host, name)
+    except SchedulerError as e:
+        typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(20) from None
+    typer.secho(f"schedule triggered: {name}", fg=typer.colors.GREEN)
 
 
 @app.command()
@@ -406,6 +742,53 @@ def runs_show(
         PhaseStatus.SUCCESS: 0, PhaseStatus.SKIPPED: 0,
         PhaseStatus.PARTIAL: 1, PhaseStatus.FAILED: 2,
     }[overall])
+
+
+@runs_app.command("json")
+def runs_json(
+    run_id: str = typer.Argument(..., help="Run id (the directory name under runs_dir)."),
+    runs_dir: Path | None = typer.Option(None, "--runs-dir"),
+    pretty: bool = typer.Option(False, "--pretty", help="Pretty-print the JSON (indent=2)."),
+) -> None:
+    """Emit a consolidated run report as a single JSON blob (pipe to jq).
+
+    Schema: ``ascendo/run/v1``. Carries the per-sidecar payloads plus a
+    top-level rollup (overall_status, started/finished, duration_seconds,
+    needs_reboot, summary). Useful for scripting on top of `ascendo runs`.
+    """
+    from ..orchestrator.sidecar_io import read_run
+
+    base_dir = runs_dir or _default_runs_dir()
+    run_dir = base_dir / run_id
+    if not run_dir.is_dir():
+        typer.secho(f"error: run not found: {run_dir}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    sidecars = [sc for sc in read_run(run_dir) if hasattr(sc, "status")]
+    overall = _run_overall_status(sidecars)
+    started = min((sc.started_at for sc in sidecars if sc.started_at), default=None)
+    finished = max((sc.finished_at for sc in sidecars if sc.finished_at), default=None)
+    duration = (finished - started).total_seconds() if started and finished else None
+
+    payload = {
+        "schema": "ascendo/run/v1",
+        "run_id": run_id,
+        "started_at":  started.isoformat()  if started  else None,
+        "finished_at": finished.isoformat() if finished else None,
+        "duration_seconds": duration,
+        "overall_status": overall.value,
+        "needs_reboot": _sidecars_need_reboot(sidecars),
+        "sidecars": [sc.model_dump(mode="json", by_alias=True) for sc in sidecars],
+        "summary": {
+            "phases":        len(sidecars),
+            "items_total":   sum(sc.summary.total for sc in sidecars),
+            "items_failed":  sum(sc.summary.failed for sc in sidecars),
+            "items_success": sum(sc.summary.success for sc in sidecars),
+        },
+    }
+
+    import json as _json
+    typer.echo(_json.dumps(payload, indent=2 if pretty else None, default=str))
 
 
 def main() -> None:
