@@ -26,8 +26,36 @@
       "icons/icon.png"
     ],
     "shortDescription": "Ascendo - Unified Updates",
-    "longDescription": "Ascendo desktop shell. Spawns the Python dashboard sidecar on a loopback port and opens it in a WebView2 window.",
+    "longDescription": "Ascendo desktop shell. Spawns the Python dashboard sidecar on a loopback port and opens it in a WebView2 window. Bundles a Python runtime so the user does not need Python installed.",
     "category": "DeveloperTool",
-    "publisher": "Ascendo"
+    "publisher": "Ascendo Software",
+    "copyright": "Copyright (c) 2026 KasprowiczM and Ascendo contributors",
+    "homepage": "https://github.com/KasprowiczM/ascendo",
+    "license": "MIT",
+    "licenseFile": "../../../LICENSE",
+    "resources": [
+      "binaries/python-sidecar"
+    ],
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "wix": {
+        "language": ["en-US"],
+        "upgradeCode": "5C9E0E4F-5A1A-4F7C-B3F6-2E2C2C5B5C5C",
+        "bannerPath": "../../packaging/installer-assets/installer-banner-wix.bmp",
+        "dialogImagePath": "../../packaging/installer-assets/installer-sidebar-wix.bmp",
+        "license": "../../../LICENSE"
+      },
+      "nsis": {
+        "displayLanguageSelector": false,
+        "languages": ["English"],
+        "installMode": "perMachine",
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "../../packaging/installer-assets/installer-banner-nsis.bmp",
+        "sidebarImage": "../../packaging/installer-assets/installer-sidebar-nsis.bmp",
+        "license": "../../../LICENSE",
+        "compression": "lzma",
+        "installerHooks": "../../packaging/installer-assets/nsis-installer-hooks.nsh"
+      }
+    }
   }
 }

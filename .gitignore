@@ -28,6 +28,13 @@ out/
 *.egg-info/
 *.egg
 __pycache__/
+
+# Tauri sidecar staging — populated by bin/build-installer.ps1 from the
+# PyInstaller bundle. The exe + _internal/ tree is too large to commit.
+ui/desktop-tauri/src-tauri/binaries/
+
+# Throw-away preview PNGs from the installer-assets generator.
+packaging/installer-assets/_preview-*.png
 *.py[cod]
 *$py.class
 .pytest_cache/
