@@ -75,12 +75,19 @@ function Get-VssShadowCopies {
                 $createdAt = $createdAt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
             }
         } catch { $createdAt = $null }
+        # AllocatedSpace is not present on every Windows build / shadow copy
+        # provider; under Set-StrictMode -Version Latest plain dot access
+        # throws. Guard via PSObject.Properties.
+        $sizeBytes = $null
+        if ($c.PSObject.Properties['AllocatedSpace']) {
+            $sizeBytes = $c.PSObject.Properties['AllocatedSpace'].Value
+        }
         $out += [pscustomobject]@{
             id          = $id
             created_at  = $createdAt
             label       = if ($entry) { $entry.label } else { $null }
             backend     = 'vss'
-            size_bytes  = $c.AllocatedSpace
+            size_bytes  = $sizeBytes
             notes       = if ($entry) { $entry.notes } else { $null }
         }
     }
@@ -132,9 +139,10 @@ function Invoke-CreateSnapshot {
 
 # ── Dispatch ──────────────────────────────────────────────────────────────
 $result = $null
+$resultIsList = $false
 switch ($Action) {
-    'create' { $result = Invoke-CreateSnapshot -LabelText $Label -NotesText $Notes }
-    'list'   { $result = Get-VssShadowCopies }
+    'create' { $result = Invoke-CreateSnapshot -LabelText $Label -NotesText $Notes; $resultIsList = $false }
+    'list'   { $result = Get-VssShadowCopies; $resultIsList = $true }
 }
 
 # Always emit a JSON file (creates parent dirs as needed).
@@ -142,6 +150,23 @@ $outputDir = Split-Path -Parent $OutputPath
 if ($outputDir -and -not (Test-Path $outputDir)) {
     $null = New-Item -ItemType Directory -Force -Path $outputDir
 }
-$json = $result | ConvertTo-Json -Depth 6
+
+# ConvertTo-Json on an empty array / $null produces an empty string, which
+# makes downstream JSON parsers choke. For 'list' actions we always emit a
+# JSON array, even when empty. Single-element arrays are also unwrapped to
+# objects by ConvertTo-Json without ``-AsArray``, so we wrap them.
+if ($resultIsList) {
+    $arr = @($result)
+    if ($arr.Count -eq 0) {
+        $json = '[]'
+    } else {
+        $body = ($arr | ForEach-Object { ConvertTo-Json -InputObject $_ -Depth 6 }) -join ','
+        $json = '[' + $body + ']'
+    }
+} elseif ($null -eq $result) {
+    $json = 'null'
+} else {
+    $json = $result | ConvertTo-Json -Depth 6
+}
 [System.IO.File]::WriteAllText($OutputPath, $json, [System.Text.UTF8Encoding]::new($false))
 exit 0

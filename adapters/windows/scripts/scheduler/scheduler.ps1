@@ -43,7 +43,23 @@ function Write-Output-Json {
     if ($outputDir -and -not (Test-Path $outputDir)) {
         $null = New-Item -ItemType Directory -Force -Path $outputDir
     }
-    $json = $Object | ConvertTo-Json -Depth 6
+    # ConvertTo-Json on an empty array / $null produces an empty string,
+    # which makes downstream JSON parsers (Python, etc.) choke. Force the
+    # right shape ourselves. Single-element arrays are also unwrapped to
+    # objects by ConvertTo-Json without ``-AsArray``; we wrap them.
+    if ($null -eq $Object) {
+        $json = 'null'
+    } elseif ($Object -is [array] -or ($Object -is [System.Collections.IList] -and -not ($Object -is [string]))) {
+        $arr = @($Object)
+        if ($arr.Count -eq 0) {
+            $json = '[]'
+        } else {
+            $body = ($arr | ForEach-Object { ConvertTo-Json -InputObject $_ -Depth 6 }) -join ','
+            $json = '[' + $body + ']'
+        }
+    } else {
+        $json = $Object | ConvertTo-Json -Depth 6
+    }
     [System.IO.File]::WriteAllText($OutputPath, $json, [System.Text.UTF8Encoding]::new($false))
 }
 
@@ -80,7 +96,8 @@ function Convert-ExpressionToArgs {
             return @('/SC', 'HOURLY', '/MO', '1', '/ST', $time)
         }
         'MINUTE'  {
-            return @('/SC', 'MINUTE', '/MO', if ($parts.Count -ge 2) { $parts[1] } else { '60' })
+            $modifier = if ($parts.Count -ge 2) { $parts[1] } else { '60' }
+            return @('/SC', 'MINUTE', '/MO', $modifier)
         }
         default {
             # Pass through (advanced users supply full schtasks args).
