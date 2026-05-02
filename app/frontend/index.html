@@ -250,6 +250,53 @@
         <div class="run-progress-bar"><div class="run-progress-fill"></div></div>
         <div class="run-progress-recent"></div>
       </div>
+      <!--
+        Live detail panel — appears below the per-phase summary cards above.
+        The summary card is the at-a-glance "general step on green" view; this
+        panel exposes the package-by-package "what's actually happening".
+        Populated entirely by app.js (renderRunDetail) from SSE sidecar events.
+      -->
+      <section id="run-detail-panel" class="run-detail hidden" aria-live="polite">
+        <header class="run-detail-header">
+          <div class="run-detail-title-row">
+            <h3 class="run-detail-title" data-i18n="run.detail.title">Live detail</h3>
+            <span id="run-detail-elapsed" class="run-detail-elapsed dim"></span>
+          </div>
+          <div id="run-detail-bar-wrap" class="run-detail-bar-wrap" role="progressbar"
+               aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div class="run-detail-bar"><div id="run-detail-bar-fill" class="run-detail-bar-fill"></div></div>
+            <div id="run-detail-bar-meta" class="run-detail-bar-meta"></div>
+          </div>
+          <nav id="run-detail-nav" class="run-detail-nav"
+               aria-label="Phase and source switcher"></nav>
+        </header>
+        <div class="run-detail-body">
+          <section class="run-detail-section run-detail-packages">
+            <h4 class="run-detail-section-title" data-i18n="run.detail.packages">
+              Packages found
+            </h4>
+            <p id="run-detail-packages-empty" class="run-detail-empty dim"
+               data-i18n="run.detail.packages_empty">
+              Waiting for the first sidecar to land.
+            </p>
+            <ol id="run-detail-packages-list" class="run-detail-packages-list"
+                role="list"></ol>
+          </section>
+          <section class="run-detail-section run-detail-diagnostics">
+            <div class="run-detail-section-row">
+              <h4 class="run-detail-section-title" data-i18n="run.detail.diagnostics">
+                Diagnostics
+              </h4>
+              <label class="run-detail-autoscroll">
+                <input type="checkbox" id="run-detail-autoscroll" />
+                <span data-i18n="run.detail.autoscroll">Auto-scroll</span>
+              </label>
+            </div>
+            <ol id="run-detail-diagnostics-list" class="run-detail-diagnostics-list"
+                role="log"></ol>
+          </section>
+        </div>
+      </section>
       <pre id="live-log"></pre>
     </section>
 
