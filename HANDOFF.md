@@ -6,6 +6,87 @@
 
 ---
 
+## Sesja 20 (2026-05-03) — macOS adapter M5.1: brew end-to-end + v0.0.8-alpha
+
+First milestone of the macOS adapter, mirroring Windows v0.0.7-alpha. The full
+5-phase contract works against `brew outdated --json=v2` on this MacBook
+(Mac.r12.home, Apple Silicon, Homebrew 5.1.8, jq 1.8.1, bash 3.2.57). A real
+`brew upgrade` was performed (`glib 2.88.0 → 2.88.1`); verify confirmed the
+package is no longer outdated; cleanup ran. Tag `v0.0.8-alpha` created locally.
+
+### Architecture confirmed end-to-end
+
+- Layer 4 core unchanged. The OS-agnostic Pydantic models, `parse_sidecar`,
+  orchestrator, dashboard all work with the new adapter unmodified — proven
+  by `bin/validate-macos.sh` printing `ALL CHECKS PASSED. (11/11)`.
+- `adapter_factory.AdapterRegistry.discover()` finds `ascendo_macos` via the
+  same direct-import fallback path Windows uses.
+- Sidecar emitter is hybrid Bash + Python helper (matches Linux pattern).
+  Cross-platform consistency comes from the shared CONTRACT (schema +
+  5-phase + interfaces), NOT shared code.
+- `python -m ascendo doctor`: `macos (macOS) tier=1`,
+  `capabilities: AdapterCapability.PACKAGE_MANAGEMENT`, all 5 health
+  components green (brew/jq/bash/ascendo_lib/ascendo_scripts).
+
+### Files added (per M5.1.x sub-milestone)
+
+- `core/ascendo/models/package.py` — added `SourceType.BREW` (e7eb119)
+- `docs/architecture/schemas/sidecar.v1.schema.json` — regenerated (c63fe7e)
+- `adapters/macos/lib/_json_emit.py` — Python helper, `ascendo/v1` schema
+  with `_read_jsonl` truncated-line tolerance (7b971b6, cf42980)
+- `adapters/macos/lib/ascendo_json.sh` — bash wrapper (0444444)
+- `adapters/macos/lib/ascendo_brew.sh` — brew helpers (jq parser, cask
+  app-name map, `kill_cask_apps` via osascript) (9526403)
+- `adapters/macos/scripts/brew/check.sh` (79f875f)
+- `adapters/macos/ascendo_macos/managers/brew.py` — `BrewManager` (c820d23)
+- `adapters/macos/ascendo_macos/adapter.py` — `MacOSAdapter`
+  (capability: `PACKAGE_MANAGEMENT` only) (69668fa)
+- `adapters/macos/scripts/brew/apply.sh` — first mutating phase (c5c0e2e)
+- `adapters/macos/scripts/brew/{plan,verify,cleanup}.sh` — read-only
+  triplet (dc22c5a)
+- `bin/install-dev-macos.sh` (fb69518)
+- `bin/validate-macos.sh` (1eab739)
+- `bin/run-tag-release-macos.sh` (a258aed)
+
+Total ~46 macOS adapter tests green (mock-based unit + real-brew
+integration). Plus 11/11 end-to-end checks via `validate-macos.sh`.
+
+### Real apply trace
+
+```
+==> [Stage 5] Apply
+ascendo run 1c3a3409-941c-4826-9b72-f464e5408c49  adapter=macos
+  apply    brew           success    items=1 failed=0 success=1
+overall: success (1 sidecars, 1 items)
+    apply succeeded (exit 0)
+
+==> [Stage 6] Verify + cleanup
+  verify   brew           success    items=0 failed=0 success=0
+    verify exit: 0
+  cleanup  brew           success    items=0 failed=0 success=0
+    cleanup exit: 0
+
+==> [Stage 7] Doctor + tag
+    tagged v0.0.8-alpha.
+```
+
+### What's next (M5.2-M5.5, separate specs)
+
+- **M5.2** — `mas` manager + `MacElevation` (sudo askpass cache for
+  dashboard-driven sudo). The `sudo mas upgrade` rule (CVE-2025-43411)
+  lives here.
+- **M5.3** — `LaunchServicesInventory` + `INVENTORY` capability.
+- **M5.4** — `softwareupdate` manager (the `-R` rule) + Time Machine
+  read-only `ISnapshot`.
+- **M5.5** — `launchd` `IScheduler`. After this, tag `v0.2.0` (full M5).
+
+### Spec + plan
+
+- `docs/superpowers/specs/2026-05-03-macos-brew-mvp-design.md`
+- `docs/superpowers/plans/2026-05-03-macos-brew-mvp.md`
+
+---
+
 ## Sesja 19 (2026-05-03) — Cross-platform handoff: worktrees retired, dev-sync hardened
 
 Wrap-up session before the user moves to MacBook + Ubuntu. Goal: leave the
