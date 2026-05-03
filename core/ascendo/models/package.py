@@ -32,6 +32,7 @@ class SourceType(str, Enum):
     FLATPAK = "flatpak"
     BREW_FORMULA = "brew_formula"
     BREW_CASK = "brew_cask"
+    BREW = "brew"                 # manager-level category for BrewManager (covers both)
     WINGET = "winget"
     MSSTORE = "msstore"
     APPX = "appx"          # Windows AppX/MSIX installed but not via msstore

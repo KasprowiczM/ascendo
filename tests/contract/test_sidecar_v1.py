@@ -140,3 +140,12 @@ def test_dry_run_planned_status(
     # Check phases keep status='success' even when items are planned —
     # the run.dry_run flag is the dry-run signal at the run level.
     assert sidecar.status.value == "success"
+
+
+def test_source_type_has_brew_value() -> None:
+    """BrewManager.category == SourceType.BREW. Required by M5.1."""
+    from ascendo.models.package import SourceType
+    assert SourceType.BREW.value == "brew"
+    # BREW_FORMULA / BREW_CASK retained for item-level namespace tagging.
+    assert SourceType.BREW_FORMULA.value == "brew_formula"
+    assert SourceType.BREW_CASK.value == "brew_cask"
