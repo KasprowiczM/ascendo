@@ -219,24 +219,63 @@ dev-sync is a **private-overlay sync**, NOT a code sync. It mirrors a small set 
 
 When you sit down at a fresh machine:
 
+### Linux / macOS
+
 ```bash
 # 1. Pull the public code from GitHub
 git clone https://github.com/KasprowiczM/ascendo.git ~/Dev_Env/Ascendo
 cd ~/Dev_Env/Ascendo
 
 # 2. Install rclone + configure your Proton remote (one-time, interactive)
-brew install rclone        # Mac
-# OR sudo apt install rclone    # Ubuntu
-# OR winget install Rclone.Rclone   # Windows
-rclone config              # interactive — pick "protondrive", auth via browser
+brew install rclone                            # Mac
+# OR sudo apt install rclone                   # Ubuntu
+rclone config                                  # interactive — pick "protondrive", auth via browser
 
 # 3. Pull the private overlay from Proton
-bash dev-sync/provider_setup.sh                 # tells Ascendo which remote to use
-bash dev-sync-restore-preflight.sh              # safety check
-bash dev-sync-import.sh --dry-run --verbose     # preview
-bash dev-sync-import.sh                         # real
-bash dev-sync-verify-full.sh                    # confirm both GitHub + Proton coverage
+bash dev-sync/provider_setup.sh                # tells Ascendo which remote to use
+bash dev-sync-restore-preflight.sh             # safety check
+bash dev-sync-import.sh --dry-run --verbose    # preview
+bash dev-sync-import.sh                        # real
+bash dev-sync-verify-full.sh                   # confirm both GitHub + Proton coverage
 ```
+
+### Windows (PowerShell — same workflow, `.ps1` wrappers)
+
+Every `.sh` wrapper has a Windows mirror at the repo root with the same name and `.ps1` extension. Both delegate to the same cross-platform Python backends in `dev-sync/`, so the behaviour is identical.
+
+```powershell
+# 1. Pull the public code from GitHub
+git clone https://github.com/KasprowiczM/ascendo.git D:\Dev_Env\Ascendo
+cd D:\Dev_Env\Ascendo
+
+# 2. Install rclone + configure your Proton remote (one-time, interactive)
+winget install Rclone.Rclone
+rclone config                                  # interactive — pick "protondrive", auth in browser
+
+# 3. Pull the private overlay from Proton
+.\dev-sync-provider-setup.ps1                  # writes .dev_sync_config.json
+.\dev-sync-restore-preflight.ps1               # safety check
+.\dev-sync-import.ps1 --dry-run --verbose      # preview
+.\dev-sync-import.ps1                          # real
+.\dev-sync-verify-full.ps1                     # confirm coverage
+```
+
+### Daily commands — both shells
+
+| Action | Linux / Mac | Windows |
+|---|---|---|
+| Configure provider (one-time, interactive) | `bash dev-sync/provider_setup.sh` | `.\dev-sync-provider-setup.ps1` |
+| Preview what would be exported | `bash dev-sync-export.sh --dry-run --verbose` | `.\dev-sync-export.ps1 --dry-run --verbose` |
+| Push private overlay to provider | `bash dev-sync-export.sh` | `.\dev-sync-export.ps1` |
+| Pull overlay onto a fresh clone | `bash dev-sync-import.sh` | `.\dev-sync-import.ps1` |
+| Check what's on Proton | `bash dev-sync-proton-status.sh` | `.\dev-sync-proton-status.ps1` |
+| Verify Git + provider coverage | `bash dev-sync-verify-full.sh` | `.\dev-sync-verify-full.ps1` |
+| Verify Git only (read-only) | `bash dev-sync-verify-git.sh` | `.\dev-sync-verify-git.ps1` |
+| Plan-quarantine excluded files | `bash dev-sync-prune-excluded.sh` | `.\dev-sync-prune-excluded.ps1` |
+| Apply the reviewed quarantine purge | `bash dev-sync-purge-quarantine.sh --apply` | `.\dev-sync-purge-quarantine.ps1 --apply` |
+| Restore-readiness preflight | `bash dev-sync-restore-preflight.sh` | `.\dev-sync-restore-preflight.ps1` |
+
+The `.ps1` scripts hunt for Python in this order: `py` (Microsoft launcher) → `python` → `python3`. Install Python via `winget install Python.Python.3.13` if none of those are on PATH.
 
 Now both your code AND your secrets are on the new machine. Daily: `git pull` for code; only re-run `dev-sync-export.sh` when you've changed a secret (e.g. rotated an API key).
 
