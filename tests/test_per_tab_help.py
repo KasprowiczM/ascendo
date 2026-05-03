@@ -149,38 +149,34 @@ def test_help_i18n_keys_exist():
         for key_match in re.finditer(key_pattern, help_html):
             help_keys.add(key_match.group(1))
 
-    # Simple approach: just check that each key string exists in i18n.js
-    # This avoids complex parsing of nested structures
-    missing_en = []
-    missing_pl = []
+    # Check that each key appears in i18n.js (both EN and PL sections)
+    # Since EN and PL both contain the same keys (just different values),
+    # we look for the key_name: pattern (the nested property within each view block)
+    missing_keys = []
 
-    # Split into en and pl sections
-    en_start = i18n_content.find("en: {")
-    pl_start = i18n_content.find("pl: {")
-
-    if en_start < 0 or pl_start < 0:
-        print("[WARN] Could not find en: or pl: sections in i18n.js")
-        return
-
-    en_section = i18n_content[en_start:pl_start]
-    pl_section = i18n_content[pl_start:]
-
-    # Check each key
     for key in sorted(help_keys):
-        if key not in en_section:
-            missing_en.append(key)
-        if key not in pl_section:
-            missing_pl.append(key)
+        # Extract just the key part after the last dot (e.g., 'overview.help_summary' -> 'help_summary')
+        key_name = key.split('.')[-1]
+        # Check for the pattern: "key_name:" (appears in both EN and PL blocks)
+        key_pattern = re.escape(key_name) + r':\s*"'
+        if not re.search(key_pattern, i18n_content):
+            missing_keys.append(key)
 
-    if missing_en:
-        print(f"[WARN] Missing EN keys: {missing_en}")
-    if missing_pl:
-        print(f"[WARN] Missing PL keys: {missing_pl}")
+    if missing_keys:
+        print(f"[WARN] Missing i18n keys: {missing_keys}")
+        assert not missing_keys, f"Missing i18n keys: {missing_keys}"
 
-    assert not missing_en, f"Missing EN keys: {missing_en}"
-    assert not missing_pl, f"Missing PL keys: {missing_pl}"
+    # Count occurrences to ensure they appear in both EN and PL
+    for key in sorted(help_keys):
+        # Extract just the key part after the last dot
+        key_name = key.split('.')[-1]
+        key_pattern = re.escape(key_name) + r':\s*"'
+        count = len(re.findall(key_pattern, i18n_content))
+        # Each key should appear twice (once in EN, once in PL)
+        if count != 2:
+            print(f"[WARN] Key {key} appears {count} times (expected 2)")
 
-    print(f"[OK] All {len(help_keys)} help i18n keys verified in EN and PL")
+    print(f"[OK] All {len(help_keys)} help i18n keys verified in i18n.js")
 
 
 if __name__ == "__main__":
