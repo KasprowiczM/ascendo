@@ -25,6 +25,17 @@ bash scripts/bootstrap.sh --skip-sync
 bash scripts/verify-state.sh
 ```
 
+Windows PowerShell equivalent for the private overlay part:
+
+```powershell
+git clone https://github.com/KasprowiczM/ascendo.git D:\Dev_Env\Ascendo
+cd D:\Dev_Env\Ascendo
+.\dev-sync\provider_setup.ps1
+.\scripts\restore-from-proton.ps1 --dry-run --verbose
+.\scripts\restore-from-proton.ps1 --verbose
+.\dev-sync-verify-full.ps1
+```
+
 ## Existing Machine After `git pull`
 
 ```bash
@@ -33,6 +44,15 @@ bash scripts/preflight.sh
 bash dev-sync-export.sh --dry-run --verbose
 bash dev-sync-export.sh
 bash scripts/verify-state.sh
+```
+
+Windows private-overlay export:
+
+```powershell
+git pull --ff-only
+.\dev-sync-export.ps1 --dry-run --verbose
+.\dev-sync-export.ps1
+.\dev-sync-verify-full.ps1
 ```
 
 ## Safety Rules

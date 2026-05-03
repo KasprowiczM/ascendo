@@ -72,6 +72,18 @@ DEFAULT_EXCLUDE_PATTERNS = [
     "app/tauri/src-tauri/Cargo.lock",
     # Tauri build/icon outputs are gitignored too but recreatable.
     "app/tauri/src-tauri/icons/",
+    # Current Tauri 2.x desktop bundle outputs live under ui/desktop-tauri.
+    # They are produced by npm/cargo/PyInstaller/installer packaging and can
+    # dwarf the private overlay if not excluded.
+    "package-lock.json",
+    "Cargo.lock",
+    "ui/desktop-tauri/src-tauri/binaries/",
+    "**/src-tauri/binaries/",
+    "ui/desktop-tauri/src-tauri/gen/",
+    "**/src-tauri/gen/",
+    "ui/desktop-tauri/src-tauri/installer-assets/",
+    "**/src-tauri/installer-assets/",
+    "ui/desktop-tauri/src-tauri/LICENSE",
     # Go / Java / Gradle / Maven build outputs.
     ".gradle/",
     ".m2/",

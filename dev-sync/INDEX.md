@@ -11,5 +11,8 @@
 - `dev_sync_proton_status.py` - macOS File Provider status helper; not the primary Ubuntu/rclone verification path.
 - `provider_setup.sh` - interactive provider config writer.
 - `dev-sync-*.sh` - shell wrappers for Python CLIs.
+- `provider_setup.ps1` - PowerShell provider setup wrapper.
+- `dev-sync-*.ps1` - PowerShell wrappers for Python CLIs.
+- `Invoke-DevSyncPython.ps1` - shared PowerShell launcher for Python backend scripts.
 - `RESTORE_MANIFEST.md` - bounded fresh-clone restore checklist and overlay scope.
 - `../config/restore-manifest.json` - tracked high-level contract for private overlay and rebuildable files.

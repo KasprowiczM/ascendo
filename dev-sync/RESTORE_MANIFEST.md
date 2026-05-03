@@ -39,6 +39,13 @@ bash scripts/restore-from-proton.sh --dry-run --verbose
 bash scripts/restore-from-proton.sh --verbose
 ```
 
+Windows PowerShell wrapper:
+
+```powershell
+.\scripts\restore-from-proton.ps1 --dry-run --verbose
+.\scripts\restore-from-proton.ps1 --verbose
+```
+
 ## Provider Overlay Scope
 
 Expected private overlay examples:

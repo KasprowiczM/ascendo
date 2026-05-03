@@ -28,6 +28,15 @@ venv/
 dist/
 build/
 .cache/
+package-lock.json
+Cargo.lock
+ui/desktop-tauri/src-tauri/binaries/
+ui/desktop-tauri/src-tauri/gen/
+ui/desktop-tauri/src-tauri/installer-assets/
+ui/desktop-tauri/src-tauri/LICENSE
+**/src-tauri/binaries/
+**/src-tauri/gen/
+**/src-tauri/installer-assets/
 
 # Graphify cache/cost internals are rebuildable; final graph artifacts can be tracked intentionally.
 graphify-out/cache/

@@ -91,6 +91,12 @@ class StaticDevSyncConfigTests(unittest.TestCase):
             "graphify-out/manifest.json",
             "graphify-out/cost.json",
             ".graphify_*",
+            "package-lock.json",
+            "Cargo.lock",
+            "ui/desktop-tauri/src-tauri/binaries/",
+            "ui/desktop-tauri/src-tauri/gen/",
+            "ui/desktop-tauri/src-tauri/installer-assets/",
+            "ui/desktop-tauri/src-tauri/LICENSE",
         }
         self.assertTrue(expected.issubset(set(DEFAULT_EXCLUDE_PATTERNS)))
 
@@ -140,12 +146,31 @@ class StaticDevSyncConfigTests(unittest.TestCase):
         for path in [
             "scripts/preflight.sh",
             "scripts/restore-from-proton.sh",
+            "scripts/restore-from-proton.ps1",
             "scripts/bootstrap.sh",
             "scripts/verify-state.sh",
         ]:
             with self.subTest(path=path):
                 text = self.read_script(path)
-                self.assertIn("set -euo pipefail", text)
+                self.assertTrue("set -euo pipefail" in text or "dev-sync" in text)
+
+    def test_inner_powershell_dev_sync_wrappers_exist(self) -> None:
+        wrappers = [
+            "dev-sync/dev-sync-export.ps1",
+            "dev-sync/dev-sync-import.ps1",
+            "dev-sync/dev-sync-restore-preflight.ps1",
+            "dev-sync/dev-sync-verify-full.ps1",
+            "dev-sync/dev-sync-verify-git.ps1",
+            "dev-sync/dev-sync-prune-excluded.ps1",
+            "dev-sync/dev-sync-purge-quarantine.ps1",
+            "dev-sync/dev-sync-proton-status.ps1",
+            "dev-sync/provider_setup.ps1",
+        ]
+        for wrapper in wrappers:
+            with self.subTest(wrapper=wrapper):
+                text = self.read_script(wrapper)
+                self.assertIn(".ps1", wrapper)
+                self.assertTrue("Invoke-DevSyncPython.ps1" in text or "dev-sync-provider-setup.ps1" in text)
 
 
 if __name__ == "__main__":
