@@ -1495,6 +1495,10 @@ const ui = {
     const target = $("#cat-detail-" + cat);
     target.innerHTML = `<span class="spinner"></span> ${tr("overview.scanning")}`;
     try {
+      // Bust the 60s inventory cache before reading so the row reflects
+      // whatever check sidecar JUST landed (otherwise the user sees the
+      // pre-check state for up to 60s after running check).
+      await api.post(`/inventory/refresh?category=${encodeURIComponent(cat)}`, {}).catch(()=>{});
       const items = (await api.get(`/inventory/${encodeURIComponent(cat)}`)).items;
       if (!items.length) {
         target.innerHTML = `<p class="dim">${tr("categories.no_items")}</p>`;

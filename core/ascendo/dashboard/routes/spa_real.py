@@ -299,12 +299,13 @@ def _latest_check_overlay(runs_dir: Path, category: str) -> dict[str, dict[str, 
         candidate = (it.get("candidate")
                      or it.get("target_version")
                      or it.get("targetVersion"))
-        # Some scripts write the literal string "Unknown" as the version
-        # (e.g. MEGAsync). Treat that as missing so the SPA renders "—"
-        # instead of misleading the user.
-        if isinstance(installed, str) and installed.strip().lower() in {"", "unknown"}:
+        # Surface "Unknown" verbatim instead of dropping to None — the user
+        # would rather see "Unknown" (with knowledge that winget couldn't
+        # detect) than a blank cell. Empty strings still drop to None
+        # because they carry no information.
+        if isinstance(installed, str) and installed.strip() == "":
             installed = None
-        if isinstance(candidate, str) and candidate.strip().lower() in {"", "unknown"}:
+        if isinstance(candidate, str) and candidate.strip() == "":
             candidate = None
         record: dict[str, Any] = {
             "installed": installed,
