@@ -1103,12 +1103,33 @@ const ui = {
     } catch (e) { $("#last-run").textContent = String(e); }
     try {
       const p = await api.get("/preflight");
-      $("#preflight").innerHTML = `${p.needs_reboot ? `<b>${tr("overview.reboot_pending")}</b><br>` : ""}` +
-        p.items.map(i => `<span class="badge ${i.present ? "ok" : "warn"}">${i.tool}</span>`).join(" ");
+      // Backend /preflight currently returns {ok, checks, warnings, errors}.
+      // Some legacy paths instead returned {needs_reboot, items: [{tool, present}]}.
+      // Accept BOTH shapes so the System Health card never throws on
+      // ``undefined.map`` and instead renders whatever it has.
+      const items = Array.isArray(p.items) ? p.items : [];
+      const errors = Array.isArray(p.errors) ? p.errors : [];
+      const warnings = Array.isArray(p.warnings) ? p.warnings : [];
+      const parts = [];
+      if (p.needs_reboot) parts.push(`<b>${tr("overview.reboot_pending")}</b>`);
+      if (items.length) {
+        parts.push(items.map(i =>
+          `<span class="badge ${i.present ? "ok" : "warn"}">${i.tool || ""}</span>`
+        ).join(" "));
+      } else if (errors.length || warnings.length) {
+        if (errors.length) parts.push(
+          errors.map(e => `<span class="badge fail">${(e.msg || e).toString()}</span>`).join(" "));
+        if (warnings.length) parts.push(
+          warnings.map(w => `<span class="badge warn">${(w.msg || w).toString()}</span>`).join(" "));
+      } else {
+        // Genuinely all-clear — render an unobtrusive ok pill.
+        parts.push(`<span class="badge ok">${p.ok === false ? "issues" : "ok"}</span>`);
+      }
+      $("#preflight").innerHTML = parts.join("<br>");
     } catch (e) { $("#preflight").textContent = String(e); }
     try {
       const g = await api.get("/git/status");
-      $("#git-status").innerHTML = `branch <code>${g.branch}</code> ` +
+      $("#git-status").innerHTML = `branch <code>${g.branch || "(unknown)"}</code> ` +
         (g.dirty ? "<span class='badge warn'>dirty</span>" : "<span class='badge ok'>clean</span>") +
         ` <span class="dim">↑${g.ahead} ↓${g.behind}</span>`;
     } catch (e) { $("#git-status").textContent = String(e); }
@@ -1549,7 +1570,7 @@ const ui = {
       for (const p of profs) {
         const opt = document.createElement("option");
         opt.value = p.id;
-        opt.textContent = `${p.id} - ${p.description}`;
+        opt.textContent = p.description ? `${p.id} - ${p.description}` : (p.label && p.label !== p.id ? `${p.id} - ${p.label}` : p.id);
         sel.appendChild(opt);
       }
       const cats = (await api.get("/categories")).categories;
@@ -1698,14 +1719,14 @@ const ui = {
       for (const h of hosts) {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td><b>${h.id}</b><br><span class="dim">${h.display_name}</span></td>
+          <td><b>${h.id || h.hostname || "(unknown)"}</b><br><span class="dim">${h.display_name || h.hostname || ""}</span></td>
           <td colspan="5" class="dim">checking…</td>
           <td>${ui.badge("running")}</td>`;
         tb.appendChild(tr);
         api.get(`/hosts/${encodeURIComponent(h.id)}/preflight`).then(p => {
           const lastRun = p.last_run ? `${p.last_run.status || "?"} (${p.last_run.run_id || ""})` : "-";
           tr.innerHTML = `
-            <td><b>${h.id}</b><br><span class="dim">${h.display_name}</span></td>
+            <td><b>${h.id || h.hostname || "(unknown)"}</b><br><span class="dim">${h.display_name || h.hostname || ""}</span></td>
             <td>${p.hostname || "-"}</td>
             <td>${p.os || "-"}</td>
             <td>${p.kernel || "-"}</td>
@@ -1726,11 +1747,12 @@ const ui = {
     if (!wrap) return;
     try {
       const r = await api.get("/profiles/templates");
-      if (!r.items.length) {
+      const templates = r.items || r.templates || [];
+      if (!templates.length) {
         wrap.innerHTML = `<p class="dim">No templates in config/profiles/.</p>`;
         return;
       }
-      wrap.innerHTML = r.items.map(t => `
+      wrap.innerHTML = templates.map(t => `
         <div style="border:1px solid var(--border);border-radius:6px;padding:0.5rem 0.7rem;margin:0.4rem 0">
           <div><b>${t.name}</b> <span class="dim">- ${t.lines} pkg(s)</span></div>
           <div class="dim" style="font-size:0.78rem;margin:0.2rem 0">${t.summary || ""}</div>
@@ -1753,7 +1775,7 @@ const ui = {
     // Load profile templates panel + updates repo field.
     ui.loadProfilesPanel();
     const f = $("#settings-form");
-    f.elements.default_profile.value = s.default_profile;
+    f.elements.default_profile.value = s.default_profile || "safe";
     f.elements.snapshot_before_apply.checked = !!s.snapshot_before_apply;
     f.elements.notifications_desktop.checked = !!(s.notifications && s.notifications.desktop);
     f.elements.ui_theme.value    = (s.ui && s.ui.theme)    || "auto";
@@ -1794,7 +1816,7 @@ const ui = {
     try {
       const g = await api.get("/git/status");
       $("#sync-git").innerHTML =
-        `branch <code>${g.branch}</code> ` +
+        `branch <code>${g.branch || "(unknown)"}</code> ` +
         (g.dirty ? "<span class='badge warn'>dirty</span>" : "<span class='badge ok'>clean</span>") +
         ` <span class="dim">↑${g.ahead} ↓${g.behind}</span>`;
     } catch (e) { $("#sync-git").textContent = String(e); }
@@ -1806,7 +1828,7 @@ const ui = {
           `last verify: <code>${s.log_path}</code><br>` +
           `<span class="dim">overall: ${s.overall}</span>`;
       } else {
-        $("#sync-cloud").innerHTML = `<span class="dim">${s.reason}</span>`;
+        $("#sync-cloud").innerHTML = `<span class="dim">${s.reason || "cloud sync not configured (open Cloud Provider panel below to set it up)"}</span>`;
       }
     } catch (e) { $("#sync-cloud").textContent = String(e); }
   },
