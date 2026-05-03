@@ -6,6 +6,91 @@
 
 ---
 
+## Sesja 19 (2026-05-03) — Cross-platform handoff: worktrees retired, dev-sync hardened
+
+Wrap-up session before the user moves to MacBook + Ubuntu. Goal: leave the
+Windows box in a state where the entire `.claude/worktrees/` tree can be
+deleted with **zero data loss**, and the first Proton dev-sync export can
+run without uploading 2 GB of duplicate checkouts.
+
+### What landed
+
+- **dev-sync hardening** (`dev-sync/dev_sync_core.py`):
+  added `.claude/worktrees/` to both `DEFAULT_EXCLUDE_PATTERNS` and
+  `HARD_EXCLUDE_PATTERNS`. The hard list bypasses any user config, so a
+  stale `.dev_sync_config.json` carried over from another machine cannot
+  re-enable shipping multi-GB Claude Code agent worktrees to the cloud
+  overlay. Comments in both lists explain why.
+- **Repo state audit:** all 4 git worktrees were verified ancestors of
+  `main` (`git merge-base --is-ancestor`) AND had clean working trees.
+  `main` = `origin/main` (0 ahead 0 behind) at `190e02a`. Nothing is
+  lost when the worktrees are deleted.
+- **Previous fix from same session** (commit `190e02a`):
+  9 dev-sync `.ps1` wrappers patched. Two bugs:
+  1. `rclone: not recognized` after `winget install rclone` — fixed by
+     re-reading Machine + User PATH from the registry into `$env:Path`
+     at script startup. No shell restart needed.
+  2. `Cannot convert 'System.Object[]' to 'String' for AdditionalChildPath`
+     in `Find-LocalProtonPath` — fixed by parenthesising each `Join-Path`
+     inside the `@(...)` literal so PowerShell's comma-binding rule
+     doesn't merge them with the cmdlet's positional args.
+
+### Worktree audit (snapshot at session close)
+
+| Path | Branch | HEAD | Ancestor of main? | Working tree |
+|------|--------|------|-------------------|--------------|
+| `.claude/worktrees/agent-a5e47d44f63314b9d` | `worktree-agent-a5e47d44f63314b9d` | `1a985fa` | yes | clean |
+| `.claude/worktrees/agent-a8b3c75472639660a` | `worktree-agent-a8b3c75472639660a` | `760d971` | yes | clean |
+| `.claude/worktrees/agent-ac5705e8e77381971` | `worktree-agent-ac5705e8e77381971` | `85337aa` | yes | clean |
+| `.claude/worktrees/unruffled-shamir-7d473c` | `claude/windows-end-to-end-2026-05-02` | `fd05d10` | yes | clean |
+
+Total disk: 2.1 GB. Already-on-origin: 100%.
+
+### Cross-platform readiness
+
+After this session the user can:
+
+1. **Delete the worktrees folder** (one PowerShell command — see
+   *Closure flow* below).
+2. **Run `dev-sync-export.ps1`** to push the private overlay to Proton
+   Drive. Overlay will NOT include `.claude/worktrees/` thanks to the
+   exclude-list hardening above.
+3. **Switch to MacBook / Ubuntu**: `git clone` from origin/main + run
+   `dev-sync-import.sh` to pull the same private overlay back. Both
+   machines will be at parity with the Windows box.
+
+### Closure flow (one-shot for the user)
+
+```powershell
+# In D:\Dev_Env\Ascendo, single command — removes all 4 worktrees,
+# their git internals, the on-disk folder, and the agent branches:
+'agent-a5e47d44f63314b9d','agent-a8b3c75472639660a','agent-ac5705e8e77381971','unruffled-shamir-7d473c' |
+  ForEach-Object {
+    git worktree unlock ".claude/worktrees/$_" 2>$null
+    git worktree remove --force ".claude/worktrees/$_" 2>$null
+  }
+Remove-Item -Recurse -Force .claude\worktrees -ErrorAction SilentlyContinue
+git worktree prune
+git branch -D worktree-agent-a5e47d44f63314b9d worktree-agent-a8b3c75472639660a worktree-agent-ac5705e8e77381971 2>$null
+
+# Then the regular dev-sync flow:
+.\dev-sync-provider-setup.ps1     # one-time, writes .dev_sync_config.json
+.\dev-sync-export.ps1 --dry-run   # preview what goes to Proton
+.\dev-sync-export.ps1             # actual upload
+```
+
+On the MacBook / Ubuntu:
+
+```bash
+cd ~/dev   # or wherever
+git clone https://github.com/KasprowiczM/ascendo.git
+cd ascendo
+bash dev-sync/provider_setup.sh   # one-time per machine
+bash dev-sync-import.sh           # pulls the overlay
+```
+
+---
+
 ## Sesja 13 (2026-05-02) — Windows end-to-end + frontend apply UX + Tauri 2.x scaffold
 
 Six commits on `claude/windows-end-to-end-2026-05-02` finishing the path

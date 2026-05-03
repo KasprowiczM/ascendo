@@ -27,6 +27,11 @@ DEFAULT_EXCLUDE_PATTERNS = [
     ".agent/skills/",
     ".agent/superpowers/",
     ".claude/skills/",
+    # Claude Code worktrees: each agent dispatch may create a full
+    # checkout under .claude/worktrees/<id>/ for isolation. These are
+    # always reconstructible from the canonical branch on origin and
+    # can grow to multiple GB. NEVER ship them to the cloud overlay.
+    ".claude/worktrees/",
     ".gemini/skills/",
     ".codex.local/tmp/",
     "node_modules/",
@@ -140,6 +145,11 @@ HARD_EXCLUDE_PATTERNS = [
     "APPS.md",
     "logs/",
     ".codex.local/tmp/",
+    # Claude Code worktrees — see DEFAULT_EXCLUDE_PATTERNS comment.
+    # Listed here too so a stale config carried over from another
+    # machine cannot accidentally re-enable shipping multi-GB
+    # duplicate checkouts to the overlay.
+    ".claude/worktrees/",
     ".env*.example",
     ".env*.sample",
     ".env*.template",
