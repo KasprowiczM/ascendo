@@ -33,6 +33,8 @@ import subprocess
 import sys
 import tempfile
 import time
+
+from ascendo.utils.proc import no_window_kwargs
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
@@ -152,6 +154,7 @@ class WindowsElevation(IElevation):
                 list(argv), capture_output=True, text=True,
                 timeout=timeout_sec, check=False,
                 env=merged_env, cwd=cwd,
+                **no_window_kwargs(),
             )
         except subprocess.TimeoutExpired as exc:
             raise ElevationTimeout(

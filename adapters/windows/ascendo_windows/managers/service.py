@@ -47,6 +47,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from ascendo.utils.proc import no_window_kwargs
+
 _log = logging.getLogger(__name__)
 
 
@@ -249,6 +251,7 @@ class WindowsServiceManager:
                 text=True,
                 timeout=timeout or self._timeout,
                 check=False,
+                **no_window_kwargs(),
             )
         except subprocess.TimeoutExpired as exc:
             raise ServiceManagerError(

@@ -9,6 +9,7 @@ import platform
 import shutil
 import socket
 import subprocess
+import sys
 from pathlib import Path
 from typing import ClassVar
 
@@ -23,6 +24,7 @@ from ascendo.interfaces import (
     ISource,
 )
 from ascendo.models.host import ElevationMethod, HostInfo, OperatingSystem
+from ascendo.utils.proc import no_window_kwargs
 
 from .inventory import WindowsInventory
 from .managers.arp import ArpManager
@@ -194,6 +196,7 @@ class WindowsAdapter(IAdapter):
                 text=True,
                 timeout=5,
                 check=False,
+                **no_window_kwargs(),
             )
         except (OSError, subprocess.TimeoutExpired):
             return None
@@ -261,6 +264,7 @@ class WindowsAdapter(IAdapter):
                 text=True,
                 timeout=5,
                 check=False,
+                **no_window_kwargs(),
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             return f"error: {exc}"
@@ -294,6 +298,7 @@ class WindowsAdapter(IAdapter):
                 text=True,
                 timeout=10,
                 check=False,
+                **no_window_kwargs(),
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             return f"error: probe failed: {exc}"
@@ -326,6 +331,7 @@ class WindowsAdapter(IAdapter):
                     text=True,
                     timeout=10,
                     check=False,
+                    **no_window_kwargs(),
                 )
             except (OSError, subprocess.TimeoutExpired) as exc:
                 return f"error: {label} probe failed: {exc}"

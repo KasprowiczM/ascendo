@@ -17,12 +17,14 @@ import json
 import logging
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import ClassVar
 
 from ascendo.interfaces.scheduler import IScheduler, ScheduleSpec, SchedulerError
 from ascendo.models.host import HostInfo, OperatingSystem
+from ascendo.utils.proc import no_window_kwargs
 
 _log = logging.getLogger(__name__)
 
@@ -113,6 +115,7 @@ class WindowsScheduler(IScheduler):
                 completed = subprocess.run(  # noqa: S603
                     argv, capture_output=True, text=True,
                     timeout=self._timeout_sec, check=False,
+                    **no_window_kwargs(),
                 )
             except subprocess.TimeoutExpired as exc:
                 raise SchedulerError(f"scheduler {action} timed out") from exc

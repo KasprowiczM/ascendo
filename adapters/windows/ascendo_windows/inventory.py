@@ -29,6 +29,7 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections.abc import Iterable
 from datetime import datetime, timezone
@@ -37,6 +38,7 @@ from typing import ClassVar
 from uuid import uuid4
 
 from ascendo.interfaces.inventory import IInventory
+from ascendo.utils.proc import no_window_kwargs
 
 # ManagerError reused for parity with WingetManager: a dropped IPC contract
 # (script crash, missing sidecar, parse failure) is the same conceptual
@@ -165,6 +167,7 @@ class WindowsInventory(IInventory):
                     text=True,
                     timeout=self._timeout_sec,
                     check=False,
+                    **no_window_kwargs(),
                 )
             except subprocess.TimeoutExpired as exc:
                 msg = (

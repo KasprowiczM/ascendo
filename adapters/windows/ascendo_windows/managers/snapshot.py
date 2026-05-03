@@ -33,6 +33,7 @@ import json
 import logging
 import shutil
 import subprocess
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,6 +41,7 @@ from typing import ClassVar
 
 from ascendo.interfaces.snapshot import ISnapshot, SnapshotError, SnapshotInfo
 from ascendo.models.host import HostInfo, OperatingSystem
+from ascendo.utils.proc import no_window_kwargs
 
 _log = logging.getLogger(__name__)
 
@@ -130,6 +132,7 @@ class WindowsSnapshot(ISnapshot):
                 completed = subprocess.run(  # noqa: S603
                     argv, capture_output=True, text=True,
                     timeout=self._timeout_sec, check=False,
+                    **no_window_kwargs(),
                 )
             except subprocess.TimeoutExpired as exc:
                 raise SnapshotError(f"VSS {action} timed out after {self._timeout_sec}s") from exc

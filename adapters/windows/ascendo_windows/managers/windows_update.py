@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
@@ -38,6 +39,7 @@ from ascendo.orchestrator.sidecar_io import (
     SidecarReadError,
     read_sidecar,
 )
+from ascendo.utils.proc import no_window_kwargs
 
 _log = logging.getLogger(__name__)
 
@@ -131,6 +133,7 @@ class WindowsUpdateManager(IPackageManager):
                 text=True,
                 timeout=self._PSWU_PROBE_TIMEOUT_SEC,
                 check=False,
+                **no_window_kwargs(),
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             _log.debug("WindowsUpdateManager: PSWindowsUpdate probe failed: %s", exc)
@@ -197,6 +200,7 @@ class WindowsUpdateManager(IPackageManager):
                     text=True,
                     timeout=self._timeout_sec,
                     check=False,
+                    **no_window_kwargs(),
                 )
             except subprocess.TimeoutExpired as exc:
                 msg = (
