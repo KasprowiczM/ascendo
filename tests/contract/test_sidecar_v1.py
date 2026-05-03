@@ -149,3 +149,11 @@ def test_source_type_has_brew_value() -> None:
     # BREW_FORMULA / BREW_CASK retained for item-level namespace tagging.
     assert SourceType.BREW_FORMULA.value == "brew_formula"
     assert SourceType.BREW_CASK.value == "brew_cask"
+
+
+def test_source_type_has_mas_value() -> None:
+    """MasManager.category == SourceType.MAS. Required by M5.2."""
+    from ascendo.models.package import SourceType
+    assert SourceType.MAS.value == "mas"
+    # MAC_APP_STORE retained for future item-level namespace tagging.
+    assert SourceType.MAC_APP_STORE.value == "mac_app_store"

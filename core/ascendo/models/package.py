@@ -39,6 +39,7 @@ class SourceType(str, Enum):
     REGISTRY_ARP = "registry_arp"   # Windows Add/Remove Programs entry
     WINDOWS_UPDATE = "windows_update"   # OS patches via PSWindowsUpdate (KBs)
     MAC_APP_STORE = "mac_app_store"
+    MAS = "mas"                    # manager-level category for MasManager
     NPM = "npm"
     PIP = "pip"
     PIPX = "pipx"

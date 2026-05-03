@@ -613,6 +613,7 @@
         "registry_arp",
         "windows_update",
         "mac_app_store",
+        "mas",
         "npm",
         "pip",
         "pipx",
