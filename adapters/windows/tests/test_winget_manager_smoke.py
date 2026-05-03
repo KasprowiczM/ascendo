@@ -107,7 +107,7 @@ def test_run_phase_success_returns_parsed_sidecar(
             returncode=0,
         )
 
-    with patch("ascendo_windows.managers.winget.subprocess.run", side_effect=fake_run):
+    with patch.object(manager, "_run_streaming", side_effect=lambda argv, **kw: fake_run(argv, capture_output=True, text=True, timeout=kw.get("timeout"), check=False)):
         sidecar = manager.run_phase(Phase.CHECK, run_info, windows_host)
 
     assert sidecar.category.value == "winget"
@@ -138,7 +138,7 @@ def test_run_phase_passes_item_filter_as_comma_list(
             returncode=0,
         )
 
-    with patch("ascendo_windows.managers.winget.subprocess.run", side_effect=fake_run):
+    with patch.object(manager, "_run_streaming", side_effect=lambda argv, **kw: fake_run(argv, capture_output=True, text=True, timeout=kw.get("timeout"), check=False)):
         manager.run_phase(
             Phase.CHECK,
             run_info,
@@ -178,7 +178,7 @@ def test_run_phase_dryrun_passes_true(
             returncode=0,
         )
 
-    with patch("ascendo_windows.managers.winget.subprocess.run", side_effect=fake_run):
+    with patch.object(manager, "_run_streaming", side_effect=lambda argv, **kw: fake_run(argv, capture_output=True, text=True, timeout=kw.get("timeout"), check=False)):
         manager.run_phase(Phase.CHECK, dry_run, windows_host)
 
     argv = captured["argv"]
@@ -201,7 +201,7 @@ def test_run_phase_missing_sidecar_with_nonzero_exit_raises(
             args=argv, returncode=1, stdout="", stderr="boom: native crash\n"
         )
 
-    with patch("ascendo_windows.managers.winget.subprocess.run", side_effect=fake_run):
+    with patch.object(manager, "_run_streaming", side_effect=lambda argv, **kw: fake_run(argv, capture_output=True, text=True, timeout=kw.get("timeout"), check=False)):
         with pytest.raises(ManagerError) as excinfo:
             manager.run_phase(Phase.CHECK, run_info, windows_host)
 
@@ -223,7 +223,7 @@ def test_run_phase_missing_sidecar_with_zero_exit_raises(
     def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(args=argv, returncode=0, stdout="", stderr="")
 
-    with patch("ascendo_windows.managers.winget.subprocess.run", side_effect=fake_run):
+    with patch.object(manager, "_run_streaming", side_effect=lambda argv, **kw: fake_run(argv, capture_output=True, text=True, timeout=kw.get("timeout"), check=False)):
         with pytest.raises(ManagerError) as excinfo:
             manager.run_phase(Phase.CHECK, run_info, windows_host)
 
@@ -242,7 +242,7 @@ def test_run_phase_timeout_raises_manager_error(
     def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         raise subprocess.TimeoutExpired(cmd=argv, timeout=kwargs.get("timeout", 0))
 
-    with patch("ascendo_windows.managers.winget.subprocess.run", side_effect=fake_run):
+    with patch.object(manager, "_run_streaming", side_effect=lambda argv, **kw: fake_run(argv, capture_output=True, text=True, timeout=kw.get("timeout"), check=False)):
         with pytest.raises(ManagerError) as excinfo:
             manager.run_phase(Phase.CHECK, run_info, windows_host)
 
@@ -318,7 +318,7 @@ def test_run_phase_dispatches_correct_script_per_phase(
             phase_value=phase.value,
         )
 
-    with patch("ascendo_windows.managers.winget.subprocess.run", side_effect=fake_run):
+    with patch.object(manager, "_run_streaming", side_effect=lambda argv, **kw: fake_run(argv, capture_output=True, text=True, timeout=kw.get("timeout"), check=False)):
         sidecar = manager.run_phase(phase, run_info, windows_host)
 
     assert str(fake_scripts_dir / "winget" / script_name) in captured["argv"]
@@ -365,7 +365,7 @@ def test_run_phase_sidecar_with_failed_items_returns_normally(
             returncode=1,
         )
 
-    with patch("ascendo_windows.managers.winget.subprocess.run", side_effect=fake_run):
+    with patch.object(manager, "_run_streaming", side_effect=lambda argv, **kw: fake_run(argv, capture_output=True, text=True, timeout=kw.get("timeout"), check=False)):
         sidecar = manager.run_phase(Phase.CHECK, run_info, windows_host)
 
     assert sidecar.status.value == "failed"

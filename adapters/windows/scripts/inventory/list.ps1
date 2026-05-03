@@ -331,6 +331,69 @@ try {
         return 'winget'
     }
 
+    # ARP items often have winget Version='Unknown' even when the registry
+    # carries a real DisplayVersion. This helper falls back to the
+    # Add/Remove Programs registry hives so the user sees an installed
+    # version rather than a blank cell. Cached per-process so repeat
+    # lookups in the same scan are O(1) after the first hit.
+    if (-not (Test-Path variable:script:_ArpVersionCache)) {
+        $script:_ArpVersionCache = $null
+    }
+    function Get-ArpDisplayVersionByName {
+        param([string] $DisplayName)
+        if ([string]::IsNullOrWhiteSpace($DisplayName)) { return $null }
+        if ($null -eq $script:_ArpVersionCache) {
+            $script:_ArpVersionCache = @{}
+            foreach ($root in @(
+                'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+                'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall',
+                'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
+            )) {
+                Get-ChildItem $root -ErrorAction SilentlyContinue | ForEach-Object {
+                    try {
+                        $p = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
+                    } catch { $p = $null }
+                    if (-not $p) { return }
+                    # StrictMode-safe property access: every read goes through
+                    # PSObject.Properties[name] so missing properties don't throw.
+                    $dnProp = $p.PSObject.Properties['DisplayName']
+                    if (-not $dnProp -or [string]::IsNullOrWhiteSpace([string]$dnProp.Value)) { return }
+                    $key = ([string]$dnProp.Value).Trim()
+                    $ver = $null
+                    $dvProp = $p.PSObject.Properties['DisplayVersion']
+                    if ($dvProp -and -not [string]::IsNullOrWhiteSpace([string]$dvProp.Value)) {
+                        $ver = [string]$dvProp.Value
+                    } else {
+                        $vmaj = $p.PSObject.Properties['VersionMajor']
+                        if ($vmaj -and $vmaj.Value) {
+                            $vmin = $p.PSObject.Properties['VersionMinor']
+                            $minor = if ($vmin -and $null -ne $vmin.Value) { $vmin.Value } else { 0 }
+                            $ver = "{0}.{1}" -f $vmaj.Value, $minor
+                        }
+                    }
+                    if ($ver -and -not $script:_ArpVersionCache.ContainsKey($key)) {
+                        $script:_ArpVersionCache[$key] = $ver
+                    }
+                }
+            }
+        }
+        $needle = $DisplayName.Trim()
+        if ($script:_ArpVersionCache.ContainsKey($needle)) {
+            return $script:_ArpVersionCache[$needle]
+        }
+        # winget sometimes truncates names with an ellipsis (U+2026); try a
+        # case-insensitive prefix match against the cache.
+        $stripped = $needle.TrimEnd([char]0x2026, '.', ' ')
+        if ($stripped.Length -ge 6) {
+            foreach ($k in $script:_ArpVersionCache.Keys) {
+                if ($k.StartsWith($stripped, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    return $script:_ArpVersionCache[$k]
+                }
+            }
+        }
+        return $null
+    }
+
     $emittedIds       = @{}
     $perCategoryCount = @{
         'winget'         = 0
@@ -359,6 +422,13 @@ try {
         }
 
         $itemCategory = Resolve-InventoryCategory -Id ([string]$pkg.Id) -Source $sourceFeed
+        # Registry fallback: ARP items often arrive with Version='Unknown'
+        # but the underlying Uninstall registry entry has a real
+        # DisplayVersion. Look it up by name.
+        if ($itemCategory -eq 'registry_arp' -and [string]::IsNullOrWhiteSpace($current)) {
+            $reg = Get-ArpDisplayVersionByName -DisplayName ([string]$pkg.Name)
+            if ($reg) { $current = $reg }
+        }
         $perCategoryCount[$itemCategory] = $perCategoryCount[$itemCategory] + 1
 
         $itemArgs = @{

@@ -366,6 +366,9 @@ async def stream_run_events(run_id: UUID, request: Request):
         import json as _json
 
         seen: set[str] = set()
+        # Per-log-file byte offset so we only stream NEW lines on each
+        # poll cycle (not the whole file every 500 ms). Key = log path.
+        log_offsets: dict[str, int] = {}
         # Initial status event.
         yield _sse("status", {"status": state.status.value, "run_id": str(run_id)})
 
@@ -383,6 +386,43 @@ async def stream_run_events(run_id: UUID, request: Request):
                         yield _sse("sidecar", sc.model_dump(mode="json", by_alias=True))
                     except SidecarReadError as exc:
                         yield _sse("sidecar_error", {"path": str(path), "error": str(exc)})
+
+                # NEW: tail any phase log files (.log) the manager wrote
+                # alongside its sidecars — winget's apply phase streams
+                # download bars + "Successfully installed" lines into
+                # <run-id>/<phase>__<source>.log via Popen + line read.
+                # Emit each new chunk as a 'log' SSE event; the SPA's
+                # raw event log already listens for these.
+                try:
+                    log_files = sorted(run_dir.glob("*.log"))
+                except OSError:
+                    log_files = []
+                for log_path in log_files:
+                    try:
+                        size = log_path.stat().st_size
+                    except OSError:
+                        continue
+                    last = log_offsets.get(str(log_path), 0)
+                    if size <= last:
+                        continue
+                    try:
+                        with log_path.open("rb") as fh:
+                            fh.seek(last)
+                            chunk = fh.read(size - last)
+                    except OSError:
+                        continue
+                    log_offsets[str(log_path)] = size
+                    text = chunk.decode("utf-8", errors="replace")
+                    # Stream line by line so the SPA can append per-line
+                    # without re-parsing a multi-line blob.
+                    for raw_line in text.splitlines():
+                        line = raw_line.rstrip("\r")
+                        if not line:
+                            continue
+                        yield _sse("log", {
+                            "source": log_path.stem,  # e.g. "apply__winget"
+                            "line": line,
+                        })
             if state.status in (RunStatus.COMPLETED, RunStatus.FAILED):
                 yield _sse("done", {
                     "status": state.status.value,

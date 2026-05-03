@@ -187,14 +187,23 @@ class WingetManager(IPackageManager):
                 argv,
             )
 
+            # Live-stream stdout/stderr to a sibling .log file so the
+            # SSE endpoint can tail it and surface real-time progress
+            # (download bars, "Successfully installed" lines, etc) in
+            # the SPA's raw event log. Without this, the user sees
+            # nothing until the whole phase script finishes.
+            log_path = (
+                output_dir
+                / str(run.id)
+                / f"{phase.value}__{self.category.value}.log"
+            )
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+
             try:
-                completed = subprocess.run(  # noqa: S603 (argv list, not shell)
+                completed = self._run_streaming(
                     argv,
-                    capture_output=True,
-                    text=True,
+                    log_path=log_path,
                     timeout=self._timeout_sec,
-                    check=False,
-                    **no_window_kwargs(),
                 )
             except subprocess.TimeoutExpired as exc:
                 msg = (
@@ -250,6 +259,79 @@ class WingetManager(IPackageManager):
             return sidecar
 
     # ── Internals ────────────────────────────────────────────────────
+
+    def _run_streaming(
+        self,
+        argv: list[str],
+        *,
+        log_path: Path,
+        timeout: float,
+    ) -> subprocess.CompletedProcess:
+        """Spawn the script with Popen + tee stdout/stderr to ``log_path``
+        line-by-line, returning a faux ``CompletedProcess`` with the same
+        shape ``run_phase`` expects.
+
+        Why streaming rather than ``subprocess.run``: winget's ``upgrade``
+        emits real-time progress (download bars, "Successfully installed"
+        lines, exit messages) on stdout. With ``run`` everything buffers
+        until the script exits and the user stares at a frozen progress
+        bar. With streaming, every line lands in ``<run-id>/<phase>__<source>.log``
+        as it happens, the SSE endpoint tails that file, and the SPA's
+        raw event log fills up live.
+        """
+        import time as _time
+
+        # Open the log file in line-buffered text mode. We append (not
+        # truncate) so two phases that share a log path don't lose the
+        # earlier one — though by convention each (phase, source) gets
+        # its own file.
+        proc = subprocess.Popen(  # noqa: S603 (argv list, not shell)
+            argv,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # merge stderr → stdout for one tail
+            text=True,
+            bufsize=1,  # line-buffered
+            **no_window_kwargs(),
+        )
+
+        captured: list[str] = []
+        started = _time.monotonic()
+        try:
+            with log_path.open("a", encoding="utf-8") as fh:
+                # Iterating proc.stdout yields decoded lines because text=True.
+                for raw_line in iter(proc.stdout.readline, ""):
+                    # Per-line timeout safety: if we're past the budget,
+                    # kill the process. Doing this between lines avoids
+                    # the OS-level timeout machinery (which would buffer
+                    # output until the timeout fires).
+                    if _time.monotonic() - started > timeout:
+                        proc.kill()
+                        raise subprocess.TimeoutExpired(argv, timeout)
+                    if not raw_line:
+                        break
+                    captured.append(raw_line)
+                    try:
+                        fh.write(raw_line)
+                        fh.flush()
+                    except OSError:
+                        # Best-effort log: don't kill the run if disk is
+                        # transiently full / permission-denied.
+                        pass
+        finally:
+            proc.stdout.close()
+        # Wait for the process to fully exit (it may still be flushing).
+        try:
+            return_code = proc.wait(timeout=max(1.0, timeout - (_time.monotonic() - started)))
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            raise
+
+        return subprocess.CompletedProcess(
+            args=argv,
+            returncode=return_code,
+            stdout="".join(captured),
+            stderr="",  # merged into stdout above
+        )
 
     def _build_argv(
         self,
