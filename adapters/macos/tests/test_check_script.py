@@ -70,6 +70,42 @@ def test_check_emits_valid_sidecar(tmp_path: Path) -> None:
     sys.platform != "darwin" or shutil.which("brew") is None or shutil.which("jq") is None,
     reason="real brew + jq on macOS required",
 )
+@pytest.mark.parametrize("phase", ["plan", "verify", "cleanup"])
+def test_phase_emits_valid_sidecar(tmp_path: Path, phase: str) -> None:
+    script = ADAPTER_ROOT / "scripts" / "brew" / f"{phase}.sh"
+    run_id = str(uuid.uuid4())
+    out_dir = tmp_path / "runs"
+    args = [
+        "bash", str(script),
+        "--run-id", run_id,
+        "--trigger", "cli",
+        "--profile", "default",
+        "--output-dir", str(out_dir),
+    ]
+    if phase == "cleanup":
+        args.append("--dry-run")  # don't mutate the brew cache during tests
+    res = subprocess.run(args, capture_output=True, text=True, check=False)
+    assert res.returncode in (0, 1), (
+        f"{phase} exit={res.returncode}\n{res.stderr}\n{res.stdout}"
+    )
+    sidecar = out_dir / run_id / f"{phase}__brew.json"
+    assert sidecar.is_file(), (
+        f"missing {sidecar}\n{res.stdout}\n{res.stderr}"
+    )
+    sys.path.insert(0, str(ADAPTER_ROOT.parent.parent / "core"))
+    try:
+        from ascendo.models.sidecar import parse_sidecar
+        sc = parse_sidecar(sidecar.read_text())
+    finally:
+        sys.path.pop(0)
+    assert sc.phase.value == phase
+    assert sc.category.value == "brew"
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin" or shutil.which("brew") is None or shutil.which("jq") is None,
+    reason="real brew + jq on macOS required",
+)
 def test_apply_dry_run_emits_planned_items(tmp_path: Path) -> None:
     """apply.sh with --dry-run emits status=planned, no real upgrade."""
     APPLY = ADAPTER_ROOT / "scripts" / "brew" / "apply.sh"
