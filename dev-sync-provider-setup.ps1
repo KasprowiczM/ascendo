@@ -31,6 +31,21 @@ $repoRoot   = $PSScriptRoot
 $configPath = Join-Path $repoRoot '.dev_sync_config.json'
 $projectName = Split-Path -Leaf $repoRoot
 
+# Refresh PATH from the registry into the current process so a freshly-
+# installed binary (e.g. ``winget install Rclone.Rclone`` in this same
+# shell) is discoverable without restarting PowerShell. Idempotent —
+# always picks up whatever's currently in the System + User PATH.
+function Update-SessionPath {
+    try {
+        $machine = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
+        $user    = [System.Environment]::GetEnvironmentVariable('Path', 'User')
+        $env:Path = ($machine, $user | Where-Object { $_ }) -join ';'
+    } catch {
+        # Best-effort; if registry access fails we just leave PATH as is.
+    }
+}
+Update-SessionPath
+
 function Write-Header($text) {
     Write-Host ""
     Write-Host $text -ForegroundColor Blue -NoNewline
@@ -53,12 +68,17 @@ function Get-RcloneRemotes() {
 
 function Find-LocalProtonPath() {
     # Windows Proton Drive native client mirrors at one of these paths
-    # depending on install variant + multi-account setup.
+    # depending on install variant + multi-account setup. Each candidate
+    # MUST be parenthesised — PowerShell parses
+    #     Join-Path $a 'X', Join-Path $a 'Y'
+    # as ``Join-Path $a @('X', <Join-Path-token>)`` (the comma binds to
+    # cmdlet args before it binds to the array). Resulting error:
+    # ``Cannot convert 'System.Object[]' to type 'System.String'``.
     $candidates = @(
-        Join-Path $env:USERPROFILE 'Proton Drive',
-        Join-Path $env:USERPROFILE 'ProtonDrive',
-        Join-Path $env:USERPROFILE 'Proton Drive - Personal',
-        Join-Path $env:USERPROFILE 'Proton Drive - Business'
+        (Join-Path $env:USERPROFILE 'Proton Drive'),
+        (Join-Path $env:USERPROFILE 'ProtonDrive'),
+        (Join-Path $env:USERPROFILE 'Proton Drive - Personal'),
+        (Join-Path $env:USERPROFILE 'Proton Drive - Business')
     )
     foreach ($p in $candidates) {
         if (Test-Path -PathType Container $p) { return $p }

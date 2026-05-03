@@ -22,6 +22,17 @@
 param([Parameter(ValueFromRemainingArguments = $true)] [string[]] $Args)
 
 $ErrorActionPreference = 'Stop'
+
+# Refresh PATH from the registry so freshly-installed Python (e.g. via
+# ``winget install Python.Python.3.13`` in this same shell) is found
+# without restarting PowerShell. Same pattern lives in every other
+# dev-sync-*.ps1 wrapper.
+try {
+    $machine = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $user    = [System.Environment]::GetEnvironmentVariable('Path', 'User')
+    $env:Path = ($machine, $user | Where-Object { $_ }) -join ';'
+} catch { }
+
 $repoRoot   = $PSScriptRoot
 $pyBackend  = Join-Path $repoRoot 'dev-sync\dev_sync_export.py'
 
@@ -39,7 +50,7 @@ foreach ($candidate in @('py', 'python', 'python3')) {
     if ($cmd) { $python = $cmd.Source; break }
 }
 if (-not $python) {
-    Write-Error 'No Python interpreter found on PATH (tried: py, python, python3). Install Python 3.11+ from python.org or `winget install Python.Python.3.13`.'
+    Write-Error 'No Python found. winget install Python.Python.3.13 (then restart this shell, or call this script again so it re-reads PATH).'
     exit 2
 }
 
