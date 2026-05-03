@@ -2,7 +2,7 @@
 # mas helper functions for the macOS adapter. Bash 3.2-safe.
 #
 # Public functions:
-#   mas_signed_in                 0 if `mas list` succeeds with output, else 1
+#   mas_signed_in                 0 if `mas list` exits 0, else 1
 #   mas_list_json                 emits JSON array of installed apps to stdout
 #   mas_outdated_json             emits JSON array of outdated apps to stdout
 #   mas_version_at_least <major>  reads version from stdin or `mas version`
@@ -110,10 +110,14 @@ mas_outdated_json() {
 # Returns 0 if major >= required, 1 otherwise.
 mas_version_at_least() {
     local required="$1"
-    local version
+    local version=""
+    # If stdin is not a tty, try to read with a short timeout so we never
+    # block waiting for input that may never arrive (phase scripts have
+    # non-tty stdin but no piped data when calling this function directly).
     if [ ! -t 0 ]; then
-        IFS= read -r version
-    else
+        IFS= read -r -t 2 version || version=""
+    fi
+    if [ -z "$version" ]; then
         version="$("$MAS_BIN" version 2>/dev/null || printf '0.0.0')"
     fi
     local major

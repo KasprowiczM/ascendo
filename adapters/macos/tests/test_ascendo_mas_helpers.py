@@ -18,7 +18,7 @@ LIB = ADAPTER_ROOT / "lib" / "ascendo_mas.sh"
 FIX = ADAPTER_ROOT / "tests" / "fixtures"
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="module")
 def _require_jq() -> None:
     if shutil.which("jq") is None:
         pytest.skip("jq not on PATH")
@@ -40,7 +40,7 @@ def test_lib_exists_and_sources_clean():
     assert res.returncode == 0, res.stderr
 
 
-def test_mas_list_json_parses_id_name_version():
+def test_mas_list_json_parses_id_name_version(_require_jq):
     text = (FIX / "mas-list.txt").read_text()
     res = _bash("mas_list_json_from_stdin", stdin=text)
     assert res.returncode == 0, res.stderr
@@ -53,7 +53,7 @@ def test_mas_list_json_parses_id_name_version():
     assert xc["version"] == "26.4.1"
 
 
-def test_mas_outdated_json_parses_arrow():
+def test_mas_outdated_json_parses_arrow(_require_jq):
     text = (FIX / "mas-outdated.txt").read_text()
     res = _bash("mas_outdated_json_from_stdin", stdin=text)
     assert res.returncode == 0, res.stderr
@@ -94,8 +94,8 @@ def test_signed_in_probe_runs_without_real_mas(tmp_path):
     so we test the function shape: when MAS_BIN points to a fake script that
     exits 0, mas_signed_in returns 0; when it exits 1, returns 1.
     """
-    fake_ok = FIX / "_fake_mas_ok.sh"
-    fake_fail = FIX / "_fake_mas_fail.sh"
+    fake_ok = tmp_path / "_fake_mas_ok.sh"
+    fake_fail = tmp_path / "_fake_mas_fail.sh"
     fake_ok.write_text("#!/usr/bin/env bash\nexit 0\n")
     os.chmod(fake_ok, 0o755)
     fake_fail.write_text("#!/usr/bin/env bash\nexit 1\n")
@@ -106,3 +106,22 @@ def test_signed_in_probe_runs_without_real_mas(tmp_path):
 
     res = _bash(f"export MAS_BIN={fake_fail}; mas_signed_in && echo PASS || echo FAIL")
     assert res.stdout.strip() == "FAIL"
+
+
+def test_mas_version_at_least_no_hang_on_empty_stdin(tmp_path):
+    """Regression: mas_version_at_least must not block on a closed stdin
+    with no data when MAS_BIN is callable."""
+    fake_mas = tmp_path / "fake_mas"
+    fake_mas.write_text("#!/usr/bin/env bash\necho '4.3.0'\n")
+    os.chmod(fake_mas, 0o755)
+    # Run with stdin redirected from /dev/null so [ -t 0 ] is false but
+    # the read should time out within 2s and fall back to MAS_BIN version.
+    res = subprocess.run(
+        ["bash", "-c", f"export MAS_BIN={fake_mas}; . '{LIB}'; "
+         "mas_version_at_least 4 && echo PASS || echo FAIL"],
+        input="",   # closed stdin
+        capture_output=True, text=True,
+        timeout=10,  # if it hangs, pytest kills via timeout
+        check=False,
+    )
+    assert res.stdout.strip() == "PASS", f"stdout={res.stdout!r} stderr={res.stderr!r}"
