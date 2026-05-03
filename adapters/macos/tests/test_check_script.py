@@ -64,3 +64,44 @@ def test_check_emits_valid_sidecar(tmp_path: Path) -> None:
     # summary.total may be 0 if nothing outdated; phase still success.
     assert sc.summary.total >= 0
     assert sc.tool.name == "brew"
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin" or shutil.which("brew") is None or shutil.which("jq") is None,
+    reason="real brew + jq on macOS required",
+)
+def test_apply_dry_run_emits_planned_items(tmp_path: Path) -> None:
+    """apply.sh with --dry-run emits status=planned, no real upgrade."""
+    APPLY = ADAPTER_ROOT / "scripts" / "brew" / "apply.sh"
+    run_id = str(uuid.uuid4())
+    out_dir = tmp_path / "runs"
+    res = subprocess.run(
+        [
+            "bash", str(APPLY),
+            "--run-id", run_id,
+            "--trigger", "cli",
+            "--profile", "default",
+            "--output-dir", str(out_dir),
+            "--dry-run",
+        ],
+        capture_output=True, text=True, check=False,
+    )
+    assert res.returncode in (0, 1), (
+        f"unexpected exit: {res.returncode}\n{res.stderr}\n{res.stdout}"
+    )
+    sidecar_path = out_dir / run_id / "apply__brew.json"
+    assert sidecar_path.is_file(), (
+        f"missing {sidecar_path}\n{res.stdout}\n{res.stderr}"
+    )
+    sys.path.insert(0, str(ADAPTER_ROOT.parent.parent / "core"))
+    try:
+        from ascendo.models.sidecar import parse_sidecar
+        sc = parse_sidecar(sidecar_path.read_text())
+    finally:
+        sys.path.pop(0)
+    # In dry-run mode, NO item should have status in success/failed (those
+    # are mutation outcomes); planned/up_to_date are valid.
+    for it in sc.items:
+        assert it.status.value in {"planned", "up_to_date", "skipped"}, (
+            f"unexpected status {it.status.value} for {it.id} in dry-run"
+        )
