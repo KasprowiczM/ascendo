@@ -91,7 +91,6 @@
       "properties": {
         "id": {
           "description": "Package identifier within its source.",
-          "maxLength": 512,
           "minLength": 1,
           "title": "Id",
           "type": "string"
@@ -112,7 +111,6 @@
         "current_version": {
           "anyOf": [
             {
-              "maxLength": 128,
               "minLength": 1,
               "type": "string"
             },
@@ -127,7 +125,6 @@
         "target_version": {
           "anyOf": [
             {
-              "maxLength": 128,
               "minLength": 1,
               "type": "string"
             },
@@ -142,7 +139,6 @@
         "resolved_version": {
           "anyOf": [
             {
-              "maxLength": 128,
               "minLength": 1,
               "type": "string"
             },
@@ -234,7 +230,6 @@
         "appx_version": {
           "anyOf": [
             {
-              "maxLength": 128,
               "minLength": 1,
               "type": "string"
             },
@@ -249,7 +244,6 @@
         "registry_version": {
           "anyOf": [
             {
-              "maxLength": 128,
               "minLength": 1,
               "type": "string"
             },
@@ -264,7 +258,6 @@
         "dpkg_version": {
           "anyOf": [
             {
-              "maxLength": 128,
               "minLength": 1,
               "type": "string"
             },
@@ -279,7 +272,6 @@
         "binary_version": {
           "anyOf": [
             {
-              "maxLength": 128,
               "minLength": 1,
               "type": "string"
             },
@@ -614,10 +606,12 @@
         "flatpak",
         "brew_formula",
         "brew_cask",
+        "brew",
         "winget",
         "msstore",
         "appx",
         "registry_arp",
+        "windows_update",
         "mac_app_store",
         "npm",
         "pip",

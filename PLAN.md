@@ -140,27 +140,36 @@ git push --tags
 
 ---
 
-## M5 — macOS adapter (path to v0.2.0, ~3 weeks)
+## M5 — macOS adapter (path to v0.2.0)
 
-Mirror `adapters/windows/` as `adapters/macos/`. Same patterns, OS-specific tools:
+Mirror `adapters/windows/` as `adapters/macos/`. Same patterns, OS-specific tools.
 
-| Manager | Tool | Est LOC (Python + Bash) |
+| Sub | Status | Notes |
 |---|---|---|
-| `managers/brew.py` | Homebrew (formulae + casks) | 150 + 350 |
-| `managers/mas.py` | Mac App Store via `mas` CLI | 100 + 200 |
-| `managers/softwareupdate.py` | `softwareupdate -l` + `-i -R` | 100 + 150 |
-| `managers/launchservices.py` | LaunchServices (ARP-equivalent) | 100 + 200 |
-| `managers/snapshot.py` | Time Machine read-only | 80 + 150 |
-| `managers/scheduler.py` | launchd | 80 + 200 |
-| `managers/elevation.py` | sudo + AuthorizationCreate | 80 + 100 |
+| **M5.1** | ✅ done (2026-05-03, **v0.0.8-alpha**) | `BrewManager` + `MacOSAdapter` (PACKAGE_MANAGEMENT only). Real `brew upgrade` performed end-to-end on Mac.r12.home. `bin/{install-dev,validate,run-tag-release}-macos.sh`. ~46 tests + 11/11 validate-macos.sh checks. Spec/plan: `docs/superpowers/specs/2026-05-03-macos-brew-mvp-design.md` + `docs/superpowers/plans/2026-05-03-macos-brew-mvp.md`. See HANDOFF.md Sesja 20. |
+| M5.2 | ⏳ pending | `mas` manager + `MacElevation` (sudo askpass cache for dashboard-driven sudo). The `sudo mas upgrade` rule (CVE-2025-43411) lives here. |
+| M5.3 | ⏳ pending | `LaunchServicesInventory` + `INVENTORY` capability — populates dashboard Categories tab with installed-apps list. |
+| M5.4 | ⏳ pending | `softwareupdate` manager (the `-R` flag rule) + Time Machine read-only `ISnapshot`. |
+| M5.5 | ⏳ pending | `launchd` `IScheduler`. After this, tag `v0.2.0` (full M5). |
 
-**lib:** Bash equivalents of `AscendoJson.psm1` + `AscendoWinget.psm1`. Port from
-`Aktualizacje_MAC/` shell logic (already battle-tested).
+### Forward backlog (per-manager scope)
+
+| Manager | Tool | Est LOC (Python + Bash) | Sub |
+|---|---|---|---|
+| `managers/brew.py` | Homebrew (formulae + casks) | 190 + 600 | ✅ M5.1 |
+| `managers/mas.py` | Mac App Store via `mas` CLI | 100 + 200 | M5.2 |
+| `managers/elevation.py` | sudo + AuthorizationCreate | 80 + 100 | M5.2 |
+| `managers/launchservices.py` | LaunchServices (ARP-equivalent) | 100 + 200 | M5.3 |
+| `managers/softwareupdate.py` | `softwareupdate -l` + `-i -R` | 100 + 150 | M5.4 |
+| `managers/snapshot.py` | Time Machine read-only | 80 + 150 | M5.4 |
+| `managers/scheduler.py` | launchd | 80 + 200 | M5.5 |
+
+**lib (M5.1 shipped):** `adapters/macos/lib/{_json_emit.py, ascendo_json.sh, ascendo_brew.sh}`. The Bash + Python helper pattern matches the Linux adapter (cross-platform consistency lives in the shared CONTRACT — `ascendo/v1` schema + 5-phase + Pydantic interfaces — not in shared code).
 
 **Critical rules to preserve from `Aktualizacje_MAC/CLAUDE.md`:**
-- `softwareupdate` MUST have `-R` flag.
-- `mas upgrade` MUST have `sudo` (CVE-2025-43411).
-- Bash 3.2 only (no `declare -A`, `mapfile`, `readarray`).
+- `softwareupdate` MUST have `-R` flag (M5.4).
+- `mas upgrade` MUST have `sudo` (CVE-2025-43411) (M5.2).
+- Bash 3.2 only (no `declare -A`, `mapfile`, `readarray`) — honored throughout M5.1.
 
 ---
 
