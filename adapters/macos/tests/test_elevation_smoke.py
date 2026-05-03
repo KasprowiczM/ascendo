@@ -6,10 +6,8 @@ sudo invocations; subprocess.run is mocked.
 """
 from __future__ import annotations
 
-import os
 import stat
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -37,6 +35,16 @@ def test_register_allowlist_lowercases_basenames():
     assert e._allowlist == frozenset({"mas", "foo.sh", "bar"})
 
 
+def test_run_with_empty_allowlist_denies_everything(host):
+    """Deny-by-default: when register_allowlist was never called, every
+    command is rejected. Mirrors Windows elevation contract (T4 mitigation
+    per ADR-0005)."""
+    e = MacElevation()
+    # Note: register_allowlist NOT called.
+    with pytest.raises(ElevationDenied):
+        e.run(host, ["mas", "upgrade"])
+
+
 def test_run_with_empty_argv_raises_elevation_denied(host):
     e = MacElevation()
     e.register_allowlist(["mas"])
@@ -58,8 +66,9 @@ def test_run_rejects_command_not_in_allowlist(host):
         e.run(host, ["rm", "-rf", "/"])
 
 
-def test_register_password_verifies_via_sudo_v(monkeypatch):
+def test_register_password_verifies_via_sudo_v(monkeypatch, tmp_path):
     """register_password calls `sudo -S -p '' -v` and stores on success."""
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
     e = MacElevation()
     captured = {}
 
@@ -140,6 +149,24 @@ def test_invalidate_wipes_state_and_is_idempotent(monkeypatch, tmp_path):
     # Second invalidate is a no-op
     e.invalidate()
     assert e.has_password_registered() is False
+
+
+def test_register_password_does_not_partially_set_state_on_helper_failure(monkeypatch):
+    """If _create_askpass_helper raises, neither _password nor _askpass_path
+    should be set — has_password_registered() must return False."""
+    e = MacElevation()
+    # Mock subprocess.run for verify -> success
+    monkeypatch.setattr("subprocess.run",
+                        lambda *a, **kw: MagicMock(returncode=0, stdout="", stderr=""))
+    # Force _create_askpass_helper to raise
+    def boom(*a, **kw):
+        raise OSError("disk full")
+    monkeypatch.setattr(MacElevation, "_create_askpass_helper", boom)
+
+    with pytest.raises(OSError):
+        e.register_password("hunter2")
+    assert e.has_password_registered() is False
+    assert e.askpass_path() is None
 
 
 def test_available_methods_empty_when_sudo_missing(monkeypatch):

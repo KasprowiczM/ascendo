@@ -10,7 +10,6 @@ the IElevation ABC + allow-list T4 guard from ADR-0005 on top.
 from __future__ import annotations
 
 import atexit
-import logging
 import os
 import shutil
 import subprocess
@@ -27,8 +26,6 @@ from ascendo.interfaces.elevation import (
     IElevation,
 )
 from ascendo.models.host import ElevationMethod, HostInfo
-
-_log = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT_SEC = 1800
 _VERIFY_TIMEOUT_SEC = 15
@@ -85,7 +82,7 @@ class MacElevation(IElevation):
         if not argv:
             raise ElevationDenied("argv is empty")
         head = Path(argv[0]).name.lower()
-        if self._allowlist and head not in self._allowlist:
+        if head not in self._allowlist:
             raise ElevationDenied(
                 f"command {head!r} not in allow-list "
                 f"{sorted(self._allowlist)!r}"
@@ -153,9 +150,12 @@ class MacElevation(IElevation):
             if res.returncode != 0:
                 err = (res.stderr or res.stdout).strip()
                 return False, err[:300] or f"sudo -S -v exited {res.returncode}"
+        # Create the helper outside the lock so a failure doesn't leave
+        # _password set with _askpass_path still None.
+        helper = self._create_askpass_helper(password)
         with self._lock:
             self._password = password
-            self._askpass_path = self._create_askpass_helper(password)
+            self._askpass_path = helper
         return True, "password verified and stored"
 
     def invalidate(self) -> None:
