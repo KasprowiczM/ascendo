@@ -1,0 +1,37 @@
+{
+  "schema": "ascendo/v1",
+  "phase": "check",
+  "category": "brew",
+  "run": {
+    "id": "00000000-0000-0000-0000-000000000099",
+    "trigger": "cli",
+    "profile": "default",
+    "dry_run": false,
+    "started_at": "2026-05-03T12:00:00Z"
+  },
+  "host": {
+    "hostname": "macbook.local",
+    "os": "macos",
+    "os_version": "14.5",
+    "arch": "arm64",
+    "user": "mk",
+    "is_elevated": false
+  },
+  "tool": {"name": "brew", "version": "4.4.0", "binary_path": null},
+  "started_at": "2026-05-03T12:00:00Z",
+  "finished_at": "2026-05-03T12:00:01Z",
+  "status": "success",
+  "summary": {"total": 1, "success": 0, "up_to_date": 0, "failed": 0, "skipped": 0, "planned": 1, "partial": 0},
+  "items": [
+    {
+      "id": "node",
+      "name": "node",
+      "category": "brew",
+      "current_version": "20.10.0",
+      "target_version": "21.6.1",
+      "status": "planned",
+      "source": {"type": "brew", "feed": "formula", "url": null}
+    }
+  ],
+  "messages": [{"level": "info", "text": "outdated formula: 1"}]
+}
