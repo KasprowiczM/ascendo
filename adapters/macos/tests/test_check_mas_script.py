@@ -140,7 +140,13 @@ def test_check_with_dry_run_flag_is_no_op_for_check(tmp_path):
         capture_output=True, text=True, env=env, check=False,
     )
     assert res.returncode == 0, res.stderr
-    assert (out / rid / "check__mas.json").is_file()
+    sidecar = out / rid / "check__mas.json"
+    assert sidecar.is_file()
+    # --dry-run must NOT silently short-circuit item emission for check
+    sc = _parse_sidecar(sidecar)
+    statuses = [i.status.value for i in sc.items]
+    assert "planned" in statuses
+    assert "up_to_date" in statuses
 
 
 def test_filter_limits_planned_items(tmp_path):

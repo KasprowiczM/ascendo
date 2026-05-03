@@ -33,7 +33,7 @@ RUN_ID=""
 TRIGGER=""
 PROFILE_NAME=""
 OUTPUT_DIR=""
-DRY_RUN=0
+DRY_RUN=0          # check is already read-only; --dry-run accepted for build_argv parity (Python adapter passes it for all phases)
 FILTER_CSV=""
 
 while [ $# -gt 0 ]; do
