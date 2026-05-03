@@ -1239,6 +1239,7 @@ const ui = {
         tr("categories.col_cand")    || "Candidate",
         tr("categories.col_status")  || "Status",
         tr("apps.col_in_config")     || "In config",
+        tr("categories.col_act")     || "Action",
       ].forEach(label => {
         const th = document.createElement("th");
         th.textContent = label;
@@ -1253,7 +1254,7 @@ const ui = {
       if (!apps.length) {
         const trEmpty = document.createElement("tr");
         const td = document.createElement("td");
-        td.colSpan = 6;
+        td.colSpan = 7;
         td.className = "dim";
         td.textContent = tr("apps.empty") || "No apps detected. Run a check from Categories first.";
         trEmpty.appendChild(td);
@@ -1303,6 +1304,29 @@ const ui = {
           lbl.appendChild(txt);
           tdToggle.appendChild(lbl);
           trRow.appendChild(tdToggle);
+
+          // Explicit Action column with a button so the in/out semantics
+          // are obvious even if the user misses the checkbox.
+          const tdAction = document.createElement("td");
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "secondary";
+          btn.style.fontSize = "0.78rem";
+          if (it.in_config) {
+            btn.textContent = tr("apps.btn_remove") || "Remove from config";
+            btn.title = tr("apps.in_config_on_hint")
+              || "Currently in config — click to exclude this app from updates.";
+            btn.dataset.appsExclude = "1";
+          } else {
+            btn.textContent = tr("apps.btn_add") || "+ Add to config";
+            btn.title = tr("apps.in_config_off_hint")
+              || "Currently excluded — click to include this app in updates again.";
+            btn.dataset.appsInclude = "1";
+          }
+          btn.dataset.cat = it.category;
+          btn.dataset.name = it.name;
+          tdAction.appendChild(btn);
+          trRow.appendChild(tdAction);
 
           tbody.appendChild(trRow);
         });
@@ -2630,6 +2654,29 @@ document.addEventListener("change", e => {
 document.addEventListener("change", e => {
   const t = e.target.closest("[data-excl-toggle]");
   if (t) ui.toggleExclusion(t.dataset.pkg, t.dataset.cat, t.checked);
+});
+
+// Apps tab explicit Action-column buttons (Add to config / Remove from config).
+// These are the obvious-button counterpart to the in-config checkbox.
+document.addEventListener("click", async e => {
+  const ex = e.target.closest("[data-apps-exclude]");
+  if (ex) {
+    try {
+      await api.post("/apps/exclude", {category: ex.dataset.cat, name: ex.dataset.name});
+      ui.status(`${ex.dataset.cat}:${ex.dataset.name} → excluded`);
+      ui._loaded.apps = false; ui._loaded.categories = false;
+      ui.loadApps();
+    } catch (err) { ui.status(String(err)); }
+  }
+  const inc = e.target.closest("[data-apps-include]");
+  if (inc) {
+    try {
+      await api.post("/apps/include", {category: inc.dataset.cat, name: inc.dataset.name});
+      ui.status(`${inc.dataset.cat}:${inc.dataset.name} → in config`);
+      ui._loaded.apps = false; ui._loaded.categories = false;
+      ui.loadApps();
+    } catch (err) { ui.status(String(err)); }
+  }
 });
 
 // Backup import (file upload)

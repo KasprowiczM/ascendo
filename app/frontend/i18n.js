@@ -69,6 +69,8 @@ window.I18N = {
       pill_tracked:  "in config",
       pill_excluded: "excluded",
       empty: "No apps detected. Run a check from Categories first.",
+      btn_add:    "+ Add to config",
+      btn_remove: "Remove from config",
     },
     wizard: {
       title:        "Welcome to Ascendo",
@@ -388,6 +390,7 @@ window.I18N = {
       theme:           "Theme",
       theme_dark:      "dark (default)",
       theme_light:     "light",
+      theme_auto:      "auto (match system)",
       theme_hint:      "Dark is the Ascendo design-system primary surface; light is the alternate.",
       language:        "Language",
       lang_auto:       "auto (browser)",
@@ -508,6 +511,8 @@ window.I18N = {
       pill_tracked:  "w konfiguracji",
       pill_excluded: "wykluczone",
       empty: "Nie wykryto aplikacji. Najpierw uruchom check w Kategoriach.",
+      btn_add:    "+ Dodaj do konfiguracji",
+      btn_remove: "Usuń z konfiguracji",
     },
     wizard: {
       title:        "Witaj w Ascendo",
@@ -826,6 +831,7 @@ window.I18N = {
       theme:           "Motyw",
       theme_dark:      "ciemny (domyślny)",
       theme_light:     "jasny",
+      theme_auto:      "auto (zgodnie z systemem)",
       theme_hint:      "Tryb ciemny to podstawowy widok systemu Ascendo; jasny jest alternatywny.",
       language:        "Język",
       lang_auto:       "auto (przeglądarka)",
