@@ -242,7 +242,7 @@ const ui = {
         if (saved) Object.assign(this.state, JSON.parse(saved));
       } catch {}
       try {
-        const lsTheme = localStorage.getItem("ascendo_theme");
+        const lsTheme = localStorage.getItem("ui-theme") || localStorage.getItem("ascendo_theme");
         if (lsTheme) this.state.theme = lsTheme;
       } catch {}
       this.currentIdx = 0;
@@ -425,8 +425,9 @@ const ui = {
         r.addEventListener("change", () => {
           this.state.theme = val;
           try {
-            localStorage.setItem("ascendo_theme", val);
-            window.applyThemePref(val);
+            localStorage.setItem("ui-theme", val);
+            document.documentElement.dataset.themePref = val;
+            window.applyTheme(val);
           } catch {}
           this.saveScratch();
         });
@@ -2888,7 +2889,7 @@ document.addEventListener("click", async e => {
   const ad = e.target.closest("[data-cat-add]");
   if (ad) {
     try {
-      const r = await api.post("/apps/add", {package: ad.dataset.pkg, category: ad.dataset.cat});
+      const r = await api.post("/apps/include", {category: ad.dataset.cat, name: ad.dataset.pkg});
       ui.status(r.ok ? `added ${ad.dataset.cat}:${ad.dataset.pkg}` : `error: ${(r.stderr||"").slice(0,120)}`);
       await _refreshAfterCfgEdit(ad.dataset.cat);
       ui.loadCategoryDetail(ad.dataset.cat);
@@ -2913,7 +2914,7 @@ document.addEventListener("click", async e => {
   if (rm) {
     if (!confirm(`Remove ${rm.dataset.pkg} from ${rm.dataset.cat} config?\n(does NOT uninstall the package itself)`)) return;
     try {
-      const r = await api.post("/apps/remove", {package: rm.dataset.pkg, category: rm.dataset.cat});
+      const r = await api.post("/apps/exclude", {category: rm.dataset.cat, name: rm.dataset.pkg});
       ui.status(r.ok ? `removed ${rm.dataset.cat}:${rm.dataset.pkg}` : `error: ${(r.stderr||"").slice(0,120)}`);
       await _refreshAfterCfgEdit(rm.dataset.cat);
       ui.loadCategoryDetail(rm.dataset.cat);
@@ -2929,7 +2930,7 @@ document.addEventListener("click", async e => {
     if (!cat || !pkg) { out.textContent = "pick a category and type a package name"; return; }
     out.textContent = "adding…";
     try {
-      const r = await api.post("/apps/add", {package: pkg, category: cat});
+      const r = await api.post("/apps/include", {category: cat, name: pkg});
       out.textContent = r.ok ? `added ${cat}:${pkg}` : `error: ${(r.stderr||"").slice(0,200)}`;
       $("#cats-add-pkg").value = "";
       // Bust the 60s inventory cache so the change is visible immediately.
@@ -2958,9 +2959,9 @@ async function bootstrap() {
   // B7 — read localStorage.ascendo_theme synchronously on first paint so the
   // wizard's theme choice survives reload even before /settings resolves.
   let lsTheme = null;
-  try { lsTheme = localStorage.getItem("ascendo_theme"); } catch {}
+  try { lsTheme = localStorage.getItem("ui-theme") || localStorage.getItem("ascendo_theme"); } catch {}
   if (lsTheme) {
-    try { window.applyThemePref(lsTheme); } catch {}
+    try { window.applyTheme(lsTheme); } catch {}
   }
   try {
     const s = await api.get("/settings");
@@ -2968,13 +2969,13 @@ async function bootstrap() {
     // localStorage wins over /settings — the wizard wrote it last.
     const themePref = lsTheme || (s.ui && s.ui.theme) || "dark";
     const langPref  = (s.ui && s.ui.language) || "auto";
-    window.applyThemePref(themePref);
+    window.applyTheme(themePref);
     window.UI_LANG = (langPref === "en" || langPref === "pl")
       ? langPref
       : window.detectLanguage();
     window.applyI18n();
   } catch {
-    window.applyThemePref(lsTheme || "dark");
+    window.applyTheme(lsTheme || "dark");
     window.UI_LANG = window.detectLanguage();
     window.applyI18n();
   }
@@ -3217,7 +3218,7 @@ window.ui = ui;
 
   // ---- Render ----------------------------------------------------------
   function render() {
-    const panel = $$("run-detail-panel");
+    const panel = $("#run-detail-panel");
     if (!panel) return;
     const buckets = state.phaseSource;
     if (buckets.size === 0 && !state.runId) {
@@ -3232,7 +3233,7 @@ window.ui = ui;
   }
 
   function renderElapsed() {
-    const elapsedEl = $$("run-detail-elapsed");
+    const elapsedEl = $("#run-detail-elapsed");
     if (!elapsedEl) return;
     const end = state.finished || Date.now();
     const ms = Math.max(0, end - state.started);
@@ -3241,7 +3242,7 @@ window.ui = ui;
   }
 
   function renderNav() {
-    const nav = $$("run-detail-nav");
+    const nav = $("#run-detail-nav");
     if (!nav) return;
     clearChildren(nav);
     // Render in canonical phase order, then by source.
@@ -3283,9 +3284,9 @@ window.ui = ui;
   }
 
   function renderBar(bucket) {
-    const fill = $$("run-detail-bar-fill");
-    const meta = $$("run-detail-bar-meta");
-    const wrap = $$("run-detail-bar-wrap");
+    const fill = $("#run-detail-bar-fill");
+    const meta = $("#run-detail-bar-meta");
+    const wrap = $("#run-detail-bar-wrap");
     if (!fill || !meta || !wrap) return;
     fill.classList.remove("is-warn", "is-err");
     if (!bucket) {
@@ -3336,8 +3337,8 @@ window.ui = ui;
   }
 
   function renderPackages(bucket) {
-    const list = $$("run-detail-packages-list");
-    const empty = $$("run-detail-packages-empty");
+    const list = $("#run-detail-packages-list");
+    const empty = $("#run-detail-packages-empty");
     if (!list || !empty) return;
     clearChildren(list);
     const items = bucket ? bucket.itemOrder.map(k => bucket.items.get(k)).filter(Boolean) : [];
@@ -3480,7 +3481,7 @@ window.ui = ui;
   }
 
   function renderDiagnostics(bucket) {
-    const list = $$("run-detail-diagnostics-list");
+    const list = $("#run-detail-diagnostics-list");
     if (!list) return;
     // Track userScrolledDiagnostics so auto-scroll only kicks when the user
     // has the toggle on AND hasn't scrolled away.
@@ -3525,7 +3526,7 @@ window.ui = ui;
       li.appendChild(time); li.appendChild(lvlEl); li.appendChild(text);
       list.appendChild(li);
     });
-    const auto = $$("run-detail-autoscroll");
+    const auto = $("#run-detail-autoscroll");
     if (auto && auto.checked && !state.userScrolledDiagnostics) {
       list.scrollTop = list.scrollHeight;
     }

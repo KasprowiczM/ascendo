@@ -4,19 +4,29 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Ascendo - Unified Updates</title>
-  <!-- Pin the dark theme synchronously before paint to avoid the first-frame
-       flash of the design system's light default when localStorage already
-       holds a user preference. -->
+  <!-- Pin the chosen theme synchronously before paint. "auto" resolves
+       against the OS via prefers-color-scheme. The data-theme attribute
+       drives CSS (always dark/light); data-theme-pref preserves the
+       user's intent (dark/light/auto) so the topbar cycle resumes from
+       the choice they made. Falls back to legacy ascendo_theme key for
+       installs upgraded mid-session-17. -->
   <script>
     (function () {
       try {
-        var pref = localStorage.getItem("ui-theme");
-        // Treat legacy "auto" as a fresh install -> default to dark.
-        if (!pref || pref === "auto") pref = "dark";
-        document.documentElement.dataset.theme = pref;
+        var pref = localStorage.getItem("ui-theme")
+                || localStorage.getItem("ascendo_theme")
+                || "dark";
+        if (pref !== "dark" && pref !== "light" && pref !== "auto") pref = "dark";
         document.documentElement.dataset.themePref = pref;
+        var resolved = pref;
+        if (pref === "auto") {
+          resolved = (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches)
+            ? "light" : "dark";
+        }
+        document.documentElement.dataset.theme = resolved;
       } catch (_) {
         document.documentElement.dataset.theme = "dark";
+        document.documentElement.dataset.themePref = "dark";
       }
     })();
   </script>

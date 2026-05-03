@@ -240,18 +240,23 @@ import json as _json  # local alias so the new helper is self-contained
 
 
 def _latest_check_overlay(runs_dir: Path, category: str) -> dict[str, dict[str, Any]]:
-    """Return ``{name: {installed, candidate, status}}`` from the latest
+    """Return ``{name|id: {installed, candidate, status}}`` from the latest
     successful check sidecar for ``category``, or ``{}`` if none exists.
 
     Bounded scan (latest 50 runs) so a long-lived install with hundreds
     of historical runs doesn't pay an O(N) glob on every request.
+
+    Sidecar layout (the orchestrator writes flat by default; some legacy
+    paths write nested per-source dirs — we accept both):
+
+      flat:   <runs_dir>/<run-id>/check__<category>.json
+      nested: <runs_dir>/<run-id>/<category>/check__<category>.json
     """
     if not isinstance(runs_dir, Path):
         runs_dir = Path(runs_dir)
     if not runs_dir.is_dir():
         return {}
     candidates: list[tuple[float, Path]] = []
-    # runs_dir layout: <runs_dir>/<run-id>/<category>/check__<category>.json
     try:
         run_dirs = sorted(
             (p for p in runs_dir.iterdir() if p.is_dir()),
@@ -261,12 +266,17 @@ def _latest_check_overlay(runs_dir: Path, category: str) -> dict[str, dict[str, 
     except OSError:
         return {}
     for run_dir in run_dirs:
-        sidecar = run_dir / category / f"check__{category}.json"
-        if sidecar.is_file():
-            try:
-                candidates.append((sidecar.stat().st_mtime, sidecar))
-            except OSError:
-                continue
+        # Check both layouts; flat wins if both exist (it's the canonical
+        # orchestrator output).
+        for sidecar in (
+            run_dir / f"check__{category}.json",
+            run_dir / category / f"check__{category}.json",
+        ):
+            if sidecar.is_file():
+                try:
+                    candidates.append((sidecar.stat().st_mtime, sidecar))
+                except OSError:
+                    continue
     if not candidates:
         return {}
     candidates.sort(reverse=True)
@@ -283,11 +293,30 @@ def _latest_check_overlay(runs_dir: Path, category: str) -> dict[str, dict[str, 
         name = it.get("name") or it.get("id")
         if not name:
             continue
-        overlay[str(name)] = {
-            "installed": it.get("installed") or it.get("current_version"),
-            "candidate": it.get("candidate") or it.get("target_version"),
+        installed = (it.get("installed")
+                     or it.get("current_version")
+                     or it.get("currentVersion"))
+        candidate = (it.get("candidate")
+                     or it.get("target_version")
+                     or it.get("targetVersion"))
+        # Some scripts write the literal string "Unknown" as the version
+        # (e.g. MEGAsync). Treat that as missing so the SPA renders "—"
+        # instead of misleading the user.
+        if isinstance(installed, str) and installed.strip().lower() in {"", "unknown"}:
+            installed = None
+        if isinstance(candidate, str) and candidate.strip().lower() in {"", "unknown"}:
+            candidate = None
+        record: dict[str, Any] = {
+            "installed": installed,
+            "candidate": candidate,
             "status": it.get("status"),
         }
+        # Index by both name AND id so the inventory lookup hits whichever
+        # field the inventory item carries (display name vs winget Id).
+        overlay[str(name)] = record
+        item_id = it.get("id")
+        if item_id and str(item_id) != str(name):
+            overlay[str(item_id)] = record
     return overlay
 
 
@@ -307,7 +336,10 @@ def _enrich_items(items: list[dict[str, Any]], category: str, runs_dir: Path | N
     for it in items:
         out = dict(it)
         name = out.get("name", "")
-        hit = overlay.get(name)
+        # The overlay is keyed by both name and id, so try name first
+        # (inventory's `name` is usually a display name) then any id-shaped
+        # field the inventory item happens to carry.
+        hit = overlay.get(name) or overlay.get(out.get("id", "")) or overlay.get(out.get("vendor", ""))
         if hit:
             if hit.get("installed") is not None:
                 out["installed"] = hit["installed"]
