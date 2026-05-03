@@ -53,13 +53,25 @@ def _bufdir(arg: str) -> Path:
 
 
 def _read_jsonl(path: Path) -> list[dict]:
+    """Read JSONL file, skipping any malformed lines with a stderr warning.
+
+    A truncated last line from a SIGKILL'd writer is the canonical failure
+    mode this guards against -- we'd rather lose one item than the whole phase.
+    """
     if not path.exists():
         return []
-    out = []
+    out: list[dict] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
-        if line:
+        if not line:
+            continue
+        try:
             out.append(json.loads(line))
+        except json.JSONDecodeError:
+            print(
+                f"_read_jsonl: skipping malformed line in {path}",
+                file=sys.stderr,
+            )
     return out
 
 

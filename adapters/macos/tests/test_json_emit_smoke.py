@@ -141,3 +141,66 @@ def test_finalize_round_trips_through_pydantic(tmp_path: Path) -> None:
     assert sc.category.value == "brew"
     assert len(sc.items) == 1
     assert sc.items[0].id == "node"
+
+
+def test_finalize_tolerates_truncated_jsonl(tmp_path: Path) -> None:
+    """A SIGKILL'd phase script can leave a partial JSON object on the last
+    line of items.jsonl. Finalize must skip the bad line, surface a warning
+    on stderr, and produce a valid sidecar with the intact items.
+    """
+    bufdir = tmp_path / "buf"
+    out = tmp_path / "check__brew.json"
+
+    _run([
+        "init", "--bufdir", str(bufdir),
+        "--phase", "check", "--category", "brew",
+        "--run-id", "00000000-0000-0000-0000-000000000007",
+        "--trigger", "cli", "--profile-name", "default",
+        "--tool-name", "brew", "--tool-version", "4.4.0",
+        "--started-at", "2026-05-03T12:00:00Z",
+        "--host-name", "macbook.local",
+        "--host-os", "macos",
+        "--host-os-version", "14.5",
+        "--host-arch", "arm64",
+        "--host-user", "mk",
+        "--host-is-elevated", "false",
+    ], cwd=tmp_path)
+
+    _run([
+        "add-item", "--bufdir", str(bufdir),
+        "--id", "node",
+        "--current-version", "20.10.0",
+        "--target-version", "21.0.0",
+        "--status", "planned",
+        "--source-type", "brew",
+        "--source-feed", "formula",
+    ], cwd=tmp_path)
+
+    # Corrupt the file by appending a truncated half-line -- simulates the
+    # write being interrupted mid-JSON.
+    items_path = bufdir / "items.jsonl"
+    with items_path.open("a", encoding="utf-8") as fh:
+        fh.write('{"id": "git", "status": "plan')   # no closing brace, no newline
+
+    res = _run([
+        "finalize", "--bufdir", str(bufdir),
+        "--out", str(out),
+        "--exit-code", "0",
+        "--ended-at", "2026-05-03T12:00:01Z",
+    ], cwd=tmp_path)
+    assert res.returncode == 0, res.stderr
+    assert out.is_file()
+
+    # The truncated line must be skipped and the warning must surface on stderr.
+    assert "skipping malformed" in (res.stderr or ""), \
+        f"expected truncated-line warning on stderr; got: {res.stderr!r}"
+
+    # Round-trip must still succeed with the one good item.
+    sys.path.insert(0, str(ADAPTER_ROOT.parent.parent / "core"))
+    try:
+        from ascendo.models.sidecar import parse_sidecar
+        sc = parse_sidecar(out.read_text())
+    finally:
+        sys.path.pop(0)
+    assert len(sc.items) == 1
+    assert sc.items[0].id == "node"
