@@ -1156,3 +1156,54 @@ td.duration, td.eta { font-family: var(--font-mono); font-size: var(--fs-xs); co
 .st-skip::before  { background: var(--fg-faint); }
 .st-info  { background: var(--info-bg); color: var(--info); }
 .st-info::before  { background: var(--info); }
+
+
+/* Run Center: collapsible raw event log under the structured detail panel.
+   Geek-friendly fallback so power users still get the line-by-line stream. */
+.live-log-wrap { margin-top: 0.8rem; }
+.live-log-wrap > summary { cursor: pointer; padding: 0.4rem 0.6rem; background: var(--bg-elev); border-radius: 6px; font-size: 0.85rem; color: var(--fg-muted); user-select: none; }
+.live-log-wrap > summary:hover { color: var(--fg); }
+.live-log-wrap[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.live-log-wrap > pre#live-log { margin: 0; max-height: 40vh; overflow: auto; background: #0a0d12; color: #cdd2e0; padding: 0.8rem; border-radius: 0 0 6px 6px; font-family: var(--mono, monospace); font-size: 12px; white-space: pre-wrap; }
+
+/* Per-tab inline help panels. Each view has a collapsible "How this works"
+   section at the top with a summary sentence and 4+ bullet points. */
+.tab-help {
+  margin-bottom: 1rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--bg-elev);
+  border-left: 3px solid var(--accent);
+  font-size: 0.85rem;
+}
+.tab-help > p {
+  margin: 0 0 0.3rem;
+  font-weight: 500;
+  color: var(--fg);
+}
+.tab-help > details {
+  margin-top: 0.5rem;
+}
+.tab-help > details > summary {
+  cursor: pointer;
+  padding: 0.3rem 0;
+  color: var(--accent-fg);
+  font-weight: 500;
+  user-select: none;
+}
+.tab-help > details > summary:hover {
+  text-decoration: underline;
+}
+.tab-help > details > ul {
+  margin: 0.5rem 0 0 1.2rem;
+  padding: 0;
+  list-style: none;
+}
+.tab-help > details > ul > li {
+  margin: 0.3rem 0;
+  line-height: 1.35;
+  color: var(--fg-muted);
+}
+.tab-help > details > ul > li > b {
+  color: var(--fg);
+  font-weight: 600;
+}

@@ -130,6 +130,19 @@
                 style="margin-left:auto;font-size:0.8rem"
                 data-i18n="overview.refresh">Refresh</button>
       </h2>
+      <section class="tab-help card" style="margin-bottom:1rem">
+        <p data-i18n="overview.help_summary"></p>
+        <details style="margin-top:0.5rem">
+          <summary data-i18n="overview.help_details_label"></summary>
+          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
+            <li><b data-i18n="overview.help_li1_b"></b> <span data-i18n="overview.help_li1_t"></span></li>
+            <li><b data-i18n="overview.help_li2_b"></b> <span data-i18n="overview.help_li2_t"></span></li>
+            <li><b data-i18n="overview.help_li3_b"></b> <span data-i18n="overview.help_li3_t"></span></li>
+            <li><b data-i18n="overview.help_li4_b"></b> <span data-i18n="overview.help_li4_t"></span></li>
+            <li><b data-i18n="overview.help_li5_b"></b> <span data-i18n="overview.help_li5_t"></span></li>
+          </ul>
+        </details>
+      </section>
       <div class="grid">
         <div class="card">
           <h3 data-i18n="overview.last_run">Last run</h3>
@@ -189,6 +202,18 @@
                 style="margin-left:auto;font-size:0.8rem"
                 data-i18n="overview.refresh">Refresh</button>
       </h2>
+      <section class="tab-help card" style="margin-bottom:1rem">
+        <p data-i18n="apps.help_summary"></p>
+        <details style="margin-top:0.5rem">
+          <summary data-i18n="apps.help_details_label"></summary>
+          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
+            <li><b data-i18n="apps.help_li1_b"></b> <span data-i18n="apps.help_li1_t"></span></li>
+            <li><b data-i18n="apps.help_li2_b"></b> <span data-i18n="apps.help_li2_t"></span></li>
+            <li><b data-i18n="apps.help_li3_b"></b> <span data-i18n="apps.help_li3_t"></span></li>
+            <li><b data-i18n="apps.help_li4_b"></b> <span data-i18n="apps.help_li4_t"></span></li>
+          </ul>
+        </details>
+      </section>
       <p class="dim" data-i18n="apps.hint">
         Compare what is installed on this machine with what's tracked in
         config/*.list. Add detected packages to make them part of every
@@ -201,6 +226,19 @@
     <!-- Categories -->
     <section id="view-categories" class="view hidden">
       <h2 data-i18n="categories.title">Categories</h2>
+      <section class="tab-help card" style="margin-bottom:1rem">
+        <p data-i18n="categories.help_summary"></p>
+        <details style="margin-top:0.5rem">
+          <summary data-i18n="categories.help_details_label"></summary>
+          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
+            <li><b data-i18n="categories.help_li1_b"></b> <span data-i18n="categories.help_li1_t"></span></li>
+            <li><b data-i18n="categories.help_li2_b"></b> <span data-i18n="categories.help_li2_t"></span></li>
+            <li><b data-i18n="categories.help_li3_b"></b> <span data-i18n="categories.help_li3_t"></span></li>
+            <li><b data-i18n="categories.help_li4_b"></b> <span data-i18n="categories.help_li4_t"></span></li>
+            <li><b data-i18n="categories.help_li5_b"></b> <span data-i18n="categories.help_li5_t"></span></li>
+          </ul>
+        </details>
+      </section>
       <p class="dim" data-i18n="categories.hint">Click a row to expand. Each
         category supports add/remove of packages from your config and runs the
         5 phases independently.</p>
@@ -229,6 +267,19 @@
     <!-- Run Center -->
     <section id="view-run" class="view hidden">
       <h2 data-i18n="run.title">Run Center</h2>
+      <section class="tab-help card" style="margin-bottom:1rem">
+        <p data-i18n="run.help_summary"></p>
+        <details style="margin-top:0.5rem">
+          <summary data-i18n="run.help_details_label"></summary>
+          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
+            <li><b data-i18n="run.help_li1_b"></b> <span data-i18n="run.help_li1_t"></span></li>
+            <li><b data-i18n="run.help_li2_b"></b> <span data-i18n="run.help_li2_t"></span></li>
+            <li><b data-i18n="run.help_li3_b"></b> <span data-i18n="run.help_li3_t"></span></li>
+            <li><b data-i18n="run.help_li4_b"></b> <span data-i18n="run.help_li4_t"></span></li>
+            <li><b data-i18n="run.help_li5_b"></b> <span data-i18n="run.help_li5_t"></span></li>
+          </ul>
+        </details>
+      </section>
       <form id="run-form">
         <label><span data-i18n="run.profile">Profile</span>
           <select name="profile" id="profile-select"></select>
@@ -307,12 +358,32 @@
           </section>
         </div>
       </section>
-      <pre id="live-log"></pre>
+      <!-- Raw event stream (collapsible). The structured detail panel above
+           is the geek-friendly UX; this <pre> is the engineer-friendly raw
+           text that tails every SSE event line-by-line. Collapsed by default
+           so normal users see only the structured view; geeks click to
+           expand. -->
+      <details id="live-log-wrap" class="live-log-wrap">
+        <summary data-i18n="run.raw_log_label">Raw event log (click to expand)</summary>
+        <pre id="live-log"></pre>
+      </details>
     </section>
 
     <!-- History -->
     <section id="view-history" class="view hidden">
       <h2 data-i18n="history.title">History</h2>
+      <section class="tab-help card" style="margin-bottom:1rem">
+        <p data-i18n="history.help_summary"></p>
+        <details style="margin-top:0.5rem">
+          <summary data-i18n="history.help_details_label"></summary>
+          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
+            <li><b data-i18n="history.help_li1_b"></b> <span data-i18n="history.help_li1_t"></span></li>
+            <li><b data-i18n="history.help_li2_b"></b> <span data-i18n="history.help_li2_t"></span></li>
+            <li><b data-i18n="history.help_li3_b"></b> <span data-i18n="history.help_li3_t"></span></li>
+            <li><b data-i18n="history.help_li4_b"></b> <span data-i18n="history.help_li4_t"></span></li>
+          </ul>
+        </details>
+      </section>
       <p id="history-eta" class="dim" style="font-size:0.82rem"></p>
       <table id="history-table">
         <thead><tr>
@@ -335,6 +406,18 @@
         <select id="logs-run-select" style="margin-left:auto;font-size:0.85rem;min-width:18rem"></select>
         <button id="logs-refresh-btn" class="secondary" style="font-size:0.8rem">Refresh</button>
       </h2>
+      <section class="tab-help card" style="margin-bottom:1rem">
+        <p data-i18n="logs.help_summary"></p>
+        <details style="margin-top:0.5rem">
+          <summary data-i18n="logs.help_details_label"></summary>
+          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
+            <li><b data-i18n="logs.help_li1_b"></b> <span data-i18n="logs.help_li1_t"></span></li>
+            <li><b data-i18n="logs.help_li2_b"></b> <span data-i18n="logs.help_li2_t"></span></li>
+            <li><b data-i18n="logs.help_li3_b"></b> <span data-i18n="logs.help_li3_t"></span></li>
+            <li><b data-i18n="logs.help_li4_b"></b> <span data-i18n="logs.help_li4_t"></span></li>
+          </ul>
+        </details>
+      </section>
       <p class="dim" data-i18n="logs.hint_intro">
         Pick a run from the dropdown above to inspect every phase. Click a phase
         row for the full plain-text log; click the JSON link to see the sidecar.
@@ -349,6 +432,19 @@
     <!-- Sync -->
     <section id="view-sync" class="view hidden">
       <h2 data-i18n="sync.title">Sync</h2>
+      <section class="tab-help card" style="margin-bottom:1rem">
+        <p data-i18n="sync.help_summary"></p>
+        <details style="margin-top:0.5rem">
+          <summary data-i18n="sync.help_details_label"></summary>
+          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
+            <li><b data-i18n="sync.help_li1_b"></b> <span data-i18n="sync.help_li1_t"></span></li>
+            <li><b data-i18n="sync.help_li2_b"></b> <span data-i18n="sync.help_li2_t"></span></li>
+            <li><b data-i18n="sync.help_li3_b"></b> <span data-i18n="sync.help_li3_t"></span></li>
+            <li><b data-i18n="sync.help_li4_b"></b> <span data-i18n="sync.help_li4_t"></span></li>
+            <li><b data-i18n="sync.help_li5_b"></b> <span data-i18n="sync.help_li5_t"></span></li>
+          </ul>
+        </details>
+      </section>
       <div class="grid">
         <div class="card">
           <h3 data-i18n="sync.git">Git</h3>
@@ -448,6 +544,18 @@
         <button id="suggest-refresh-btn" class="secondary" style="margin-left:auto;font-size:0.8rem"
                 data-i18n="suggest.btn_refresh">Re-analyse</button>
       </h2>
+      <section class="tab-help card" style="margin-bottom:1rem">
+        <p data-i18n="suggest.help_summary"></p>
+        <details style="margin-top:0.5rem">
+          <summary data-i18n="suggest.help_details_label"></summary>
+          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
+            <li><b data-i18n="suggest.help_li1_b"></b> <span data-i18n="suggest.help_li1_t"></span></li>
+            <li><b data-i18n="suggest.help_li2_b"></b> <span data-i18n="suggest.help_li2_t"></span></li>
+            <li><b data-i18n="suggest.help_li3_b"></b> <span data-i18n="suggest.help_li3_t"></span></li>
+            <li><b data-i18n="suggest.help_li4_b"></b> <span data-i18n="suggest.help_li4_t"></span></li>
+          </ul>
+        </details>
+      </section>
       <p class="dim" data-i18n="suggest.hint">
         Heuristic + optional AI advice based on your inventory and run history.
         Always shown as a diff - nothing is applied without your click.
@@ -490,6 +598,18 @@
     <!-- Hosts -->
     <section id="view-hosts" class="view hidden">
       <h2 data-i18n="hosts.title">Hosts</h2>
+      <section class="tab-help card" style="margin-bottom:1rem">
+        <p data-i18n="hosts.help_summary"></p>
+        <details style="margin-top:0.5rem">
+          <summary data-i18n="hosts.help_details_label"></summary>
+          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
+            <li><b data-i18n="hosts.help_li1_b"></b> <span data-i18n="hosts.help_li1_t"></span></li>
+            <li><b data-i18n="hosts.help_li2_b"></b> <span data-i18n="hosts.help_li2_t"></span></li>
+            <li><b data-i18n="hosts.help_li3_b"></b> <span data-i18n="hosts.help_li3_t"></span></li>
+            <li><b data-i18n="hosts.help_li4_b"></b> <span data-i18n="hosts.help_li4_t"></span></li>
+          </ul>
+        </details>
+      </section>
       <p class="dim">
         <span data-i18n="hosts.hint">Read-only SSH preflight across machines in</span>
         <code>config/hosts.toml</code>.
@@ -544,6 +664,19 @@
     <!-- Settings -->
     <section id="view-settings" class="view hidden">
       <h2 data-i18n="settings.title">Settings</h2>
+      <section class="tab-help card" style="margin-bottom:1rem">
+        <p data-i18n="settings.help_summary"></p>
+        <details style="margin-top:0.5rem">
+          <summary data-i18n="settings.help_details_label"></summary>
+          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
+            <li><b data-i18n="settings.help_li1_b"></b> <span data-i18n="settings.help_li1_t"></span></li>
+            <li><b data-i18n="settings.help_li2_b"></b> <span data-i18n="settings.help_li2_t"></span></li>
+            <li><b data-i18n="settings.help_li3_b"></b> <span data-i18n="settings.help_li3_t"></span></li>
+            <li><b data-i18n="settings.help_li4_b"></b> <span data-i18n="settings.help_li4_t"></span></li>
+            <li><b data-i18n="settings.help_li5_b"></b> <span data-i18n="settings.help_li5_t"></span></li>
+          </ul>
+        </details>
+      </section>
       <form id="settings-form">
         <div class="grid">
           <div class="card">
@@ -668,6 +801,18 @@
     <!-- Help -->
     <section id="view-help" class="view hidden">
       <h2 data-i18n="help.title">Help</h2>
+      <section class="tab-help card" style="margin-bottom:1rem">
+        <p data-i18n="help.help_summary"></p>
+        <details style="margin-top:0.5rem">
+          <summary data-i18n="help.help_details_label"></summary>
+          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
+            <li><b data-i18n="help.help_li1_b"></b> <span data-i18n="help.help_li1_t"></span></li>
+            <li><b data-i18n="help.help_li2_b"></b> <span data-i18n="help.help_li2_t"></span></li>
+            <li><b data-i18n="help.help_li3_b"></b> <span data-i18n="help.help_li3_t"></span></li>
+            <li><b data-i18n="help.help_li4_b"></b> <span data-i18n="help.help_li4_t"></span></li>
+          </ul>
+        </details>
+      </section>
       <p class="dim" data-i18n="help.intro">Everything you need to use Ascendo:
         installation, every script and what it does, configuration, and recovery.</p>
 
@@ -882,6 +1027,18 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
     <!-- About -->
     <section id="view-about" class="view hidden">
       <h2 data-i18n="about.title">About Ascendo</h2>
+      <section class="tab-help card" style="margin-bottom:1rem">
+        <p data-i18n="about.help_summary"></p>
+        <details style="margin-top:0.5rem">
+          <summary data-i18n="about.help_details_label"></summary>
+          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
+            <li><b data-i18n="about.help_li1_b"></b> <span data-i18n="about.help_li1_t"></span></li>
+            <li><b data-i18n="about.help_li2_b"></b> <span data-i18n="about.help_li2_t"></span></li>
+            <li><b data-i18n="about.help_li3_b"></b> <span data-i18n="about.help_li3_t"></span></li>
+            <li><b data-i18n="about.help_li4_b"></b> <span data-i18n="about.help_li4_t"></span></li>
+          </ul>
+        </details>
+      </section>
       <div class="grid">
         <div class="card">
           <h3 data-i18n="about.app">Application</h3>

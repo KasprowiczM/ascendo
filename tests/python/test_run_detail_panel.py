@@ -23,15 +23,19 @@ class TestRunDetailPanel(unittest.TestCase):
 
     def test_index_has_run_detail_panel(self):
         text = (ROOT / "index.html").read_text(encoding="utf-8")
-        # Must live INSIDE the existing #view-run section.
+        # Must come AFTER the existing #view-run section start. Don't
+        # try to find #view-run's matching closing </section> by string
+        # search — the section now contains nested <section> elements
+        # (the per-tab help panel + the run-detail panel itself), so
+        # the first </section> match is one of those, not view-run's.
         view_start = text.find('id="view-run"')
-        view_end = text.find("</section>", view_start)
         self.assertGreater(view_start, -1, "missing #view-run section")
         panel_idx = text.find('id="run-detail-panel"')
-        self.assertGreater(panel_idx, view_start)
-        # The panel should appear AFTER the existing summary card, not
-        # before (the user wants summary on top, detail below).
-        prog_idx = text.find('id="run-progress"', view_start, view_end)
+        self.assertGreater(panel_idx, view_start,
+                           "run-detail panel must come after #view-run starts")
+        # Existing summary card must still be present and come BEFORE
+        # the live-detail panel.
+        prog_idx = text.find('id="run-progress"')
         self.assertGreater(prog_idx, -1, "missing existing #run-progress card")
         self.assertGreater(panel_idx, prog_idx,
                            "live-detail panel must render BELOW #run-progress")
