@@ -301,9 +301,48 @@ try {
         $emitted++
     }
 
-    # 6. Phase-level info message.
+    # 6a. Enumerate installed updates so the Categories tab shows "what
+    # patches are already on this machine" — without this, the row was
+    # always empty when the user was fully patched. Get-HotFix is a
+    # built-in cmdlet (no PSWindowsUpdate dependency) and lists every KB
+    # in HKLM\Software\Microsoft\Windows\CurrentVersion\Component Based
+    # Servicing\Packages.
+    $emittedKbs = @{}
+    foreach ($u in $pending) {
+        if ($u -and $u.KB) { $emittedKbs[[string]$u.KB] = $true }
+    }
+    $installedCount = 0
+    try {
+        $installed = @(Get-HotFix -ErrorAction Stop)
+    } catch {
+        $installed = @()
+        Add-SidecarMessage -Sidecar $sidecar -Level 'warn' `
+            -Text ("Get-HotFix failed (no installed-history listing): {0}" -f $_.Exception.Message)
+    }
+    foreach ($hf in $installed) {
+        if (-not $hf -or -not $hf.HotFixID) { continue }
+        $kb = [string]$hf.HotFixID
+        if ($emittedKbs.ContainsKey($kb)) { continue }
+        if ($null -ne $itemFilterArray -and ($itemFilterArray -notcontains $kb)) { continue }
+        $name = if ($hf.Description) { ('{0} — {1}' -f $kb, $hf.Description) } else { $kb }
+        $iso = if ($hf.InstalledOn) { ([datetime]$hf.InstalledOn).ToString('yyyy-MM-dd') } else { $null }
+        $itemArgs = @{
+            Sidecar        = $sidecar
+            Id             = $kb
+            Name           = $name
+            Category       = 'windows_update'
+            SourceType     = 'windows_update'
+            Status         = 'up_to_date'
+        }
+        if ($iso) { $itemArgs['CurrentVersion'] = $iso }
+        [void](Add-SidecarItem @itemArgs)
+        $installedCount++
+        $emittedKbs[$kb] = $true
+    }
+
+    # 6b. Phase-level info message.
     Add-SidecarMessage -Sidecar $sidecar -Level 'info' `
-        -Text ('Found {0} pending Windows update(s).' -f $emitted)
+        -Text ('Found {0} pending and {1} installed Windows update(s).' -f $emitted, $installedCount)
 
     if ($null -ne $itemFilterArray) {
         Add-SidecarMessage -Sidecar $sidecar -Level 'info' `

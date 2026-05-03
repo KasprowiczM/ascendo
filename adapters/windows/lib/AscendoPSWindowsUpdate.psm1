@@ -184,14 +184,14 @@ function Get-PendingWindowsUpdates {
 
     if (-not (Test-PSWindowsUpdateAvailable)) {
         Write-Verbose 'Get-PendingWindowsUpdates: PSWindowsUpdate not installed; returning @()'
-        return ,@()
+        return  # was `return ,@()` — see Stop-PackageProcesses comment
     }
 
     try {
         Import-Module PSWindowsUpdate -Force -ErrorAction Stop | Out-Null
     } catch {
         Write-Verbose "Get-PendingWindowsUpdates: Import-Module failed: $_"
-        return ,@()
+        return  # was `return ,@()` — see Stop-PackageProcesses comment
     }
 
     $raw = $null
@@ -202,11 +202,11 @@ function Get-PendingWindowsUpdates {
         $raw = @(Get-WindowsUpdate -AcceptAll -Confirm:$false -ErrorAction Stop 2>$null)
     } catch {
         Write-Verbose "Get-PendingWindowsUpdates: scan failed: $_"
-        return ,@()
+        return  # was `return ,@()` — see Stop-PackageProcesses comment
     }
 
     if (-not $raw -or $raw.Count -eq 0) {
-        return ,@()
+        return  # was `return ,@()` — see Stop-PackageProcesses comment
     }
 
     $rows = New-Object System.Collections.Generic.List[object]
@@ -284,14 +284,14 @@ function Install-WindowsUpdateBatch {
 
     if (-not (Test-PSWindowsUpdateAvailable)) {
         Write-Verbose 'Install-WindowsUpdateBatch: PSWindowsUpdate not installed; returning @()'
-        return ,@()
+        return  # was `return ,@()` — see Stop-PackageProcesses comment
     }
 
     try {
         Import-Module PSWindowsUpdate -Force -ErrorAction Stop | Out-Null
     } catch {
         Write-Verbose "Install-WindowsUpdateBatch: Import-Module failed: $_"
-        return ,@()
+        return  # was `return ,@()` — see Stop-PackageProcesses comment
     }
 
     # Normalise KB filter: 'KB5034441' -> '5034441' (PSWindowsUpdate's
@@ -326,11 +326,11 @@ function Install-WindowsUpdateBatch {
         $raw = @(Install-WindowsUpdate @installArgs 2>$null)
     } catch {
         Write-Verbose "Install-WindowsUpdateBatch: install failed: $_"
-        return ,@()
+        return  # was `return ,@()` — see Stop-PackageProcesses comment
     }
 
     if (-not $raw -or $raw.Count -eq 0) {
-        return ,@()
+        return  # was `return ,@()` — see Stop-PackageProcesses comment
     }
 
     # Deduplicate by KB id; PSWindowsUpdate fires the result callback once

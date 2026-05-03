@@ -309,7 +309,15 @@ function Stop-PackageProcesses {
 
     if (-not $script:APP_PROCESS_MAP.Contains($PackageId)) {
         Write-Verbose "Stop-PackageProcesses: '$PackageId' not in APP_PROCESS_MAP; nothing to do."
-        return ,@()
+        # NOTE: ``return ,@()`` (unary-comma wrap) breaks every caller that
+        # does ``$x = @(Stop-PackageProcesses ...)`` because @() re-wraps the
+        # already-wrapped empty array, yielding a 1-element array whose
+        # single element is @() — and the downstream
+        # ``Where-Object { $_.Stopped }`` then dereferences ``.Stopped`` on
+        # an empty array, throwing "the property 'Stopped' cannot be
+        # found". Plain ``return`` avoids both the over-wrap AND the
+        # auto-unwrap (the function declares OutputType[Object[]]).
+        return
     }
 
     $procNames = $script:APP_PROCESS_MAP[$PackageId]
@@ -358,7 +366,9 @@ function Stop-PackageProcesses {
         }
     }
 
-    return ,$results.ToArray()
+    # Plain return — caller wraps via ``@(Stop-PackageProcesses ...)`` so
+    # we don't comma-wrap and accidentally yield a nested array.
+    return $results.ToArray()
 }
 
 function Uninstall-PackageViaRegistry {

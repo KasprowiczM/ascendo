@@ -94,7 +94,11 @@ try {
     try {
         $allUpg = @(Get-WingetUpgradable -ErrorAction Stop)
         $upgradable = @($allUpg | Where-Object {
-            $_.PSObject.Properties['Source'] -and $_.Source -and ($_.Source -ieq 'msstore')
+            # Match the inventory bucketing: include rows whose Source column says
+            # 'msstore' AND rows whose Id starts with 'MSIX' (Store-installed
+            # MSIX bundles often lack the Source attribute).
+            ($_.PSObject.Properties['Source'] -and $_.Source -and ($_.Source -ieq 'msstore')) `
+            -or ($_.PSObject.Properties['Id'] -and $_.Id -and ([string]$_.Id).StartsWith('MSIX\'))
         })
     } catch {
         Add-SidecarMessage -Sidecar $sidecar -Level 'warn' `
@@ -104,7 +108,9 @@ try {
     try {
         $allInst = @(Get-WingetInstalled -ErrorAction Stop)
         $installed = @($allInst | Where-Object {
-            $_.PSObject.Properties['Source'] -and $_.Source -and ($_.Source -ieq 'msstore')
+            # Same dual-rule as upgradable: Source='msstore' OR Id starts 'MSIX'.
+            ($_.PSObject.Properties['Source'] -and $_.Source -and ($_.Source -ieq 'msstore')) `
+            -or ($_.PSObject.Properties['Id'] -and $_.Id -and ([string]$_.Id).StartsWith('MSIX\'))
         })
     } catch {
         Add-SidecarMessage -Sidecar $sidecar -Level 'warn' `
