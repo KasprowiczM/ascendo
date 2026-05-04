@@ -257,3 +257,66 @@ def test_elevation_invalidate_no_elevation_adapter(client_no_elev: TestClient) -
     """No IElevation -> 503."""
     r = client_no_elev.post("/elevation/invalidate")
     assert r.status_code == 503
+
+
+# ── Extra coverage for _elevation_or_503 branches ────────────────────────────
+
+
+def test_endpoints_503_when_no_adapter_configured(tmp_path: Path) -> None:
+    """When the dashboard has no adapter at all, /elevation/* endpoints return
+    503 with 'no adapter configured' in the detail string."""
+    app = create_app(adapter=None, runs_dir=tmp_path)
+    # Inject None explicitly so the lifespan discovery path is bypassed.
+    app.state.adapter = None
+    client = TestClient(app, raise_server_exceptions=False)
+
+    r = client.get("/elevation/status")
+    assert r.status_code == 503
+    assert "no adapter configured" in r.json()["detail"].lower()
+
+
+def test_endpoints_503_when_elevation_lacks_askpass_methods(tmp_path: Path) -> None:
+    """An IElevation impl that only satisfies the ABC (no password-registration
+    methods) returns 503 instead of AttributeError at request time."""
+
+    class _MinimalElevation(IElevation):
+        """Implements only the IElevation ABC surface — no askpass extras."""
+
+        @property
+        def available_methods(self) -> tuple[ElevationMethod, ...]:
+            return (ElevationMethod.SUDO,)
+
+        def is_currently_elevated(self, host: HostInfo) -> bool:
+            return False
+
+        def register_allowlist(self, allowed_commands) -> None:
+            pass
+
+        def run(self, host: HostInfo, argv, **kwargs) -> ElevationResult:
+            raise NotImplementedError
+
+    class _AdapterMinimalElev(_BaseAdapter):
+        _elev = _MinimalElevation()
+
+        def elevation(self) -> IElevation | None:
+            return self._elev
+
+    app = create_app(adapter=_AdapterMinimalElev(), runs_dir=tmp_path)
+    client = TestClient(app)
+
+    for method, path, payload in [
+        ("GET", "/elevation/status", None),
+        ("POST", "/elevation/auth", {"password": "x"}),
+        ("POST", "/elevation/invalidate", None),
+    ]:
+        if method == "GET":
+            r = client.get(path)
+        elif payload is not None:
+            r = client.post(path, json=payload)
+        else:
+            r = client.post(path)
+        assert r.status_code == 503, f"{method} {path} returned {r.status_code}"
+        detail = r.json()["detail"].lower()
+        assert "password registration" in detail or "missing" in detail, (
+            f"unexpected detail for {method} {path}: {r.json()['detail']}"
+        )

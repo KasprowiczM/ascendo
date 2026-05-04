@@ -62,19 +62,39 @@ def _elevation_or_503(request: Request):
     """Return the IElevation instance or raise 503.
 
     Raises:
-        HTTPException(503): when the adapter is None or has no IElevation.
+        HTTPException(503): when the adapter is None, has no IElevation, or
+            the IElevation backend lacks the password-registration methods
+            required by this router (has_password_registered, register_password,
+            invalidate). Future non-macOS implementations (Windows UAC, Linux
+            pkexec) satisfy IElevation but do not have these methods; checking
+            here avoids an AttributeError at request time. Importing the
+            concrete MacElevation class is intentionally avoided to preserve
+            the ADR-0005 layer-5 import boundary.
     """
     adapter = getattr(request.app.state, "adapter", None)
     if adapter is None:
         raise HTTPException(
             status_code=503,
-            detail="No adapter installed for this OS.",
+            detail="no adapter configured",
         )
     elev = adapter.elevation()
     if elev is None:
         raise HTTPException(
             status_code=503,
             detail="This adapter does not support elevation management.",
+        )
+    # The dashboard askpass flow requires three methods beyond the IElevation
+    # ABC (has_password_registered, register_password, invalidate). Duck-type
+    # check so non-macOS adapters get a clean 503 instead of AttributeError.
+    required = ("has_password_registered", "register_password", "invalidate")
+    missing = [m for m in required if not callable(getattr(elev, m, None))]
+    if missing:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "elevation backend does not support password registration: "
+                f"missing {', '.join(missing)}"
+            ),
         )
     return elev
 
