@@ -14,6 +14,10 @@
 #   4-7. (reserved for future stages)
 #   8. mas + dashboard askpass round-trip (M5.2): doctor reports mas,
 #      five-phase mas contract, /elevation/auth + /elevation/status cycle
+#   9. LaunchServices inventory (M5.3): doctor reports system_profiler,
+#      list.sh end-to-end produces sidecar with 50+ apps, classification
+#      distribution sanity (system/mas/brew/web), MacOSAdapter.inventory()
+#      Python wrapper
 #
 # Exits 0 on full success, 1 with [FAIL] count otherwise.
 # Final line on success: ALL CHECKS PASSED.
@@ -475,6 +479,9 @@ else
     printf '%s\n' "$PY_INV_OUT" >&2
     result "9.4 MacOSAdapter.inventory() end-to-end" 0 "see above"
 fi
+
+# Cleanup Stage 9 temp dir
+[ -n "${INV_DIR:-}" ] && [ -d "$INV_DIR" ] && rm -rf "$INV_DIR"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 printf "\n"
