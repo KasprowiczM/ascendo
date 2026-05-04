@@ -6,6 +6,110 @@
 
 ---
 
+## Sesja 25 (2026-05-04) — macOS adapter M5.3: LaunchServices inventory + v0.0.10-alpha
+
+Third milestone of the macOS adapter. The dashboard Categories tab on
+macOS now populates with the real installed-apps list, classified into
+SourceType.{SYSTEM, MAS, BREW, WEB}. Tag `v0.0.10-alpha` created locally
++ pushed.
+
+### Architecture confirmed end-to-end on Mac.r12.home
+
+- Layer 4 core extended: added `SourceType.SYSTEM` (Apple-bundled apps),
+  `SourceType.INVENTORY` (sidecar category enum value), and
+  `Package.source: ItemSource | None` field (backward-compatible --
+  Windows tests 33/33 unaffected).
+- `MacOSAdapter.capabilities` now `PACKAGE_MANAGEMENT | ELEVATION | INVENTORY`.
+  `inventory()` returns a cached `MacOSInventory` singleton.
+- `bin/validate-macos.sh` Stage 9 (LaunchServices) printed all 4
+  sub-steps green with **387 apps enumerated** and the classification
+  distribution `system=64 mas=13 brew=1 web=309`.
+- Dashboard `/inventory*` routes (pre-existing) start serving real
+  data -- zero new dashboard code required.
+
+### Files added (per M5.3.x sub-milestone)
+
+- `core/ascendo/models/package.py` -- added `SourceType.SYSTEM` (M5.3.1) +
+  `SourceType.INVENTORY` (M5.3.3 adaptation) + `Package.source` field (M5.3.4)
+- `docs/architecture/schemas/sidecar.v1.schema.json` -- regenerated (M5.3.1, M5.3.3)
+- `adapters/macos/tests/fixtures/system_profiler_apps.json` -- fixture (M5.3.2)
+- `adapters/macos/scripts/inventory/list.sh` -- bash list script (M5.3.3)
+- `adapters/macos/ascendo_macos/inventory.py` -- `MacOSInventory` (M5.3.4)
+- `adapters/macos/ascendo_macos/adapter.py` -- capabilities flip + inventory wire (M5.3.5)
+- `bin/validate-macos.sh` -- Stage 9 added (M5.3.6)
+- `bin/run-tag-release-macos.sh` -- tag bump + M5.3 message (M5.3.7)
+
+Total: 6 list.sh tests + 9 inventory.py tests + 3 adapter wiring +
+1 SourceType test = **~19 new tests** + Stage 9 e2e (4 sub-steps).
+
+### Real apply trace (this run)
+
+```
+==> [Stage 5] Apply
+ascendo run 8d0583fe-1bd2-46c7-86ba-1958db4a2ec5  adapter=macos  host=Mac.r12.home  profile=full
+  apply    brew           success    items=1 failed=0 success=1
+overall: success (1 sidecars, 1 items)
+    apply succeeded (exit 0)
+
+==> [Stage 7] Doctor + tag
+    tagged v0.0.10-alpha. Run 'git push --tags' when ready.
+```
+
+Stage 9 trace:
+```
+==> 9.2 inventory list.sh end-to-end          [PASS] 387 apps enumerated
+==> 9.3 classification distribution           [PASS] system=64 mas=13 brew=1 web=309
+==> 9.4 MacOSAdapter.inventory()              [PASS] inventory enumerated 387 packages
+ALL CHECKS PASSED. (21/21)
+```
+
+### Review-cycle catches worth remembering (6 fix commits across 5 reviewed tasks)
+
+The spec-compliance + code-quality dual-review pattern caught real bugs
+that would have surfaced on real hardware or in cross-platform consumers:
+
+- Task 3: fake system_profiler didn't handle `--version` (test-only
+  cosmetic; would have polluted every test sidecar with `tool.version="{"`)
+- Task 4: categories filter silently swallowed typos; tool.version
+  hardcoded to "1.0" (synthetic placeholder)
+- Task 5: stale "M5.1" docstrings in snapshot()/scheduler(); duplicate
+  capability test (dedup); health_check docstring listed 5 of 7 components
+- Task 6: INV_DIR temp dir leak (every validate run accumulated
+  /tmp/ascendo-validate-inv-* on CI)
+
+### Heuristic limitation flagged for future M5.3.x improvement
+
+The brew classification rule (lowercase + space-to-hyphen the
+system_profiler `_name`, match against `brew list --cask` token) misses
+casks whose display name doesn't match the token. On Mac.r12.home,
+3 casks installed (`blackhole-2ch`, `inkscape`, `macwhisper`); only
+`inkscape` matched. `BlackHole 2ch` and `MacWhisper` reported as WEB.
+
+**Follow-up**: enrich classification by querying `brew info --cask
+--json=v2 <token>` to extract the cask's `name[]` array (alternative
+display names), then match those against system_profiler `_name`.
+~50 LOC bash + JSON parsing. Not a tag blocker because the spec's
+classification distribution threshold (`SYS>=5 MAS>=1 BREW+WEB>=5`)
+treats BREW + WEB as one bucket for sanity purposes.
+
+### What's next (M5.4+, separate specs)
+
+- **M5.4** -- `softwareupdate` manager (the `-R` flag rule) + Time Machine
+  read-only `ISnapshot`.
+- **M5.5** -- `launchd` `IScheduler`. After this, tag `v0.2.0` (full M5).
+- **M5.3.x follow-ups (deferred during M5.3)**:
+  brew cask name-array matching for better BREW classification;
+  `ascendo inventory list` CLI subcommand; per-app upgrade-availability
+  via inventory; iPad-app upgrade automation (Track 2 from M5.2).
+
+### Spec + plan
+
+- `docs/superpowers/specs/2026-05-04-macos-inventory-launchservices-design.md`
+- `docs/superpowers/plans/2026-05-04-macos-inventory-launchservices.md`
+- Sesja 24 process handoff (mid-session pause): `docs/superpowers/specs/2026-05-04-session-24-handoff.md`
+
+---
+
 ## Sesja 21 (2026-05-04) — macOS adapter M5.2: mas + MacElevation + v0.0.9-alpha
 
 Second milestone of the macOS adapter. `MasManager` (Mac App Store via `mas`
