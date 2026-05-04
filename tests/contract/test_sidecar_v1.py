@@ -163,3 +163,15 @@ def test_source_type_has_system_value() -> None:
     """MacOSInventory tags Apple-bundled apps as SourceType.SYSTEM. Required by M5.3."""
     from ascendo.models.package import SourceType
     assert SourceType.SYSTEM.value == "system"
+
+
+def test_source_type_has_softwareupdate_value() -> None:
+    """SoftwareUpdateManager.category == SourceType.SOFTWAREUPDATE. Required by M5.4."""
+    from ascendo.models.package import SourceType
+    assert SourceType.SOFTWAREUPDATE.value == "softwareupdate"
+
+
+def test_source_type_has_snapshot_value() -> None:
+    """TimeMachineSnapshot sidecar uses SourceType.SNAPSHOT. Required by M5.4."""
+    from ascendo.models.package import SourceType
+    assert SourceType.SNAPSHOT.value == "snapshot"

@@ -620,6 +620,8 @@
         "web",
         "system",
         "inventory",
+        "softwareupdate",
+        "snapshot",
         "plugin",
         "unknown"
       ],
