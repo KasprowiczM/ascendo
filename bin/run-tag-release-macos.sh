@@ -10,7 +10,7 @@
 #   5. Apply           -- `ascendo run --category brew --phase apply`
 #   5b. mas apply      -- real `sudo mas upgrade` (M5.2; only with --mas)
 #   6. Verify + cleanup -- both phases run unconditionally
-#   7. Doctor + tag    -- `git tag -a v0.0.9-alpha`. Does NOT push.
+#   7. Doctor + tag    -- `git tag -a v0.0.10-alpha`. Does NOT push.
 #
 # Flags:
 #   --what-if                show plan only, no mutation
@@ -137,7 +137,7 @@ if [ "$DO_MAS" -eq 1 ]; then
     step "5b" "mas apply (M5.2)"
     if [ -z "${SUDO_PW:-}" ]; then
         note "ERROR: --mas requires \$SUDO_PW to be set as a precondition for the"
-        note "       v0.0.9-alpha tag exit bar. Stage 5b itself uses sudo interactively,"
+        note "       v0.0.10-alpha tag exit bar. Stage 5b itself uses sudo interactively,"
         note "       but validate-macos.sh Step 8.7 (dashboard askpass round-trip)"
         note "       requires \$SUDO_PW so the full elevation flow is exercised."
         note "       export SUDO_PW='...' and re-run."
@@ -199,17 +199,17 @@ DOCTOR_RC=$?
 if [ "$NO_TAG" -eq 1 ]; then
     note "skipped tag (--no-tag)"
 elif [ "$APPLY_RC" -ne 0 ] && [ "$APPLY_RC" -ne 75 ]; then
-    warn "apply did not succeed cleanly (exit $APPLY_RC) -- refusing to tag v0.0.9-alpha."
+    warn "apply did not succeed cleanly (exit $APPLY_RC) -- refusing to tag v0.0.10-alpha."
     exit 1
 elif [ "$VERIFY_RC" -gt 1 ]; then
-    warn "verify exited $VERIFY_RC (>1) -- refusing to tag v0.0.9-alpha."
+    warn "verify exited $VERIFY_RC (>1) -- refusing to tag v0.0.10-alpha."
     exit 1
-elif git rev-parse v0.0.9-alpha >/dev/null 2>&1; then
-    note "tag v0.0.9-alpha already exists -- skipping."
+elif git rev-parse v0.0.10-alpha >/dev/null 2>&1; then
+    note "tag v0.0.10-alpha already exists -- skipping."
 else
-    git tag -a v0.0.9-alpha \
-        -m "macOS adapter M5.2 — mas + MacElevation; v0.0.9-alpha (apply RC=$APPLY_RC)"
-    note "tagged v0.0.9-alpha. Run 'git push --tags' when ready."
+    git tag -a v0.0.10-alpha \
+        -m "macOS adapter M5.3 — LaunchServices inventory; v0.0.10-alpha (apply RC=$APPLY_RC)"
+    note "tagged v0.0.10-alpha. Run 'git push --tags' when ready."
 fi
 
 printf "\nDone.\n"
