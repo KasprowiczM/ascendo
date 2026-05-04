@@ -169,6 +169,29 @@ def test_verify_reads_sibling_apply_sidecar(tmp_path):
     assert "Safari17.4-17.4" in success_ids
 
 
+def test_verify_marks_apply_item_failed_when_label_still_pending(tmp_path):
+    """verify.sh: when a previously-applied label is STILL in softwareupdate -l,
+    verify marks that apply success item as verify-FAILED."""
+    # fake_su returns incremental-updates which still has Safari17.4-17.4 pending
+    fake = _make_fake_su(tmp_path, fixture_name="incremental-updates.txt")
+    out = tmp_path / "out"
+    rid = str(uuid.uuid4())
+    # Synthesize apply sidecar with one success item that's still pending in softwareupdate -l
+    _make_apply_sidecar(out / rid, ["Safari17.4-17.4"])
+
+    res = _run_script(SCRIPTS_SU / "verify.sh", fake, out, rid)
+    assert res.returncode == 0, res.stderr
+
+    sidecar = out / rid / "verify__softwareupdate.json"
+    assert sidecar.is_file(), f"sidecar missing\nstdout: {res.stdout}\nstderr: {res.stderr}"
+
+    sc = _parse_sidecar(sidecar)
+    assert sc.phase.value == "verify"
+    # The apply success item is now verify-FAILED (label still pending)
+    failed_ids = [i.id for i in sc.items if i.status.value == "failed"]
+    assert "Safari17.4-17.4" in failed_ids, f"Safari17.4-17.4 should be failed; got {failed_ids}"
+
+
 def test_verify_softnoop_when_no_apply_sidecar(tmp_path):
     """verify.sh: when apply sidecar absent, emits success sidecar with zero items + info message."""
     fake = _make_fake_su(tmp_path, fixture_name="incremental-updates.txt")

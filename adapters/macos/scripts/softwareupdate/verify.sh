@@ -114,9 +114,10 @@ fi
 STILL_PENDING="$(printf '%s\n' "$SU_OUT" | sed -n 's/^\* Label: //p')"
 
 # -- emit one verify item per apply success id ---------------------------------
-# Use a here-string (<<< ) so variable assignments inside the loop persist.
-# For each apply-success label: if it still appears in STILL_PENDING -> failed,
-# otherwise -> success.
+# Iterate apply success items and check whether each label is still pending in
+# `softwareupdate -l` output. NOTE: this `printf | while` subshell is safe because
+# json_add_item persists each item to disk via JSON_BUFDIR (set by json_init); we
+# don't rely on any bash variable mutation surviving the subshell.
 printf '%s\n' "$APPLY_SUCCESS_IDS" | while IFS= read -r _id; do
     [ -n "$_id" ] || continue
     # Look up resolved_version from apply sidecar
