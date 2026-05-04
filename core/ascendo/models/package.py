@@ -45,6 +45,7 @@ class SourceType(str, Enum):
     PIPX = "pipx"
     WEB = "web"
     SYSTEM = "system"      # macOS Apple-bundled apps in /System/Applications/
+    INVENTORY = "inventory"  # macOS LaunchServices inventory category (M5.3)
     PLUGIN = "plugin"      # plugin-supplied source
     UNKNOWN = "unknown"
 

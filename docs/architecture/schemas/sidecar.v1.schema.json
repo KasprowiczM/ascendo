@@ -619,6 +619,7 @@
         "pipx",
         "web",
         "system",
+        "inventory",
         "plugin",
         "unknown"
       ],
