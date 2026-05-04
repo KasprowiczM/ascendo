@@ -25,6 +25,8 @@ from ascendo.interfaces import (
 from ascendo.models.host import ElevationMethod, HostInfo, OperatingSystem
 
 from .managers.brew import BrewManager
+from .managers.elevation import MacElevation
+from .managers.mas import MasManager
 
 _log = logging.getLogger(__name__)
 
@@ -70,6 +72,7 @@ class MacOSAdapter(IAdapter):
 
     def __init__(self) -> None:
         self._cached_host: HostInfo | None = None
+        self._cached_elevation: MacElevation | None = None
 
     # ── Identity ──────────────────────────────────────────────────────────
 
@@ -87,13 +90,14 @@ class MacOSAdapter(IAdapter):
 
     @property
     def capabilities(self) -> AdapterCapability:
-        return AdapterCapability.PACKAGE_MANAGEMENT
+        return AdapterCapability.PACKAGE_MANAGEMENT | AdapterCapability.ELEVATION
 
     # ── Sub-interface accessors ───────────────────────────────────────────
 
     def package_managers(self, host: HostInfo) -> list[IPackageManager]:
         return [
             BrewManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
+            MasManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, elevation=self.elevation()),
         ]
 
     def inventory(self) -> IInventory | None:  # type: ignore[override]
@@ -113,8 +117,10 @@ class MacOSAdapter(IAdapter):
         return None
 
     def elevation(self) -> IElevation | None:
-        """Not implemented in M5.1. Returns None (ELEVATION capability not set)."""
-        return None  # M5.2 (sudo + osascript askpass cache)
+        """Returns a cached MacElevation singleton (M5.2)."""
+        if self._cached_elevation is None:
+            self._cached_elevation = MacElevation()
+        return self._cached_elevation
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -163,6 +169,7 @@ class MacOSAdapter(IAdapter):
         out: dict[str, str] = {}
         out["brew"] = self._brew_status()
         out["jq"] = self._jq_status()
+        out["mas"] = self._mas_status()
         out["bash"] = self._bash_status()
         out["ascendo_lib"] = self._lib_status()
         out["ascendo_scripts"] = self._scripts_status()
@@ -272,6 +279,33 @@ class MacOSAdapter(IAdapter):
             return f"error: jq --version exited {res.returncode}"
         v = (res.stdout or "").strip()
         return f"ok: {v}" if v else "ok"
+
+    def _mas_status(self) -> str:
+        path = shutil.which("mas")
+        if path is None:
+            return "unavailable: mas not on PATH (install: brew install mas)"
+        try:
+            res = subprocess.run(
+                [path, "version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"error: {exc}"
+        if res.returncode != 0:
+            return f"error: mas version exited {res.returncode}"
+        v = (res.stdout or "").strip()
+        if not v:
+            return "ok"
+        try:
+            major = int(v.split(".")[0])
+            if major < 4:
+                return f"degraded: mas {v} found, need >=4 (brew upgrade mas)"
+            return f"ok: {v}"
+        except (ValueError, IndexError):
+            return f"ok: {v}"
 
     def _bash_status(self) -> str:
         # Prefer system bash; shutil.which("bash") finds it on macOS PATH

@@ -26,33 +26,35 @@ def test_adapter_identity() -> None:
 # ── Capabilities ─────────────────────────────────────────────────────────
 
 
-def test_capabilities_is_package_management_only() -> None:
-    """M5.1 declares only PACKAGE_MANAGEMENT — not the full TIER_1_FULL set."""
+def test_capabilities_is_package_management_and_elevation() -> None:
+    """M5.2 declares PACKAGE_MANAGEMENT | ELEVATION — not the full TIER_1_FULL set."""
     a = MacOSAdapter()
-    assert a.capabilities == AdapterCapability.PACKAGE_MANAGEMENT
-    # Explicitly confirm the other capabilities are NOT set
+    assert a.capabilities & AdapterCapability.PACKAGE_MANAGEMENT
+    assert a.capabilities & AdapterCapability.ELEVATION
+    # M5.3-M5.5 capabilities not yet set
     assert not (a.capabilities & AdapterCapability.INVENTORY)
     assert not (a.capabilities & AdapterCapability.SNAPSHOTS)
     assert not (a.capabilities & AdapterCapability.SCHEDULING)
-    assert not (a.capabilities & AdapterCapability.ELEVATION)
 
 
 # ── Accessor None-ness (M5.2-M5.5 reserved) ──────────────────────────────
 
 
-def test_unsupported_accessors_return_none_in_m51() -> None:
+def test_unsupported_accessors_return_none_in_m52() -> None:
+    """M5.3-M5.5 accessors still return None; elevation() is now wired (M5.2)."""
     a = MacOSAdapter()
     assert a.inventory() is None
     assert a.snapshot() is None
     assert a.scheduler() is None
     assert a.source() is None
-    assert a.elevation() is None
+    assert a.elevation() is not None  # M5.2 wired
 
 
 # ── package_managers ─────────────────────────────────────────────────────
 
 
-def test_package_managers_returns_brew() -> None:
+def test_package_managers_returns_brew_and_mas() -> None:
+    """M5.2 adds MasManager after BrewManager."""
     a = MacOSAdapter()
     host = HostInfo(
         hostname="macbook.local",
@@ -63,8 +65,9 @@ def test_package_managers_returns_brew() -> None:
         is_elevated=False,
     )
     mgrs = a.package_managers(host)
-    assert len(mgrs) == 1
+    assert len(mgrs) == 2
     assert mgrs[0].category is SourceType.BREW
+    assert mgrs[1].category is SourceType.MAS
 
 
 # ── detect_host ──────────────────────────────────────────────────────────
@@ -95,11 +98,12 @@ def test_detect_host_is_cached() -> None:
 
 
 def test_health_check_reports_required_keys() -> None:
-    """health_check() must return all 5 expected component keys."""
+    """health_check() must return all 6 expected component keys (M5.2 adds mas)."""
     a = MacOSAdapter()
     h = a.health_check()
     assert "brew" in h
     assert "jq" in h
+    assert "mas" in h
     assert "bash" in h
     assert "ascendo_lib" in h
     assert "ascendo_scripts" in h
@@ -142,3 +146,54 @@ def test_adapter_via_select_adapter() -> None:
     assert isinstance(a, MacOSAdapter)
     assert a.tier == 1
     assert a.name == "macos"
+
+
+# ── M5.2 wiring assertions ────────────────────────────────────────────────
+
+
+@pytest.fixture
+def mac_host() -> HostInfo:
+    from ascendo.models.host import ElevationMethod
+
+    return HostInfo(
+        hostname="testmac.local",
+        os=OperatingSystem.MACOS,
+        os_version="14.5",
+        arch="arm64",
+        user="mk",
+        is_elevated=False,
+        elevation_method=ElevationMethod.NONE,
+    )
+
+
+def test_capabilities_includes_elevation() -> None:
+    """M5.2 adds ELEVATION to the declared capability set."""
+    a = MacOSAdapter()
+    assert AdapterCapability.PACKAGE_MANAGEMENT in a.capabilities
+    assert AdapterCapability.ELEVATION in a.capabilities
+
+
+def test_package_managers_includes_brew_and_mas(mac_host: HostInfo) -> None:
+    """package_managers() returns [BrewManager, MasManager] in that order."""
+    a = MacOSAdapter()
+    pkgs = a.package_managers(mac_host)
+    names = [type(p).__name__ for p in pkgs]
+    assert names == ["BrewManager", "MasManager"]
+
+
+def test_elevation_returns_macelevation() -> None:
+    """elevation() returns a MacElevation singleton (same object on repeated calls)."""
+    from ascendo_macos.managers.elevation import MacElevation
+
+    a = MacOSAdapter()
+    e1 = a.elevation()
+    e2 = a.elevation()
+    assert isinstance(e1, MacElevation)
+    assert e1 is e2
+
+
+def test_health_check_includes_mas_component() -> None:
+    """health_check() must include a 'mas' component key."""
+    a = MacOSAdapter()
+    h = a.health_check()
+    assert "mas" in h
