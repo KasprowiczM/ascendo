@@ -180,12 +180,16 @@ def run(
 def _sidecars_need_reboot(sidecars) -> bool:
     """True if any sidecar in this run signals a pending reboot.
 
-    The Sidecar v1 schema does not have a dedicated ``needs_reboot``
-    field (see ``core/ascendo/models/legacy.py``). The Windows apply
-    scripts encode the signal as a phase-level WARN message with text
-    starting with "Reboot required" — we look for that here.
+    Two channels (preserved for cross-platform compatibility):
+      1. Top-level `sc.needs_reboot` flag (canonical, M5.4 macOS softwareupdate
+         + any future adapter that uses the json_set_needs_reboot bash helper).
+      2. Message-text scan for "Reboot required" (legacy Windows convention).
     """
     for sc in sidecars:
+        # Channel 1: top-level flag (new, canonical)
+        if getattr(sc, "needs_reboot", False):
+            return True
+        # Channel 2: message-text scan (legacy Windows)
         for msg in getattr(sc, "messages", ()):
             text = (getattr(msg, "text", "") or "").lstrip()
             if text.lower().startswith("reboot required"):
