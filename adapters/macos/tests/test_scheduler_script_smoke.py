@@ -215,7 +215,8 @@ def test_install_disabled_skips_bootstrap(tmp_path):
     assert plist.exists(), "disabled plist still written to disk"
     assert "<key>Disabled</key>" in plist.read_text()
     log_text = log.read_text() if log.exists() else ""
-    # bootout still allowed (idempotent), but bootstrap MUST NOT appear.
+    # bootout runs unconditionally (idempotency), bootstrap MUST NOT appear.
+    assert "bootout" in log_text, "bootout should run unconditionally on install for idempotency"
     assert "bootstrap" not in log_text
 
 
@@ -253,3 +254,22 @@ def test_install_rejects_bad_expression(tmp_path):
     err = json.loads(output.read_text())
     assert "error" in err
     assert "expression" in err["error"].lower() or "unsupported" in err["error"].lower()
+
+
+def test_install_rejects_bad_profile(tmp_path):
+    """Defense-in-depth: profile content guard rejects shell-special chars."""
+    fake_home = tmp_path / "fake_home"
+    binary, _ = _make_fake_launchctl(tmp_path)
+    payload = {
+        "name": "weird-profile",
+        "expression": "DAILY 03:00",
+        "profile": 'safe"injected',
+        "enabled": True,
+        "description": None,
+    }
+    res, output = _run("install", payload=payload, tmp_path=tmp_path,
+                       fake_home=fake_home, launchctl=binary)
+    assert res.returncode == 2
+    err = json.loads(output.read_text())
+    assert "error" in err
+    assert "profile" in err["error"].lower()

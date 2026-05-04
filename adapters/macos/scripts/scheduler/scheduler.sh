@@ -263,6 +263,13 @@ case "$ACTION" in
         fi
         PROFILE="$(_payload_get profile)"
         if [ -z "$PROFILE" ]; then PROFILE="full"; fi
+        # Defense-in-depth: profile content guard. Pydantic ProfileName
+        # already constrains this to ^[a-zA-Z0-9_-]+$ on the Python side,
+        # but the bash driver is also a standalone executable and may
+        # be invoked directly with crafted payloads.
+        case "$PROFILE" in
+            *[!a-zA-Z0-9_-]*) emit_error "invalid profile: '$PROFILE'"; exit 2 ;;
+        esac
         ENABLED="$(_payload_get_bool enabled true)"
         DESCRIPTION="$(_payload_get description)"
 
@@ -346,7 +353,7 @@ p.write_text(json.dumps({
     "profile": "$PROFILE",
     "enabled": enabled_val,
     "description": desc,
-    "installed_at": datetime.datetime.utcnow().isoformat() + "Z",
+    "installed_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
 }, indent=2))
 PY_EOF
 
