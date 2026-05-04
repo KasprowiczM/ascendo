@@ -2,20 +2,22 @@
 # =============================================================================
 # bin/run-tag-release-macos.sh -- interactive real-apply + tag harness
 # =============================================================================
-# 7-stage flow:
+# 8-stage flow:
 #   1. Preflight       -- ensure repo root, PYTHONPATH wired, tools present
 #   2. Snapshot        -- N/A in M5.1; warning printed (Time Machine = M5.4)
 #   3. Plan            -- `ascendo run --category brew --phase plan`
 #   4. Confirm gate    -- type literal `apply` to proceed
 #   5. Apply           -- `ascendo run --category brew --phase apply`
+#   5b. mas apply      -- real `sudo mas upgrade` (M5.2; only with --mas)
 #   6. Verify + cleanup -- both phases run unconditionally
-#   7. Doctor + tag    -- `git tag -a v0.0.8-alpha`. Does NOT push.
+#   7. Doctor + tag    -- `git tag -a v0.0.9-alpha`. Does NOT push.
 #
 # Flags:
 #   --what-if                show plan only, no mutation
 #   --no-tag                 apply but skip the git tag step
 #   --no-snapshot            skip snapshot step (no-op in M5.1)
 #   --i-accept-upgrade-risk  bypass the interactive confirm gate (for CI)
+#   --mas                    also run real `sudo mas upgrade` (M5.2 exit bar)
 # =============================================================================
 set -o pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -26,6 +28,7 @@ WHAT_IF=0
 NO_TAG=0
 NO_SNAPSHOT=0
 ACCEPT_RISK=0
+DO_MAS=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -33,6 +36,7 @@ while [ $# -gt 0 ]; do
         --no-tag)                NO_TAG=1; shift ;;
         --no-snapshot)           NO_SNAPSHOT=1; shift ;;
         --i-accept-upgrade-risk) ACCEPT_RISK=1; shift ;;
+        --mas)                   DO_MAS=1; shift ;;
         *) printf "run-tag-release-macos.sh: unknown arg: %s\n" "$1" >&2; exit 2 ;;
     esac
 done
@@ -128,6 +132,44 @@ case "$APPLY_RC" in
         ;;
 esac
 
+# ── Stage 5b: mas apply (M5.2 -- only when --mas) ────────────────────────────
+if [ "$DO_MAS" -eq 1 ]; then
+    step "5b" "mas apply (M5.2)"
+    if [ -z "${SUDO_PW:-}" ]; then
+        note "ERROR: --mas requires \$SUDO_PW for the dashboard askpass round-trip"
+        note "       (validate-macos.sh Step 8.7 must run for the v0.0.9-alpha tag)"
+        note "       export SUDO_PW='...' and re-run."
+        exit 2
+    fi
+
+    # Probe outdated; if any, real upgrade of first. Else: re-install one
+    # already-installed app (same elevation surface, validates the flow).
+    OUTDATED_RAW="$(mas outdated 2>/dev/null || true)"
+    if [ -n "$OUTDATED_RAW" ]; then
+        FIRST_ID="$(printf '%s\n' "$OUTDATED_RAW" | awk 'NR==1 {print $1}')"
+        note "upgrading first outdated id=$FIRST_ID"
+        if python3 -m ascendo run --category mas --phase apply --items "$FIRST_ID"; then
+            note "mas apply --items $FIRST_ID    OK"
+        else
+            warn "mas apply failed"
+            exit 30
+        fi
+    else
+        FIRST_ID="$(mas list 2>/dev/null | awk 'NR==1 {print $1}')"
+        if [ -z "$FIRST_ID" ]; then
+            warn "no installed App Store apps; mas validation skipped."
+        else
+            note "no outdated; re-installing first listed id=$FIRST_ID (same elevation surface)"
+            if sudo mas install "$FIRST_ID"; then
+                note "sudo mas install $FIRST_ID    OK"
+            else
+                warn "sudo mas install failed"
+                exit 30
+            fi
+        fi
+    fi
+fi
+
 # ── Stage 6: Verify + cleanup ─────────────────────────────────────────────────
 step 6 "Verify + cleanup"
 
@@ -148,17 +190,17 @@ DOCTOR_RC=$?
 if [ "$NO_TAG" -eq 1 ]; then
     note "skipped tag (--no-tag)"
 elif [ "$APPLY_RC" -ne 0 ] && [ "$APPLY_RC" -ne 75 ]; then
-    warn "apply did not succeed cleanly (exit $APPLY_RC) -- refusing to tag v0.0.8-alpha."
+    warn "apply did not succeed cleanly (exit $APPLY_RC) -- refusing to tag v0.0.9-alpha."
     exit 1
 elif [ "$VERIFY_RC" -gt 1 ]; then
-    warn "verify exited $VERIFY_RC (>1) -- refusing to tag v0.0.8-alpha."
+    warn "verify exited $VERIFY_RC (>1) -- refusing to tag v0.0.9-alpha."
     exit 1
-elif git rev-parse v0.0.8-alpha >/dev/null 2>&1; then
-    note "tag v0.0.8-alpha already exists -- skipping."
+elif git rev-parse v0.0.9-alpha >/dev/null 2>&1; then
+    note "tag v0.0.9-alpha already exists -- skipping."
 else
-    git tag -a v0.0.8-alpha \
-        -m "macOS adapter M5.1: brew end-to-end on real hardware (apply RC=$APPLY_RC)"
-    note "tagged v0.0.8-alpha. Run 'git push --tags' when ready."
+    git tag -a v0.0.9-alpha \
+        -m "macOS adapter M5.2 — mas + MacElevation; v0.0.9-alpha (apply RC=$APPLY_RC)"
+    note "tagged v0.0.9-alpha. Run 'git push --tags' when ready."
 fi
 
 printf "\nDone.\n"
