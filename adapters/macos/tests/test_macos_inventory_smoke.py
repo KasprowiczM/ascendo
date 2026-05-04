@@ -79,7 +79,7 @@ def test_identity_and_paths():
     assert inv.scripts_dir == SCRIPTS_DIR
 
 
-def test_list_installed_returns_packages_from_sidecar(tmp_path):
+def test_list_installed_returns_packages_from_sidecar():
     items = [_item("Safari", "system"), _item("Amphetamine", "mas"),
              _item("Inkscape", "brew"), _item("Firefox", "web")]
     sidecar_text = _minimal_sidecar(items)
@@ -102,7 +102,7 @@ def test_list_installed_returns_packages_from_sidecar(tmp_path):
                        SourceType.BREW, SourceType.WEB}
 
 
-def test_list_installed_categories_filter(tmp_path):
+def test_list_installed_categories_filter():
     items = [_item("Safari", "system"), _item("Amphetamine", "mas")]
     sidecar_text = _minimal_sidecar(items)
 
@@ -188,3 +188,28 @@ def test_emit_sidecar_returns_valid_sidecar():
     assert sidecar.phase.value == "check"
     assert sidecar.category.value == "inventory"
     assert len(sidecar.items) == 1
+
+
+def test_list_installed_unknown_category_logs_and_skips(caplog):
+    """Unknown category strings are logged at WARNING and skipped, not silent-pass."""
+    items = [_item("Safari", "system"), _item("Amphetamine", "mas")]
+    sidecar_text = _minimal_sidecar(items)
+
+    def fake_run(argv, **kwargs):
+        rid = argv[argv.index("--run-id") + 1]
+        out = Path(argv[argv.index("--output-dir") + 1]) / rid
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "check__inventory.json").write_text(sidecar_text)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    inv = MacOSInventory(scripts_dir=SCRIPTS_DIR, lib_dir=LIB_DIR)
+    with patch("subprocess.run", side_effect=fake_run):
+        with caplog.at_level("WARNING"):
+            packages = inv.list_installed(_mac_host(), categories=["systm"])  # typo
+    # Unknown category yields an empty filter set -> no packages match
+    assert packages == []
+    # A WARNING was emitted naming the unknown category
+    assert any(
+        "unknown category" in rec.message.lower()
+        for rec in caplog.records
+    )

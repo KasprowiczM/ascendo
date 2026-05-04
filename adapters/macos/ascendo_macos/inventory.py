@@ -269,7 +269,7 @@ class MacOSInventory(IInventory):
             exit_code=0,
         )
 
-        tool = ToolInfo(name="system_profiler", version="1.0", binary_path=None)
+        tool = ToolInfo(name="system_profiler", version="unknown", binary_path=None)
 
         return Sidecar.model_validate(
             {
@@ -341,6 +341,8 @@ class MacOSInventory(IInventory):
         """
         # Normalise the categories filter into a set of SourceType values
         # so we can compare against item.source.type cleanly.
+        # Unknown strings are logged at WARNING and skipped (mirrors
+        # WindowsInventory pattern) so typos don't silently yield 0 results.
         cat_filter: set[str] | None = None
         if categories is not None:
             cat_filter = set()
@@ -348,7 +350,15 @@ class MacOSInventory(IInventory):
                 if isinstance(cat, SourceType):
                     cat_filter.add(cat.value)
                 else:
-                    cat_filter.add(str(cat))
+                    try:
+                        cat_filter.add(SourceType(cat).value)
+                    except ValueError:
+                        _log.warning(
+                            "MacOSInventory: ignoring unknown category %r "
+                            "(valid: %s)",
+                            cat,
+                            ", ".join(s.value for s in SourceType),
+                        )
 
         packages: list[Package] = []
         for item in sidecar.items:
