@@ -6,12 +6,14 @@
 #
 # Verifies (in order):
 #   1. python3 -m ascendo --help / version / doctor all exit 0
-#   2. python3 -m ascendo run --category brew --phase {check, plan,
-#         apply --dry-run, verify, cleanup --dry-run} each produces a
-#         sidecar at the right path with schema=ascendo/v1, phase=<expected>,
-#         category=brew
-#   3. Dashboard launches in background, /version + /health respond,
-#      POST /runs/async + status poll, stopped cleanly.
+#   2. Five-phase brew contract: check / plan / apply --dry-run / verify /
+#      cleanup --dry-run each produces a sidecar with schema=ascendo/v1,
+#      phase=<expected>, category=brew
+#   3. Dashboard smoke: /version + /health, POST /runs/async + status poll,
+#      clean teardown
+#   4-7. (reserved for future stages)
+#   8. mas + dashboard askpass round-trip (M5.2): doctor reports mas,
+#      five-phase mas contract, /elevation/auth + /elevation/status cycle
 #
 # Exits 0 on full success, 1 with [FAIL] count otherwise.
 # Final line on success: ALL CHECKS PASSED.
@@ -205,8 +207,8 @@ step "8. mas + dashboard askpass (M5.2)"
 # 8.1 doctor reports mas component
 step "8.1 doctor reports mas component"
 DOCTOR_OUT=$(python3 -m ascendo doctor 2>&1)
-if printf '%s' "$DOCTOR_OUT" | grep -qE '^\s*mas\s+'; then
-    MAS_LINE=$(printf '%s' "$DOCTOR_OUT" | grep -E '^\s*mas\s+' | head -1)
+if printf '%s' "$DOCTOR_OUT" | grep -qE '^\s+mas\s+(ok|degraded|unavailable|error)'; then
+    MAS_LINE=$(printf '%s' "$DOCTOR_OUT" | grep -E '^\s+mas\s+(ok|degraded|unavailable|error)' | head -1)
     result "8.1 doctor: mas component" 1 "$MAS_LINE"
     MAS_AVAILABLE=1
 else
@@ -278,11 +280,14 @@ step "8.7 dashboard askpass round-trip"
 if [ -z "${SUDO_PW:-}" ]; then
     printf "  [skip] 8.7 dashboard askpass round-trip (SUDO_PW not set; export SUDO_PW=<password> to enable)\n"
 else
-    _ASKPASS_PORT=$((DASHBOARD_PORT + 10))
+    # Use env override or +100 offset (not +10) to avoid collision with stale
+    # dashboards when --port is shifted near defaults.
+    _ASKPASS_PORT="${ASCENDO_VALIDATE_ASKPASS_PORT:-$((DASHBOARD_PORT + 100))}"
     _ASKPASS_LOG=$(mktemp -t ascendo_dash8_XXXXXX)
     _ASKPASS_PID=""
 
     # Ensure dashboard is torn down on exit from this block
+    # NOTE: this overrides any pre-existing EXIT trap; future stages must coordinate.
     _cleanup_askpass_dash() {
         if [ -n "$_ASKPASS_PID" ]; then
             kill "$_ASKPASS_PID" 2>/dev/null || true
@@ -319,14 +324,22 @@ else
         fi
 
         # 8.7b POST /elevation/auth -> 200
-        AUTH_CODE=$(curl -sf -o /dev/null -w "%{http_code}" -X POST \
-            "http://127.0.0.1:$_ASKPASS_PORT/elevation/auth" \
-            -H "Content-Type: application/json" \
-            -d "{\"password\":\"$SUDO_PW\"}" 2>/dev/null)
-        if [ "$AUTH_CODE" = "200" ]; then
-            result "8.7b POST /elevation/auth" 1
+        # Use jq (already a hard dep) to build the JSON body safely — prevents
+        # shell injection if SUDO_PW contains ", \, $, or backticks.
+        AUTH_CODE=""
+        if ! command -v jq >/dev/null 2>&1; then
+            result "8.7b POST /elevation/auth" 0 "jq missing — needed for safe password JSON encoding"
         else
-            result "8.7b POST /elevation/auth" 0 "HTTP $AUTH_CODE (wrong password or no elevation support)"
+            _auth_body="$(jq -n --arg pw "$SUDO_PW" '{password: $pw}')"
+            AUTH_CODE=$(curl -fsS -o /dev/null -w "%{http_code}" -X POST \
+                "http://127.0.0.1:$_ASKPASS_PORT/elevation/auth" \
+                -H "Content-Type: application/json" \
+                -d "$_auth_body" 2>/dev/null)
+            if [ "$AUTH_CODE" = "200" ]; then
+                result "8.7b POST /elevation/auth" 1
+            else
+                result "8.7b POST /elevation/auth" 0 "HTTP $AUTH_CODE (wrong password or no elevation support)"
+            fi
         fi
 
         # 8.7c GET /elevation/status -> registered: true
