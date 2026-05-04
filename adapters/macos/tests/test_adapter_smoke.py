@@ -26,13 +26,13 @@ def test_adapter_identity() -> None:
 # ── Capabilities ─────────────────────────────────────────────────────────
 
 
-def test_capabilities_is_package_management_and_elevation() -> None:
-    """M5.2 declares PACKAGE_MANAGEMENT | ELEVATION — not the full TIER_1_FULL set."""
+def test_capabilities_is_package_management_and_elevation_and_inventory() -> None:
+    """M5.3 declares PACKAGE_MANAGEMENT | ELEVATION | INVENTORY."""
     a = MacOSAdapter()
     assert a.capabilities & AdapterCapability.PACKAGE_MANAGEMENT
     assert a.capabilities & AdapterCapability.ELEVATION
-    # M5.3-M5.5 capabilities not yet set
-    assert not (a.capabilities & AdapterCapability.INVENTORY)
+    assert a.capabilities & AdapterCapability.INVENTORY  # M5.3 wired
+    # M5.4-M5.5 capabilities not yet set
     assert not (a.capabilities & AdapterCapability.SNAPSHOTS)
     assert not (a.capabilities & AdapterCapability.SCHEDULING)
 
@@ -40,12 +40,12 @@ def test_capabilities_is_package_management_and_elevation() -> None:
 # ── Accessor None-ness (M5.2-M5.5 reserved) ──────────────────────────────
 
 
-def test_unsupported_accessors_return_none_in_m52() -> None:
-    """M5.3-M5.5 accessors still return None; elevation() is now wired (M5.2)."""
+def test_unsupported_accessors_return_none_m54_m55() -> None:
+    """M5.4-M5.5 accessors still return None; elevation() and inventory() are wired."""
     a = MacOSAdapter()
-    assert a.inventory() is None
-    assert a.snapshot() is None
-    assert a.scheduler() is None
+    assert a.inventory() is not None  # M5.3 wired
+    assert a.snapshot() is None       # M5.4 (Time Machine read-only)
+    assert a.scheduler() is None      # M5.5 (launchd)
     assert a.source() is None
     assert a.elevation() is not None  # M5.2 wired
 
@@ -98,12 +98,13 @@ def test_detect_host_is_cached() -> None:
 
 
 def test_health_check_reports_required_keys() -> None:
-    """health_check() must return all 6 expected component keys (M5.2 adds mas)."""
+    """health_check() must return all 7 expected component keys (M5.3 adds system_profiler)."""
     a = MacOSAdapter()
     h = a.health_check()
     assert "brew" in h
     assert "jq" in h
     assert "mas" in h
+    assert "system_profiler" in h  # M5.3
     assert "bash" in h
     assert "ascendo_lib" in h
     assert "ascendo_scripts" in h
@@ -197,3 +198,32 @@ def test_health_check_includes_mas_component() -> None:
     a = MacOSAdapter()
     h = a.health_check()
     assert "mas" in h
+
+
+# ── M5.3 wiring assertions ────────────────────────────────────────────────
+
+
+def test_capabilities_includes_inventory() -> None:
+    """M5.3 adds INVENTORY to the declared capability set."""
+    a = MacOSAdapter()
+    assert AdapterCapability.PACKAGE_MANAGEMENT in a.capabilities
+    assert AdapterCapability.ELEVATION in a.capabilities
+    assert AdapterCapability.INVENTORY in a.capabilities
+
+
+def test_inventory_returns_macosinventory_singleton() -> None:
+    """inventory() returns a MacOSInventory instance and caches it (same object)."""
+    from ascendo_macos.inventory import MacOSInventory
+
+    a = MacOSAdapter()
+    e1 = a.inventory()
+    e2 = a.inventory()
+    assert isinstance(e1, MacOSInventory)
+    assert e1 is e2
+
+
+def test_health_check_includes_system_profiler_component() -> None:
+    """health_check() must include a 'system_profiler' component key (M5.3)."""
+    a = MacOSAdapter()
+    h = a.health_check()
+    assert "system_profiler" in h

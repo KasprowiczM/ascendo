@@ -24,6 +24,7 @@ from ascendo.interfaces import (
 )
 from ascendo.models.host import ElevationMethod, HostInfo, OperatingSystem
 
+from .inventory import MacOSInventory
 from .managers.brew import BrewManager
 from .managers.elevation import MacElevation
 from .managers.mas import MasManager
@@ -50,7 +51,7 @@ def _resolve_resource_dir(env_var: str, repo_relative: str) -> Path:
 
 
 class MacOSAdapter(IAdapter):
-    """Tier 1 adapter for macOS (M5.2 scope — PACKAGE_MANAGEMENT | ELEVATION).
+    """Tier 1 adapter for macOS (M5.3 scope — PACKAGE_MANAGEMENT | ELEVATION | INVENTORY).
 
     Capabilities declared:
         PACKAGE_MANAGEMENT — Homebrew formulae + casks via BrewManager;
@@ -59,14 +60,18 @@ class MacOSAdapter(IAdapter):
         ELEVATION          — sudo password cache via MacElevation; exposed as
                              POST /elevation/auth on the dashboard so the SPA
                              can prompt once and forward sudo to mas/brew.
+        INVENTORY          — installed-application enumeration via MacOSInventory
+                             (uses ``system_profiler SPApplicationsDataType -json``
+                             + ``mdfind`` fallback); populates the dashboard
+                             Categories tab with the installed-apps list.
 
-    MacElevation is a singleton per adapter instance (cached in
-    ``self._cached_elevation``) so a single dashboard password prompt
-    covers all managers in the same process lifetime.
+    MacElevation and MacOSInventory are singletons per adapter instance
+    (cached in ``self._cached_elevation`` / ``self._cached_inventory``) so
+    a single dashboard password prompt covers all managers and inventory
+    reads reuse the same object within a process lifetime.
 
-    Remaining accessors (inventory, snapshot, scheduler, source) return None
-    and are reserved for M5.3-M5.5:
-        M5.3 — inventory (LaunchServicesInventory)
+    Remaining accessors (snapshot, scheduler, source) return None
+    and are reserved for M5.4-M5.5:
         M5.4 — snapshot (Time Machine read-only) + softwareupdate manager
         M5.5 — scheduler (launchd)
     """
@@ -81,6 +86,7 @@ class MacOSAdapter(IAdapter):
     def __init__(self) -> None:
         self._cached_host: HostInfo | None = None
         self._cached_elevation: MacElevation | None = None
+        self._cached_inventory: MacOSInventory | None = None
 
     # ── Identity ──────────────────────────────────────────────────────────
 
@@ -98,7 +104,11 @@ class MacOSAdapter(IAdapter):
 
     @property
     def capabilities(self) -> AdapterCapability:
-        return AdapterCapability.PACKAGE_MANAGEMENT | AdapterCapability.ELEVATION
+        return (
+            AdapterCapability.PACKAGE_MANAGEMENT
+            | AdapterCapability.ELEVATION
+            | AdapterCapability.INVENTORY
+        )
 
     # ── Sub-interface accessors ───────────────────────────────────────────
 
@@ -109,8 +119,12 @@ class MacOSAdapter(IAdapter):
         ]
 
     def inventory(self) -> IInventory | None:  # type: ignore[override]
-        """Not implemented in M5.1. Returns None (INVENTORY capability not set)."""
-        return None  # M5.3
+        """Returns a cached MacOSInventory singleton (M5.3)."""
+        if self._cached_inventory is None:
+            self._cached_inventory = MacOSInventory(
+                scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR
+            )
+        return self._cached_inventory
 
     def snapshot(self) -> ISnapshot | None:
         """Not implemented in M5.1. Returns None (SNAPSHOTS capability not set)."""
@@ -178,6 +192,7 @@ class MacOSAdapter(IAdapter):
         out["brew"] = self._brew_status()
         out["jq"] = self._jq_status()
         out["mas"] = self._mas_status()
+        out["system_profiler"] = self._system_profiler_status()
         out["bash"] = self._bash_status()
         out["ascendo_lib"] = self._lib_status()
         out["ascendo_scripts"] = self._scripts_status()
@@ -314,6 +329,26 @@ class MacOSAdapter(IAdapter):
             return f"ok: {v}"
         except (ValueError, IndexError):
             return f"ok: {v}"
+
+    def _system_profiler_status(self) -> str:
+        path = shutil.which("system_profiler") or "/usr/sbin/system_profiler"
+        if not Path(path).is_file():
+            return "unavailable: system_profiler not found (macOS-only built-in)"
+        try:
+            res = subprocess.run(
+                [path, "-listDataTypes"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"error: {exc}"
+        if res.returncode != 0:
+            return f"error: system_profiler -listDataTypes exited {res.returncode}"
+        if "SPApplicationsDataType" not in (res.stdout or ""):
+            return "degraded: SPApplicationsDataType not advertised"
+        return "ok"
 
     def _bash_status(self) -> str:
         # Prefer system bash; shutil.which("bash") finds it on macOS PATH
