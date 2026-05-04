@@ -63,3 +63,102 @@ def test_missing_output_path_exits_2(tmp_path):
         capture_output=True, text=True, check=False,
     )
     assert res.returncode == 2
+
+
+def _run_parse_test(expr: str, tmp_path: Path) -> subprocess.CompletedProcess:
+    """Source the script and call _parse_expression in a sub-shell.
+
+    The driver exposes _parse_expression as a function; we exercise it
+    directly to keep this test focused. Set CAL_HOUR/CAL_MINUTE/etc.
+    are echoed so we can assert the parsed values.
+    """
+    probe = tmp_path / "probe.sh"
+    probe.write_text(
+        "#!/usr/bin/env bash\n"
+        f'export PARSE_EXPR_ONLY=1\n'
+        f'. "{SCRIPT}" >/dev/null 2>&1 || true\n'  # source for fn defs
+        f'_parse_expression "{expr}"\n'
+        f'echo "RC=$?"\n'
+        'echo "CAL_HOUR=${CAL_HOUR:-}"\n'
+        'echo "CAL_MINUTE=${CAL_MINUTE:-}"\n'
+        'echo "CAL_WEEKDAY=${CAL_WEEKDAY:-}"\n'
+        'echo "CAL_DAY=${CAL_DAY:-}"\n'
+        'echo "CAL_INTERVAL_SEC=${CAL_INTERVAL_SEC:-}"\n'
+    )
+    return subprocess.run(["bash", str(probe)], capture_output=True, text=True, check=False)
+
+
+def _parse_probe_output(out: str) -> dict:
+    d: dict[str, str] = {}
+    for line in out.splitlines():
+        if "=" in line:
+            k, _, v = line.partition("=")
+            d[k.strip()] = v.strip()
+    return d
+
+
+def test_parse_daily(tmp_path):
+    r = _run_parse_test("DAILY 03:00", tmp_path)
+    out = _parse_probe_output(r.stdout)
+    assert out["RC"] == "0"
+    assert out["CAL_HOUR"] == "3"
+    assert out["CAL_MINUTE"] == "0"
+    assert out["CAL_WEEKDAY"] == ""
+    assert out["CAL_DAY"] == ""
+    assert out["CAL_INTERVAL_SEC"] == ""
+
+
+def test_parse_weekly_sunday(tmp_path):
+    r = _run_parse_test("WEEKLY SUN 03:00", tmp_path)
+    out = _parse_probe_output(r.stdout)
+    assert out["RC"] == "0"
+    assert out["CAL_HOUR"] == "3"
+    assert out["CAL_MINUTE"] == "0"
+    assert out["CAL_WEEKDAY"] == "0"
+
+
+def test_parse_weekly_friday_lowercase(tmp_path):
+    r = _run_parse_test("weekly fri 23:30", tmp_path)
+    out = _parse_probe_output(r.stdout)
+    assert out["RC"] == "0"
+    assert out["CAL_HOUR"] == "23"
+    assert out["CAL_MINUTE"] == "30"
+    assert out["CAL_WEEKDAY"] == "5"
+
+
+def test_parse_monthly_default_day_one(tmp_path):
+    r = _run_parse_test("MONTHLY 02:15", tmp_path)
+    out = _parse_probe_output(r.stdout)
+    assert out["RC"] == "0"
+    assert out["CAL_HOUR"] == "2"
+    assert out["CAL_MINUTE"] == "15"
+    assert out["CAL_DAY"] == "1"
+
+
+def test_parse_monthly_specific_day(tmp_path):
+    r = _run_parse_test("MONTHLY 15 04:00", tmp_path)
+    out = _parse_probe_output(r.stdout)
+    assert out["RC"] == "0"
+    assert out["CAL_DAY"] == "15"
+    assert out["CAL_HOUR"] == "4"
+
+
+def test_parse_hourly(tmp_path):
+    r = _run_parse_test("HOURLY :30", tmp_path)
+    out = _parse_probe_output(r.stdout)
+    assert out["RC"] == "0"
+    assert out["CAL_MINUTE"] == "30"
+    assert out["CAL_HOUR"] == ""
+
+
+def test_parse_minute_interval(tmp_path):
+    r = _run_parse_test("MINUTE 5", tmp_path)
+    out = _parse_probe_output(r.stdout)
+    assert out["RC"] == "0"
+    assert out["CAL_INTERVAL_SEC"] == "300"
+
+
+def test_parse_garbage_rejected(tmp_path):
+    r = _run_parse_test("YEARLY 2026 1 1 03:00", tmp_path)
+    out = _parse_probe_output(r.stdout)
+    assert out["RC"] == "2"
