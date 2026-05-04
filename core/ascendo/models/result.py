@@ -159,6 +159,13 @@ class Summary(BaseModel):
     skipped: NonNegativeInt = 0
     planned: NonNegativeInt = 0
     partial: NonNegativeInt = 0
+    needs_reboot: bool = Field(
+        default=False,
+        description=(
+            "True if any item in this phase requires a reboot to complete. "
+            "Set by the native script via json_set_needs_reboot."
+        ),
+    )
     duration_ms: NonNegativeInt | None = Field(
         default=None,
         description="Total wall-clock duration for this phase, in milliseconds.",
