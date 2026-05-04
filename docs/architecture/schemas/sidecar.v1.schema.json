@@ -797,6 +797,12 @@
     "summary": {
       "$ref": "#/$defs/Summary"
     },
+    "needs_reboot": {
+      "default": false,
+      "description": "True if this phase requires a system reboot to complete. Emitted by native scripts (e.g. softwareupdate -R, Windows Update). Read by dashboard/routes/runs.py and the CLI _sidecars_need_reboot helper.",
+      "title": "Needs Reboot",
+      "type": "boolean"
+    },
     "messages": {
       "description": "Phase-level log lines not associated with a specific item.",
       "items": {

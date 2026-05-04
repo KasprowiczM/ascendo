@@ -259,6 +259,7 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         **meta,
         "finished_at": args.ended_at,
         "status": status,
+        "needs_reboot": needs_reboot,
         "summary": {
             "total": total,
             "success": success,
@@ -267,7 +268,6 @@ def cmd_finalize(args: argparse.Namespace) -> int:
             "skipped": skipped,
             "planned": planned,
             "partial": partial,
-            "needs_reboot": needs_reboot,
             "exit_code": args.exit_code,
         },
         "items": items,

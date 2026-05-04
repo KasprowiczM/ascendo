@@ -116,6 +116,14 @@ class Sidecar(BaseModel):
     summary: Summary
 
     # ── Optional ─────────────────────────────────────────────────────
+    needs_reboot: bool = Field(
+        default=False,
+        description=(
+            "True if this phase requires a system reboot to complete. "
+            "Emitted by native scripts (e.g. softwareupdate -R, Windows Update). "
+            "Read by dashboard/routes/runs.py and the CLI _sidecars_need_reboot helper."
+        ),
+    )
     messages: list[Message] = Field(
         default_factory=list,
         description="Phase-level log lines not associated with a specific item.",

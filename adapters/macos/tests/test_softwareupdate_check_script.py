@@ -102,7 +102,7 @@ def test_restart_required_marks_needs_reboot(tmp_path):
     assert res.returncode == 0, res.stderr
     sc = _parse(out / rid / "check__softwareupdate.json")
     assert len(sc.items) == 2
-    assert sc.summary.needs_reboot is True
+    assert sc.needs_reboot is True
     macos_item = next(i for i in sc.items if i.id.startswith("macOS Sonoma"))
     assert macos_item.current_version == "14.7.1"
 
@@ -122,7 +122,15 @@ def test_per_item_metadata_safari(tmp_path):
 
 def test_softwareupdate_failure_exits_30(tmp_path):
     su = tmp_path / "broken_su"
-    su.write_text("#!/usr/bin/env bash\necho 'broken' >&2\nexit 1\n")
+    su.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [ \"$1\" = '--help' ] || [ \"$1\" = '-h' ]; then\n"
+        "    echo 'broken-fake'\n"
+        "    exit 0\n"
+        "fi\n"
+        "echo 'broken' >&2\n"
+        "exit 1\n"
+    )
     os.chmod(su, 0o755)
     out = tmp_path / "out"
     rid = str(uuid.uuid4())
