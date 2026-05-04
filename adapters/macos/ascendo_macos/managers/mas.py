@@ -2,7 +2,8 @@
 
 Mirrors BrewManager exactly with two additions:
 
-1. Takes an IElevation dependency in __init__.
+1. Takes a MacElevation dependency in __init__ (we use concrete-only
+   methods has_password_registered() and askpass_path()).
 2. For Phase.APPLY only, injects SUDO_ASKPASS into the child process
    environment when elevation.has_password_registered() is True.
 
@@ -25,8 +26,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import ClassVar
 
-from ascendo.interfaces.elevation import IElevation
 from ascendo.interfaces.package_manager import IPackageManager, ManagerError
+from ascendo_macos.managers.elevation import MacElevation
 from ascendo.models.host import HostInfo, OperatingSystem
 from ascendo.models.package import SourceType
 from ascendo.models.run import Phase, RunInfo
@@ -68,13 +69,13 @@ class MasManager(IPackageManager):
         *,
         scripts_dir: Path,
         lib_dir: Path,
-        elevation: IElevation,
+        elevation: MacElevation,
         bash_path: str | None = None,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
     ) -> None:
         self._scripts_dir = Path(scripts_dir)
         self._lib_dir = Path(lib_dir)
-        self._elevation = elevation
+        self._elevation: MacElevation = elevation
         self._bash_override = bash_path
         self._timeout_sec = timeout_sec
         # Test seam: populated before each _run_streaming call so tests can
@@ -159,13 +160,14 @@ class MasManager(IPackageManager):
             log_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Build env before spawning — test seam reads _last_env_for_test.
-            self._last_env_for_test = self._build_env(phase)
+            env = self._build_env(phase)
+            self._last_env_for_test = env
 
             _log.debug("MasManager.run_phase phase=%s run_id=%s argv=%r",
                        phase.value, run.id, argv)
 
             try:
-                completed = self._run_streaming(argv, log_path, self._timeout_sec)
+                completed = self._run_streaming(argv, log_path, self._timeout_sec, env=env)
             except subprocess.TimeoutExpired as exc:
                 raise ManagerError(
                     f"mas {phase.value} script timed out after "
@@ -226,14 +228,13 @@ class MasManager(IPackageManager):
         return argv
 
     def _build_env(self, phase: Phase) -> dict[str, str]:
-        """Build the env dict for the child process.
+        """Build the env dict to pass explicitly to the child process.
 
-        For Phase.APPLY only: when a sudo password is cached, inject
-        SUDO_ASKPASS so the bash script's ``sudo -A mas upgrade`` can
-        authenticate non-interactively from the dashboard.
-
-        For all other phases (read-only): no env override; the child
-        inherits the current process environment unchanged.
+        All phases receive a snapshot of ``os.environ`` passed via
+        ``Popen(env=...)``.  For Phase.APPLY additionally, when a sudo
+        password is cached, SUDO_ASKPASS is injected so the bash script's
+        ``sudo -A mas upgrade`` can authenticate non-interactively from
+        the dashboard.
         """
         env = dict(os.environ)
         if phase is Phase.APPLY and self._elevation.has_password_registered():
@@ -247,6 +248,8 @@ class MasManager(IPackageManager):
         argv: list[str],
         log_path: Path,
         timeout: float,
+        *,
+        env: dict[str, str],
     ) -> subprocess.CompletedProcess[str]:
         proc = subprocess.Popen(  # noqa: S603 (argv list)
             argv,
@@ -254,7 +257,7 @@ class MasManager(IPackageManager):
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
-            env=self._last_env_for_test or None,
+            env=env,
         )
         captured: list[str] = []
         started = time.monotonic()

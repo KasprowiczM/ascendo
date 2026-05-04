@@ -7,7 +7,6 @@ and the elevation handshake (SUDO_ASKPASS env injection on apply only).
 from __future__ import annotations
 
 import json
-import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -140,7 +139,7 @@ def test_is_available_true_when_all_present_and_recent(monkeypatch, mac_host):
 def test_run_phase_dispatches_correct_script(phase, relpath, run_info, mac_host):
     captured = {}
 
-    def fake_run_streaming(self, argv, log_path, timeout):
+    def fake_run_streaming(self, argv, log_path, timeout, *, env):
         captured["argv"] = argv
         run_id = run_info.id
         out_dir = Path(argv[argv.index("--output-dir") + 1])
@@ -163,7 +162,7 @@ def test_apply_exports_sudo_askpass_when_password_registered(
     helper = tmp_path / "askpass-x.sh"
     helper.write_text("#!/usr/bin/env bash\necho secret\n")
 
-    def fake_run_streaming(self, argv, log_path, timeout):
+    def fake_run_streaming(self, argv, log_path, timeout, *, env):
         run_id = run_info.id
         out_dir = Path(argv[argv.index("--output-dir") + 1])
         sidecar_path = out_dir / str(run_id) / "apply__mas.json"
@@ -179,7 +178,7 @@ def test_apply_exports_sudo_askpass_when_password_registered(
 
 
 def test_apply_does_not_export_sudo_askpass_when_no_password(run_info, mac_host):
-    def fake_run_streaming(self, argv, log_path, timeout):
+    def fake_run_streaming(self, argv, log_path, timeout, *, env):
         run_id = run_info.id
         out_dir = Path(argv[argv.index("--output-dir") + 1])
         sidecar_path = out_dir / str(run_id) / "apply__mas.json"
@@ -193,11 +192,46 @@ def test_apply_does_not_export_sudo_askpass_when_no_password(run_info, mac_host)
     assert "SUDO_ASKPASS" not in m._last_env_for_test
 
 
+def test_apply_does_not_export_sudo_askpass_when_helper_path_is_none(run_info, mac_host):
+    """has_pw=True but askpass_path() returns None (helper creation failed)."""
+    def fake_run_streaming(self, argv, log_path, timeout, *, env):
+        run_id = run_info.id
+        out_dir = Path(argv[argv.index("--output-dir") + 1])
+        sidecar_path = out_dir / str(run_id) / "apply__mas.json"
+        sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+        sidecar_path.write_text(json.dumps(_minimal_sidecar(Phase.APPLY, run_id)))
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    with patch.object(MasManager, "_run_streaming", fake_run_streaming):
+        m = _make_manager(_FakeElevation(has_pw=True, helper=None))
+        m.run_phase(Phase.APPLY, run_info, mac_host)
+    assert "SUDO_ASKPASS" not in m._last_env_for_test
+
+
+@pytest.mark.parametrize("phase", [Phase.CHECK, Phase.PLAN, Phase.VERIFY, Phase.CLEANUP])
+def test_non_apply_phase_does_not_export_sudo_askpass_even_when_password_registered(
+    phase, run_info, mac_host,
+):
+    def fake_run_streaming(self, argv, log_path, timeout, *, env):
+        run_id = run_info.id
+        out_dir = Path(argv[argv.index("--output-dir") + 1])
+        sidecar_path = out_dir / str(run_id) / f"{phase.value}__mas.json"
+        sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+        sidecar_path.write_text(json.dumps(_minimal_sidecar(phase, run_id)))
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    elev = _FakeElevation(has_pw=True, helper=Path("/tmp/askpass.sh"))
+    with patch.object(MasManager, "_run_streaming", fake_run_streaming):
+        m = _make_manager(elev)
+        m.run_phase(phase, run_info, mac_host)
+    assert "SUDO_ASKPASS" not in m._last_env_for_test
+
+
 # ── error paths ───────────────────────────────────────────────
 
 def test_run_phase_raises_manager_error_when_no_sidecar(run_info, mac_host):
     """Bash exits non-zero AND no sidecar produced -> ManagerError."""
-    def fake_run_streaming(self, argv, log_path, timeout):
+    def fake_run_streaming(self, argv, log_path, timeout, *, env):
         return MagicMock(returncode=2, stdout="boom", stderr="")
     with patch.object(MasManager, "_run_streaming", fake_run_streaming):
         m = _make_manager()
