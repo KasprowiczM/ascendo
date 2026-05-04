@@ -58,16 +58,98 @@ class LaunchdScheduler(IScheduler):
         return shutil.which("launchctl") is not None
 
     def install(self, host: HostInfo, spec: ScheduleSpec) -> None:
-        raise NotImplementedError("M5.5.7")
+        body = {
+            "name":        spec.name,
+            "expression":  spec.expression,
+            "profile":     spec.profile,
+            "enabled":     spec.enabled,
+            "description": spec.description or "",
+        }
+        self._invoke("install", payload=body)
 
     def uninstall(self, host: HostInfo, name: str) -> None:
-        raise NotImplementedError("M5.5.7")
+        self._invoke("uninstall", payload={"name": name})
 
     def list(self, host: HostInfo) -> list[ScheduleSpec]:  # noqa: A003
-        raise NotImplementedError("M5.5.7")
+        result = self._invoke("list")
+        if not isinstance(result, list):
+            return []
+        out: list[ScheduleSpec] = []
+        for item in result:
+            try:
+                out.append(self._parse_spec(item))
+            except (TypeError, ValueError):
+                continue
+        return out
 
     def get(self, host: HostInfo, name: str) -> ScheduleSpec | None:
-        raise NotImplementedError("M5.5.7")
+        for spec in self.list(host):
+            if spec.name == name:
+                return spec
+        return None
 
     def trigger(self, host: HostInfo, name: str) -> None:
-        raise NotImplementedError("M5.5.7")
+        self._invoke("trigger", payload={"name": name})
+
+    # ── Internals ────────────────────────────────────────────────────────
+
+    def _invoke(self, action: str, *, payload: dict | None = None):
+        script = self._scripts_dir / "scheduler" / "scheduler.sh"
+        bash = self._resolve_bash()
+        with tempfile.TemporaryDirectory(prefix="ascendo-sched-") as tmp:
+            output = Path(tmp) / "result.json"
+            payload_path = None
+            argv: list[str] = [
+                bash,
+                str(script),
+                "--action", action,
+                "--output", str(output),
+            ]
+            if payload is not None:
+                payload_path = Path(tmp) / "payload.json"
+                payload_path.write_text(json.dumps(payload), encoding="utf-8")
+                argv += ["--payload", str(payload_path)]
+            try:
+                completed = subprocess.run(  # noqa: S603
+                    argv, capture_output=True, text=True,
+                    timeout=self._timeout_sec, check=False,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise SchedulerError(f"scheduler {action} timed out") from exc
+            except OSError as exc:
+                raise SchedulerError(f"failed to spawn bash for scheduler {action}: {exc}") from exc
+
+            if completed.returncode != 0 and not output.exists():
+                raise SchedulerError(
+                    f"scheduler {action} failed: exit={completed.returncode} "
+                    f"stderr={completed.stderr[:300]!r}"
+                )
+            if not output.exists():
+                # install / uninstall / trigger may not produce output.
+                return None
+            try:
+                return json.loads(output.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise SchedulerError(f"scheduler {action} emitted invalid JSON: {exc}") from exc
+
+    def _parse_spec(self, item: dict) -> ScheduleSpec:
+        return ScheduleSpec(
+            name=str(item.get("name", "")),
+            expression=str(item.get("expression", "")),
+            profile=str(item.get("profile", "full")),
+            enabled=bool(item.get("enabled", True)),
+            description=item.get("description") or None,
+        )
+
+    def _resolve_bash(self) -> str:
+        if self._bash_resolved is not None:
+            return self._bash_resolved
+        if self._bash_override is not None:
+            self._bash_resolved = self._bash_override
+            return self._bash_resolved
+        for candidate in ("bash", "/bin/bash", "/usr/local/bin/bash"):
+            found = shutil.which(candidate)
+            if found is not None:
+                self._bash_resolved = found
+                return found
+        raise SchedulerError("no bash binary on PATH")
