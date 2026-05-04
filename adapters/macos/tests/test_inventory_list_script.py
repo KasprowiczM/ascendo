@@ -31,6 +31,10 @@ def _make_fake_sp(tmp_path: Path) -> Path:
     p = tmp_path / "fake_system_profiler"
     body = (
         "#!/usr/bin/env bash\n"
+        "if [ \"$1\" = '--version' ]; then\n"
+        "    echo 'system_profiler test-fake 1.0'\n"
+        "    exit 0\n"
+        "fi\n"
         f"cat <<'EOF_SP'\n{fixture}\nEOF_SP\n"
     )
     p.write_text(body)
@@ -122,6 +126,12 @@ def test_emits_one_item_per_app(tmp_path):
     assert sc.status.value == "success"
 
 
+# Note: rule 2 (mas-name match) and rule 3 (obtained_from=mac_app_store)
+# are co-active for all MAS fixture entries, so the test asserts the
+# combined effect rather than each rule in isolation. test_no_mas_falls_through
+# confirms rule 3 alone catches them when mas is absent. A future fixture
+# addition (a MAS app with obtained_from=identified_developer) would
+# exercise rule 2 in isolation.
 def test_classification_distribution(tmp_path):
     sp = _make_fake_sp(tmp_path)
     mas = _make_fake_mas(tmp_path)
