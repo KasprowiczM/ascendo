@@ -127,11 +127,11 @@ class MacOSAdapter(IAdapter):
         return self._cached_inventory
 
     def snapshot(self) -> ISnapshot | None:
-        """Not implemented in M5.1. Returns None (SNAPSHOTS capability not set)."""
+        """Not implemented yet (planned for M5.4 — Time Machine read-only ISnapshot). Returns None."""
         return None  # M5.4 (Time Machine read-only)
 
     def scheduler(self) -> IScheduler | None:
-        """Not implemented in M5.1. Returns None (SCHEDULING capability not set)."""
+        """Not implemented yet (planned for M5.5 — launchd IScheduler). Returns None."""
         return None  # M5.5 (launchd)
 
     def source(self) -> ISource | None:
@@ -181,12 +181,8 @@ class MacOSAdapter(IAdapter):
     def health_check(self) -> dict[str, str]:
         """Adapter self-test. Returns component→status_string for ``ascendo doctor``.
 
-        Components checked:
-            brew          — Homebrew binary availability + version
-            jq            — jq binary (required by brew phase scripts)
-            bash          — bash shell (required for all phase scripts)
-            ascendo_lib   — lib/*.sh + lib/*.py modules present
-            ascendo_scripts — scripts/brew/ directory present
+        Components checked (7 total):
+            brew, jq, mas, system_profiler, bash, ascendo_lib, ascendo_scripts
         """
         out: dict[str, str] = {}
         out["brew"] = self._brew_status()

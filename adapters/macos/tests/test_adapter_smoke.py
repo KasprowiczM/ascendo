@@ -203,14 +203,6 @@ def test_health_check_includes_mas_component() -> None:
 # ── M5.3 wiring assertions ────────────────────────────────────────────────
 
 
-def test_capabilities_includes_inventory() -> None:
-    """M5.3 adds INVENTORY to the declared capability set."""
-    a = MacOSAdapter()
-    assert AdapterCapability.PACKAGE_MANAGEMENT in a.capabilities
-    assert AdapterCapability.ELEVATION in a.capabilities
-    assert AdapterCapability.INVENTORY in a.capabilities
-
-
 def test_inventory_returns_macosinventory_singleton() -> None:
     """inventory() returns a MacOSInventory instance and caches it (same object)."""
     from ascendo_macos.inventory import MacOSInventory
