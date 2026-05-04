@@ -618,6 +618,7 @@
         "pip",
         "pipx",
         "web",
+        "system",
         "plugin",
         "unknown"
       ],

@@ -44,6 +44,7 @@ class SourceType(str, Enum):
     PIP = "pip"
     PIPX = "pipx"
     WEB = "web"
+    SYSTEM = "system"      # macOS Apple-bundled apps in /System/Applications/
     PLUGIN = "plugin"      # plugin-supplied source
     UNKNOWN = "unknown"
 

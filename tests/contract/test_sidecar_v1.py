@@ -157,3 +157,9 @@ def test_source_type_has_mas_value() -> None:
     assert SourceType.MAS.value == "mas"
     # MAC_APP_STORE retained for future item-level namespace tagging.
     assert SourceType.MAC_APP_STORE.value == "mac_app_store"
+
+
+def test_source_type_has_system_value() -> None:
+    """MacOSInventory tags Apple-bundled apps as SourceType.SYSTEM. Required by M5.3."""
+    from ascendo.models.package import SourceType
+    assert SourceType.SYSTEM.value == "system"
