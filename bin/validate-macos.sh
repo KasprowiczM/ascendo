@@ -18,6 +18,11 @@
 #      list.sh end-to-end produces sidecar with 50+ apps, classification
 #      distribution sanity (system/mas/brew/web), MacOSAdapter.inventory()
 #      Python wrapper
+#  10. softwareupdate (M5.4): doctor reports softwareupdate,
+#      five-phase softwareupdate contract via CLI (check/plan/verify/cleanup
+#      + apply --dry-run; real apply EXCLUDED — would reboot the Mac)
+#  11. Time Machine read-only (M5.4): doctor reports tmutil,
+#      TimeMachineSnapshot.list() end-to-end (>=0 snapshots; no lower bound)
 #
 # Exits 0 on full success, 1 with [FAIL] count otherwise.
 # Final line on success: ALL CHECKS PASSED.
@@ -482,6 +487,91 @@ fi
 
 # Cleanup Stage 9 temp dir
 [ -n "${INV_DIR:-}" ] && [ -d "$INV_DIR" ] && rm -rf "$INV_DIR"
+
+# ============================================================
+# Stage 10 — softwareupdate (M5.4)
+# ============================================================
+step "10. softwareupdate (M5.4)"
+
+# Capture doctor output ONCE for both Stage 10 + Stage 11 component grep.
+DOCTOR_OUT_M54="$(python3 -m ascendo doctor 2>&1)"
+
+# Step 10.1 — doctor reports softwareupdate component
+step "10.1 doctor: softwareupdate component"
+if printf '%s\n' "$DOCTOR_OUT_M54" | grep -qE '^[[:space:]]+softwareupdate[[:space:]]+(ok|degraded|unavailable|error)'; then
+    printf '%s\n' "$DOCTOR_OUT_M54" | grep -E '^[[:space:]]+softwareupdate[[:space:]]+'
+    result "10.1 doctor: softwareupdate component" 1
+else
+    result "10.1 doctor: softwareupdate component" 0 "no softwareupdate line in doctor output"
+fi
+
+# Stage 10 phase probes share one runs-dir
+SU_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ascendo-validate-su-XXXXXX")"
+
+# Helper: run softwareupdate phase via CLI and assert the sidecar lands.
+# CLI assigns its own run-id; we use `find` to detect any matching sidecar.
+_su_phase_probe() {
+    local _phase="$1"
+    local _label="$2"
+    shift 2
+    step "$_label"
+    if python3 -m ascendo run \
+            --category softwareupdate --phase "$_phase" \
+            --runs-dir "$SU_DIR" "$@" >/dev/null 2>&1; then
+        if find "$SU_DIR" -name "${_phase}__softwareupdate.json" -print -quit 2>/dev/null | grep -q .; then
+            result "$_label" 1 "sidecar=${_phase}__softwareupdate.json"
+        else
+            result "$_label" 0 "no sidecar produced"
+        fi
+    else
+        result "$_label" 0 "CLI exit non-zero"
+    fi
+}
+
+_su_phase_probe "check"   "10.2 softwareupdate check"
+_su_phase_probe "plan"    "10.3 softwareupdate plan"
+_su_phase_probe "verify"  "10.4 softwareupdate verify (soft no-op)"
+_su_phase_probe "cleanup" "10.5 softwareupdate cleanup"
+
+# Step 10.6 — apply --dry-run (NEVER invokes sudo on real Mac)
+_su_phase_probe "apply" "10.6 softwareupdate apply --dry-run" --dry-run
+
+# Cleanup Stage 10 temp dir
+[ -n "${SU_DIR:-}" ] && [ -d "$SU_DIR" ] && rm -rf "$SU_DIR"
+
+# ============================================================
+# Stage 11 — Time Machine read-only (M5.4)
+# ============================================================
+step "11. Time Machine read-only (M5.4)"
+
+# Step 11.1 — doctor reports tmutil component
+step "11.1 doctor: tmutil component"
+if printf '%s\n' "$DOCTOR_OUT_M54" | grep -qE '^[[:space:]]+tmutil[[:space:]]+(ok|degraded|unavailable|error)'; then
+    printf '%s\n' "$DOCTOR_OUT_M54" | grep -E '^[[:space:]]+tmutil[[:space:]]+'
+    result "11.1 doctor: tmutil component" 1
+else
+    result "11.1 doctor: tmutil component" 0 "no tmutil line in doctor output"
+fi
+
+# Step 11.2 — TimeMachineSnapshot.list() end-to-end
+step "11.2 TimeMachineSnapshot.list() end-to-end"
+PY_TM_OUT="$(python3 -c "
+from ascendo_macos.adapter import MacOSAdapter
+a = MacOSAdapter()
+host = a.detect_host()
+snap = a.snapshot()
+snapshots = snap.list(host)
+print('time machine: %d local snapshots' % len(snapshots))
+# No lower bound -- fresh-install Mac may have no local snapshots yet.
+" 2>&1)"
+PY_TM_RC=$?
+if [ "$PY_TM_RC" -eq 0 ]; then
+    printf '         %s\n' "$PY_TM_OUT"
+    result "11.2 TimeMachineSnapshot.list() end-to-end" 1
+else
+    printf '%s\n' "$PY_TM_OUT" >&2
+    result "11.2 TimeMachineSnapshot.list() end-to-end" 0 "see above"
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 printf "\n"
