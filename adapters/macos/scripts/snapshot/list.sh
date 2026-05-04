@@ -95,6 +95,12 @@ fi
 # Use here-string (<<< "$TM_OUT") so the while loop runs in the CURRENT shell,
 # avoiding bash 3.2 subshell variable scoping issues (same pattern as check.sh).
 # Only accept lines matching com.apple.TimeMachine.*-*-*-*.local; skip all else.
+# NOTE: shell glob `*` matches any sequence INCLUDING `.`, so a hypothetical
+# future Apple naming like `com.apple.TimeMachine.2026-05-03-140425.com.apple.foo.local`
+# would also be accepted by this pattern. This is acceptable — current
+# (macOS 10.15-15.x) Apple naming is `com.apple.TimeMachine.YYYY-MM-DD-HHMMSS.local`
+# only. If Apple introduces extended suffixes, the Python wrapper's regex
+# (snapshot.py, Task 8) would need to evolve too.
 while IFS= read -r snap; do
     [ -n "$snap" ] || continue
     case "$snap" in
