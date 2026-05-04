@@ -124,9 +124,9 @@ def test_real_apply_invokes_sudo_a_mas_upgrade(tmp_path):
     res = _run_apply(fake_mas, fake_sudo, out, rid)
     assert res.returncode == 0, res.stderr
 
-    # First sudo call should be `-A mas upgrade ...`
-    log = sudo_log.read_text().strip().splitlines()
-    assert any("-A" in line and "upgrade" in line for line in log), log
+    # First sudo call must START with `-A` (CVE-2025-43411: -A must be first arg)
+    log_lines = sudo_log.read_text().strip().splitlines()
+    assert any(line.startswith("-A ") and "upgrade" in line for line in log_lines), log_lines
 
 
 def test_signed_out_fail_fast_no_sudo(tmp_path):
@@ -174,3 +174,17 @@ def test_apply_emits_success_items_for_upgraded(tmp_path):
     sc = _parse(out / rid / "apply__mas.json")
     statuses = [i.status.value for i in sc.items]
     assert any(s == "success" for s in statuses)
+
+
+def test_apply_no_outdated_emits_no_items_no_sudo(tmp_path):
+    """When mas outdated returns empty, no sudo invocation, sidecar has zero items."""
+    sudo_log = tmp_path / "sudo.log"
+    fake_sudo = _make_fake_sudo(tmp_path, log_path=sudo_log)
+    fake_mas = _make_fake_mas(tmp_path, signed_in=True, outdated_text="")
+    out = tmp_path / "out"
+    rid = str(uuid.uuid4())
+    res = _run_apply(fake_mas, fake_sudo, out, rid)
+    assert res.returncode == 0, res.stderr
+    sc = _parse(out / rid / "apply__mas.json")
+    assert sc.items == []
+    assert (not sudo_log.exists()) or sudo_log.read_text() == ""

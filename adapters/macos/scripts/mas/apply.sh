@@ -124,33 +124,22 @@ fi
 # -- real apply path -----------------------------------------------------------
 # Collect target ids + version pairs as space-separated strings (Bash 3.2-safe;
 # no declare -A). IDs are numeric-only so spaces are safe delimiters.
-TARGET_IDS=""
-TARGET_PAIRS=""  # space-separated "id|cur|tgt" tokens
-
-printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, .current_version, .target_version] | @tsv' 2>/dev/null | \
-while IFS="$(printf '\t')" read -r _id _cur _tgt; do
-    [ -n "$_id" ] || continue
-    in_filter "$_id" || continue
-    printf '%s ' "$_id"
-done | { read -r TARGET_IDS_LINE; printf '%s' "${TARGET_IDS_LINE:-}"; }
-
-# Re-collect using a temp file to avoid subshell variable scoping (Bash 3.2).
-_TMPIDS="$(printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, .current_version, .target_version] | @tsv' 2>/dev/null | \
+# Use command substitution to avoid subshell variable scoping (Bash 3.2).
+TARGET_IDS="$(printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, .current_version, .target_version] | @tsv' 2>/dev/null | \
     while IFS="$(printf '\t')" read -r _id _cur _tgt; do
         [ -n "$_id" ] || continue
         in_filter "$_id" || continue
         printf '%s ' "$_id"
     done)"
+TARGET_IDS="${TARGET_IDS%% }"   # strip trailing space
 
-_TMPPAIRS="$(printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, .current_version, .target_version] | @tsv' 2>/dev/null | \
+TARGET_PAIRS="$(printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, .current_version, .target_version] | @tsv' 2>/dev/null | \
     while IFS="$(printf '\t')" read -r _id _cur _tgt; do
         [ -n "$_id" ] || continue
         in_filter "$_id" || continue
         printf '%s|%s|%s ' "$_id" "$_cur" "$_tgt"
     done)"
-
-TARGET_IDS="${_TMPIDS%% }"   # strip trailing space
-TARGET_PAIRS="${_TMPPAIRS%% }"
+TARGET_PAIRS="${TARGET_PAIRS%% }"
 
 if [ -z "$TARGET_IDS" ]; then
     json_add_message "info" "nothing to upgrade"

@@ -73,9 +73,33 @@ def test_mas_classify_exit_known_codes():
     # 1 -> failed
     res = _bash("mas_classify_exit 1")
     assert res.stdout.strip() == "failed"
-    # 6 -> failed-not-signed-in
+    # 6 -> failed (not-signed-in semantic preserved via apply.sh error message)
     res = _bash("mas_classify_exit 6")
-    assert res.stdout.strip() == "failed-not-signed-in"
+    assert res.stdout.strip() == "failed"
+
+
+def test_mas_classify_exit_returns_only_valid_itemstatus_values():
+    """All possible mas_classify_exit return values must be valid ItemStatus enum members."""
+    import sys
+    sys.path.insert(0, str(ADAPTER_ROOT.parent.parent / "core"))
+    try:
+        from ascendo.models.result import ItemStatus
+    finally:
+        sys.path.pop(0)
+    valid = {s.value for s in ItemStatus}
+    # Test documented exit codes (0=success, 1=generic fail, 6=not-signed-in, 99=unknown)
+    for rc in (0, 1, 6, 99):
+        res = subprocess.run(
+            ["bash", "-c", f". '{LIB}'; mas_classify_exit {rc}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        result = res.stdout.strip()
+        assert result in valid, (
+            f"mas_classify_exit {rc} returned '{result}' which is not in "
+            f"ItemStatus enum {valid}"
+        )
 
 
 def test_mas_version_at_least_compares_correctly():

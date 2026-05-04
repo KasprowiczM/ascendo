@@ -126,14 +126,14 @@ mas_version_at_least() {
 }
 
 # mas_classify_exit <code>
-# Maps mas exit code to a single token usable as ascendo item status:
+# Maps mas exit code to a valid ascendo ItemStatus enum value:
 #   0 -> success
-#   6 -> failed-not-signed-in     (mas convention; observed on signed-out hosts)
+#   6 -> failed  (mas convention: not signed in; rc=6 is captured in the
+#                 apply.sh error message which includes the raw exit code)
 #   * -> failed
 mas_classify_exit() {
     case "$1" in
         0) printf 'success\n' ;;
-        6) printf 'failed-not-signed-in\n' ;;
         *) printf 'failed\n' ;;
     esac
 }
