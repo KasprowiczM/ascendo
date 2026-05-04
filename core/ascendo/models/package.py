@@ -39,10 +39,15 @@ class SourceType(str, Enum):
     REGISTRY_ARP = "registry_arp"   # Windows Add/Remove Programs entry
     WINDOWS_UPDATE = "windows_update"   # OS patches via PSWindowsUpdate (KBs)
     MAC_APP_STORE = "mac_app_store"
+    MAS = "mas"                    # manager-level category for MasManager
     NPM = "npm"
     PIP = "pip"
     PIPX = "pipx"
     WEB = "web"
+    SYSTEM = "system"      # macOS Apple-bundled apps in /System/Applications/
+    INVENTORY = "inventory"  # macOS LaunchServices inventory category (M5.3)
+    SOFTWAREUPDATE = "softwareupdate"  # macOS softwareupdate CLI (M5.4 OS patches)
+    SNAPSHOT = "snapshot"  # macOS Time Machine local snapshots (M5.4)
     PLUGIN = "plugin"      # plugin-supplied source
     UNKNOWN = "unknown"
 
@@ -86,6 +91,14 @@ class Package(BaseModel):
     )
     category: SourceType = Field(
         description="Source/feed type. Drives which adapter handles this package.",
+    )
+    source: "ItemSource | None" = Field(
+        default=None,
+        description=(
+            "Optional specific source/feed descriptor. Populated by inventory "
+            "implementations that have per-item source metadata (e.g. app path, "
+            "tap name). None when only the category is known."
+        ),
     )
 
 

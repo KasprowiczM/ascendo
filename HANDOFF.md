@@ -6,6 +6,381 @@
 
 ---
 
+## Sesja 26 (2026-05-04) — macOS adapter M5.4: softwareupdate + Time Machine read-only + v0.0.11-alpha
+
+Fourth milestone of the macOS adapter. Two related Layer-5 components:
+
+1. **SoftwareUpdateManager** wraps Apple's `softwareupdate` CLI for
+   macOS OS updates. Default invocation: `sudo -A softwareupdate -i -r
+   -R --verbose` (recommended only). `--all` opts into `-ia` for
+   non-recommended updates; `--filter LABEL` restricts to a single
+   label. The `-R` flag is **mandatory** — sets boot metadata that
+   triggers the update on restart (battle-tested wisdom from legacy
+   `/Users/mk/Dev_Env/Aktualizacje_MAC/update_system.sh`). Without `-R`,
+   updates download but never apply.
+
+2. **TimeMachineSnapshot** implements `ISnapshot` (read-only). Lists
+   APFS local snapshots via `tmutil listlocalsnapshots /` (no TCC
+   permissions required). `create()` raises `SnapshotError` with an
+   explainer — APFS local snapshots are auto-managed; user-initiated
+   backups go through System Settings > Time Machine.
+
+Tag `v0.0.11-alpha` created locally + pushed. Real-Mac validate-macos
+showed **29/29 PASS** including all of Stage 10 (6 sub-steps) + Stage 11
+(2 sub-steps); **22 local APFS snapshots** detected on Mac.r12.home.
+
+### Architecture confirmed end-to-end
+
+- Layer 4 core: added `SourceType.SOFTWAREUPDATE` + `SourceType.SNAPSHOT`
+  enum values; **moved `needs_reboot` from Summary to top-level Sidecar**
+  (catches a real bug — the dashboard router + CLI helper both read
+  from the top level; Summary placement would have silently dropped
+  the reboot signal). Schema regenerated.
+- `MacOSAdapter.capabilities` now `PACKAGE_MANAGEMENT | ELEVATION |
+  INVENTORY | SNAPSHOTS`. `package_managers()` returns
+  `[BrewManager, MasManager, SoftwareUpdateManager]` — softwareupdate
+  LAST because apply may reboot the Mac mid-run. `snapshot()` returns
+  cached `TimeMachineSnapshot` singleton.
+- Reboot-survival in apply.sh: pre-emit success items + `json_save`
+  before sudo invocation, set `JSON_FINALIZED=1` to disable EXIT-trap
+  double-save. Trade-off: if sudo fails, items still show success;
+  verify phase reconciles.
+- Health check now reports 9 components (was 7): brew/jq/mas/system_profiler
+  + new softwareupdate + tmutil + bash/ascendo_lib/ascendo_scripts.
+
+### Files added (per M5.4.x sub-milestone)
+
+- `core/ascendo/models/package.py` — added `SourceType.SOFTWAREUPDATE` +
+  `SourceType.SNAPSHOT` (M5.4.1)
+- `core/ascendo/models/sidecar.py` — added top-level `needs_reboot: bool`
+  field (M5.4.3 follow-up)
+- `core/ascendo/cli/__init__.py` — `_sidecars_need_reboot` extended to
+  read top-level `sc.needs_reboot` (M5.4.3 follow-up #2)
+- `adapters/macos/lib/_json_emit.py` — `cmd_finalize` writes
+  `needs_reboot` at sidecar top-level (was nested under summary)
+- `docs/architecture/schemas/sidecar.v1.schema.json` — regenerated 2×
+  (enum + needs_reboot)
+- `adapters/macos/tests/fixtures/softwareupdate/` — 3 fixtures + README
+  (M5.4.2)
+- `adapters/macos/scripts/softwareupdate/{check,plan,verify,cleanup,apply}.sh`
+  — full 5-phase contract (M5.4.3-5)
+- `adapters/macos/scripts/snapshot/list.sh` — tmutil enumerator (M5.4.7)
+- `adapters/macos/ascendo_macos/managers/softwareupdate.py` —
+  SoftwareUpdateManager (M5.4.6)
+- `adapters/macos/ascendo_macos/snapshot.py` — TimeMachineSnapshot
+  (M5.4.8)
+- `adapters/macos/ascendo_macos/adapter.py` — capabilities flip + 3rd
+  manager + snapshot() singleton + 2 health helpers (M5.4.9)
+- `bin/validate-macos.sh` — Stages 10 + 11 added (M5.4.10)
+- `bin/run-tag-release-macos.sh` — tag bump (M5.4.11)
+
+Tests: 7 softwareupdate phase scripts + 21 SoftwareUpdateManager + 6
+softwareupdate-triplet + 4 snapshot list.sh + 7 TimeMachineSnapshot +
+4 adapter wiring + 5 cli-needs-reboot + 2 SourceType contract = **~56
+new tests** + Stage 10 (6 sub-steps) + Stage 11 (2 sub-steps) e2e.
+
+### Real apply trace (this run)
+
+```
+==> [Stage 5] Apply
+ascendo run 4acfaead-...  adapter=macos  host=Mac.r12.home  profile=full
+  apply    brew           success    items=1 failed=0 success=1
+overall: success (1 sidecars, 1 items)
+    apply succeeded (exit 0)
+
+==> [Stage 7] Doctor + tag
+    tagged v0.0.11-alpha. Run 'git push --tags' when ready.
+```
+
+Stage 10 + Stage 11 trace:
+```
+==> 10.1 doctor: softwareupdate component   [PASS] softwareupdate ok
+==> 10.2 softwareupdate check               [PASS] sidecar=check__softwareupdate.json
+==> 10.3 softwareupdate plan                [PASS]
+==> 10.4 softwareupdate verify (soft no-op) [PASS]
+==> 10.5 softwareupdate cleanup             [PASS]
+==> 10.6 softwareupdate apply --dry-run     [PASS]
+==> 11.1 doctor: tmutil component           [PASS] tmutil ok
+==> 11.2 TimeMachineSnapshot.list()         [PASS] time machine: 22 local snapshots
+ALL CHECKS PASSED. (29/29)
+```
+
+### Subagent rate-limit pivot mid-session (operational lesson)
+
+Subagent dispatch hit Anthropic's per-tier API rate limit ~mid-session
+(reset window: ~6h). Tasks 5, 6, 8, 9, 10, 11 completed inline using
+direct Read/Write/Edit/Bash without the spec/code-quality reviewer
+cycle that worked well for M5.2 + M5.3. Net result: no reviewer
+catches on the inline tasks (manual self-review only). Future M5.x:
+plan around the rate limit by dispatching at most ~5 reviews/hour to
+avoid hitting the wall mid-flight, OR accept inline execution for
+later tasks once the early ones have been reviewed and the patterns
+are well-established.
+
+### Review-cycle catches worth remembering (Task 3 was the standout)
+
+The dual-review pattern (spec-haiku + code-quality-sonnet) caught a
+real Layer-4 design bug on Task 3: the implementer placed
+`needs_reboot` on the `Summary` model, but the existing
+dashboard/routes/runs.py + cli/_sidecars_need_reboot consumers
+both read from the **top-level Sidecar** object. The new flag would
+have been silently dropped on real Mac runs. Code-quality reviewer
+caught it; fix moved the field + extended the CLI helper. This is
+exactly the bug class that's expensive to find in production.
+
+### Heuristic limitation flagged for follow-up
+
+The reboot-survival pre-emit pattern in apply.sh emits success items
+BEFORE sudo invocation (so the sidecar persists across mid-run reboot).
+If sudo subsequently fails, items still show success in the sidecar.
+The verify phase is the reconciliation point — re-running
+`softwareupdate -l` after reboot catches items that didn't actually
+take. **M5.x follow-up**: post-apply sidecar reconciliation (parse
+softwareupdate output + update items in-place via a json_set_item
+helper).
+
+### What's next (M5.5+)
+
+- **M5.5** — `launchd` `IScheduler` (cron-equivalent on macOS). After
+  this, tag `v0.2.0` (full M5 — macOS adapter feature-complete).
+- **M5.x deferred follow-ups**: orchestrator pre-apply
+  snapshot-create integration; `tmutil latestbackup` exposure (TCC
+  permissions required); softwareupdate post-apply sidecar
+  reconciliation; major-version macOS upgrade automation
+  (`softwareupdate --filter "macOS Sequoia"`).
+
+### Spec + plan
+
+- `docs/superpowers/specs/2026-05-04-macos-softwareupdate-snapshot-design.md`
+- `docs/superpowers/plans/2026-05-04-macos-softwareupdate-snapshot.md`
+
+---
+
+## Sesja 25 (2026-05-04) — macOS adapter M5.3: LaunchServices inventory + v0.0.10-alpha
+
+Third milestone of the macOS adapter. The dashboard Categories tab on
+macOS now populates with the real installed-apps list, classified into
+SourceType.{SYSTEM, MAS, BREW, WEB}. Tag `v0.0.10-alpha` created locally
++ pushed.
+
+### Architecture confirmed end-to-end on Mac.r12.home
+
+- Layer 4 core extended: added `SourceType.SYSTEM` (Apple-bundled apps),
+  `SourceType.INVENTORY` (sidecar category enum value), and
+  `Package.source: ItemSource | None` field (backward-compatible --
+  Windows tests 33/33 unaffected).
+- `MacOSAdapter.capabilities` now `PACKAGE_MANAGEMENT | ELEVATION | INVENTORY`.
+  `inventory()` returns a cached `MacOSInventory` singleton.
+- `bin/validate-macos.sh` Stage 9 (LaunchServices) printed all 4
+  sub-steps green with **387 apps enumerated** and the classification
+  distribution `system=64 mas=13 brew=1 web=309`.
+- Dashboard `/inventory*` routes (pre-existing) start serving real
+  data -- zero new dashboard code required.
+
+### Files added (per M5.3.x sub-milestone)
+
+- `core/ascendo/models/package.py` -- added `SourceType.SYSTEM` (M5.3.1) +
+  `SourceType.INVENTORY` (M5.3.3 adaptation) + `Package.source` field (M5.3.4)
+- `docs/architecture/schemas/sidecar.v1.schema.json` -- regenerated (M5.3.1, M5.3.3)
+- `adapters/macos/tests/fixtures/system_profiler_apps.json` -- fixture (M5.3.2)
+- `adapters/macos/scripts/inventory/list.sh` -- bash list script (M5.3.3)
+- `adapters/macos/ascendo_macos/inventory.py` -- `MacOSInventory` (M5.3.4)
+- `adapters/macos/ascendo_macos/adapter.py` -- capabilities flip + inventory wire (M5.3.5)
+- `bin/validate-macos.sh` -- Stage 9 added (M5.3.6)
+- `bin/run-tag-release-macos.sh` -- tag bump + M5.3 message (M5.3.7)
+
+Total: 6 list.sh tests + 9 inventory.py tests + 3 adapter wiring +
+1 SourceType test = **~19 new tests** + Stage 9 e2e (4 sub-steps).
+
+### Real apply trace (this run)
+
+```
+==> [Stage 5] Apply
+ascendo run 8d0583fe-1bd2-46c7-86ba-1958db4a2ec5  adapter=macos  host=Mac.r12.home  profile=full
+  apply    brew           success    items=1 failed=0 success=1
+overall: success (1 sidecars, 1 items)
+    apply succeeded (exit 0)
+
+==> [Stage 7] Doctor + tag
+    tagged v0.0.10-alpha. Run 'git push --tags' when ready.
+```
+
+Stage 9 trace:
+```
+==> 9.2 inventory list.sh end-to-end          [PASS] 387 apps enumerated
+==> 9.3 classification distribution           [PASS] system=64 mas=13 brew=1 web=309
+==> 9.4 MacOSAdapter.inventory()              [PASS] inventory enumerated 387 packages
+ALL CHECKS PASSED. (21/21)
+```
+
+### Review-cycle catches worth remembering (6 fix commits across 5 reviewed tasks)
+
+The spec-compliance + code-quality dual-review pattern caught real bugs
+that would have surfaced on real hardware or in cross-platform consumers:
+
+- Task 3: fake system_profiler didn't handle `--version` (test-only
+  cosmetic; would have polluted every test sidecar with `tool.version="{"`)
+- Task 4: categories filter silently swallowed typos; tool.version
+  hardcoded to "1.0" (synthetic placeholder)
+- Task 5: stale "M5.1" docstrings in snapshot()/scheduler(); duplicate
+  capability test (dedup); health_check docstring listed 5 of 7 components
+- Task 6: INV_DIR temp dir leak (every validate run accumulated
+  /tmp/ascendo-validate-inv-* on CI)
+
+### Heuristic limitation flagged for future M5.3.x improvement
+
+The brew classification rule (lowercase + space-to-hyphen the
+system_profiler `_name`, match against `brew list --cask` token) misses
+casks whose display name doesn't match the token. On Mac.r12.home,
+3 casks installed (`blackhole-2ch`, `inkscape`, `macwhisper`); only
+`inkscape` matched. `BlackHole 2ch` and `MacWhisper` reported as WEB.
+
+**Follow-up**: enrich classification by querying `brew info --cask
+--json=v2 <token>` to extract the cask's `name[]` array (alternative
+display names), then match those against system_profiler `_name`.
+~50 LOC bash + JSON parsing. Not a tag blocker because the spec's
+classification distribution threshold (`SYS>=5 MAS>=1 BREW+WEB>=5`)
+treats BREW + WEB as one bucket for sanity purposes.
+
+### What's next (M5.4+, separate specs)
+
+- **M5.4** -- `softwareupdate` manager (the `-R` flag rule) + Time Machine
+  read-only `ISnapshot`.
+- **M5.5** -- `launchd` `IScheduler`. After this, tag `v0.2.0` (full M5).
+- **M5.3.x follow-ups (deferred during M5.3)**:
+  brew cask name-array matching for better BREW classification;
+  `ascendo inventory list` CLI subcommand; per-app upgrade-availability
+  via inventory; iPad-app upgrade automation (Track 2 from M5.2).
+
+### Spec + plan
+
+- `docs/superpowers/specs/2026-05-04-macos-inventory-launchservices-design.md`
+- `docs/superpowers/plans/2026-05-04-macos-inventory-launchservices.md`
+- Sesja 24 process handoff (mid-session pause): `docs/superpowers/specs/2026-05-04-session-24-handoff.md`
+
+---
+
+## Sesja 21 (2026-05-04) — macOS adapter M5.2: mas + MacElevation + v0.0.9-alpha
+
+Second milestone of the macOS adapter. `MasManager` (Mac App Store via `mas`
+CLI, CVE-2025-43411 `sudo mas upgrade` rule) and `MacElevation` (sudo password
+cache, dashboard `POST /elevation/auth` endpoint) shipped and validated
+end-to-end on Mac.r12.home (Apple Silicon, mas 6.0.1, brew 5.1.8, jq 1.8.1,
+bash 3.2.57, 13 App Store apps installed).
+
+### Architecture additions (M5.2)
+
+- `MacElevation` implements `IElevation` via a subprocess askpass helper
+  (`adapters/macos/lib/askpass_helper.sh`). Password cached in-memory per
+  adapter instance; never written to disk. Dashboard exposes it via
+  `POST /elevation/auth` (returns 200 on success, 401 on wrong password).
+- `MasManager` implements `IPackageManager` for the Mac App Store.
+  `sudo mas upgrade <id>` is the only apply path; CVE-2025-43411 mitigation
+  is a hard-coded rule in `apply.sh` — plain `mas upgrade` is rejected.
+- `MacOSAdapter` now declares `PACKAGE_MANAGEMENT | ELEVATION`. The
+  `MacElevation` singleton is cached per adapter instance
+  (`self._cached_elevation`) so a single dashboard password prompt covers
+  all managers.
+- `validate-macos.sh` extended to Stage 8 (23 checks): Stages 8.1-8.6
+  cover `mas` CLI health / check / plan / apply / verify / cleanup; Stage
+  8.7 (a-f) is the dashboard askpass round-trip (`POST /elevation/auth`
+  with real `$SUDO_PW`, verify 200, verify 401 on wrong pw, verify `GET
+  /elevation/status`, POST /runs/async with mas category, stop dashboard).
+- `run-tag-release-macos.sh` gains `--mas` flag: Stage 5b performs
+  `sudo mas install <id>` (or upgrade if outdated) via the elevation
+  surface, then verifies exit 0.
+
+### Files added / modified (M5.2.x sub-milestones)
+
+- `adapters/macos/lib/askpass_helper.sh` — SUDO_ASKPASS helper (echoes
+  cached password from env var `_ASCENDO_SUDO_PW`; never logs it).
+- `adapters/macos/lib/ascendo_mas.sh` — mas helpers: `mas_check`,
+  `mas_outdated_json`, `mas_install_or_upgrade`. Bash 3.2 compatible.
+- `adapters/macos/scripts/mas/{check,plan,apply,verify,cleanup}.sh` —
+  full 5-phase contract for Mac App Store.
+- `adapters/macos/ascendo_macos/managers/mas.py` — `MasManager`.
+- `adapters/macos/ascendo_macos/managers/elevation.py` — `MacElevation`.
+- `adapters/macos/ascendo_macos/adapter.py` — wired `MasManager` +
+  `MacElevation`; capability flag extended to include `ELEVATION`.
+- `core/ascendo/dashboard/routes/elevation.py` — `POST /elevation/auth`,
+  `GET /elevation/status` endpoints.
+- `core/ascendo/dashboard/app.py` — elevation router registered.
+- `adapters/macos/tests/test_mas_manager.py` — MasManager unit tests.
+- `adapters/macos/tests/test_elevation.py` — MacElevation unit tests.
+- `bin/validate-macos.sh` — Stage 8 (23 total checks including 8.7a-f
+  dashboard askpass round-trip).
+- `bin/run-tag-release-macos.sh` — `--mas` flag + Stage 5b.
+
+### Real apply trace (Stage 5b)
+
+```
+==> [Stage 5b] mas apply (M5.2)
+    no outdated; re-installing first listed id=937984704 (same elevation surface)
+    Password:
+    Warning: Already installed Amphetamine (937984704)
+    sudo mas install 937984704    OK
+```
+
+"Already installed" is benign — confirms the `sudo mas` elevation surface
+works end-to-end. 13 App Store apps installed on Mac.r12.home; none outdated
+at the time of the run (correct behaviour: no-op apply).
+
+### Validation results
+
+```
+validate-macos.sh: 23/23 PASS
+  Stages 1-7: CLI, brew health, brew check/plan/apply/verify/cleanup, doctor
+  Stage 8.1: mas is available
+  Stage 8.2: mas check exit 0
+  Stage 8.3: mas plan exit 0
+  Stage 8.4: mas apply exit 0 (no outdated = no-op, correct)
+  Stage 8.5: mas verify exit 0
+  Stage 8.6: mas cleanup exit 0
+  Stage 8.7a: POST /elevation/auth 200 with real $SUDO_PW
+  Stage 8.7b: GET /elevation/status returns {"authenticated": true}
+  Stage 8.7c: POST /elevation/auth 401 with wrong password
+  Stage 8.7d: GET /elevation/status after wrong pw still authenticated
+  Stage 8.7e: POST /runs/async with categories=["mas"] exit 202
+  Stage 8.7f: dashboard stopped cleanly
+
+run-tag-release-macos.sh --mas: green through all 7 stages
+Tag v0.0.9-alpha: created locally on commit 1e01a64, pushed in this Task 13.
+```
+
+Pytest (109 macOS adapter tests): 109 passed in ~21 s. Contract tests: 168
+passed, 9 pre-existing `test_service_endpoints.py` failures (unchanged,
+predate M5.2).
+
+### Lessons from this session
+
+- **zsh vs bash `read -p` incompatibility**: the `$SUDO_PW` capture
+  one-liner `read -p "sudo password: " -rs SUDO_PW` fails silently in
+  zsh (no prompt, captures empty string). Fixed via
+  `stty -echo; printf 'sudo password: '; IFS= read -r SUDO_PW; stty echo; echo`
+  — portable across bash 3.2 + zsh.
+- **11 review-cycle commits** across the M5.2 series (one fix follow-up per
+  task): spec-compliance + code-quality reviews caught real bugs — Task 5
+  temporal coupling in `C1`, Task 7 python3-vs-jq ambiguity, Task 8 invalid
+  `ItemStatus` enum value, Task 9 `IElevation` type-safety gap, Task 10
+  shell injection via `$SUDO_PW` in curl body, Task 11 `mas outdated` error
+  masking. The review rhythm pays for itself.
+
+### What's next (M5.3-M5.5)
+
+- **M5.3** — `LaunchServicesInventory` + `INVENTORY` capability. Populates
+  dashboard Categories tab with installed-apps list for macOS.
+- **M5.4** — `softwareupdate` manager (the `-R` rule) + Time Machine
+  read-only `ISnapshot`.
+- **M5.5** — `launchd` `IScheduler`. After this, tag `v0.2.0` (full M5).
+
+### Deferred follow-ups (not blocking M5.3)
+
+- Track 2: AppleScript GUI password dialog via `osascript` for iPad-only
+  App Store apps that `mas` cannot install headlessly.
+- SPA modal sudo prompt (dashboard UX for `POST /elevation/auth`).
+
+---
+
 ## Sesja 20 (2026-05-03) — macOS adapter M5.1: brew end-to-end + v0.0.8-alpha
 
 First milestone of the macOS adapter, mirroring Windows v0.0.7-alpha. The full

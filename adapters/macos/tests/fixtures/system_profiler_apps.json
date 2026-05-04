@@ -1,0 +1,130 @@
+{
+  "SPApplicationsDataType": [
+    {
+      "_name": "Safari",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "2025-12-01T10:00:00Z",
+      "obtained_from": "apple",
+      "path": "/System/Applications/Safari.app",
+      "signed_by": ["Software Signing", "Apple Code Signing Certification Authority"],
+      "version": "18.2"
+    },
+    {
+      "_name": "Mail",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "2025-12-01T10:00:00Z",
+      "obtained_from": "apple",
+      "path": "/System/Applications/Mail.app",
+      "signed_by": ["Software Signing"],
+      "version": "16.0"
+    },
+    {
+      "_name": "Amphetamine",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "2024-08-12T14:23:11Z",
+      "obtained_from": "mac_app_store",
+      "path": "/Applications/Amphetamine.app",
+      "signed_by": ["Apple Mac OS Application Signing"],
+      "version": "5.3.5"
+    },
+    {
+      "_name": "iMovie",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "2024-09-10T08:00:00Z",
+      "obtained_from": "mac_app_store",
+      "path": "/Applications/iMovie.app",
+      "signed_by": ["Apple Mac OS Application Signing"],
+      "version": "10.4.4"
+    },
+    {
+      "_name": "Inkscape",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "2025-04-01T12:00:00Z",
+      "obtained_from": "identified_developer",
+      "path": "/Applications/Inkscape.app",
+      "signed_by": ["Developer ID Application: Inkscape"],
+      "version": "1.4"
+    },
+    {
+      "_name": "MacWhisper",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "2025-03-15T18:00:00Z",
+      "obtained_from": "identified_developer",
+      "path": "/Applications/MacWhisper.app",
+      "signed_by": ["Developer ID Application: Jordi Bruin"],
+      "version": "9.0.1"
+    },
+    {
+      "_name": "BlackHole 2ch",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "2024-11-20T09:00:00Z",
+      "obtained_from": "identified_developer",
+      "path": "/Applications/BlackHole 2ch.app",
+      "signed_by": ["Developer ID Application: Existential Audio"],
+      "version": "0.6.0"
+    },
+    {
+      "_name": "Custom Internal Tool",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "2025-01-10T11:00:00Z",
+      "obtained_from": "unknown",
+      "path": "/Applications/Custom Internal Tool.app",
+      "signed_by": [],
+      "version": "0.1.0"
+    },
+    {
+      "_name": "Calculator",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "2025-12-01T10:00:00Z",
+      "obtained_from": "apple",
+      "path": "/System/Applications/Calculator.app",
+      "signed_by": ["Software Signing"],
+      "version": "10.16"
+    },
+    {
+      "_name": "Notes",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "2025-12-01T10:00:00Z",
+      "obtained_from": "apple",
+      "path": "/System/Applications/Notes.app",
+      "signed_by": ["Software Signing"],
+      "version": "4.10"
+    },
+    {
+      "_name": "KeePassium",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "2024-06-01T10:00:00Z",
+      "obtained_from": "mac_app_store",
+      "path": "/Applications/KeePassium.app",
+      "signed_by": ["Apple Mac OS Application Signing"],
+      "version": "2.5"
+    },
+    {
+      "_name": "Firefox",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "2025-04-15T10:00:00Z",
+      "obtained_from": "identified_developer",
+      "path": "/Applications/Firefox.app",
+      "signed_by": ["Developer ID Application: Mozilla Corporation"],
+      "version": "125.0"
+    },
+    {
+      "_name": "VLC",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "2025-02-10T10:00:00Z",
+      "obtained_from": "identified_developer",
+      "path": "/Applications/VLC.app",
+      "signed_by": ["Developer ID Application: VideoLAN"],
+      "version": "3.0.20"
+    },
+    {
+      "_name": "Empty Path App",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "",
+      "obtained_from": "unknown",
+      "path": "",
+      "signed_by": [],
+      "version": ""
+    }
+  ]
+}

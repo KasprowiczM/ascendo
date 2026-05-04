@@ -253,10 +253,13 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     else:
         status = "success"
 
+    needs_reboot: bool = bool(counters["needs_reboot"])
+
     sidecar = {
         **meta,
         "finished_at": args.ended_at,
         "status": status,
+        "needs_reboot": needs_reboot,
         "summary": {
             "total": total,
             "success": success,

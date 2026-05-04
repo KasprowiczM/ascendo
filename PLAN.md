@@ -1,6 +1,6 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-02 (sesja 15) — Windows installer pipeline shipped (sub-project 3). PyInstaller sidecar + branded MSI/NSIS produced from a single command.
+> Last updated: 2026-05-04 (sesja 26) — macOS adapter M5.4 shipped (softwareupdate + Time Machine read-only, v0.0.11-alpha).
 >
 > This file is the **single source of truth for what comes next**. HANDOFF.md
 > is the historical session log; PLAN.md is the forward roadmap. Update this
@@ -147,9 +147,9 @@ Mirror `adapters/windows/` as `adapters/macos/`. Same patterns, OS-specific tool
 | Sub | Status | Notes |
 |---|---|---|
 | **M5.1** | ✅ done (2026-05-03, **v0.0.8-alpha**) | `BrewManager` + `MacOSAdapter` (PACKAGE_MANAGEMENT only). Real `brew upgrade` performed end-to-end on Mac.r12.home. `bin/{install-dev,validate,run-tag-release}-macos.sh`. ~46 tests + 11/11 validate-macos.sh checks. Spec/plan: `docs/superpowers/specs/2026-05-03-macos-brew-mvp-design.md` + `docs/superpowers/plans/2026-05-03-macos-brew-mvp.md`. See HANDOFF.md Sesja 20. |
-| M5.2 | ⏳ pending | `mas` manager + `MacElevation` (sudo askpass cache for dashboard-driven sudo). The `sudo mas upgrade` rule (CVE-2025-43411) lives here. |
-| M5.3 | ⏳ pending | `LaunchServicesInventory` + `INVENTORY` capability — populates dashboard Categories tab with installed-apps list. |
-| M5.4 | ⏳ pending | `softwareupdate` manager (the `-R` flag rule) + Time Machine read-only `ISnapshot`. |
+| **M5.2** | ✅ done (2026-05-04, **v0.0.9-alpha**) | `MasManager` + `MacElevation` (sudo askpass cache for dashboard-driven sudo). `sudo mas upgrade` enforced (CVE-2025-43411). Dashboard `POST /elevation/auth` round-trip green. 109 macOS adapter tests + 23/23 validate-macos.sh PASS on Mac.r12.home. Spec/plan: `docs/superpowers/specs/2026-05-03-macos-mas-elevation.md` + `docs/superpowers/plans/2026-05-03-macos-mas-elevation.md`. See HANDOFF.md Sesja 21. |
+| **M5.3** | ✅ done (2026-05-04, **v0.0.10-alpha**) | `MacOSInventory` populates dashboard Categories tab via `system_profiler -json -detailLevel mini SPApplicationsDataType` + 5-rule classification (SYSTEM/MAS/BREW/WEB). 387 apps enumerated on Mac.r12.home (system=64, mas=13, brew=1, web=309). ~19 new tests + Stage 9 e2e via `validate-macos.sh`. Spec/plan: `docs/superpowers/specs/2026-05-04-macos-inventory-launchservices-design.md` + `docs/superpowers/plans/2026-05-04-macos-inventory-launchservices.md`. See HANDOFF.md Sesja 25. |
+| **M5.4** | ✅ done (2026-05-04, **v0.0.11-alpha**) | `SoftwareUpdateManager` (default `sudo -A softwareupdate -ir -R --verbose`; `--all` for `-ia`; `--filter LABEL` for single-label apply; -R flag mandatory) + `TimeMachineSnapshot` read-only (`tmutil listlocalsnapshots /`; `create()` raises `SnapshotError` per APFS auto-management). Capability `SNAPSHOTS` added. `Sidecar.needs_reboot` moved to top-level (consumer fix). 22 local snapshots + softwareupdate 5-phase contract green on Mac.r12.home. ~56 new tests + Stage 10 + Stage 11 e2e via `validate-macos.sh`. Spec/plan: `docs/superpowers/specs/2026-05-04-macos-softwareupdate-snapshot-design.md` + `docs/superpowers/plans/2026-05-04-macos-softwareupdate-snapshot.md`. See HANDOFF.md Sesja 26. |
 | M5.5 | ⏳ pending | `launchd` `IScheduler`. After this, tag `v0.2.0` (full M5). |
 
 ### Forward backlog (per-manager scope)
@@ -157,11 +157,11 @@ Mirror `adapters/windows/` as `adapters/macos/`. Same patterns, OS-specific tool
 | Manager | Tool | Est LOC (Python + Bash) | Sub |
 |---|---|---|---|
 | `managers/brew.py` | Homebrew (formulae + casks) | 190 + 600 | ✅ M5.1 |
-| `managers/mas.py` | Mac App Store via `mas` CLI | 100 + 200 | M5.2 |
-| `managers/elevation.py` | sudo + AuthorizationCreate | 80 + 100 | M5.2 |
-| `managers/launchservices.py` | LaunchServices (ARP-equivalent) | 100 + 200 | M5.3 |
-| `managers/softwareupdate.py` | `softwareupdate -l` + `-i -R` | 100 + 150 | M5.4 |
-| `managers/snapshot.py` | Time Machine read-only | 80 + 150 | M5.4 |
+| `managers/mas.py` | Mac App Store via `mas` CLI | 100 + 200 | ✅ M5.2 |
+| `managers/elevation.py` | sudo + AuthorizationCreate | 80 + 100 | ✅ M5.2 |
+| `managers/launchservices.py` | LaunchServices (ARP-equivalent) | 100 + 200 | ✅ M5.3 |
+| `managers/softwareupdate.py` | `softwareupdate -l` + `-i -R` | 100 + 150 | ✅ M5.4 |
+| `snapshot.py` | Time Machine read-only | 80 + 150 | ✅ M5.4 |
 | `managers/scheduler.py` | launchd | 80 + 200 | M5.5 |
 
 **lib (M5.1 shipped):** `adapters/macos/lib/{_json_emit.py, ascendo_json.sh, ascendo_brew.sh}`. The Bash + Python helper pattern matches the Linux adapter (cross-platform consistency lives in the shared CONTRACT — `ascendo/v1` schema + 5-phase + Pydantic interfaces — not in shared code).

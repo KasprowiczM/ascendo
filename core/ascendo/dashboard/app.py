@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .routes.about import router as about_router
 from .routes.apps import router as apps_router
+from .routes.elevation import router as elevation_router
 from .routes.health import router as health_router
 from .routes.onboarding import router as onboarding_router
 from .routes.runs import router as runs_router
@@ -175,6 +176,10 @@ def create_app(
     # shape rather than 404 -- the SPA can branch on
     # ``status.supported``.
     app.include_router(service_router, prefix="")
+    # Elevation password cache management (/elevation/*). Registered after
+    # service -- endpoints exist in OpenAPI on all platforms; handlers
+    # return 503 when the adapter has no IElevation.
+    app.include_router(elevation_router)
 
     # ── SPA bundle -- serve at root, last so REST routes win ──────────────
     frontend_dir = _resolve_frontend_dir()
