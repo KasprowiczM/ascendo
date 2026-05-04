@@ -312,3 +312,89 @@ def test_uninstall_idempotent_on_missing(tmp_path):
                        launchctl=binary)
     assert res.returncode == 0
     assert json.loads(output.read_text()) == {"ok": True}
+
+
+def test_list_empty_dir_returns_empty_array(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    binary, _ = _make_fake_launchctl(tmp_path)
+    res, output = _run("list", payload=None, tmp_path=tmp_path,
+                       fake_home=fake_home, launchctl=binary)
+    assert res.returncode == 0
+    assert json.loads(output.read_text()) == []
+
+
+def test_list_after_two_installs_enumerates_both(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    binary, _ = _make_fake_launchctl(tmp_path)
+    for name, expr, prof in [
+        ("daily-quick", "DAILY 02:00", "quick"),
+        ("weekly-safe", "WEEKLY SAT 04:00", "safe"),
+    ]:
+        _run("install",
+             payload={"name": name, "expression": expr, "profile": prof,
+                      "enabled": True, "description": None},
+             tmp_path=tmp_path, fake_home=fake_home, launchctl=binary)
+    res, output = _run("list", payload=None, tmp_path=tmp_path,
+                       fake_home=fake_home, launchctl=binary)
+    assert res.returncode == 0
+    arr = json.loads(output.read_text())
+    assert isinstance(arr, list)
+    assert len(arr) == 2
+    names = {e["name"] for e in arr}
+    assert names == {"daily-quick", "weekly-safe"}
+    by_name = {e["name"]: e for e in arr}
+    assert by_name["daily-quick"]["profile"] == "quick"
+    assert by_name["daily-quick"]["expression"] == "DAILY 02:00"
+    assert by_name["weekly-safe"]["profile"] == "safe"
+
+
+def test_get_filters_by_name(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    binary, _ = _make_fake_launchctl(tmp_path)
+    _run("install",
+         payload={"name": "single", "expression": "DAILY 01:00", "profile": "safe",
+                  "enabled": True, "description": "single entry"},
+         tmp_path=tmp_path, fake_home=fake_home, launchctl=binary)
+    res, output = _run("get", payload={"name": "single"}, tmp_path=tmp_path,
+                       fake_home=fake_home, launchctl=binary)
+    assert res.returncode == 0
+    obj = json.loads(output.read_text())
+    assert obj["name"] == "single"
+    assert obj["description"] == "single entry"
+
+
+def test_get_unknown_returns_null(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    binary, _ = _make_fake_launchctl(tmp_path)
+    res, output = _run("get", payload={"name": "missing"}, tmp_path=tmp_path,
+                       fake_home=fake_home, launchctl=binary)
+    assert res.returncode == 0
+    assert json.loads(output.read_text()) is None
+
+
+def test_trigger_invokes_kickstart(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    binary, log = _make_fake_launchctl(tmp_path)
+    _run("install",
+         payload={"name": "kicked", "expression": "DAILY 09:00", "profile": "safe",
+                  "enabled": True, "description": None},
+         tmp_path=tmp_path, fake_home=fake_home, launchctl=binary)
+    res, output = _run("trigger", payload={"name": "kicked"}, tmp_path=tmp_path,
+                       fake_home=fake_home, launchctl=binary)
+    assert res.returncode == 0, res.stderr
+    assert json.loads(output.read_text()) == {"ok": True}
+    assert "kickstart" in log.read_text()
+
+
+def test_trigger_missing_returns_error_30(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    binary, _ = _make_fake_launchctl(tmp_path)
+    res, output = _run("trigger", payload={"name": "ghost"}, tmp_path=tmp_path,
+                       fake_home=fake_home, launchctl=binary)
+    assert res.returncode == 30
+    err = json.loads(output.read_text())
+    assert "error" in err
+    assert "ghost" in err["error"] or "no such" in err["error"].lower()

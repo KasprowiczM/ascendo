@@ -383,9 +383,162 @@ PY_EOF
         exit 0
         ;;
 
-    *)
-        # list, get, trigger land in subsequent tasks.
+    list)
+        # Enumerate ~/Library/LaunchAgents/dev.ascendo.*.plist; emit JSON
+        # array of {name, expression, profile, enabled, description}.
+        # Source of truth for the sidecar fields is the schedules JSON.
+        # Plist-only fallback (when sidecar missing) reconstructs
+        # expression best-effort.
+        if [ ! -d "$LAUNCH_AGENTS_DIR" ]; then
+            emit_json '[]'
+            exit 0
+        fi
+        # python3 owns enumeration + JSON shape (bash 3.2 has no real
+        # array library; rather than pin manually, hand the work off).
+        export LAUNCH_AGENTS_DIR LABEL_PREFIX SCHEDULES_DIR
+        RESULT="$(python3 - <<'PY_EOF'
+import json, os, plistlib, pathlib, re
+agents_dir = pathlib.Path(os.environ["LAUNCH_AGENTS_DIR"])
+prefix = os.environ["LABEL_PREFIX"]
+schedules_dir = pathlib.Path(os.environ["SCHEDULES_DIR"])
+
+out = []
+if agents_dir.is_dir():
+    for plist_path in sorted(agents_dir.glob(f"{prefix}*.plist")):
+        name = plist_path.stem[len(prefix):]
+        sidecar_path = schedules_dir / f"{name}.json"
+        if sidecar_path.is_file():
+            try:
+                meta = json.loads(sidecar_path.read_text())
+            except (OSError, json.JSONDecodeError):
+                meta = {}
+        else:
+            meta = {}
+        # Best-effort plist parse for fallback fields.
+        try:
+            with plist_path.open("rb") as f:
+                pl = plistlib.load(f)
+        except Exception:
+            pl = {}
+        # Reconstruct expression if sidecar is missing.
+        expression = meta.get("expression")
+        if not expression:
+            sci = pl.get("StartCalendarInterval", {})
+            si  = pl.get("StartInterval")
+            if isinstance(si, int) and si > 0:
+                expression = f"MINUTE {si // 60}"
+            elif isinstance(sci, dict):
+                hh = sci.get("Hour")
+                mm = sci.get("Minute")
+                wd = sci.get("Weekday")
+                day = sci.get("Day")
+                if wd is not None and hh is not None and mm is not None:
+                    weekdays = ["SUN","MON","TUE","WED","THU","FRI","SAT"]
+                    expression = f"WEEKLY {weekdays[wd % 7]} {hh:02d}:{mm:02d}"
+                elif day is not None and hh is not None and mm is not None:
+                    expression = f"MONTHLY {day} {hh:02d}:{mm:02d}"
+                elif hh is not None and mm is not None:
+                    expression = f"DAILY {hh:02d}:{mm:02d}"
+                elif mm is not None:
+                    expression = f"HOURLY :{mm:02d}"
+                else:
+                    expression = ""
+            else:
+                expression = ""
+        # Reconstruct profile from ProgramArguments if sidecar missing.
+        profile = meta.get("profile")
+        if not profile:
+            args = pl.get("ProgramArguments", [])
+            if isinstance(args, list) and "--profile" in args:
+                idx = args.index("--profile")
+                if idx + 1 < len(args):
+                    profile = args[idx + 1]
+        if not profile:
+            profile = "full"
+        # enabled: missing-key sidecar → True (default); plist Disabled key wins on tie.
+        if "enabled" in meta:
+            enabled = bool(meta["enabled"])
+        else:
+            enabled = not bool(pl.get("Disabled", False))
+        out.append({
+            "name": name,
+            "expression": expression,
+            "profile": profile,
+            "enabled": enabled,
+            "description": meta.get("description"),
+        })
+print(json.dumps(out))
+PY_EOF
+)"
+        emit_json "$RESULT"
+        exit 0
+        ;;
+
+    get)
+        NAME="$(_payload_get name)"
+        if ! _validate_name "$NAME"; then
+            emit_error "invalid name: must match ^[a-z0-9-]+\$"
+            exit 2
+        fi
+        PLIST="$LAUNCH_AGENTS_DIR/${LABEL_PREFIX}${NAME}.plist"
+        if [ ! -f "$PLIST" ]; then
+            emit_json 'null'
+            exit 0
+        fi
+        # Reuse list emitter — single entry filter via python3.
+        export LAUNCH_AGENTS_DIR LABEL_PREFIX SCHEDULES_DIR ASCENDO_GET_NAME="$NAME"
+        RESULT="$(python3 - <<'PY_EOF'
+import json, os, plistlib, pathlib
+name = os.environ["ASCENDO_GET_NAME"]
+prefix = os.environ["LABEL_PREFIX"]
+agents_dir = pathlib.Path(os.environ["LAUNCH_AGENTS_DIR"])
+schedules_dir = pathlib.Path(os.environ["SCHEDULES_DIR"])
+plist_path = agents_dir / f"{prefix}{name}.plist"
+if not plist_path.is_file():
+    print("null")
+else:
+    sidecar_path = schedules_dir / f"{name}.json"
+    if sidecar_path.is_file():
+        meta = json.loads(sidecar_path.read_text())
+    else:
+        meta = {}
+    print(json.dumps({
+        "name": name,
+        "expression": meta.get("expression", ""),
+        "profile": meta.get("profile", "full"),
+        "enabled": bool(meta.get("enabled", True)),
+        "description": meta.get("description"),
+    }))
+PY_EOF
+)"
+        emit_json "$RESULT"
+        exit 0
+        ;;
+
+    trigger)
+        NAME="$(_payload_get name)"
+        if ! _validate_name "$NAME"; then
+            emit_error "invalid name: must match ^[a-z0-9-]+\$"
+            exit 2
+        fi
+        PLIST="$LAUNCH_AGENTS_DIR/${LABEL_PREFIX}${NAME}.plist"
+        LABEL="${LABEL_PREFIX}${NAME}"
+        if [ ! -f "$PLIST" ]; then
+            emit_error "no such schedule: $NAME"
+            exit 30
+        fi
+        # Idempotent bootstrap (silent on "already loaded").
+        launchctl bootstrap "gui/${UID_VAL}" "$PLIST" >/dev/null 2>&1 || true
+        if ! launchctl kickstart "gui/${UID_VAL}/${LABEL}" >/dev/null 2>&1; then
+            emit_error "kickstart failed for $LABEL"
+            exit 30
+        fi
         emit_json '{"ok": true}'
         exit 0
+        ;;
+
+    *)
+        printf 'scheduler.sh: unknown action: %s\n' "$ACTION" >&2
+        exit 2
         ;;
 esac
