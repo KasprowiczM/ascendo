@@ -50,16 +50,24 @@ def _resolve_resource_dir(env_var: str, repo_relative: str) -> Path:
 
 
 class MacOSAdapter(IAdapter):
-    """Tier 1 adapter for macOS (M5.1 scope — PACKAGE_MANAGEMENT only).
+    """Tier 1 adapter for macOS (M5.2 scope — PACKAGE_MANAGEMENT | ELEVATION).
 
     Capabilities declared:
-        PACKAGE_MANAGEMENT — Homebrew formulae + casks via BrewManager.
+        PACKAGE_MANAGEMENT — Homebrew formulae + casks via BrewManager;
+                             Mac App Store via MasManager (sudo mas upgrade,
+                             CVE-2025-43411 rule enforced).
+        ELEVATION          — sudo password cache via MacElevation; exposed as
+                             POST /elevation/auth on the dashboard so the SPA
+                             can prompt once and forward sudo to mas/brew.
 
-    All other accessors (inventory, snapshot, scheduler, elevation, source)
-    return None and are reserved for M5.2-M5.5:
-        M5.2 — elevation (sudo + osascript askpass cache)
-        M5.3 — inventory (Homebrew + LaunchServices)
-        M5.4 — snapshot (Time Machine read-only)
+    MacElevation is a singleton per adapter instance (cached in
+    ``self._cached_elevation``) so a single dashboard password prompt
+    covers all managers in the same process lifetime.
+
+    Remaining accessors (inventory, snapshot, scheduler, source) return None
+    and are reserved for M5.3-M5.5:
+        M5.3 — inventory (LaunchServicesInventory)
+        M5.4 — snapshot (Time Machine read-only) + softwareupdate manager
         M5.5 — scheduler (launchd)
     """
 

@@ -1,6 +1,6 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-02 (sesja 15) — Windows installer pipeline shipped (sub-project 3). PyInstaller sidecar + branded MSI/NSIS produced from a single command.
+> Last updated: 2026-05-04 (sesja 21) — macOS adapter M5.2 shipped (v0.0.9-alpha). MasManager + MacElevation end-to-end on Mac.r12.home; dashboard POST /elevation/auth round-trip green.
 >
 > This file is the **single source of truth for what comes next**. HANDOFF.md
 > is the historical session log; PLAN.md is the forward roadmap. Update this
@@ -147,7 +147,7 @@ Mirror `adapters/windows/` as `adapters/macos/`. Same patterns, OS-specific tool
 | Sub | Status | Notes |
 |---|---|---|
 | **M5.1** | ✅ done (2026-05-03, **v0.0.8-alpha**) | `BrewManager` + `MacOSAdapter` (PACKAGE_MANAGEMENT only). Real `brew upgrade` performed end-to-end on Mac.r12.home. `bin/{install-dev,validate,run-tag-release}-macos.sh`. ~46 tests + 11/11 validate-macos.sh checks. Spec/plan: `docs/superpowers/specs/2026-05-03-macos-brew-mvp-design.md` + `docs/superpowers/plans/2026-05-03-macos-brew-mvp.md`. See HANDOFF.md Sesja 20. |
-| M5.2 | ⏳ pending | `mas` manager + `MacElevation` (sudo askpass cache for dashboard-driven sudo). The `sudo mas upgrade` rule (CVE-2025-43411) lives here. |
+| **M5.2** | ✅ done (2026-05-04, **v0.0.9-alpha**) | `MasManager` + `MacElevation` (sudo askpass cache for dashboard-driven sudo). `sudo mas upgrade` enforced (CVE-2025-43411). Dashboard `POST /elevation/auth` round-trip green. 109 macOS adapter tests + 23/23 validate-macos.sh PASS on Mac.r12.home. Spec/plan: `docs/superpowers/specs/2026-05-03-macos-mas-elevation.md` + `docs/superpowers/plans/2026-05-03-macos-mas-elevation.md`. See HANDOFF.md Sesja 21. |
 | M5.3 | ⏳ pending | `LaunchServicesInventory` + `INVENTORY` capability — populates dashboard Categories tab with installed-apps list. |
 | M5.4 | ⏳ pending | `softwareupdate` manager (the `-R` flag rule) + Time Machine read-only `ISnapshot`. |
 | M5.5 | ⏳ pending | `launchd` `IScheduler`. After this, tag `v0.2.0` (full M5). |
@@ -157,8 +157,8 @@ Mirror `adapters/windows/` as `adapters/macos/`. Same patterns, OS-specific tool
 | Manager | Tool | Est LOC (Python + Bash) | Sub |
 |---|---|---|---|
 | `managers/brew.py` | Homebrew (formulae + casks) | 190 + 600 | ✅ M5.1 |
-| `managers/mas.py` | Mac App Store via `mas` CLI | 100 + 200 | M5.2 |
-| `managers/elevation.py` | sudo + AuthorizationCreate | 80 + 100 | M5.2 |
+| `managers/mas.py` | Mac App Store via `mas` CLI | 100 + 200 | ✅ M5.2 |
+| `managers/elevation.py` | sudo + AuthorizationCreate | 80 + 100 | ✅ M5.2 |
 | `managers/launchservices.py` | LaunchServices (ARP-equivalent) | 100 + 200 | M5.3 |
 | `managers/softwareupdate.py` | `softwareupdate -l` + `-i -R` | 100 + 150 | M5.4 |
 | `managers/snapshot.py` | Time Machine read-only | 80 + 150 | M5.4 |

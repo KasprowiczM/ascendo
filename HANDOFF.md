@@ -6,6 +6,127 @@
 
 ---
 
+## Sesja 21 (2026-05-04) — macOS adapter M5.2: mas + MacElevation + v0.0.9-alpha
+
+Second milestone of the macOS adapter. `MasManager` (Mac App Store via `mas`
+CLI, CVE-2025-43411 `sudo mas upgrade` rule) and `MacElevation` (sudo password
+cache, dashboard `POST /elevation/auth` endpoint) shipped and validated
+end-to-end on Mac.r12.home (Apple Silicon, mas 6.0.1, brew 5.1.8, jq 1.8.1,
+bash 3.2.57, 13 App Store apps installed).
+
+### Architecture additions (M5.2)
+
+- `MacElevation` implements `IElevation` via a subprocess askpass helper
+  (`adapters/macos/lib/askpass_helper.sh`). Password cached in-memory per
+  adapter instance; never written to disk. Dashboard exposes it via
+  `POST /elevation/auth` (returns 200 on success, 401 on wrong password).
+- `MasManager` implements `IPackageManager` for the Mac App Store.
+  `sudo mas upgrade <id>` is the only apply path; CVE-2025-43411 mitigation
+  is a hard-coded rule in `apply.sh` — plain `mas upgrade` is rejected.
+- `MacOSAdapter` now declares `PACKAGE_MANAGEMENT | ELEVATION`. The
+  `MacElevation` singleton is cached per adapter instance
+  (`self._cached_elevation`) so a single dashboard password prompt covers
+  all managers.
+- `validate-macos.sh` extended to Stage 8 (23 checks): Stages 8.1-8.6
+  cover `mas` CLI health / check / plan / apply / verify / cleanup; Stage
+  8.7 (a-f) is the dashboard askpass round-trip (`POST /elevation/auth`
+  with real `$SUDO_PW`, verify 200, verify 401 on wrong pw, verify `GET
+  /elevation/status`, POST /runs/async with mas category, stop dashboard).
+- `run-tag-release-macos.sh` gains `--mas` flag: Stage 5b performs
+  `sudo mas install <id>` (or upgrade if outdated) via the elevation
+  surface, then verifies exit 0.
+
+### Files added / modified (M5.2.x sub-milestones)
+
+- `adapters/macos/lib/askpass_helper.sh` — SUDO_ASKPASS helper (echoes
+  cached password from env var `_ASCENDO_SUDO_PW`; never logs it).
+- `adapters/macos/lib/ascendo_mas.sh` — mas helpers: `mas_check`,
+  `mas_outdated_json`, `mas_install_or_upgrade`. Bash 3.2 compatible.
+- `adapters/macos/scripts/mas/{check,plan,apply,verify,cleanup}.sh` —
+  full 5-phase contract for Mac App Store.
+- `adapters/macos/ascendo_macos/managers/mas.py` — `MasManager`.
+- `adapters/macos/ascendo_macos/managers/elevation.py` — `MacElevation`.
+- `adapters/macos/ascendo_macos/adapter.py` — wired `MasManager` +
+  `MacElevation`; capability flag extended to include `ELEVATION`.
+- `core/ascendo/dashboard/routes/elevation.py` — `POST /elevation/auth`,
+  `GET /elevation/status` endpoints.
+- `core/ascendo/dashboard/app.py` — elevation router registered.
+- `adapters/macos/tests/test_mas_manager.py` — MasManager unit tests.
+- `adapters/macos/tests/test_elevation.py` — MacElevation unit tests.
+- `bin/validate-macos.sh` — Stage 8 (23 total checks including 8.7a-f
+  dashboard askpass round-trip).
+- `bin/run-tag-release-macos.sh` — `--mas` flag + Stage 5b.
+
+### Real apply trace (Stage 5b)
+
+```
+==> [Stage 5b] mas apply (M5.2)
+    no outdated; re-installing first listed id=937984704 (same elevation surface)
+    Password:
+    Warning: Already installed Amphetamine (937984704)
+    sudo mas install 937984704    OK
+```
+
+"Already installed" is benign — confirms the `sudo mas` elevation surface
+works end-to-end. 13 App Store apps installed on Mac.r12.home; none outdated
+at the time of the run (correct behaviour: no-op apply).
+
+### Validation results
+
+```
+validate-macos.sh: 23/23 PASS
+  Stages 1-7: CLI, brew health, brew check/plan/apply/verify/cleanup, doctor
+  Stage 8.1: mas is available
+  Stage 8.2: mas check exit 0
+  Stage 8.3: mas plan exit 0
+  Stage 8.4: mas apply exit 0 (no outdated = no-op, correct)
+  Stage 8.5: mas verify exit 0
+  Stage 8.6: mas cleanup exit 0
+  Stage 8.7a: POST /elevation/auth 200 with real $SUDO_PW
+  Stage 8.7b: GET /elevation/status returns {"authenticated": true}
+  Stage 8.7c: POST /elevation/auth 401 with wrong password
+  Stage 8.7d: GET /elevation/status after wrong pw still authenticated
+  Stage 8.7e: POST /runs/async with categories=["mas"] exit 202
+  Stage 8.7f: dashboard stopped cleanly
+
+run-tag-release-macos.sh --mas: green through all 7 stages
+Tag v0.0.9-alpha: created locally on commit 1e01a64, pushed in this Task 13.
+```
+
+Pytest (109 macOS adapter tests): 109 passed in ~21 s. Contract tests: 168
+passed, 9 pre-existing `test_service_endpoints.py` failures (unchanged,
+predate M5.2).
+
+### Lessons from this session
+
+- **zsh vs bash `read -p` incompatibility**: the `$SUDO_PW` capture
+  one-liner `read -p "sudo password: " -rs SUDO_PW` fails silently in
+  zsh (no prompt, captures empty string). Fixed via
+  `stty -echo; printf 'sudo password: '; IFS= read -r SUDO_PW; stty echo; echo`
+  — portable across bash 3.2 + zsh.
+- **11 review-cycle commits** across the M5.2 series (one fix follow-up per
+  task): spec-compliance + code-quality reviews caught real bugs — Task 5
+  temporal coupling in `C1`, Task 7 python3-vs-jq ambiguity, Task 8 invalid
+  `ItemStatus` enum value, Task 9 `IElevation` type-safety gap, Task 10
+  shell injection via `$SUDO_PW` in curl body, Task 11 `mas outdated` error
+  masking. The review rhythm pays for itself.
+
+### What's next (M5.3-M5.5)
+
+- **M5.3** — `LaunchServicesInventory` + `INVENTORY` capability. Populates
+  dashboard Categories tab with installed-apps list for macOS.
+- **M5.4** — `softwareupdate` manager (the `-R` rule) + Time Machine
+  read-only `ISnapshot`.
+- **M5.5** — `launchd` `IScheduler`. After this, tag `v0.2.0` (full M5).
+
+### Deferred follow-ups (not blocking M5.3)
+
+- Track 2: AppleScript GUI password dialog via `osascript` for iPad-only
+  App Store apps that `mas` cannot install headlessly.
+- SPA modal sudo prompt (dashboard UX for `POST /elevation/auth`).
+
+---
+
 ## Sesja 20 (2026-05-03) — macOS adapter M5.1: brew end-to-end + v0.0.8-alpha
 
 First milestone of the macOS adapter, mirroring Windows v0.0.7-alpha. The full
