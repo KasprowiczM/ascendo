@@ -26,35 +26,39 @@ def test_adapter_identity() -> None:
 # ── Capabilities ─────────────────────────────────────────────────────────
 
 
-def test_capabilities_is_package_management_and_elevation_and_inventory() -> None:
-    """M5.3 declares PACKAGE_MANAGEMENT | ELEVATION | INVENTORY."""
+def test_capabilities_is_package_management_and_elevation_and_inventory_and_snapshots() -> None:
+    """M5.4 declares PACKAGE_MANAGEMENT | ELEVATION | INVENTORY | SNAPSHOTS."""
     a = MacOSAdapter()
     assert a.capabilities & AdapterCapability.PACKAGE_MANAGEMENT
     assert a.capabilities & AdapterCapability.ELEVATION
-    assert a.capabilities & AdapterCapability.INVENTORY  # M5.3 wired
-    # M5.4-M5.5 capabilities not yet set
-    assert not (a.capabilities & AdapterCapability.SNAPSHOTS)
+    assert a.capabilities & AdapterCapability.INVENTORY  # M5.3
+    assert a.capabilities & AdapterCapability.SNAPSHOTS  # M5.4 wired
+    # M5.5 still reserved
     assert not (a.capabilities & AdapterCapability.SCHEDULING)
 
 
-# ── Accessor None-ness (M5.2-M5.5 reserved) ──────────────────────────────
+# ── Accessor None-ness (M5.5 reserved) ───────────────────────────────────
 
 
-def test_unsupported_accessors_return_none_m54_m55() -> None:
-    """M5.4-M5.5 accessors still return None; elevation() and inventory() are wired."""
+def test_unsupported_accessors_return_none_m55() -> None:
+    """M5.5 accessor (scheduler) still returns None; everything else is wired."""
     a = MacOSAdapter()
-    assert a.inventory() is not None  # M5.3 wired
-    assert a.snapshot() is None       # M5.4 (Time Machine read-only)
-    assert a.scheduler() is None      # M5.5 (launchd)
+    assert a.inventory() is not None      # M5.3 wired
+    assert a.snapshot() is not None       # M5.4 wired (read-only)
+    assert a.scheduler() is None          # M5.5 (launchd)
     assert a.source() is None
-    assert a.elevation() is not None  # M5.2 wired
+    assert a.elevation() is not None      # M5.2 wired
 
 
 # ── package_managers ─────────────────────────────────────────────────────
 
 
-def test_package_managers_returns_brew_and_mas() -> None:
-    """M5.2 adds MasManager after BrewManager."""
+def test_package_managers_returns_brew_mas_softwareupdate() -> None:
+    """M5.4 adds SoftwareUpdateManager after BrewManager + MasManager.
+
+    Order: brew first, mas second, softwareupdate LAST (apply may reboot
+    the Mac mid-run).
+    """
     a = MacOSAdapter()
     host = HostInfo(
         hostname="macbook.local",
@@ -65,9 +69,10 @@ def test_package_managers_returns_brew_and_mas() -> None:
         is_elevated=False,
     )
     mgrs = a.package_managers(host)
-    assert len(mgrs) == 2
+    assert len(mgrs) == 3
     assert mgrs[0].category is SourceType.BREW
     assert mgrs[1].category is SourceType.MAS
+    assert mgrs[2].category is SourceType.SOFTWAREUPDATE
 
 
 # ── detect_host ──────────────────────────────────────────────────────────
@@ -98,13 +103,18 @@ def test_detect_host_is_cached() -> None:
 
 
 def test_health_check_reports_required_keys() -> None:
-    """health_check() must return all 7 expected component keys (M5.3 adds system_profiler)."""
+    """health_check() must return all 9 expected component keys.
+
+    M5.3 added system_profiler. M5.4 adds softwareupdate + tmutil.
+    """
     a = MacOSAdapter()
     h = a.health_check()
     assert "brew" in h
     assert "jq" in h
     assert "mas" in h
     assert "system_profiler" in h  # M5.3
+    assert "softwareupdate" in h   # M5.4
+    assert "tmutil" in h           # M5.4
     assert "bash" in h
     assert "ascendo_lib" in h
     assert "ascendo_scripts" in h
@@ -174,12 +184,16 @@ def test_capabilities_includes_elevation() -> None:
     assert AdapterCapability.ELEVATION in a.capabilities
 
 
-def test_package_managers_includes_brew_and_mas(mac_host: HostInfo) -> None:
-    """package_managers() returns [BrewManager, MasManager] in that order."""
+def test_package_managers_includes_brew_mas_softwareupdate(mac_host: HostInfo) -> None:
+    """package_managers() returns [BrewManager, MasManager, SoftwareUpdateManager] in that order.
+
+    M5.4 added SoftwareUpdateManager. Order matters: softwareupdate is
+    LAST because apply may reboot the Mac mid-run.
+    """
     a = MacOSAdapter()
     pkgs = a.package_managers(mac_host)
     names = [type(p).__name__ for p in pkgs]
-    assert names == ["BrewManager", "MasManager"]
+    assert names == ["BrewManager", "MasManager", "SoftwareUpdateManager"]
 
 
 def test_elevation_returns_macelevation() -> None:
@@ -219,3 +233,45 @@ def test_health_check_includes_system_profiler_component() -> None:
     a = MacOSAdapter()
     h = a.health_check()
     assert "system_profiler" in h
+
+
+# ── M5.4 wiring assertions ────────────────────────────────────────────────
+
+
+def test_snapshot_returns_timemachinesnapshot_singleton() -> None:
+    """snapshot() returns a TimeMachineSnapshot instance and caches it."""
+    from ascendo_macos.snapshot import TimeMachineSnapshot
+
+    a = MacOSAdapter()
+    s1 = a.snapshot()
+    s2 = a.snapshot()
+    assert isinstance(s1, TimeMachineSnapshot)
+    assert s1 is s2
+
+
+def test_package_managers_third_is_softwareupdate() -> None:
+    """package_managers() returns SoftwareUpdateManager as the THIRD entry (after brew, mas)."""
+    from ascendo_macos.managers.softwareupdate import SoftwareUpdateManager
+
+    a = MacOSAdapter()
+    host = HostInfo(
+        hostname="macbook.local", os=OperatingSystem.MACOS,
+        os_version="14.5", arch="arm64", user="mk", is_elevated=False,
+    )
+    mgrs = a.package_managers(host)
+    assert len(mgrs) == 3
+    assert isinstance(mgrs[2], SoftwareUpdateManager)
+
+
+def test_health_check_includes_softwareupdate_component() -> None:
+    """health_check() must include a 'softwareupdate' component key (M5.4)."""
+    a = MacOSAdapter()
+    h = a.health_check()
+    assert "softwareupdate" in h
+
+
+def test_health_check_includes_tmutil_component() -> None:
+    """health_check() must include a 'tmutil' component key (M5.4)."""
+    a = MacOSAdapter()
+    h = a.health_check()
+    assert "tmutil" in h

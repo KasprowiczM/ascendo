@@ -28,6 +28,8 @@ from .inventory import MacOSInventory
 from .managers.brew import BrewManager
 from .managers.elevation import MacElevation
 from .managers.mas import MasManager
+from .managers.softwareupdate import SoftwareUpdateManager
+from .snapshot import TimeMachineSnapshot
 
 _log = logging.getLogger(__name__)
 
@@ -51,28 +53,34 @@ def _resolve_resource_dir(env_var: str, repo_relative: str) -> Path:
 
 
 class MacOSAdapter(IAdapter):
-    """Tier 1 adapter for macOS (M5.3 scope — PACKAGE_MANAGEMENT | ELEVATION | INVENTORY).
+    """Tier 1 adapter for macOS (M5.4 scope — PACKAGE_MANAGEMENT | ELEVATION | INVENTORY | SNAPSHOTS).
 
     Capabilities declared:
         PACKAGE_MANAGEMENT — Homebrew formulae + casks via BrewManager;
                              Mac App Store via MasManager (sudo mas upgrade,
-                             CVE-2025-43411 rule enforced).
+                             CVE-2025-43411 rule enforced); macOS OS updates
+                             via SoftwareUpdateManager (sudo -A softwareupdate
+                             -i ... -R --verbose; -R flag mandatory).
         ELEVATION          — sudo password cache via MacElevation; exposed as
                              POST /elevation/auth on the dashboard so the SPA
-                             can prompt once and forward sudo to mas/brew.
+                             can prompt once and forward sudo to mas/brew/
+                             softwareupdate.
         INVENTORY          — installed-application enumeration via MacOSInventory
-                             (uses ``system_profiler SPApplicationsDataType -json``
-                             + ``mdfind`` fallback); populates the dashboard
-                             Categories tab with the installed-apps list.
+                             (uses ``system_profiler SPApplicationsDataType -json``);
+                             populates the dashboard Categories tab.
+        SNAPSHOTS          — read-only via TimeMachineSnapshot
+                             (``tmutil listlocalsnapshots /``). create() raises
+                             SnapshotError — APFS local snapshots are
+                             auto-managed; user-initiated backups go through
+                             System Settings > Time Machine.
 
-    MacElevation and MacOSInventory are singletons per adapter instance
-    (cached in ``self._cached_elevation`` / ``self._cached_inventory``) so
-    a single dashboard password prompt covers all managers and inventory
-    reads reuse the same object within a process lifetime.
+    MacElevation, MacOSInventory, and TimeMachineSnapshot are singletons
+    per adapter instance (cached in ``self._cached_*``) so a single dashboard
+    password prompt covers all managers and snapshot/inventory reads reuse
+    the same object within a process lifetime.
 
-    Remaining accessors (snapshot, scheduler, source) return None
-    and are reserved for M5.4-M5.5:
-        M5.4 — snapshot (Time Machine read-only) + softwareupdate manager
+    Remaining accessors (scheduler, source) return None and are reserved
+    for M5.5+:
         M5.5 — scheduler (launchd)
     """
 
@@ -87,6 +95,7 @@ class MacOSAdapter(IAdapter):
         self._cached_host: HostInfo | None = None
         self._cached_elevation: MacElevation | None = None
         self._cached_inventory: MacOSInventory | None = None
+        self._cached_snapshot: TimeMachineSnapshot | None = None
 
     # ── Identity ──────────────────────────────────────────────────────────
 
@@ -108,14 +117,20 @@ class MacOSAdapter(IAdapter):
             AdapterCapability.PACKAGE_MANAGEMENT
             | AdapterCapability.ELEVATION
             | AdapterCapability.INVENTORY
+            | AdapterCapability.SNAPSHOTS
         )
 
     # ── Sub-interface accessors ───────────────────────────────────────────
 
     def package_managers(self, host: HostInfo) -> list[IPackageManager]:
+        # Order matters: brew first, mas second, softwareupdate LAST.
+        # softwareupdate's apply may reboot the Mac mid-run (when any
+        # update has Action: restart) — putting it last lets the orchestrator
+        # complete brew + mas first.
         return [
             BrewManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
             MasManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, elevation=self.elevation()),
+            SoftwareUpdateManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, elevation=self.elevation()),
         ]
 
     def inventory(self) -> IInventory | None:  # type: ignore[override]
@@ -127,8 +142,17 @@ class MacOSAdapter(IAdapter):
         return self._cached_inventory
 
     def snapshot(self) -> ISnapshot | None:
-        """Not implemented yet (planned for M5.4 — Time Machine read-only ISnapshot). Returns None."""
-        return None  # M5.4 (Time Machine read-only)
+        """Returns a cached TimeMachineSnapshot singleton (M5.4, read-only).
+
+        Lists APFS local snapshots via ``tmutil listlocalsnapshots /``.
+        ``create()`` raises SnapshotError — APFS local snapshots are
+        auto-managed; user-initiated backups via System Settings > Time Machine.
+        """
+        if self._cached_snapshot is None:
+            self._cached_snapshot = TimeMachineSnapshot(
+                scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR
+            )
+        return self._cached_snapshot
 
     def scheduler(self) -> IScheduler | None:
         """Not implemented yet (planned for M5.5 — launchd IScheduler). Returns None."""
@@ -181,14 +205,17 @@ class MacOSAdapter(IAdapter):
     def health_check(self) -> dict[str, str]:
         """Adapter self-test. Returns component→status_string for ``ascendo doctor``.
 
-        Components checked (7 total):
-            brew, jq, mas, system_profiler, bash, ascendo_lib, ascendo_scripts
+        Components checked (9 total):
+            brew, jq, mas, system_profiler, softwareupdate, tmutil,
+            bash, ascendo_lib, ascendo_scripts
         """
         out: dict[str, str] = {}
         out["brew"] = self._brew_status()
         out["jq"] = self._jq_status()
         out["mas"] = self._mas_status()
         out["system_profiler"] = self._system_profiler_status()
+        out["softwareupdate"] = self._softwareupdate_status()
+        out["tmutil"] = self._tmutil_status()
         out["bash"] = self._bash_status()
         out["ascendo_lib"] = self._lib_status()
         out["ascendo_scripts"] = self._scripts_status()
@@ -344,6 +371,57 @@ class MacOSAdapter(IAdapter):
             return f"error: system_profiler -listDataTypes exited {res.returncode}"
         if "SPApplicationsDataType" not in (res.stdout or ""):
             return "degraded: SPApplicationsDataType not advertised"
+        return "ok"
+
+    def _softwareupdate_status(self) -> str:
+        path = shutil.which("softwareupdate") or "/usr/sbin/softwareupdate"
+        if not Path(path).is_file():
+            return "unavailable: softwareupdate not found (macOS-only built-in)"
+        try:
+            res = subprocess.run(
+                [path, "--help"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"error: {exc}"
+        # softwareupdate --help may exit non-zero on some macOS versions but still print
+        # usage. Treat any output as "ok"; only complete failure (no output, non-zero) is error.
+        if res.returncode != 0 and not (res.stdout or res.stderr):
+            return f"error: softwareupdate --help exited {res.returncode} with no output"
+        return "ok"
+
+    def _tmutil_status(self) -> str:
+        path = shutil.which("tmutil") or "/usr/bin/tmutil"
+        if not Path(path).is_file():
+            return "unavailable: tmutil not found (macOS-only built-in)"
+        try:
+            res = subprocess.run(
+                [path, "version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"error: {exc}"
+        # tmutil version subcommand may not exist on all macOS versions; fall back
+        # to listlocalsnapshots probe (read-only, always-safe).
+        if res.returncode != 0:
+            try:
+                res2 = subprocess.run(
+                    [path, "listlocalsnapshots", "/"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                return f"error: {exc}"
+            if res2.returncode != 0:
+                return f"error: tmutil listlocalsnapshots / exited {res2.returncode}"
         return "ok"
 
     def _bash_status(self) -> str:
