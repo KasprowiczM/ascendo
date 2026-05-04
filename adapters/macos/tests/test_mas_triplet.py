@@ -110,6 +110,20 @@ def test_plan_emits_only_planned_items(tmp_path):
     assert "up_to_date" not in statuses
 
 
+def test_plan_signed_out_emits_failed_item(tmp_path):
+    """plan.sh with signed-out mas: exit 0, sidecar status failed, one synthetic item."""
+    fake = _make_fake_mas(tmp_path, "signed_out")
+    out = tmp_path / "out"
+    rid = str(uuid.uuid4())
+    res = _run_script(SCRIPTS_MAS / "plan.sh", fake, out, rid)
+    assert res.returncode == 0, res.stderr
+    sc = _parse_sidecar(out / rid / "plan__mas.json")
+    assert sc.status.value == "failed"
+    assert len(sc.items) == 1
+    assert sc.items[0].id == "mas:not-signed-in"
+    assert sc.items[0].status.value == "failed"
+
+
 def test_plan_no_outdated_emits_success_no_items(tmp_path):
     """plan.sh with nothing outdated: success sidecar, zero items."""
     fake = _make_fake_mas(tmp_path, "no_outdated")
@@ -188,6 +202,18 @@ def test_verify_soft_noop_without_apply_sidecar(tmp_path):
 # ---------------------------------------------------------------------------
 # cleanup.sh tests
 # ---------------------------------------------------------------------------
+
+def test_cleanup_dry_run_is_identical(tmp_path):
+    """cleanup.sh --dry-run: exit 0, success status, zero items (no-op either way)."""
+    fake = _make_fake_mas(tmp_path, "signed_in")
+    out = tmp_path / "out"
+    rid = str(uuid.uuid4())
+    res = _run_script(SCRIPTS_MAS / "cleanup.sh", fake, out, rid, "--dry-run")
+    assert res.returncode == 0, res.stderr
+    sc = _parse_sidecar(out / rid / "cleanup__mas.json")
+    assert sc.status.value == "success"
+    assert sc.items == []
+
 
 def test_cleanup_emits_success_sidecar_with_info_message(tmp_path):
     """cleanup.sh: no-op, emits success sidecar + one info message + zero items."""

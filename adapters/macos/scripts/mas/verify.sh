@@ -91,16 +91,7 @@ if ! mas_signed_in; then
 fi
 
 # -- extract apply success items (ids where status == "success") ---------------
-APPLY_SUCCESS_IDS="$(python3 - "$APPLY_SIDECAR" <<'PYEOF'
-import sys, json
-try:
-    data = json.loads(open(sys.argv[1]).read())
-    ids = [i["id"] for i in data.get("items", []) if i.get("status") == "success"]
-    print("\n".join(ids))
-except Exception:
-    pass
-PYEOF
-)"
+APPLY_SUCCESS_IDS="$(jq -r '.items[]? | select(.status=="success") | .id' "$APPLY_SIDECAR" 2>/dev/null)"
 
 if [ -z "$APPLY_SUCCESS_IDS" ]; then
     json_add_message "info" "No successful apply items found in apply__mas.json; nothing to verify."
@@ -117,18 +108,7 @@ STILL_OUTDATED=" $(printf '%s' "$OUTDATED_JSON" | jq -r '.[].id' 2>/dev/null | t
 printf '%s\n' "$APPLY_SUCCESS_IDS" | while IFS= read -r _id; do
     [ -n "$_id" ] || continue
     # Look up the resolved version from apply sidecar
-    RESOLVED="$(python3 - "$APPLY_SIDECAR" "$_id" <<'PYEOF'
-import sys, json
-try:
-    data = json.loads(open(sys.argv[1]).read())
-    for i in data.get("items", []):
-        if i["id"] == sys.argv[2]:
-            print(i.get("resolved_version") or i.get("target_version") or "")
-            break
-except Exception:
-    pass
-PYEOF
-)"
+    RESOLVED="$(jq -r --arg id "$_id" '.items[]? | select(.id==$id) | (.resolved_version // .target_version // "")' "$APPLY_SIDECAR" 2>/dev/null)"
     case "$STILL_OUTDATED" in
         (*" $_id "*) json_add_item "$_id" "" "" "failed" "mas" ;;
         (*)          json_add_item "$_id" "" "$RESOLVED" "success" "mas" ;;
