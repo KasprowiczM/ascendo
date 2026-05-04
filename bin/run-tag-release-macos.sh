@@ -136,15 +136,24 @@ esac
 if [ "$DO_MAS" -eq 1 ]; then
     step "5b" "mas apply (M5.2)"
     if [ -z "${SUDO_PW:-}" ]; then
-        note "ERROR: --mas requires \$SUDO_PW for the dashboard askpass round-trip"
-        note "       (validate-macos.sh Step 8.7 must run for the v0.0.9-alpha tag)"
+        note "ERROR: --mas requires \$SUDO_PW to be set as a precondition for the"
+        note "       v0.0.9-alpha tag exit bar. Stage 5b itself uses sudo interactively,"
+        note "       but validate-macos.sh Step 8.7 (dashboard askpass round-trip)"
+        note "       requires \$SUDO_PW so the full elevation flow is exercised."
         note "       export SUDO_PW='...' and re-run."
         exit 2
     fi
 
     # Probe outdated; if any, real upgrade of first. Else: re-install one
     # already-installed app (same elevation surface, validates the flow).
-    OUTDATED_RAW="$(mas outdated 2>/dev/null || true)"
+    MAS_RC=0
+    OUTDATED_RAW="$(mas outdated 2>&1)" || MAS_RC=$?
+    if [ "$MAS_RC" -ne 0 ]; then
+        printf "    [FAIL] 'mas outdated' failed (exit %s):\n" "$MAS_RC" >&2
+        printf "%s\n" "$OUTDATED_RAW" >&2
+        note "Common causes: not signed into App Store, network unreachable." >&2
+        exit 30
+    fi
     if [ -n "$OUTDATED_RAW" ]; then
         FIRST_ID="$(printf '%s\n' "$OUTDATED_RAW" | awk 'NR==1 {print $1}')"
         note "upgrading first outdated id=$FIRST_ID"
