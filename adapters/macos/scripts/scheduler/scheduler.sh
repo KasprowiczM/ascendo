@@ -193,6 +193,175 @@ case "$ACTION" in
         ;;
 esac
 
-# Action handlers land in subsequent tasks.
-emit_json '{"ok": true}'
-exit 0
+# ---------------------------------------------------------------------------
+# Payload helpers (used by install and other mutating actions).
+# ---------------------------------------------------------------------------
+
+# Read the payload file (if any) into PAYLOAD variable.
+_read_payload() {
+    if [ -z "$PAYLOAD_PATH" ]; then echo ""; return 0; fi
+    if [ ! -f "$PAYLOAD_PATH" ]; then echo ""; return 0; fi
+    cat "$PAYLOAD_PATH"
+}
+
+PAYLOAD="$(_read_payload)"
+
+# Extract a string field from PAYLOAD via python3 (jq not guaranteed on
+# every Mac; python3 is shipped on macOS 12.3+ and required by all
+# Ascendo bash drivers).
+_payload_get() {
+    local _field="$1"
+    if [ -z "$PAYLOAD" ]; then echo ""; return 0; fi
+    printf '%s' "$PAYLOAD" | python3 -c "
+import json, sys
+d = json.loads(sys.stdin.read() or '{}')
+v = d.get('$_field', '')
+if v is None: v = ''
+print(v)
+"
+}
+
+_payload_get_bool() {
+    local _field="$1"
+    local _default="$2"
+    if [ -z "$PAYLOAD" ]; then echo "$_default"; return 0; fi
+    printf '%s' "$PAYLOAD" | python3 -c "
+import json, sys
+d = json.loads(sys.stdin.read() or '{}')
+v = d.get('$_field')
+if v is True:  print('true')
+elif v is False: print('false')
+else: print('$_default')
+"
+}
+
+# Validate name: must match ^[a-z0-9-]+$ (no uppercase, no spaces, no special chars).
+_validate_name() {
+    case "$1" in
+        ''|*[!a-z0-9-]*)
+            return 1
+            ;;
+    esac
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Action dispatch
+# ---------------------------------------------------------------------------
+case "$ACTION" in
+
+    install)
+        NAME="$(_payload_get name)"
+        if ! _validate_name "$NAME"; then
+            emit_error "invalid name: must match ^[a-z0-9-]+\$"
+            exit 2
+        fi
+        EXPR="$(_payload_get expression)"
+        if ! _parse_expression "$EXPR"; then
+            emit_error "unsupported expression: $EXPR"
+            exit 2
+        fi
+        PROFILE="$(_payload_get profile)"
+        if [ -z "$PROFILE" ]; then PROFILE="full"; fi
+        ENABLED="$(_payload_get_bool enabled true)"
+        DESCRIPTION="$(_payload_get description)"
+
+        mkdir -p "$LAUNCH_AGENTS_DIR" "$LOGS_DIR" "$SCHEDULES_DIR"
+
+        PLIST="$LAUNCH_AGENTS_DIR/${LABEL_PREFIX}${NAME}.plist"
+        SIDECAR="$SCHEDULES_DIR/${NAME}.json"
+        LABEL="${LABEL_PREFIX}${NAME}"
+        LOG_FILE="$LOGS_DIR/scheduler-${NAME}.log"
+
+        # Build StartCalendarInterval / StartInterval block.
+        if [ -n "$CAL_INTERVAL_SEC" ]; then
+            INTERVAL_BLOCK="    <key>StartInterval</key>
+    <integer>$CAL_INTERVAL_SEC</integer>"
+        else
+            INTERVAL_BLOCK="    <key>StartCalendarInterval</key>
+    <dict>"
+            [ -n "$CAL_HOUR" ]    && INTERVAL_BLOCK="$INTERVAL_BLOCK
+        <key>Hour</key>
+        <integer>$CAL_HOUR</integer>"
+            [ -n "$CAL_MINUTE" ]  && INTERVAL_BLOCK="$INTERVAL_BLOCK
+        <key>Minute</key>
+        <integer>$CAL_MINUTE</integer>"
+            [ -n "$CAL_WEEKDAY" ] && INTERVAL_BLOCK="$INTERVAL_BLOCK
+        <key>Weekday</key>
+        <integer>$CAL_WEEKDAY</integer>"
+            [ -n "$CAL_DAY" ]     && INTERVAL_BLOCK="$INTERVAL_BLOCK
+        <key>Day</key>
+        <integer>$CAL_DAY</integer>"
+            INTERVAL_BLOCK="$INTERVAL_BLOCK
+    </dict>"
+        fi
+
+        # Disabled key only when enabled=false.
+        if [ "$ENABLED" = "false" ]; then
+            DISABLED_BLOCK="    <key>Disabled</key>
+    <true/>"
+        else
+            DISABLED_BLOCK=""
+        fi
+
+        cat > "$PLIST" <<PLIST_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/env</string>
+        <string>ascendo</string>
+        <string>run</string>
+        <string>--profile</string>
+        <string>${PROFILE}</string>
+    </array>
+${INTERVAL_BLOCK}
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>${LOG_FILE}</string>
+    <key>StandardErrorPath</key>
+    <string>${LOG_FILE}</string>
+${DISABLED_BLOCK}
+</dict>
+</plist>
+PLIST_EOF
+
+        # Sidecar: stores description + expression + profile + enabled
+        # + installed_at (launchd plists have no free-form notes channel).
+        python3 - "$DESCRIPTION" <<PY_EOF
+import json, datetime, pathlib, sys
+desc_arg = sys.argv[1] if sys.argv[1:] else None
+desc = desc_arg if desc_arg else None
+p = pathlib.Path("$SIDECAR")
+p.parent.mkdir(parents=True, exist_ok=True)
+enabled_val = True if "$ENABLED" == "true" else False
+p.write_text(json.dumps({
+    "name": "$NAME",
+    "expression": "$EXPR",
+    "profile": "$PROFILE",
+    "enabled": enabled_val,
+    "description": desc,
+    "installed_at": datetime.datetime.utcnow().isoformat() + "Z",
+}, indent=2))
+PY_EOF
+
+        # bootout any prior load (silent on "no such service") then bootstrap.
+        launchctl bootout "gui/${UID_VAL}/${LABEL}" >/dev/null 2>&1 || true
+        if [ "$ENABLED" = "true" ]; then
+            launchctl bootstrap "gui/${UID_VAL}" "$PLIST" >/dev/null 2>&1 || true
+        fi
+        emit_json '{"ok": true}'
+        exit 0
+        ;;
+
+    *)
+        # uninstall, list, get, trigger land in subsequent tasks.
+        emit_json '{"ok": true}'
+        exit 0
+        ;;
+esac

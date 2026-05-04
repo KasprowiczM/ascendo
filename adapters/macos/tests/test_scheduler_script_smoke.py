@@ -162,3 +162,94 @@ def test_parse_garbage_rejected(tmp_path):
     r = _run_parse_test("YEARLY 2026 1 1 03:00", tmp_path)
     out = _parse_probe_output(r.stdout)
     assert out["RC"] == "2"
+
+
+def test_install_writes_plist_and_sidecar(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    binary, log = _make_fake_launchctl(tmp_path)
+    payload = {
+        "name": "weekly-backup",
+        "expression": "WEEKLY SUN 03:00",
+        "profile": "safe",
+        "enabled": True,
+        "description": "weekly safe-profile run",
+    }
+    res, output = _run("install", payload=payload, tmp_path=tmp_path,
+                       fake_home=fake_home, launchctl=binary)
+    assert res.returncode == 0, res.stderr + res.stdout
+    plist = fake_home / "Library/LaunchAgents/dev.ascendo.weekly-backup.plist"
+    sidecar = fake_home / "Library/Application Support/Ascendo/schedules/weekly-backup.json"
+    assert plist.exists(), "plist not written"
+    assert sidecar.exists(), "description sidecar not written"
+    body = plist.read_text()
+    assert "<string>dev.ascendo.weekly-backup</string>" in body
+    assert "<string>--profile</string>" in body
+    assert "<string>safe</string>" in body
+    assert "<key>Hour</key>" in body and "<integer>3</integer>" in body
+    assert "<key>Minute</key>" in body and "<integer>0</integer>" in body
+    assert "<key>Weekday</key>" in body and "<integer>0</integer>" in body
+    sidecar_data = json.loads(sidecar.read_text())
+    assert sidecar_data["description"] == "weekly safe-profile run"
+    assert sidecar_data["expression"] == "WEEKLY SUN 03:00"
+    assert sidecar_data["profile"] == "safe"
+    assert sidecar_data["enabled"] is True
+    assert json.loads(output.read_text()) == {"ok": True}
+    log_text = log.read_text()
+    assert "bootstrap" in log_text  # launchctl bootstrap was invoked
+
+
+def test_install_disabled_skips_bootstrap(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    binary, log = _make_fake_launchctl(tmp_path)
+    payload = {
+        "name": "ad-hoc",
+        "expression": "DAILY 04:00",
+        "profile": "quick",
+        "enabled": False,
+        "description": None,
+    }
+    res, _ = _run("install", payload=payload, tmp_path=tmp_path,
+                  fake_home=fake_home, launchctl=binary)
+    assert res.returncode == 0
+    plist = fake_home / "Library/LaunchAgents/dev.ascendo.ad-hoc.plist"
+    assert plist.exists(), "disabled plist still written to disk"
+    assert "<key>Disabled</key>" in plist.read_text()
+    log_text = log.read_text() if log.exists() else ""
+    # bootout still allowed (idempotent), but bootstrap MUST NOT appear.
+    assert "bootstrap" not in log_text
+
+
+def test_install_rejects_bad_name(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    binary, _ = _make_fake_launchctl(tmp_path)
+    payload = {
+        "name": "Has Spaces!",
+        "expression": "DAILY 03:00",
+        "profile": "safe",
+        "enabled": True,
+        "description": None,
+    }
+    res, output = _run("install", payload=payload, tmp_path=tmp_path,
+                       fake_home=fake_home, launchctl=binary)
+    assert res.returncode == 2
+    err = json.loads(output.read_text())
+    assert "error" in err
+    assert "name" in err["error"].lower()
+
+
+def test_install_rejects_bad_expression(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    binary, _ = _make_fake_launchctl(tmp_path)
+    payload = {
+        "name": "broken",
+        "expression": "YEARLY 2026 03:00",
+        "profile": "safe",
+        "enabled": True,
+        "description": None,
+    }
+    res, output = _run("install", payload=payload, tmp_path=tmp_path,
+                       fake_home=fake_home, launchctl=binary)
+    assert res.returncode == 2
+    err = json.loads(output.read_text())
+    assert "error" in err
+    assert "expression" in err["error"].lower() or "unsupported" in err["error"].lower()
