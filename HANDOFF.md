@@ -6,6 +6,144 @@
 
 ---
 
+## Sesja 27 (2026-05-04) — macOS adapter M5.5: launchd IScheduler (PARTIAL — Tasks 1-7 of 14)
+
+Started M5.5 (launchd `IScheduler`) on a `claude/cool-beaver-f1879c`
+worktree using subagent-driven-development per the `superpowers`
+skill. Spec + plan committed first (commit `13f6874`); tasks
+implemented one at a time with two-stage review (spec compliance +
+code quality) per task.
+
+**Worktree branch (merged to main at end of session):** `claude/cool-beaver-f1879c`.
+
+### Shipped this session (7 of 14 plan tasks + 1 fix-up)
+
+| Commit    | Sub-task | Description |
+|-----------|----------|-------------|
+| `13f6874` | spec+plan| M5.5 spec + 14-task implementation plan |
+| `bf7387a` | M5.5.1   | bash driver argv + dispatch skeleton (`adapters/macos/scripts/scheduler/scheduler.sh`) — 2 tests |
+| `033e82f` | M5.5.2   | DSL parser `_parse_expression` (DAILY/WEEKLY/MONTHLY/HOURLY/MINUTE) — 8 tests |
+| `1186c12` | M5.5.3   | `install)` action (plist + sidecar JSON + `launchctl bootstrap`) — 4 tests |
+| `aeb8e02` | M5.5.3.1 | Fix-up from review: profile content guard, `datetime.utcnow()` → tz-aware UTC, tighter disabled test, +1 bad-profile test |
+| `d8baef6` | M5.5.4   | `uninstall)` action (`bootout` + `rm -f` plist + sidecar) — 2 tests |
+| `cf86557` | M5.5.5   | `list)` + `get)` + `trigger)` actions (Python heredoc with `<<'PY_EOF'` for env-driven enumeration) — 6 tests |
+| `801e721` | M5.5.6   | `LaunchdScheduler` Python class skeleton + `is_available` (`adapters/macos/ascendo_macos/managers/scheduler.py`) — 5 tests |
+| `fc4f343` | M5.5.7   | `LaunchdScheduler._invoke` + 5 IScheduler methods (install/uninstall/list/get/trigger) — 28 new tests |
+
+**Aggregate test count after Task 7:** 56 scheduler tests passing
+(23 bash-driver + 33 Python). Plus all prior macOS adapter tests
+(brew/mas/softwareupdate/snapshot/inventory/elevation) untouched.
+
+### Architecture confirmed (Layer 6 + Layer 5 done)
+
+- **Layer 6 (bash):** `scheduler.sh` is feature-complete. JSON-IPC
+  contract: `bash scheduler.sh --action <verb> --output-path <path>
+  [--payload-path <path>]`. All 5 actions (install/uninstall/list/get/
+  trigger) implemented with proper exit codes (0/2/30 per
+  `docs/agents/contract.md`), idempotent `bootout`-then-`bootstrap`
+  semantics on install/trigger, plist + sidecar JSON written to per-
+  user `~/Library/LaunchAgents/dev.ascendo.<name>.plist` and
+  `~/Library/Application Support/Ascendo/schedules/<name>.json`.
+  Bash 3.2 compatible throughout. Profile content guard added in
+  M5.5.3.1 as defense-in-depth.
+
+- **Layer 5 (Python):** `LaunchdScheduler(IScheduler)` is feature-
+  complete. JSON-IPC bridge to scheduler.sh, mirrors
+  `WindowsScheduler._invoke` (M3.13). `_resolve_bash` discovers bash
+  via fallback chain (bash / /bin/bash / /usr/local/bin/bash) with
+  caching. All 5 IScheduler methods implemented + tested with
+  `subprocess.run` mock-based smoke tests.
+
+### Pending after this handoff (Tasks 8-14)
+
+The remaining 7 tasks are documented verbatim in
+`docs/superpowers/plans/2026-05-04-macos-launchd-scheduler.md`. Cliff's notes:
+
+| Task | Description | Effort |
+|------|-------------|--------|
+| **M5.5.8** | Wire `LaunchdScheduler` into `MacOSAdapter`: import + `_cached_scheduler` slot in `__init__` + `capabilities` adds `SCHEDULING` + `scheduler()` returns cached singleton + update class docstring + update test_adapter_smoke.py assertions (3 new wiring tests). | ~30 min |
+| **M5.5.9** | `MacOSAdapter._launchctl_status()` health helper + wire into `health_check()` between `tmutil` and `bash` (component count 9 → 10). +2 health tests. | ~20 min |
+| **M5.5.10** | `bin/validate-macos.sh` Stage 12 (5 sub-steps): doctor reports launchctl, install + list + trigger + remove a throwaway `ascendo-validate-test` agent with cleanup `trap`. | ~30 min |
+| **M5.5.11** | `bin/run-tag-release-macos.sh` tag bump `v0.0.11-alpha` → `v0.2.0` + M5.5 message. | ~10 min |
+| **M5.5.12** | Real-Mac e2e validation (operator runs `bin/validate-macos.sh`, expects **34/34 PASS**, then `bin/run-tag-release-macos.sh` to tag v0.2.0). | operator |
+| **M5.5.13** | `PLAN.md` mark M5.5 ✅ done; M5 complete. | ~10 min |
+| **M5.5.14** | `HANDOFF.md` close this section out with Sesja 28 entry confirming v0.2.0 tagged. | ~10 min |
+| **Final review** | superpowers:requesting-code-review across all M5.5.* commits before merging the v0.2.0 tag. | ~20 min |
+
+**Estimated remaining effort:** ~2.5 hours single-dev (excluding the
+real-Mac validation which needs the operator at the keyboard).
+
+### Subagent-driven-development worked well
+
+Per-task spec-compliance + code-quality review caught one real bug
+class on Task 3:
+
+- **Profile content sanitization gap** (M5.5.3.1 commit). Code-quality
+  reviewer flagged that `PROFILE` (from payload) was interpolated into
+  both the plist XML and a Python heredoc with no bash-layer guard.
+  Pydantic constrains it on the Python caller side, but the bash
+  driver is also a standalone executable; a future direct invocation
+  could pass shell-special chars. Fix: one-line `case "$PROFILE" in
+  *[!a-zA-Z0-9_-]*) emit_error ...; exit 2 ;; esac`. +1 test
+  (`test_install_rejects_bad_profile`).
+
+- **`datetime.utcnow()` deprecation** (same fix-up). On Python 3.12+
+  this emits DeprecationWarning to stderr. Replaced with
+  `datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")`.
+
+The reviewer's recommendation was "Approve with fixes tracked as
+follow-ups before the M5.5 tag commit" — fix-ups landed inline in
+M5.5.3.1 instead. Right call — fixing while the implementer's context
+was fresh was cheap.
+
+### One operational lesson (autocompact thrashing on Task 6)
+
+Task 6's implementer subagent crashed mid-flight with
+"Autocompact is thrashing: the context refilled to the limit within
+3 turns of the previous compact, 3 times in a row." The agent had
+actually committed Task 6 (`801e721`) AND continued past it into
+Task 7 territory (uncommitted `_invoke` + 5 methods + a `LaunchdScheduler`
+import in `adapter.py`) before the context exhaustion killed it.
+
+Recovery (inline by the controller):
+1. Found the failing test (`test_resolve_bash_uses_override_if_set`
+   referenced `LaunchdScheduler` without importing it). One-line fix:
+   `from ascendo_macos.managers.scheduler import LaunchdScheduler`
+   inside the test body.
+2. `git stash`-ed the orphan `adapter.py` import (Task 8 territory).
+3. Committed the rest of the uncommitted work as M5.5.7 (`fc4f343`).
+4. Discarded the orphan import — Task 8 next session reintroduces it
+   cleanly.
+
+**Heuristic for next session:** if an agent task involves >300 LOC
+test additions OR multiple rounds of mock-based test scaffolding, use
+sonnet (not haiku) and prepare for autocompact. Or split the task —
+the original plan had Task 6 as "skeleton only" and Task 7 as
+"`_invoke` + 5 methods", and the agent collapsed both into one shot.
+The split was correct — the agent ignored it.
+
+### Resume instructions for next session
+
+1. Open the worktree at `/Users/mk/Dev_Env/Ascendo/.claude/worktrees/cool-beaver-f1879c`
+   (or fresh-clone main, since this branch was merged).
+2. Read `docs/superpowers/plans/2026-05-04-macos-launchd-scheduler.md`
+   — start at **Task 8: Wire `LaunchdScheduler` into `MacOSAdapter`**.
+3. Use subagent-driven-development; dispatch implementer for Task 8.
+4. Continue Tasks 9, 10, 11 (each ~30 min).
+5. Task 12 needs the operator at a real Mac — pause for handoff there.
+6. Tasks 13 + 14 + final review wrap up the milestone.
+7. Tag `v0.2.0` after operator confirms `34/34 PASS` from
+   `bin/validate-macos.sh` Stage 12.
+
+### Spec + plan
+
+- Spec: `docs/superpowers/specs/2026-05-04-macos-launchd-scheduler-design.md`
+- Plan: `docs/superpowers/plans/2026-05-04-macos-launchd-scheduler.md`
+- Windows reference (M3.13): `adapters/windows/ascendo_windows/managers/scheduler.py`
+  + `adapters/windows/scripts/scheduler/scheduler.ps1`
+
+---
+
 ## Sesja 26 (2026-05-04) — macOS adapter M5.4: softwareupdate + Time Machine read-only + v0.0.11-alpha
 
 Fourth milestone of the macOS adapter. Two related Layer-5 components:
