@@ -402,6 +402,80 @@ else
     trap - EXIT INT TERM
 fi
 
+# ── 9. LaunchServices inventory (M5.3) ───────────────────────────────────────
+step "9. LaunchServices inventory (M5.3)"
+
+# 9.1 doctor reports system_profiler component
+step "9.1 doctor reports system_profiler component"
+DOCTOR_INV_OUT="$(python3 -m ascendo doctor 2>&1)"
+if printf '%s\n' "$DOCTOR_INV_OUT" | grep -qE '^\s+system_profiler\s+(ok|degraded|unavailable|error)'; then
+    SP_LINE="$(printf '%s\n' "$DOCTOR_INV_OUT" | grep -E '^\s+system_profiler\s+' | head -1)"
+    result "9.1 doctor: system_profiler component" 1 "$SP_LINE"
+else
+    result "9.1 doctor: system_profiler component" 0 "system_profiler not listed in doctor output"
+fi
+
+# 9.2 direct list.sh invocation (real system_profiler)
+step "9.2 inventory list.sh end-to-end"
+INV_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ascendo-validate-inv-XXXXXX")"
+INV_RID="$(uuidgen 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())')"
+INV_SC=""
+if bash "$REPO_ROOT/adapters/macos/scripts/inventory/list.sh" \
+        --run-id "$INV_RID" --trigger cli --profile default \
+        --output-dir "$INV_DIR" >/dev/null 2>&1; then
+    INV_SC="$INV_DIR/$INV_RID/check__inventory.json"
+    if [ -f "$INV_SC" ]; then
+        ITEM_COUNT="$(jq '.items | length' "$INV_SC")"
+        if [ "$ITEM_COUNT" -ge 50 ]; then
+            result "9.2 inventory list.sh end-to-end" 1 "$ITEM_COUNT apps enumerated"
+        else
+            result "9.2 inventory list.sh end-to-end" 0 "$ITEM_COUNT apps; expected >=50"
+        fi
+    else
+        result "9.2 inventory list.sh end-to-end" 0 "no sidecar produced at $INV_SC"
+    fi
+else
+    result "9.2 inventory list.sh end-to-end" 0 "script exited non-zero"
+fi
+
+# 9.3 classification distribution sanity
+step "9.3 classification distribution"
+if [ -n "$INV_SC" ] && [ -f "$INV_SC" ]; then
+    SYS_N="$(jq '[.items[] | select(.source.type=="system")] | length' "$INV_SC")"
+    MAS_N="$(jq '[.items[] | select(.source.type=="mas")] | length' "$INV_SC")"
+    BREW_N="$(jq '[.items[] | select(.source.type=="brew")] | length' "$INV_SC")"
+    WEB_N="$(jq '[.items[] | select(.source.type=="web")] | length' "$INV_SC")"
+    if [ "$SYS_N" -ge 5 ] && [ "$MAS_N" -ge 1 ] && [ "$((BREW_N + WEB_N))" -ge 5 ]; then
+        result "9.3 classification distribution" 1 \
+            "system=$SYS_N mas=$MAS_N brew=$BREW_N web=$WEB_N"
+    else
+        result "9.3 classification distribution" 0 \
+            "system=$SYS_N mas=$MAS_N brew=$BREW_N web=$WEB_N; want SYS>=5 MAS>=1 BREW+WEB>=5"
+    fi
+else
+    result "9.3 classification distribution" 0 "no sidecar (9.2 failed)"
+fi
+
+# 9.4 Python wrapper end-to-end via the adapter
+step "9.4 MacOSAdapter.inventory().list_installed()"
+PY_INV_OUT="$(python3 -c "
+from ascendo_macos.adapter import MacOSAdapter
+a = MacOSAdapter()
+host = a.detect_host()
+inv = a.inventory()
+pkgs = inv.list_installed(host)
+print('inventory enumerated %d packages' % len(pkgs))
+assert len(pkgs) >= 50, 'too few packages: %d' % len(pkgs)
+" 2>&1)"
+PY_INV_RC=$?
+if [ "$PY_INV_RC" -eq 0 ]; then
+    printf '         %s\n' "$PY_INV_OUT"
+    result "9.4 MacOSAdapter.inventory() end-to-end" 1
+else
+    printf '%s\n' "$PY_INV_OUT" >&2
+    result "9.4 MacOSAdapter.inventory() end-to-end" 0 "see above"
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 printf "\n"
 if [ "$FAIL_COUNT" -eq 0 ]; then
