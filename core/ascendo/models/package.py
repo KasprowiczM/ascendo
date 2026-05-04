@@ -90,6 +90,14 @@ class Package(BaseModel):
     category: SourceType = Field(
         description="Source/feed type. Drives which adapter handles this package.",
     )
+    source: "ItemSource | None" = Field(
+        default=None,
+        description=(
+            "Optional specific source/feed descriptor. Populated by inventory "
+            "implementations that have per-item source metadata (e.g. app path, "
+            "tap name). None when only the category is known."
+        ),
+    )
 
 
 class ItemSource(BaseModel):
