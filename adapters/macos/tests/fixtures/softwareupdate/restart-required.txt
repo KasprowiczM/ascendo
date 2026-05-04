@@ -1,0 +1,8 @@
+Software Update Tool
+
+Finding available software
+Software Update found the following new or updated software:
+* Label: macOS Sonoma 14.7.1-23H311
+	Title: macOS Sonoma 14.7.1, Version: 14.7.1, Size: 5.2G, Recommended: YES, Action: restart,
+* Label: Safari17.5-17.5
+	Title: Safari, Version: 17.5, Size: 87651K, Recommended: YES,

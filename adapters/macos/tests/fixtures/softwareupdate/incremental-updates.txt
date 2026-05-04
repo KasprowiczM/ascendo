@@ -1,0 +1,8 @@
+Software Update Tool
+
+Finding available software
+Software Update found the following new or updated software:
+* Label: Safari17.4-17.4
+	Title: Safari, Version: 17.4, Size: 87651K, Recommended: YES,
+* Label: XProtectPlistConfigData_10_15-2174
+	Title: XProtectPlistConfigData, Version: 2174, Size: 50K, Recommended: YES,
