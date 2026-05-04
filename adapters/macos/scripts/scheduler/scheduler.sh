@@ -366,8 +366,25 @@ PY_EOF
         exit 0
         ;;
 
+    uninstall)
+        NAME="$(_payload_get name)"
+        if ! _validate_name "$NAME"; then
+            emit_error "invalid name: must match ^[a-z0-9-]+\$"
+            exit 2
+        fi
+        PLIST="$LAUNCH_AGENTS_DIR/${LABEL_PREFIX}${NAME}.plist"
+        SIDECAR="$SCHEDULES_DIR/${NAME}.json"
+        LABEL="${LABEL_PREFIX}${NAME}"
+
+        # Idempotent: silent on "no such service" and "no such plist".
+        launchctl bootout "gui/${UID_VAL}/${LABEL}" >/dev/null 2>&1 || true
+        rm -f "$PLIST" "$SIDECAR"
+        emit_json '{"ok": true}'
+        exit 0
+        ;;
+
     *)
-        # uninstall, list, get, trigger land in subsequent tasks.
+        # list, get, trigger land in subsequent tasks.
         emit_json '{"ok": true}'
         exit 0
         ;;

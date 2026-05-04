@@ -273,3 +273,42 @@ def test_install_rejects_bad_profile(tmp_path):
     err = json.loads(output.read_text())
     assert "error" in err
     assert "profile" in err["error"].lower()
+
+
+def test_uninstall_removes_plist_and_sidecar(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    binary, _ = _make_fake_launchctl(tmp_path)
+
+    # Install first.
+    install_payload = {
+        "name": "to-remove",
+        "expression": "DAILY 05:00",
+        "profile": "safe",
+        "enabled": True,
+        "description": None,
+    }
+    _run("install", payload=install_payload, tmp_path=tmp_path,
+         fake_home=fake_home, launchctl=binary)
+    plist = fake_home / "Library/LaunchAgents/dev.ascendo.to-remove.plist"
+    sidecar = fake_home / "Library/Application Support/Ascendo/schedules/to-remove.json"
+    assert plist.exists() and sidecar.exists()
+
+    # Now uninstall.
+    res, output = _run("uninstall", payload={"name": "to-remove"},
+                       tmp_path=tmp_path, fake_home=fake_home,
+                       launchctl=binary)
+    assert res.returncode == 0, res.stderr
+    assert not plist.exists(), "plist still on disk after uninstall"
+    assert not sidecar.exists(), "sidecar still on disk after uninstall"
+    assert json.loads(output.read_text()) == {"ok": True}
+
+
+def test_uninstall_idempotent_on_missing(tmp_path):
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir()
+    binary, _ = _make_fake_launchctl(tmp_path)
+    res, output = _run("uninstall", payload={"name": "never-existed"},
+                       tmp_path=tmp_path, fake_home=fake_home,
+                       launchctl=binary)
+    assert res.returncode == 0
+    assert json.loads(output.read_text()) == {"ok": True}
