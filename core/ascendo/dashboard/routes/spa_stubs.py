@@ -32,7 +32,7 @@ import platform
 import sys
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse, Response
 
 if TYPE_CHECKING:
@@ -359,15 +359,51 @@ async def sync_export_stub(dry_run: bool = False) -> dict[str, Any]:
 
 
 @router.get("/sudo/status")
-async def sudo_status_stub() -> dict[str, Any]:
-    """Windows uses UAC, not sudo -- always report 'cached' so the SPA
-    doesn't constantly prompt for a password it can't use."""
+async def sudo_status_stub(request: Request) -> dict[str, Any]:
+    """Adapter-aware shim: when an IElevation backend with password
+    registration is available (macOS), report the real cache state so
+    the SPA pops the modal on first apply. Windows uses UAC per-call
+    and has no in-memory cache, so it returns cached=True to avoid
+    spurious prompts the OS can't satisfy from a web flow.
+
+    Linux without sudo askpass falls back to cached=True too — the user
+    must `sudo -v` from the terminal that launched the dashboard.
+    """
+    adapter = getattr(request.app.state, "adapter", None)
+    if adapter is not None:
+        try:
+            elev = adapter.elevation()
+        except Exception:  # noqa: BLE001
+            elev = None
+        if elev is not None and callable(getattr(elev, "has_password_registered", None)):
+            return {"cached": bool(elev.has_password_registered())}
     return {"cached": True, "stub": True}
 
 
 @router.post("/sudo/auth")
-async def sudo_auth_stub() -> dict[str, Any]:
-    return {"ok": True, "cached": True, "stub": True}
+async def sudo_auth_stub(request: Request) -> dict[str, Any]:
+    """Forward password to the real IElevation backend when available;
+    otherwise no-op (Windows / Linux without askpass)."""
+    adapter = getattr(request.app.state, "adapter", None)
+    if adapter is None:
+        return {"ok": True, "cached": True, "stub": True}
+    try:
+        elev = adapter.elevation()
+    except Exception:  # noqa: BLE001
+        elev = None
+    if elev is None or not callable(getattr(elev, "register_password", None)):
+        return {"ok": True, "cached": True, "stub": True}
+    body = await request.json()
+    password = body.get("password") if isinstance(body, dict) else None
+    if not password:
+        raise HTTPException(status_code=400, detail="password required")
+    try:
+        elev.register_password(password)
+    except Exception as exc:  # noqa: BLE001
+        # Wrong password / probe failure → 401. The real /elevation/auth
+        # handler does the same; we mirror it here for the legacy SPA path.
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    return {"ok": True, "cached": True}
 
 
 @router.post("/system/reboot")
