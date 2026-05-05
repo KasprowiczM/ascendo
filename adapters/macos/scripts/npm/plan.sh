@@ -44,9 +44,16 @@ in_filter() {
     case ",$FILTER," in (*",$1,"*) return 0 ;; (*) return 1 ;; esac
 }
 classify() {
-    [ -z "$1" ] && { printf 'missing'; return; }
-    [ -z "$2" ] && { printf 'up_to_date'; return; }
-    [ "$1" = "$2" ] && { printf 'up_to_date'; return; }
+    local _installed="$1"
+    local _latest="$2"
+    [ -z "$_installed" ] && { printf 'missing'; return; }
+    [ -z "$_latest" ] && { printf 'up_to_date'; return; }
+    [ "$_installed" = "$_latest" ] && { printf 'up_to_date'; return; }
+    local _lower
+    _lower="$(printf '%s\n%s\n' "$_installed" "$_latest" | sort -V 2>/dev/null | head -n1 || true)"
+    if [ -n "$_lower" ] && [ "$_lower" = "$_latest" ]; then
+        printf 'up_to_date'; return
+    fi
     printf 'planned'
 }
 

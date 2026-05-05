@@ -37,6 +37,7 @@ class ItemStatus(str, Enum):
     SKIPPED = "skipped"
     PLANNED = "planned"   # dry-run mode: would have done X
     PARTIAL = "partial"   # multi-step item where some steps succeeded
+    MISSING = "missing"   # not installed yet — apply would install it
 
 
 class MessageLevel(str, Enum):

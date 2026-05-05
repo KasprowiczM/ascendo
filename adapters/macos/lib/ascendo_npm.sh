@@ -170,9 +170,24 @@ ascendo_npm_node_installed_version() {
     "$_node" --version 2>/dev/null | sed 's/^v//' || true
 }
 
-# Latest Node LTS version via `n` (when installed) — best-effort.
+# Latest Node LTS version. Tries `n` first (fast, local), then falls
+# back to nodejs.org's index.json which lists every release with an
+# ``lts`` flag — pick the first row whose lts is non-false. Returns
+# empty when both paths fail (no network, no `n`); the caller treats
+# that as "unknown latest".
 ascendo_npm_node_latest_version() {
     local _n="$(ascendo_npm_n_prefix)/bin/n"
-    if [ ! -x "$_n" ]; then return 0; fi
-    N_PREFIX="$(ascendo_npm_n_prefix)" "$_n" --lts 2>/dev/null | head -n1 || true
+    if [ -x "$_n" ]; then
+        local _v
+        _v="$(N_PREFIX="$(ascendo_npm_n_prefix)" "$_n" --lts 2>/dev/null | head -n1 || true)"
+        if [ -n "$_v" ]; then printf '%s' "$_v"; return 0; fi
+    fi
+    # Network fallback. Don't fail if curl/jq missing.
+    if ! command -v curl >/dev/null 2>&1; then return 0; fi
+    if ! command -v jq >/dev/null 2>&1; then return 0; fi
+    # First LTS row — e.g. {"version":"v22.11.0","lts":"Jod",...}
+    curl -fsSL --max-time 5 'https://nodejs.org/dist/index.json' 2>/dev/null \
+        | jq -r 'map(select(.lts != false))[0].version // empty' 2>/dev/null \
+        | sed 's/^v//' \
+        || true
 }

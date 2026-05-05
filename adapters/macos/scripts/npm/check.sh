@@ -70,12 +70,23 @@ in_filter() {
 
 # -- classify (installed, latest) -> status ------------------------------------
 # Returns one of: missing | planned | up_to_date.
+# When installed != latest but installed sorts AFTER latest in semver
+# order (user runs Node Current vs LTS, or a release-candidate ahead of
+# stable), report up_to_date instead of planned — applying would be a
+# no-op or a downgrade.
 classify() {
     local _installed="$1"
     local _latest="$2"
     if [ -z "$_installed" ]; then printf 'missing'; return; fi
     if [ -z "$_latest" ];    then printf 'up_to_date'; return; fi
     if [ "$_installed" = "$_latest" ]; then printf 'up_to_date'; return; fi
+    # sort -V is a GNU extension; macOS BSD sort supports it from 10.13+.
+    # If unavailable, fall through to "planned" (the safe default).
+    local _lower
+    _lower="$(printf '%s\n%s\n' "$_installed" "$_latest" | sort -V 2>/dev/null | head -n1 || true)"
+    if [ -n "$_lower" ] && [ "$_lower" = "$_latest" ]; then
+        printf 'up_to_date'; return
+    fi
     printf 'planned'
 }
 
