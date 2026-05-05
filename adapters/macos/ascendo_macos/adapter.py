@@ -219,9 +219,9 @@ class MacOSAdapter(IAdapter):
     def health_check(self) -> dict[str, str]:
         """Adapter self-test. Returns component→status_string for ``ascendo doctor``.
 
-        Components checked (9 total):
+        Components checked (10 total):
             brew, jq, mas, system_profiler, softwareupdate, tmutil,
-            bash, ascendo_lib, ascendo_scripts
+            launchctl, bash, ascendo_lib, ascendo_scripts
         """
         out: dict[str, str] = {}
         out["brew"] = self._brew_status()
@@ -230,6 +230,7 @@ class MacOSAdapter(IAdapter):
         out["system_profiler"] = self._system_profiler_status()
         out["softwareupdate"] = self._softwareupdate_status()
         out["tmutil"] = self._tmutil_status()
+        out["launchctl"] = self._launchctl_status()  # M5.5
         out["bash"] = self._bash_status()
         out["ascendo_lib"] = self._lib_status()
         out["ascendo_scripts"] = self._scripts_status()
@@ -437,6 +438,40 @@ class MacOSAdapter(IAdapter):
             if res2.returncode != 0:
                 return f"error: tmutil listlocalsnapshots / exited {res2.returncode}"
         return "ok"
+
+    def _launchctl_status(self) -> str:
+        path = shutil.which("launchctl") or "/bin/launchctl"
+        if not Path(path).is_file():
+            return "unavailable: launchctl not found (macOS-only built-in)"
+        # `launchctl version` exists from macOS 10.10+; if it fails, fall back
+        # to `launchctl help` which is documented on every release.
+        try:
+            res = subprocess.run(
+                [path, "version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"error: {exc}"
+        if res.returncode != 0:
+            try:
+                res = subprocess.run(
+                    [path, "help"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                return f"error: {exc}"
+            if res.returncode != 0 and not (res.stdout or res.stderr):
+                return f"error: launchctl help exited {res.returncode} with no output"
+            return "ok"
+        lines = (res.stdout or "").strip().splitlines()
+        v = lines[0] if lines else ""
+        return f"ok: {v}" if v else "ok"
 
     def _bash_status(self) -> str:
         # Prefer system bash; shutil.which("bash") finds it on macOS PATH

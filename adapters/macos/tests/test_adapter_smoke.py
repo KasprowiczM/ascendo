@@ -112,9 +112,10 @@ def test_detect_host_is_cached() -> None:
 
 
 def test_health_check_reports_required_keys() -> None:
-    """health_check() must return all 9 expected component keys.
+    """health_check() must return all 10 expected component keys.
 
     M5.3 added system_profiler. M5.4 adds softwareupdate + tmutil.
+    M5.5 adds launchctl.
     """
     a = MacOSAdapter()
     h = a.health_check()
@@ -124,6 +125,7 @@ def test_health_check_reports_required_keys() -> None:
     assert "system_profiler" in h  # M5.3
     assert "softwareupdate" in h   # M5.4
     assert "tmutil" in h           # M5.4
+    assert "launchctl" in h        # M5.5
     assert "bash" in h
     assert "ascendo_lib" in h
     assert "ascendo_scripts" in h
@@ -284,3 +286,27 @@ def test_health_check_includes_tmutil_component() -> None:
     a = MacOSAdapter()
     h = a.health_check()
     assert "tmutil" in h
+
+
+# ── M5.5 wiring assertions ────────────────────────────────────────────────
+
+
+def test_health_check_includes_launchctl():
+    a = MacOSAdapter()
+    components = a.health_check()
+    assert "launchctl" in components
+    # Status string is one of: ok / unavailable / error / degraded
+    s = components["launchctl"]
+    assert s.startswith(("ok", "unavailable", "error", "degraded"))
+
+
+def test_health_check_has_ten_components():
+    """M5.5 raises the macOS health-check component count from 9 to 10."""
+    a = MacOSAdapter()
+    components = a.health_check()
+    assert len(components) == 10
+    expected = {
+        "brew", "jq", "mas", "system_profiler", "softwareupdate",
+        "tmutil", "launchctl", "bash", "ascendo_lib", "ascendo_scripts",
+    }
+    assert set(components.keys()) == expected
