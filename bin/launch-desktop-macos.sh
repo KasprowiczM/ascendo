@@ -26,21 +26,30 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 TAURI_DIR="$REPO_ROOT/ui/desktop-tauri"
 
 MODE="dev"
-# Argument parser. We tolerate two shapes of accidental input that
-# shell users hit when copy-pasting our doc snippets:
+WITH_DMG=0
+# Argument parser. Tolerates two shapes of accidental input that shell
+# users hit when copy-pasting our doc snippets:
 #   1. zsh interactive mode ignores `#` comments by default unless
 #      `interactive_comments` is set, so `bash bin/launch-…sh # foo`
 #      passes "#", "foo" as positional args. Tokens starting with `#`
 #      are silently dropped here.
 #   2. comment tail words after the `#` (e.g. "dev,", "instant",
 #      "reload") are not flag tokens. Anything that isn't one of our
-#      known flags is now a soft WARN — print and continue, instead of
+#      known flags is a soft WARN — print and continue, instead of
 #      hard exit 2 — so a stray paste doesn't cancel the build/run.
+#
+# Flags:
+#   --build / -b      build the .app bundle (release)
+#   --with-dmg        also try to package a .dmg (off by default; Tauri's
+#                     bundle_dmg.sh is fragile on macOS 14+ and brew's
+#                     create-dmg isn't a hard dependency)
+#   --help / -h       help
 while [ $# -gt 0 ]; do
     case "$1" in
-        --build|-b) MODE="build"; shift ;;
+        --build|-b)  MODE="build"; shift ;;
+        --with-dmg)  WITH_DMG=1;   shift ;;
         --help|-h)
-            sed -n '2,21p' "$0"; exit 0 ;;
+            sed -n '2,25p' "$0"; exit 0 ;;
         \#*) shift ;;
         *)
             printf "launch-desktop-macos.sh: ignoring unknown arg: %s\n" "$1" >&2
@@ -122,45 +131,63 @@ case "$MODE" in
         fi
         ok ".app bundle ready: $APP_PATH"
 
-        # Optional DMG pass. If it fails (hdiutil drama, leftover
-        # mountpoints, etc.) we surface a clear [WARN] but don't error.
-        step "DMG packaging (optional post-step)"
-        DMG_RC=0
-        npm run tauri build -- --bundles dmg || DMG_RC=$?
-        # Second-chance: if Tauri's bundle_dmg.sh choked AND the user has
-        # create-dmg from brew, build the DMG manually. create-dmg is the
-        # upstream that Tauri's bundle_dmg.sh forked from; it's been
-        # actively maintained and works on current macOS.
-        if [ "$DMG_RC" -ne 0 ] && command -v create-dmg >/dev/null 2>&1; then
-            step "DMG fallback: brew create-dmg"
-            mkdir -p "$BUNDLE_DIR/dmg" 2>/dev/null
-            if create-dmg \
-                --volname "Ascendo" \
-                --window-size 600 380 \
-                --icon-size 96 \
-                --icon "Ascendo.app" 150 180 \
-                --app-drop-link 450 180 \
-                --hide-extension "Ascendo.app" \
-                "$BUNDLE_DIR/dmg/Ascendo_0.2.0_aarch64.dmg" \
-                "$APP_PATH"; then
-                DMG_RC=0
-                ok "create-dmg produced the .dmg successfully"
+        # DMG packaging is OFF by default. Tauri's bundle_dmg.sh fails
+        # on macOS 14+ for reasons that are out of our control (hdiutil
+        # drift, mountpoint cleanup races, etc.) and the previous
+        # behaviour produced confusing [WARN] noise on every successful
+        # .app build. The user already has a launchable .app — the .dmg
+        # is only needed for distribution-style drag-to-Applications,
+        # which is a separate concern.
+        #
+        # Opt in with `--with-dmg`. If `create-dmg` (brew) is on PATH,
+        # we use it directly (skip Tauri's bundle_dmg.sh entirely);
+        # otherwise we try Tauri's bundler and surface the error.
+        if [ "$WITH_DMG" -eq 1 ]; then
+            step "DMG packaging (--with-dmg requested)"
+            DMG_RC=0
+            DMG_OUT_DIR="$BUNDLE_DIR/dmg"
+            DMG_OUT="$DMG_OUT_DIR/Ascendo_0.2.0_aarch64.dmg"
+            mkdir -p "$DMG_OUT_DIR" 2>/dev/null
+
+            if command -v create-dmg >/dev/null 2>&1; then
+                # create-dmg from brew is the upstream that Tauri's
+                # bundle_dmg.sh forked from. It's actively maintained
+                # and works on current macOS — prefer it directly.
+                if create-dmg \
+                    --volname "Ascendo" \
+                    --window-size 600 380 \
+                    --icon-size 96 \
+                    --icon "Ascendo.app" 150 180 \
+                    --app-drop-link 450 180 \
+                    --hide-extension "Ascendo.app" \
+                    "$DMG_OUT" \
+                    "$APP_PATH"; then
+                    ok "create-dmg produced: $DMG_OUT"
+                else
+                    DMG_RC=$?
+                fi
+            else
+                # Fall back to Tauri's bundle_dmg.sh — flaky but it's
+                # what we have without an extra dep.
+                npm run tauri build -- --bundles dmg --verbose || DMG_RC=$?
+                # Tauri sometimes leaves a half-baked .dmg shell in
+                # bundle/macos/ when bundle_dmg.sh aborts mid-stream.
+                # Sweep it so the user doesn't see misleading artefacts.
+                rm -f "$BUNDLE_DIR/macos/Ascendo"*.dmg 2>/dev/null
             fi
-        fi
-        DMG_PATH="$(find "$BUNDLE_DIR/dmg" -maxdepth 1 -name 'Ascendo*.dmg' 2>/dev/null | head -1)"
-        if [ -n "$DMG_PATH" ] && [ -f "$DMG_PATH" ]; then
-            ok ".dmg bundle ready: $DMG_PATH"
-        elif [ "$DMG_RC" -ne 0 ]; then
-            printf "  [WARN] DMG bundler exit %d — no .dmg produced.\n" "$DMG_RC"
-            printf "         The .app at %s is launchable.\n" "$APP_PATH"
-            printf "         To enable DMG packaging on the next build:\n"
-            printf "           brew install create-dmg\n"
-            printf "         (this script auto-falls-back to create-dmg when present.)\n"
+
+            if [ ! -f "$DMG_OUT" ] && [ "$DMG_RC" -ne 0 ]; then
+                printf "  [WARN] DMG bundler failed (rc=%d). The .app is fine.\n" "$DMG_RC"
+                printf "         For a reliable DMG: brew install create-dmg, then re-run with --with-dmg.\n"
+            fi
         fi
 
         printf "\nBundle artefacts:\n"
         find "$BUNDLE_DIR" -name 'Ascendo*' 2>/dev/null | sed 's/^/  /'
         printf "\nTo launch:\n"
         printf "  open '%s'\n" "$APP_PATH"
+        if [ "$WITH_DMG" -eq 0 ]; then
+            printf "\n(DMG packaging skipped. Pass --with-dmg next time if you want a .dmg.)\n"
+        fi
         ;;
 esac
