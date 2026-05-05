@@ -608,7 +608,7 @@ fi
 step "12.2 schedule install (MINUTE 1, profile=quick)"
 if python3 -m ascendo schedule install \
         --name "$SCHED_TEST_NAME" \
-        --expression "MINUTE 1" \
+        --calendar "MINUTE 1" \
         --profile "quick" \
         >/dev/null 2>&1; then
     if [ -f "$SCHED_TEST_PLIST" ] && [ -f "$SCHED_TEST_SIDECAR" ]; then
