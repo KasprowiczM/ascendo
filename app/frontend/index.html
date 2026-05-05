@@ -865,7 +865,7 @@
             </div>
             <div id="backup-output" class="dim" style="margin-top:0.5rem;font-size:0.78rem"></div>
           </div>
-          <div class="card">
+          <div class="card adapter-hide-macos">
             <h3 data-i18n="service.title">Windows service</h3>
             <p class="dim" data-i18n="service.hint" style="font-size:0.82rem">Run the
               dashboard as an always-on Windows service (NSSM-wrapped). Survives
@@ -1195,7 +1195,7 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
   <footer>
     <span id="status-line" data-i18n="footer.ready">ready</span>
     <span id="sudo-indicator"    class="dim" style="float:right"></span>
-    <span id="service-indicator" class="dim" style="float:right; margin-right:0.5rem"></span>
+    <span id="service-indicator" class="dim adapter-hide-macos adapter-hide-linux" style="float:right; margin-right:0.5rem"></span>
   </footer>
   <!-- Apply confirmation modal (B4 — mirrors bin/run-apply.ps1).
        Native <dialog> + form method="dialog" so Esc / backdrop / browser

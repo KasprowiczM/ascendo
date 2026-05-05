@@ -1321,13 +1321,19 @@ const ui = {
       </p>`;
   },
 
+  // Apps view in-memory state (filters/groups). Lives across re-renders
+  // until the page reloads.
+  _appsState: {
+    apps: [],
+    search: "",
+    categories: new Set(),  // empty = ALL
+    statuses: new Set(),    // empty = ALL
+    collapsed: new Set(),   // category names with collapsed body
+  },
+
   async loadApps(opts) {
     opts = opts || {};
     const refresh = !!opts.refresh;
-    // Default-include model (per resident operator's spec, 2026-05-03):
-    // every detected app is in_config by default; user opts OUT per app
-    // by toggling the "In config" checkbox (POST /apps/exclude). The
-    // backend persists exclusions to %APPDATA%\Ascendo\excluded.json.
     const wrap = $("#apps-table-wrap");
     const summary = $("#apps-summary");
     if (!wrap) return;
@@ -1346,7 +1352,6 @@ const ui = {
       const apps = data.apps || [];
       const sum = data.summary || {total: 0, tracked: 0, excluded: 0, missing: 0};
 
-      // Summary pills: total / tracked / excluded.
       if (summary) {
         summary.textContent = "";
         const pill = (cls, label, n) => {
@@ -1362,122 +1367,225 @@ const ui = {
         summary.appendChild(pill("st-skip",  tr("apps.pill_excluded") || "excluded",  sum.excluded));
       }
 
-      // Sort: excluded first (so the user can see what they've opted
-      // out of at the top), then by category, then alphabetical.
-      apps.sort((a, b) =>
-        ((a.in_config ? 1 : 0) - (b.in_config ? 1 : 0)) ||
-        (a.category || "").localeCompare(b.category || "") ||
-        (a.name || "").localeCompare(b.name || ""));
-
-      const tbl = document.createElement("table");
-      tbl.className = "tbl inv-table";
-      const thead = document.createElement("thead");
-      const trh = document.createElement("tr");
-      [
-        tr("categories.col_cat")     || "Category",
-        tr("categories.col_pkg")     || "Package",
-        tr("categories.col_inst")    || "Installed",
-        tr("categories.col_cand")    || "Candidate",
-        tr("categories.col_status")  || "Status",
-        tr("apps.col_in_config")     || "In config",
-        tr("categories.col_act")     || "Action",
-      ].forEach(label => {
-        const th = document.createElement("th");
-        th.textContent = label;
-        trh.appendChild(th);
+      // Backfill status if backend left it blank.
+      apps.forEach(a => {
+        const inst = (a.installed || "").trim();
+        const cand = (a.candidate || "").trim();
+        if (!a.status || a.status === "unknown") {
+          if (!inst && cand) a.status = "missing";
+          else if (inst && cand && inst !== cand) a.status = "outdated";
+          else a.status = "ok";
+        }
       });
-      thead.appendChild(trh);
-      tbl.appendChild(thead);
 
-      const tbody = document.createElement("tbody");
-      const stCls = {ok: "st-ok", outdated: "st-warn", missing: "st-err", unknown: "st-skip"};
-
-      if (!apps.length) {
-        const trEmpty = document.createElement("tr");
-        const td = document.createElement("td");
-        td.colSpan = 7;
-        td.className = "dim";
-        td.textContent = tr("apps.empty") || "No apps detected. Run a check from Categories first.";
-        trEmpty.appendChild(td);
-        tbody.appendChild(trEmpty);
-      } else {
-        apps.forEach(it => {
-          const trRow = document.createElement("tr");
-          if (!it.in_config) trRow.classList.add("excluded");
-          trRow.classList.add("status-" + (it.status || "ok"));
-          const addCell = (text, cls) => {
-            const td = document.createElement("td");
-            if (cls) td.className = cls;
-            td.textContent = text;
-            trRow.appendChild(td);
-          };
-          addCell(it.category || "—", "dim");
-          addCell(it.name || "—", "pkg-name");
-          addCell(it.installed || "—", "mono");
-          addCell(it.candidate || "—", "mono");
-          // Status pill cell
-          const tdStatus = document.createElement("td");
-          const pill = document.createElement("span");
-          pill.className = "st-pill " + (stCls[it.status] || "st-skip");
-          pill.textContent = it.status || "ok";
-          tdStatus.appendChild(pill);
-          trRow.appendChild(tdStatus);
-          // In-config toggle
-          const tdToggle = document.createElement("td");
-          tdToggle.className = "in-config-toggle";
-          const lbl = document.createElement("label");
-          lbl.title = it.in_config
-            ? (tr("apps.in_config_on_hint")  || "In config — Ascendo will update this app. Uncheck to skip.")
-            : (tr("apps.in_config_off_hint") || "Excluded — Ascendo will NOT update this app. Check to re-include.");
-          const cb = document.createElement("input");
-          cb.type = "checkbox";
-          cb.checked = !!it.in_config;
-          cb.dataset.appsToggle = "1";
-          cb.dataset.cat = it.category;
-          cb.dataset.name = it.name;
-          lbl.appendChild(cb);
-          lbl.appendChild(document.createTextNode(" "));
-          const txt = document.createElement("span");
-          txt.className = "dim";
-          txt.textContent = it.in_config
-            ? (tr("apps.in_config_on")  || "in config")
-            : (tr("apps.in_config_off") || "excluded");
-          lbl.appendChild(txt);
-          tdToggle.appendChild(lbl);
-          trRow.appendChild(tdToggle);
-
-          // Explicit Action column with a button so the in/out semantics
-          // are obvious even if the user misses the checkbox.
-          const tdAction = document.createElement("td");
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "secondary";
-          btn.style.fontSize = "0.78rem";
-          if (it.in_config) {
-            btn.textContent = tr("apps.btn_remove") || "Remove from config";
-            btn.title = tr("apps.in_config_on_hint")
-              || "Currently in config — click to exclude this app from updates.";
-            btn.dataset.appsExclude = "1";
-          } else {
-            btn.textContent = tr("apps.btn_add") || "+ Add to config";
-            btn.title = tr("apps.in_config_off_hint")
-              || "Currently excluded — click to include this app in updates again.";
-            btn.dataset.appsInclude = "1";
-          }
-          btn.dataset.cat = it.category;
-          btn.dataset.name = it.name;
-          tdAction.appendChild(btn);
-          trRow.appendChild(tdAction);
-
-          tbody.appendChild(trRow);
-        });
-      }
-      tbl.appendChild(tbody);
-      wrap.textContent = "";
-      wrap.appendChild(tbl);
+      ui._appsState.apps = apps;
+      ui._renderAppsFilters();
+      ui._renderAppsTable();
     } catch (e) {
       wrap.textContent = String(e);
     }
+  },
+
+  _renderAppsFilters() {
+    const apps = ui._appsState.apps;
+    const search = $("#apps-search");
+    const statuses = $("#apps-status-chips");
+    const cats = $("#apps-category-chips");
+    if (search && !search.dataset.bound) {
+      search.dataset.bound = "1";
+      search.placeholder = tr("apps.search_placeholder") || "Search apps…";
+      let t = null;
+      search.addEventListener("input", () => {
+        if (t) clearTimeout(t);
+        t = setTimeout(() => {
+          ui._appsState.search = (search.value || "").trim().toLowerCase();
+          ui._renderAppsTable();
+        }, 200);
+      });
+    }
+    if (search && ui._appsState.search && !search.value) {
+      search.value = ui._appsState.search;
+    }
+
+    if (statuses) {
+      statuses.textContent = "";
+      const counts = {ok: 0, outdated: 0, missing: 0};
+      apps.forEach(a => { counts[a.status] = (counts[a.status] || 0) + 1; });
+      ["ok", "outdated", "missing"].forEach(st => {
+        if (!counts[st]) return;
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "chip";
+        if (ui._appsState.statuses.has(st)) chip.classList.add("active");
+        chip.dataset.appsStatusChip = st;
+        const label = (tr("apps.st_" + st) || st);
+        chip.innerHTML = `${label}<span class="chip-count">${counts[st]}</span>`;
+        statuses.appendChild(chip);
+      });
+    }
+
+    if (cats) {
+      cats.textContent = "";
+      const counts = {};
+      apps.forEach(a => {
+        const c = a.category || "unknown";
+        counts[c] = (counts[c] || 0) + 1;
+      });
+      Object.keys(counts).sort().forEach(c => {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "chip";
+        if (ui._appsState.categories.has(c)) chip.classList.add("active");
+        chip.dataset.appsCategoryChip = c;
+        chip.innerHTML = `${c}<span class="chip-count">${counts[c]}</span>`;
+        cats.appendChild(chip);
+      });
+    }
+  },
+
+  _renderAppsTable() {
+    const wrap = $("#apps-table-wrap");
+    if (!wrap) return;
+    wrap.textContent = "";
+    const apps = ui._appsState.apps;
+    const search = ui._appsState.search;
+    const catsF = ui._appsState.categories;
+    const stF = ui._appsState.statuses;
+
+    const visible = apps.filter(a => {
+      if (search && !(a.name || "").toLowerCase().includes(search)) return false;
+      if (catsF.size && !catsF.has(a.category || "unknown")) return false;
+      if (stF.size && !stF.has(a.status || "ok")) return false;
+      return true;
+    });
+
+    if (!visible.length) {
+      const e = document.createElement("div");
+      e.className = "apps-empty";
+      e.textContent = apps.length
+        ? (tr("apps.no_match") || "No apps match the current filters.")
+        : (tr("apps.empty") || "No apps detected. Run a check from Categories first.");
+      wrap.appendChild(e);
+      return;
+    }
+
+    const groups = {};
+    visible.forEach(a => {
+      const c = a.category || "unknown";
+      (groups[c] = groups[c] || []).push(a);
+    });
+    Object.keys(groups).sort().forEach(catName => {
+      const items = groups[catName];
+      items.sort((a, b) =>
+        ((a.in_config ? 1 : 0) - (b.in_config ? 1 : 0)) ||
+        (a.name || "").localeCompare(b.name || ""));
+      const groupEl = document.createElement("div");
+      groupEl.className = "apps-group";
+      if (ui._appsState.collapsed.has(catName)) groupEl.classList.add("collapsed");
+      const header = document.createElement("div");
+      header.className = "apps-group-header";
+      header.dataset.appsGroup = catName;
+      header.innerHTML =
+        `<span class="apps-group-arrow">▾</span>` +
+        `<span class="apps-group-title">${catName}</span>` +
+        `<span class="apps-group-count">${items.length} ${tr("apps.items_label") || "items"}</span>`;
+      groupEl.appendChild(header);
+      const body = document.createElement("div");
+      body.className = "apps-group-body";
+      body.appendChild(ui._buildAppsTable(items));
+      groupEl.appendChild(body);
+      wrap.appendChild(groupEl);
+    });
+  },
+
+  _buildAppsTable(items) {
+    const tbl = document.createElement("table");
+    tbl.className = "tbl inv-table";
+    const thead = document.createElement("thead");
+    const trh = document.createElement("tr");
+    [
+      tr("categories.col_pkg")     || "Package",
+      tr("categories.col_inst")    || "Installed",
+      tr("categories.col_cand")    || "Candidate",
+      tr("categories.col_status")  || "Status",
+      tr("categories.col_src")     || "Source",
+      tr("apps.col_in_config")     || "In config",
+      tr("categories.col_act")     || "Action",
+    ].forEach(label => {
+      const th = document.createElement("th");
+      th.textContent = label;
+      trh.appendChild(th);
+    });
+    thead.appendChild(trh);
+    tbl.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    const stCls = {ok: "st-ok", outdated: "st-warn", missing: "st-err", unknown: "st-skip"};
+    items.forEach(it => {
+      const trRow = document.createElement("tr");
+      if (!it.in_config) trRow.classList.add("excluded");
+      trRow.classList.add("status-" + (it.status || "ok"));
+      const addCell = (text, cls) => {
+        const td = document.createElement("td");
+        if (cls) td.className = cls;
+        td.textContent = text;
+        trRow.appendChild(td);
+      };
+      addCell(it.name || "—", "pkg-name");
+      addCell(it.installed || "—", "mono");
+      addCell(it.candidate || "—", "mono");
+      const tdStatus = document.createElement("td");
+      const pill = document.createElement("span");
+      pill.className = "st-pill " + (stCls[it.status] || "st-skip");
+      pill.textContent = it.status || "ok";
+      tdStatus.appendChild(pill);
+      trRow.appendChild(tdStatus);
+      addCell(it.source || it.category || "—", "dim mono");
+
+      const tdToggle = document.createElement("td");
+      tdToggle.className = "in-config-toggle";
+      const lbl = document.createElement("label");
+      lbl.title = it.in_config
+        ? (tr("apps.in_config_on_hint")  || "In config — Ascendo will update this app. Uncheck to skip.")
+        : (tr("apps.in_config_off_hint") || "Excluded — Ascendo will NOT update this app. Check to re-include.");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!it.in_config;
+      cb.dataset.appsToggle = "1";
+      cb.dataset.cat = it.category;
+      cb.dataset.name = it.name;
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode(" "));
+      const txt = document.createElement("span");
+      txt.className = "dim";
+      txt.textContent = it.in_config
+        ? (tr("apps.in_config_on")  || "in config")
+        : (tr("apps.in_config_off") || "excluded");
+      lbl.appendChild(txt);
+      tdToggle.appendChild(lbl);
+      trRow.appendChild(tdToggle);
+
+      const tdAction = document.createElement("td");
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "secondary";
+      btn.style.fontSize = "0.78rem";
+      if (it.in_config) {
+        btn.textContent = tr("apps.btn_remove") || "Remove from config";
+        btn.dataset.appsExclude = "1";
+      } else {
+        btn.textContent = tr("apps.btn_add") || "+ Add to config";
+        btn.dataset.appsInclude = "1";
+      }
+      btn.dataset.cat = it.category;
+      btn.dataset.name = it.name;
+      tdAction.appendChild(btn);
+      trRow.appendChild(tdAction);
+
+      tbody.appendChild(trRow);
+    });
+    tbl.appendChild(tbody);
+    return tbl;
   },
 
   async toggleExclusion(pkg, cat, on) {
@@ -2849,6 +2957,46 @@ document.addEventListener("click", async e => {
       ui._loaded.apps = false;
       await ui.loadApps({ refresh: true });
     });
+    return;
+  }
+  // Apps view: status chip toggle.
+  const stChip = e.target.closest("[data-apps-status-chip]");
+  if (stChip) {
+    const v = stChip.dataset.appsStatusChip;
+    const set = ui._appsState.statuses;
+    if (set.has(v)) set.delete(v); else set.add(v);
+    ui._renderAppsFilters();
+    ui._renderAppsTable();
+    return;
+  }
+  // Apps view: category chip toggle.
+  const catChip = e.target.closest("[data-apps-category-chip]");
+  if (catChip) {
+    const v = catChip.dataset.appsCategoryChip;
+    const set = ui._appsState.categories;
+    if (set.has(v)) set.delete(v); else set.add(v);
+    ui._renderAppsFilters();
+    ui._renderAppsTable();
+    return;
+  }
+  // Apps view: clear all filters.
+  if (e.target.id === "apps-clear-filters") {
+    ui._appsState.search = "";
+    ui._appsState.categories.clear();
+    ui._appsState.statuses.clear();
+    const search = $("#apps-search");
+    if (search) search.value = "";
+    ui._renderAppsFilters();
+    ui._renderAppsTable();
+    return;
+  }
+  // Apps view: collapse/expand a category group.
+  const groupHeader = e.target.closest("[data-apps-group]");
+  if (groupHeader) {
+    const c = groupHeader.dataset.appsGroup;
+    const set = ui._appsState.collapsed;
+    if (set.has(c)) set.delete(c); else set.add(c);
+    ui._renderAppsTable();
     return;
   }
   const addBtn = e.target.closest("[data-apps-add]");
