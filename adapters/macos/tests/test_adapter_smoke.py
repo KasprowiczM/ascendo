@@ -26,28 +26,37 @@ def test_adapter_identity() -> None:
 # ── Capabilities ─────────────────────────────────────────────────────────
 
 
-def test_capabilities_is_package_management_and_elevation_and_inventory_and_snapshots() -> None:
-    """M5.4 declares PACKAGE_MANAGEMENT | ELEVATION | INVENTORY | SNAPSHOTS."""
+def test_capabilities_is_full_tier_1_minus_source() -> None:
+    """M5.5 declares PACKAGE_MANAGEMENT | ELEVATION | INVENTORY | SNAPSHOTS | SCHEDULING."""
     a = MacOSAdapter()
     assert a.capabilities & AdapterCapability.PACKAGE_MANAGEMENT
     assert a.capabilities & AdapterCapability.ELEVATION
-    assert a.capabilities & AdapterCapability.INVENTORY  # M5.3
-    assert a.capabilities & AdapterCapability.SNAPSHOTS  # M5.4 wired
-    # M5.5 still reserved
-    assert not (a.capabilities & AdapterCapability.SCHEDULING)
+    assert a.capabilities & AdapterCapability.INVENTORY
+    assert a.capabilities & AdapterCapability.SNAPSHOTS
+    assert a.capabilities & AdapterCapability.SCHEDULING  # M5.5
 
 
 # ── Accessor None-ness (M5.5 reserved) ───────────────────────────────────
 
 
 def test_unsupported_accessors_return_none_m55() -> None:
-    """M5.5 accessor (scheduler) still returns None; everything else is wired."""
+    """After M5.5, only source() is None (M6 cross-cutting)."""
     a = MacOSAdapter()
-    assert a.inventory() is not None      # M5.3 wired
-    assert a.snapshot() is not None       # M5.4 wired (read-only)
-    assert a.scheduler() is None          # M5.5 (launchd)
+    assert a.inventory() is not None
+    assert a.snapshot() is not None
+    assert a.scheduler() is not None  # M5.5 wired
     assert a.source() is None
-    assert a.elevation() is not None      # M5.2 wired
+    assert a.elevation() is not None
+
+
+def test_scheduler_returns_launchd_scheduler_singleton() -> None:
+    from ascendo_macos.managers.scheduler import LaunchdScheduler
+    a = MacOSAdapter()
+    s1 = a.scheduler()
+    s2 = a.scheduler()
+    assert isinstance(s1, LaunchdScheduler)
+    assert s1 is s2  # cached singleton
+    assert s1.backend == "launchd"
 
 
 # ── package_managers ─────────────────────────────────────────────────────

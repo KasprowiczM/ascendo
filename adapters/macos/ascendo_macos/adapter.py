@@ -29,6 +29,7 @@ from .managers.brew import BrewManager
 from .managers.elevation import MacElevation
 from .managers.mas import MasManager
 from .managers.softwareupdate import SoftwareUpdateManager
+from .managers.scheduler import LaunchdScheduler
 from .snapshot import TimeMachineSnapshot
 
 _log = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ def _resolve_resource_dir(env_var: str, repo_relative: str) -> Path:
 
 
 class MacOSAdapter(IAdapter):
-    """Tier 1 adapter for macOS (M5.4 scope — PACKAGE_MANAGEMENT | ELEVATION | INVENTORY | SNAPSHOTS).
+    """Tier 1 adapter for macOS (M5.5 scope — full tier-1 minus SOURCE).
 
     Capabilities declared:
         PACKAGE_MANAGEMENT — Homebrew formulae + casks via BrewManager;
@@ -73,15 +74,18 @@ class MacOSAdapter(IAdapter):
                              SnapshotError — APFS local snapshots are
                              auto-managed; user-initiated backups go through
                              System Settings > Time Machine.
+        SCHEDULING         — per-user launchd LaunchAgents via LaunchdScheduler;
+                             DSL mirrors WindowsScheduler (DAILY / WEEKLY /
+                             MONTHLY / HOURLY / MINUTE). Plists land at
+                             ~/Library/LaunchAgents/dev.ascendo.<name>.plist.
 
-    MacElevation, MacOSInventory, and TimeMachineSnapshot are singletons
-    per adapter instance (cached in ``self._cached_*``) so a single dashboard
-    password prompt covers all managers and snapshot/inventory reads reuse
-    the same object within a process lifetime.
+    MacElevation, MacOSInventory, TimeMachineSnapshot, and LaunchdScheduler
+    are singletons per adapter instance (cached in ``self._cached_*``) so a
+    single dashboard password prompt covers all managers and object reuse
+    within a process lifetime is guaranteed.
 
-    Remaining accessors (scheduler, source) return None and are reserved
-    for M5.5+:
-        M5.5 — scheduler (launchd)
+    Remaining accessor (source) returns None and is reserved for M6
+    (cross-cutting threat-model work for source signature verification).
     """
 
     SCRIPTS_DIR: ClassVar[Path] = _resolve_resource_dir(
@@ -96,6 +100,7 @@ class MacOSAdapter(IAdapter):
         self._cached_elevation: MacElevation | None = None
         self._cached_inventory: MacOSInventory | None = None
         self._cached_snapshot: TimeMachineSnapshot | None = None
+        self._cached_scheduler: LaunchdScheduler | None = None  # M5.5
 
     # ── Identity ──────────────────────────────────────────────────────────
 
@@ -118,6 +123,7 @@ class MacOSAdapter(IAdapter):
             | AdapterCapability.ELEVATION
             | AdapterCapability.INVENTORY
             | AdapterCapability.SNAPSHOTS
+            | AdapterCapability.SCHEDULING  # M5.5 (launchd)
         )
 
     # ── Sub-interface accessors ───────────────────────────────────────────
@@ -155,8 +161,16 @@ class MacOSAdapter(IAdapter):
         return self._cached_snapshot
 
     def scheduler(self) -> IScheduler | None:
-        """Not implemented yet (planned for M5.5 — launchd IScheduler). Returns None."""
-        return None  # M5.5 (launchd)
+        """Returns a cached LaunchdScheduler singleton (M5.5).
+
+        Per-user LaunchAgents in ~/Library/LaunchAgents/dev.ascendo.<name>.plist.
+        DSL: DAILY/WEEKLY/MONTHLY/HOURLY/MINUTE forms (mirror of Windows).
+        """
+        if self._cached_scheduler is None:
+            self._cached_scheduler = LaunchdScheduler(
+                scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR
+            )
+        return self._cached_scheduler
 
     def source(self) -> ISource | None:
         """Not implemented in M5.1. Returns None."""
