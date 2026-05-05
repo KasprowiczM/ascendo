@@ -1,10 +1,22 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-05 (sesja 33) — macOS adapter now has full
-> 5-manager parity with Ubuntu: brew · mas · npm · **pip** · softwareupdate.
-> 11-component health check (added `pip`). 495 tests passing
-> (+24 new this session: 16 PipManager smoke + 5 check-script
-> end-to-end + 3 adapter wiring).
+> Last updated: 2026-05-06 (sesja 34) — multi-front polish session:
+> partial-status heuristic in `_json_emit.py` so a single failed item
+> no longer aborts the whole run; npm + pip stderr capture (last 12
+> lines) into sidecar messages so the operator sees the actual install
+> failure reason (PEP 668, EACCES, registry 404, no RECORD file, etc.);
+> Touch-ID-first sudo warming via `osascript … with administrator
+> privileges` before the askpass fallback; brew-pip self-upgrade skip
+> (no RECORD file); Tauri `--with-dmg` opt-in + create-dmg fallback;
+> icon regeneration at 8-bit RGBA; tolerant launch script arg parser;
+> Ascendo path capitalization fix across docs; **pip version-mismatch
+> fix** (LATEST=INSTALLED in brew-self-skip case so the dashboard's
+> Python `_classify` overlay no longer flips brew-managed rows back
+> to "outdated"). 495+ tests passing.
+>
+> Previous milestone: Sesja 33 — macOS adapter now has full 5-manager
+> parity with Ubuntu: brew · mas · npm · **pip** · softwareupdate.
+> 11-component health check (added `pip`).
 >
 > Previous milestone: Sesja 32 (inventory SQLite DB cache,
 > adapter-conditional onboarding wizard (macOS/Linux/Windows variants),
@@ -45,10 +57,24 @@
 
 ---
 
-## Immediate next steps (post-Sesja 29)
+## Immediate next steps (post-Sesja 34)
 
-The macOS adapter is now production-ready for everyday solo-machine use.
+The macOS adapter is production-ready for everyday solo-machine use.
 What's left before declaring v0.3.0:
+
+### Hygiene follow-ups discovered in Sesja 34
+
+- **`InventoryDB.bulk_upsert` never deletes stale rows.** When the pip
+  manifest shrinks (or any manager's tracked-set changes), the SQLite
+  inventory at `~/.ascendo/inventory.db` keeps the old entries —
+  causing Apps to report `pip 12` while Run Center reports 11. Fix:
+  in `_resolve_buckets` (or wherever live-scan repopulates), call
+  `db.clear_category(cat)` before `bulk_upsert` for each category
+  that's currently being scanned. ~10 LOC. Workaround for now:
+  `rm ~/.ascendo/inventory.db` and trigger any check.
+- **Lock in the brew-self-skip LATEST behaviour with a regression test**
+  in `tests/test_pip_check_script.py` — fake brew pip flavour, assert
+  emitted item has `installed == candidate` and `status == up_to_date`.
 
 ### Stage 5 polish (low-risk, fast)
 

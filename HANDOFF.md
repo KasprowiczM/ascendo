@@ -6,6 +6,71 @@
 
 ---
 
+## Sesja 34 (2026-05-06) — Apply-phase hardening + Touch ID + DMG split + pip version mismatch
+
+Multi-front polish session driven by operator feedback on Mac.r12.home
+after Sesja 33's pip landing. No new manager, no new milestones —
+seven discrete bug-fixes and one UX upgrade that were each blocking
+"this is good enough to actually use daily".
+
+### Shipped this session
+
+| Commit    | What |
+|-----------|------|
+| `8566dd1` | **pip stderr capture + tolerant launch arg parser.** `apply.sh` for pip now tees `pip install` combined output to a temp file; on failure, `tail -n 12 \| awk 'NF{print}' \| head -c 1500` is appended to a sidecar `error` message so the operator sees PEP 668 / EACCES / no-RECORD / dependency-resolver-conflict errors directly in Run Center instead of bare `exited 1`. `bin/launch-desktop-macos.sh` and `bin/refresh-macos-icon.sh` now warn-and-shift on unknown args (most often a stray `#` comment fragment from zsh history) instead of `exit 2`. |
+| `b64148f` | **brew-pip self-upgrade skip + Ascendo capitalization.** Homebrew installs `pip` / `setuptools` / `wheel` via its bottle, not pip's metadata path, so the RECORD file pip needs to track ownership doesn't exist; `pip install -U pip` errors with "uninstall-no-record-file". Added a skip rule in `pip/{check,plan,apply}.sh`: when `_ascendo_pip_flavour` returns `brew` and the package is `pip`/`setuptools`/`wheel`, reclassify to `up_to_date` (check) / drop from plan / emit `skipped` with `info` message recommending `brew upgrade python` (apply). Bulk-rewrote `~/Dev_Env/ascendo` → `~/Dev_Env/Ascendo` across MACOS_TESTING.md, USER_GUIDE.md, MACOS_QUICKSTART.md, README.md, HANDOFF.md, app/frontend (per operator preference). |
+| `0fa7321` | **Tauri build: split `.app` and `.dmg` passes.** Single `tauri build` invocation occasionally panicked the DMG bundler mid-build, leaving zero artifacts. Split into `--bundles app` first (always succeeds), then `--bundles dmg` (allowed to fail without aborting the run). Added create-dmg fallback when the Tauri DMG bundler fails. Identifier corrected to `dev.ascendo.desktop` (was `…app` which Tauri 2.x flags as reserved). |
+| `9c0fe2c` | **DMG opt-in (`--with-dmg`) + create-dmg-direct.** DMG generation became opt-in via `--with-dmg` flag because most operator runs only need the `.app` bundle for daily testing. When passed, the script now prefers brew's `create-dmg` directly (bypassing Tauri's bundler) since it's been more reliable across icon regenerations. |
+| `dc5ad54` | **Auto-open `.app` after build + zsh `~N` pitfall doc.** Build script now `open -a` the freshly-built `.app` automatically — saves the second copy-paste line that operators kept tripping on (zsh's history-stack `~15` reference). MACOS_QUICKSTART troubleshooting section documents the gotcha. |
+| `50f83f2` | **Partial-status heuristic + Touch-ID-first sudo warming + npm stderr.** `_json_emit.py:cmd_finalize` now emits `partial` status when `failed > 0 AND success > 0` (was: any failure → whole sidecar marked `failed` and the orchestrator aborted later phases). New `_ascendo_sudo_warm` helper in `ascendo_json.sh` uses `osascript -e 'do shell script "/usr/bin/sudo -v" with administrator privileges'` to surface the macOS native auth dialog — which probes `pam_tid.so` (Touch ID) FIRST when the user has `auth sufficient pam_tid.so` configured in `/etc/pam.d/sudo_local`, falling back to password if Touch ID is unavailable / cancelled. Wired into mas + softwareupdate apply scripts before the existing `sudo -A` askpass path. Test fixture opt-out via `PYTEST_CURRENT_TEST` + explicit `ASCENDO_SUDO_WARM_DISABLE` so subprocess-mocking tests don't see surprise `sudo -n -v` calls. Plus npm/apply.sh got the same stderr-tail capture pattern as pip. |
+| `e87f1b5` | **pip version-mismatch fix (this commit).** Operator screenshot showed `pip 26.1 → 26.1.1` flagged as outdated in Overview / Categories / Apps but `up_to_date` in the bash sidecar / Run Center. Root cause: the Sesja 33 brew-self-skip in `check.sh` set `STATUS="up_to_date"` but left `LATEST` (candidate) at `26.1.1`. The dashboard's `_classify` overlay in `spa_real.py:_enrich_items` then re-ran `_version_gt(candidate, installed)` and re-flipped the row to `outdated`, overriding the sidecar's verdict. Fix: pin `LATEST="$INSTALLED"` inside the brew-skip case so the overlay sees `installed == candidate` and keeps the up_to_date verdict. 21/21 pip tests still green. |
+
+### Tests
+
+**495 / 495 passing** (215 contract + 280 macOS adapter). One pre-existing
+`test_service_endpoints` failure unchanged. No new tests this session;
+regression test for the brew-self-skip LATEST pinning is parked as a
+Sesja 35 follow-up in PLAN.md.
+
+### Known follow-ups for Sesja 35 (parked)
+
+- **`InventoryDB.bulk_upsert` never deletes stale rows.** Apps shows
+  `pip 12` while Run Center shows 11 because the SQLite inventory at
+  `~/.ascendo/inventory.db` retains an entry that the current manifest
+  no longer emits (manifest header `display_name` was once mis-counted,
+  or some manager's tracked-set shrank). Fix: `db.clear_category(cat)`
+  before `bulk_upsert` per category in `_resolve_buckets`. Operator
+  workaround for now: `rm ~/.ascendo/inventory.db` and run any check.
+- **Lock in the LATEST=INSTALLED brew-skip rule with a regression test.**
+  ~30 LOC in `test_pip_check_script.py` with a faked brew pip flavour.
+- Programmatic Touch ID enable (`POST /elevation/touchid/enable`) — write
+  the `auth sufficient pam_tid.so` line to `/etc/pam.d/sudo_local`
+  programmatically. Currently we surface the one-liner via GET
+  `/elevation/touchid/status` and the operator pastes it into Terminal.
+- `litellm` AI provider implementation.
+- Pre-apply Time Machine snapshot integration (still APFS-API-blocked).
+- Parallel apply across categories.
+- Bulk-preview UI aggregating per-category plan sidecars into one diff.
+
+### Operator notes for next session
+
+- Worktree branch `claude/busy-mclean-0b9896` carried the seven Sesja-34
+  commits and the pip-mismatch fix. After this session's merge it folds
+  into `main`.
+- Two stale local branches present: `claude/cool-beaver-f1879c` (Sesja 27
+  worktree, fully merged to main as of v0.2.0) and `restructure/monorepo`
+  (historical anchor for v0.0.7-alpha). Neither needs to be touched but
+  both can be pruned safely with `git branch -D` if desired.
+- Origin carries `main` (canonical) and the historical
+  `cool-beaver-f1879c` snapshot. After merge, only `main` is the live
+  development line.
+- For tomorrow's fresh start: `git pull origin main` from the canonical
+  checkout brings in the seven Sesja-34 fixes + pip-mismatch fix. Then
+  `rm ~/.ascendo/inventory.db` once to clear the stale-row bug
+  documented above; subsequent dashboard runs will repopulate cleanly.
+
+---
+
 ## Sesja 33 (2026-05-05) — macOS pip / Python global CLI manager
 
 User asked: "implement pip for macos, ubuntu has it, mac doesn't". One
