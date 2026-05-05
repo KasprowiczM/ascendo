@@ -1144,47 +1144,49 @@ const ui = {
 
   async loadSuggestions() {
     const wrap = $("#suggest-list");
-    wrap.innerHTML = `<span class="spinner"></span> ${tr("overview.scanning")}`;
+    if (wrap) wrap.innerHTML = `<span class="spinner"></span> ${tr("overview.scanning")}`;
+    // Load both the preloaded library + (legacy) /suggestions in parallel.
+    let items = [];
     try {
-      const items = (await api.get("/suggestions")).items || [];
+      const lib = await api.get("/suggestions/library");
+      items = lib.items || [];
+    } catch (_e) {
+      try {
+        const legacy = await api.get("/suggestions");
+        items = legacy.items || legacy.suggestions || [];
+      } catch (_e2) { items = []; }
+    }
+    if (wrap) {
       if (!items.length) {
-        wrap.innerHTML = `<p class="dim">${tr("suggest.empty")}</p>`;
+        wrap.innerHTML = `<p class="dim">${tr("suggest.empty") || "No suggestions right now."}</p>`;
       } else {
         wrap.innerHTML = items.map(s => {
-          const conf = s.confidence === "high" ? "confidence-high" :
-                       s.confidence === "med"  ? "confidence-med" : "confidence-low";
-          const confLbl = s.confidence === "high" ? tr("suggest.conf_high")
-                        : s.confidence === "med"  ? tr("suggest.conf_med")
-                        :                            tr("suggest.conf_low");
-          const diffStr = (s.diff||[]).map(d => {
-            const adds = (d.add||[]).map(L => `<span class="add">+ ${L}</span>`).join("\n");
-            const dels = (d.remove||[]).map(L => `<span class="del">- ${L}</span>`).join("\n");
-            return `${d.file}\n${[adds, dels].filter(Boolean).join("\n")}`;
-          }).join("\n\n");
+          const sev = s.severity || "info";
+          const aiBadge = s.ai_generated
+            ? `<span class="badge ok">${tr("suggest.ai_badge") || "AI"}</span>`
+            : `<span class="badge">${tr("suggest.rule_badge") || "rule"}</span>`;
+          const action = s.action || {};
+          const apply = (action.type === "run_async" && action.payload)
+            ? `<button data-sg-run-async='${JSON.stringify(action.payload).replace(/'/g, "&#39;")}'>${(action.label || tr("suggest.btn_apply") || "Apply")}</button>`
+            : ((s.diff||[]).length
+                ? `<button data-sg-apply='${JSON.stringify({id:s.id,diff:s.diff})}'>${tr("suggest.btn_apply") || "Apply"}</button>`
+                : "");
           return `
-            <div class="suggestion ${conf}" data-sid="${s.id}">
-              <h4>${s.title}</h4>
-              <div class="meta">${confLbl} · ${s.category} · source: ${s.source}</div>
-              <p>${s.rationale}</p>
-              ${diffStr ? `<pre class="diff">${diffStr}</pre>` : ""}
-              <div class="actions">
-                ${(s.diff||[]).length ? `<button data-sg-apply='${JSON.stringify({id:s.id,diff:s.diff})}'>${tr("suggest.btn_apply")}</button>` : ""}
-                <button class="secondary" data-sg-dismiss="${s.id}">${tr("suggest.btn_dismiss")}</button>
+            <div class="suggest-card severity-${sev}" data-sid="${s.id}">
+              <div class="suggest-card-meta">${sev}${aiBadge ? " · " + aiBadge : ""}${s.category ? " · " + s.category : ""}</div>
+              <div class="suggest-card-title">${s.title || ""}</div>
+              <div class="suggest-card-body">${s.body || s.rationale || ""}</div>
+              <div class="suggest-card-actions">
+                ${apply}
+                <button class="secondary" data-sg-dismiss="${s.id}">${tr("suggest.btn_dismiss") || "Dismiss"}</button>
               </div>
             </div>`;
         }).join("");
       }
-      // Load AI form values
-      const s = await api.get("/settings");
-      const ai = s.ai || {};
-      const f = $("#ai-form");
-      if (f) {
-        f.elements.ai_provider.value = ai.provider || "";
-        f.elements.ai_api_key.value  = ai.api_key  || "";
-        f.elements.ai_model.value    = ai.model    || "";
-      }
-    } catch (e) {
-      wrap.innerHTML = `<p class="badge fail">${e}</p>`;
+    }
+    // Initialize the 3-step AI wizard once.
+    if (typeof ui.initAiWizard === "function") {
+      try { await ui.initAiWizard(); } catch (_e) { /* ignore */ }
     }
   },
 
@@ -2655,50 +2657,248 @@ document.addEventListener("click", async e => {
       out.textContent = (r.ok ? "OK\n" : "FAIL\n") + (r.stderr || r.stdout || "");
     } catch (err) { out.textContent = String(err); }
   }
-  // AI provider Test connection
-  if (e.target.id === "ai-test-btn") {
-    const out = $("#ai-output");
-    out.textContent = "testing AI provider…";
-    try {
-      const r = await api.post("/suggestions/test", {});
-      out.textContent = JSON.stringify(r, null, 2);
-    } catch (err) { out.textContent = String(err); }
-  }
 });
 
-// AI form: persist base_url too
-const _origLoadSuggestions = ui.loadSuggestions;
-ui.loadSuggestions = async function() {
-  await _origLoadSuggestions.call(this);
-  try {
-    const s = await api.get("/settings");
-    const f = $("#ai-form");
-    if (f && f.elements.ai_base_url) f.elements.ai_base_url.value = (s.ai && s.ai.base_url) || "";
-  } catch {}
+// =====================================================================
+// AI provider 3-step wizard.
+//
+// Step 1: pick provider (POST cards from /ai/providers).
+// Step 2: enter API key / base URL → POST /ai/test-connection.
+// Step 3: pick model (from the list returned by step 2) → POST /ai/config.
+// =====================================================================
+
+ui._aiWizard = {
+  initialized: false,
+  providers: [],
+  selected: null,           // chosen provider id
+  needs_url: false,
+  base_url: "",
+  api_key: "",
+  models: [],               // populated by /ai/test-connection
+  defaults: {},             // default base URLs by provider id
+  saved: null,              // /ai/config response
 };
 
-// Patch AI form save handler to include base_url
-document.addEventListener("submit", async e => {
-  if (e.target && e.target.id === "ai-form") {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    const f = e.target;
-    const out = $("#ai-output");
-    try {
-      const cur = await api.get("/settings");
-      const merged = {...cur, ai: {
-        provider: f.elements.ai_provider.value,
-        api_key:  f.elements.ai_api_key.value,
-        model:    f.elements.ai_model.value,
-        base_url: f.elements.ai_base_url ? f.elements.ai_base_url.value : "",
-      }};
-      const r = await fetch("/settings", {method:"PUT",
-        headers:{"content-type":"application/json"}, body: JSON.stringify(merged)});
-      out.textContent = r.ok ? "saved" : `error ${r.status}`;
-      ui._loaded.suggest = false; ui.loadSuggestions();
-    } catch (err) { out.textContent = String(err); }
+ui.initAiWizard = async function () {
+  if (ui._aiWizard.initialized) {
+    // Light refresh — re-render cards (saved state may have changed).
+    ui._aiRenderProviders();
+    return;
   }
-}, true);  // capture phase so this runs before the older one
+  ui._aiWizard.initialized = true;
+  // Load provider catalog + saved config in parallel.
+  try {
+    const [providers, saved] = await Promise.all([
+      api.get("/ai/providers"),
+      api.get("/ai/config").catch(() => ({})),
+    ]);
+    ui._aiWizard.providers = providers.providers || [];
+    ui._aiWizard.defaults  = providers.default_base_urls || {};
+    ui._aiWizard.saved     = saved || {};
+    if (saved && saved.provider) {
+      const match = ui._aiWizard.providers.find(p => p.id === saved.provider);
+      if (match && match.implemented) {
+        ui._aiWizard.selected = saved.provider;
+        ui._aiWizard.needs_url = !!match.needs_url;
+        ui._aiWizard.base_url = saved.base_url || ui._aiWizard.defaults[saved.provider] || "";
+      }
+    }
+    ui._aiRenderProviders();
+    ui._aiUpdateNextEnabled();
+  } catch (e) {
+    const grid = $("#ai-provider-grid");
+    if (grid) grid.textContent = "Failed to load providers: " + e;
+  }
+};
+
+ui._aiRenderProviders = function () {
+  const grid = $("#ai-provider-grid");
+  if (!grid) return;
+  grid.textContent = "";
+  ui._aiWizard.providers.forEach(p => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "ai-provider-card";
+    if (!p.implemented) card.classList.add("unimplemented");
+    if (p.id === ui._aiWizard.selected) card.classList.add("selected");
+    card.dataset.aiProviderId = p.id;
+    card.disabled = !p.implemented;
+    const meta = p.implemented
+      ? (p.needs_url ? "local · base url" : "cloud · api key")
+      : "coming soon";
+    card.innerHTML =
+      `<span class="ai-provider-name">${p.label}</span>` +
+      `<span class="ai-provider-meta">${meta}</span>`;
+    grid.appendChild(card);
+  });
+};
+
+ui._aiUpdateNextEnabled = function () {
+  const next = $("#ai-step1-next");
+  if (next) next.disabled = !ui._aiWizard.selected;
+};
+
+ui._aiShowStep = function (n) {
+  [1, 2, 3].forEach(i => {
+    const panel = document.getElementById(`ai-step-${i}`);
+    const tab   = document.getElementById(`ai-step-tab-${i}`);
+    if (panel) panel.classList.toggle("hidden", i !== n);
+    if (tab)   tab.classList.toggle("active", i === n);
+  });
+};
+
+ui._aiPrepareStep2 = function () {
+  const sel = ui._aiWizard.selected;
+  const provider = ui._aiWizard.providers.find(p => p.id === sel);
+  ui._aiWizard.needs_url = !!(provider && provider.needs_url);
+  const apiRow = $("#ai-apikey-row");
+  const urlRow = $("#ai-baseurl-row");
+  // Cloud providers (anthropic, openai) need an API key.
+  // Local providers (ollama, lm_studio, litellm) need a base URL — and
+  // openrouter is the special case: cloud + needs URL.
+  const needsKey = !ui._aiWizard.needs_url || sel === "openrouter";
+  if (apiRow) apiRow.classList.toggle("hidden", !needsKey);
+  if (urlRow) urlRow.classList.toggle("hidden", !ui._aiWizard.needs_url);
+  // Pre-fill the base URL with the provider's default.
+  const urlInput = document.querySelector('#ai-baseurl-row input[name="ai_base_url"]');
+  if (urlInput) {
+    urlInput.value = ui._aiWizard.base_url
+      || ui._aiWizard.defaults[sel]
+      || "";
+  }
+  // Don't pre-fill the api key (security): use placeholder if a key exists.
+  const apiInput = document.querySelector('#ai-apikey-row input[name="ai_api_key"]');
+  if (apiInput) {
+    apiInput.value = "";
+    apiInput.placeholder = (ui._aiWizard.saved && ui._aiWizard.saved.has_api_key)
+      ? "(api key saved — leave blank to keep)"
+      : "";
+  }
+  const out = $("#ai-test-output");
+  if (out) { out.textContent = ""; out.classList.remove("ok", "err"); }
+};
+
+ui._aiTestConnection = async function () {
+  const out = $("#ai-test-output");
+  if (out) {
+    out.textContent = (tr("suggest.wiz.testing") || "Testing connection…");
+    out.classList.remove("ok", "err");
+  }
+  const apiInput = document.querySelector('#ai-apikey-row input[name="ai_api_key"]');
+  const urlInput = document.querySelector('#ai-baseurl-row input[name="ai_base_url"]');
+  const payload = { provider: ui._aiWizard.selected };
+  if (apiInput && apiInput.value) {
+    payload.api_key = apiInput.value;
+  } else if (ui._aiWizard.saved && ui._aiWizard.saved.has_api_key) {
+    // The user is re-testing — we can't send the saved key (we redacted it
+    // server-side). Tell them to retype.
+    if (out) {
+      out.textContent = (tr("suggest.wiz.retype_key")
+        || "Re-type the API key to test again (saved keys are redacted).");
+      out.classList.add("err");
+    }
+    return;
+  }
+  if (urlInput && urlInput.value) payload.base_url = urlInput.value;
+  let r;
+  try {
+    r = await api.post("/ai/test-connection", payload);
+  } catch (e) {
+    if (out) {
+      out.textContent = String(e);
+      out.classList.add("err");
+    }
+    return;
+  }
+  if (!r || r.ok === false) {
+    if (out) {
+      out.textContent = (r && r.error) || "Connection failed.";
+      out.classList.add("err");
+    }
+    return;
+  }
+  ui._aiWizard.api_key = (apiInput && apiInput.value) || "";
+  ui._aiWizard.base_url = (urlInput && urlInput.value) || "";
+  ui._aiWizard.models = r.models || [];
+  if (out) {
+    out.textContent = `OK — ${ui._aiWizard.models.length} model(s) found.`;
+    out.classList.add("ok");
+  }
+  ui._aiPopulateModels();
+  ui._aiShowStep(3);
+};
+
+ui._aiPopulateModels = function () {
+  const sel = $("#ai-model-select");
+  if (!sel) return;
+  sel.innerHTML = "";
+  const saved = (ui._aiWizard.saved && ui._aiWizard.saved.model) || "";
+  ui._aiWizard.models.forEach(m => {
+    const opt = document.createElement("option");
+    opt.value = m.id;
+    opt.textContent = m.label || m.id;
+    if (m.id === saved) opt.selected = true;
+    sel.appendChild(opt);
+  });
+};
+
+ui._aiSaveSettings = async function () {
+  const sel = $("#ai-model-select");
+  const out = $("#ai-save-output");
+  if (out) { out.textContent = ""; out.classList.remove("ok", "err"); }
+  const payload = {
+    provider: ui._aiWizard.selected || "",
+    api_key:  ui._aiWizard.api_key || "",
+    base_url: ui._aiWizard.base_url || "",
+    model:    sel ? sel.value : "",
+  };
+  try {
+    const r = await api.post("/ai/config", payload);
+    ui._aiWizard.saved = r;
+    if (out) {
+      out.textContent = (tr("suggest.wiz.saved") || "Saved.");
+      out.classList.add("ok");
+    }
+  } catch (e) {
+    if (out) {
+      out.textContent = String(e);
+      out.classList.add("err");
+    }
+  }
+};
+
+document.addEventListener("click", async e => {
+  // Step 1: provider card.
+  const card = e.target.closest("[data-ai-provider-id]");
+  if (card && !card.disabled) {
+    ui._aiWizard.selected = card.dataset.aiProviderId;
+    ui._aiRenderProviders();
+    ui._aiUpdateNextEnabled();
+    return;
+  }
+  if (e.target.id === "ai-step1-next") {
+    if (!ui._aiWizard.selected) return;
+    ui._aiPrepareStep2();
+    ui._aiShowStep(2);
+    return;
+  }
+  if (e.target.id === "ai-step2-back") {
+    ui._aiShowStep(1);
+    return;
+  }
+  if (e.target.id === "ai-step2-test") {
+    await ui._aiTestConnection();
+    return;
+  }
+  if (e.target.id === "ai-step3-back") {
+    ui._aiShowStep(2);
+    return;
+  }
+  if (e.target.id === "ai-step3-save") {
+    await ui._aiSaveSettings();
+    return;
+  }
+});
 
 // Hook into Sync tab loader
 const _origLoadSync = ui.loadSync;
@@ -3057,6 +3257,15 @@ document.addEventListener("click", async e => {
   if (ap) {
     try { ui.applySuggestion(JSON.parse(ap.dataset.sgApply)); }
     catch (err) { ui.status(String(err)); }
+  }
+  // New: suggestion card with a run-async action — kicks off /runs/async.
+  const ra = e.target.closest("[data-sg-run-async]");
+  if (ra) {
+    try {
+      const payload = JSON.parse(ra.dataset.sgRunAsync.replace(/&#39;/g, "'"));
+      const r = await api.post("/runs/async", payload);
+      ui.status(`run started: ${r.run_id || ""}`);
+    } catch (err) { ui.status(String(err)); }
   }
   const dm = e.target.closest("[data-sg-dismiss]");
   if (dm) ui.dismissSuggestion(dm.dataset.sgDismiss);

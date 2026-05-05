@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .routes.about import router as about_router
+from .routes.ai import router as ai_router
 from .routes.apps import router as apps_router
 from .routes.elevation import router as elevation_router
 from .routes.health import router as health_router
@@ -31,6 +32,7 @@ from .routes.service import router as service_router
 from .routes.spa_real import InventoryCache
 from .routes.spa_real import router as spa_real_router
 from .routes.spa_stubs import router as spa_stubs_router
+from .routes.suggestions import router as suggestions_router
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -164,6 +166,14 @@ def create_app(
     # About + platform-aware release-notes (graduates the about_stub).
     # MUST be BEFORE spa_stubs.
     app.include_router(about_router, prefix="")
+    # AI provider config + connection-test (powers the 3-step Suggestions
+    # wizard). MUST be BEFORE spa_stubs (no overlap today, but future-
+    # proof).
+    app.include_router(ai_router, prefix="")
+    # Preloaded suggestion library at /suggestions/library. MUST be
+    # BEFORE spa_stubs so the real handler wins over the legacy
+    # /suggestions stub returning ``[]``.
+    app.include_router(suggestions_router, prefix="")
     # Legacy SPA stubs -- transient placeholders for endpoints the
     # Ubuntu_Aktualizacje SPA expects but the new core hasn't ported yet.
     # Delete the matching stub from routes/spa_stubs.py when each real
