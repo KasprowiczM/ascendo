@@ -243,6 +243,7 @@ hook that calls `tmutil localsnapshot` is on the M5.x backlog.
 | `launchctl bootstrap` says "Service already loaded" | Re-installing same agent | Idempotent — the install action does `bootout` first; safe to re-run |
 | `python3 -m ascendo` says capabilities lack SCHEDULING | Stale `__pycache__` | `find . -name '__pycache__' -type d -exec rm -rf {} +` then re-run |
 | Cmd+Tab still shows old Ascendo icon after `git pull` | macOS IconServices cache + stale .app bundle | `bash bin/launch-desktop-macos.sh --build && bash bin/refresh-macos-icon.sh` |
+| `zsh: command not found: #` / `not enough directory stack entries` when copy-pasting commands | zsh by default does not honour `#` comments in interactive mode, AND treats `~N` (e.g. `~15` from "~15 s") as a directory-stack reference | One-time fix: `echo 'setopt interactive_comments' >> ~/.zshrc && source ~/.zshrc`. After that, lines like `command # comment` work as expected. As a side-note, our launch script auto-strips `#` and unknown args so the build still completes — but the SECOND command in a multi-line paste won't run if the first one trips zsh. |
 
 ## 11 · Where everything lives
 

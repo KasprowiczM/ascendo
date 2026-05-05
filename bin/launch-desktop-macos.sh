@@ -27,6 +27,7 @@ TAURI_DIR="$REPO_ROOT/ui/desktop-tauri"
 
 MODE="dev"
 WITH_DMG=0
+NO_OPEN=0
 # Argument parser. Tolerates two shapes of accidental input that shell
 # users hit when copy-pasting our doc snippets:
 #   1. zsh interactive mode ignores `#` comments by default unless
@@ -39,14 +40,17 @@ WITH_DMG=0
 #      hard exit 2 — so a stray paste doesn't cancel the build/run.
 #
 # Flags:
-#   --build / -b      build the .app bundle (release)
+#   --build / -b      build the .app bundle (release) AND open it
 #   --with-dmg        also try to package a .dmg (off by default; Tauri's
 #                     bundle_dmg.sh is fragile on macOS 14+ and brew's
 #                     create-dmg isn't a hard dependency)
+#   --no-open         build only — don't auto-launch the .app afterwards
+#                     (use this for CI / scripted use)
 #   --help / -h       help
 while [ $# -gt 0 ]; do
     case "$1" in
         --build|-b)  MODE="build"; shift ;;
+        --no-open)   NO_OPEN=1;    shift ;;
         --with-dmg)  WITH_DMG=1;   shift ;;
         --help|-h)
             sed -n '2,25p' "$0"; exit 0 ;;
@@ -184,8 +188,21 @@ case "$MODE" in
 
         printf "\nBundle artefacts:\n"
         find "$BUNDLE_DIR" -name 'Ascendo*' 2>/dev/null | sed 's/^/  /'
-        printf "\nTo launch:\n"
-        printf "  open '%s'\n" "$APP_PATH"
+
+        # Auto-launch the freshly-built .app unless --no-open was passed.
+        # This avoids a separate `open …` step that the user has to copy-
+        # paste — and that gets eaten by zsh-with-active-`~N`-expansion
+        # when our docs include comments like `# ~15 s` (zsh treats the
+        # tilde-digit as a directory-stack reference and aborts).
+        if [ "$NO_OPEN" -eq 0 ]; then
+            step "Opening Ascendo.app"
+            open "$APP_PATH"
+            ok "launched (Cmd+Tab to bring it to front)"
+        else
+            printf "\nTo launch manually:\n"
+            printf "  open '%s'\n" "$APP_PATH"
+        fi
+
         if [ "$WITH_DMG" -eq 0 ]; then
             printf "\n(DMG packaging skipped. Pass --with-dmg next time if you want a .dmg.)\n"
         fi
