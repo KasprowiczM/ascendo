@@ -121,9 +121,13 @@ ascendo_npm_installed_version() {
         ascendo_npm_prime_installed_cache
     fi
     if ! command -v jq >/dev/null 2>&1; then return 0; fi
+    # NOTE: do NOT redirect jq's stdin from /dev/null here — it must read
+    # the piped cache JSON. The </dev/null guard belongs on commands that
+    # would otherwise drain a parent loop's stdin (npm/curl), not on jq
+    # when jq IS the consumer of the pipe.
     printf '%s' "$_ASCENDO_NPM_LS_CACHE" \
         | jq -r --arg pkg "$_pkg" '.dependencies[$pkg].version // empty' \
-              </dev/null 2>/dev/null \
+              2>/dev/null \
         || true
 }
 
