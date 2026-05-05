@@ -6,6 +6,64 @@
 
 ---
 
+## Sesja 30 (2026-05-05) — Major UX overhaul: live progress streaming, installer, AI wizard, cache, icon, sudo shim
+
+Massive multi-front delivery driven by the user's screenshot-driven
+feedback after Sesja 29. 4 parallel subagents + inline integration
+shipped 6 commits in one session.
+
+### Shipped commits (this session)
+
+| Commit    | What |
+|-----------|------|
+| `f1da8a6` | **One-liner installer + CLI banner.** New `install.sh` curl\|bash with OS detection (macOS / Ubuntu / Fedora / Arch), language picker (en/pl persisted to `~/.config/ascendo/locale.txt`), 3 install profiles (CLI / CLI+Web / CLI+Web+Desktop) with profile-tailored next-steps output. Sparse-checkout for CLI-only. Idempotent. Bare `ascendo` invocation now prints a coloured banner with quick-start + subcommand table + examples, locale-aware. +6 contract tests. |
+| `ee3c81f` | **Live verbose log streaming for Run Center.** New `<runs_dir>/<run-id>/_stream.log` convention exported as `ASCENDO_STREAM_LOG` env var. SSE endpoint adds `log_line` (per stdout/stderr line) and `progress` (`{pct, label}`) events. `_stream_tee` / `_stream_emit` / `_stream_progress` / `_stream_item` helpers in `ascendo_json.sh`. All 4 macOS apply scripts (brew/mas/npm/softwareupdate) + Windows winget wired through tee. Frontend renders terminal-style `#run-stream` box with overall progress bar, "currently processing" label, color-coded log (err/warn/info/marker), sticky-bottom autoscroll, ANSI stripping, capped at 2000 lines. +2 tests. |
+| `f752038` | **Inventory cache + Overview + adapter-gating + dark icon + Logs picker + first-run wizard.** New `frontendCache` (session-scoped, keyed by adapter+os): `loadInventoryDashboard / loadCategories / loadCategoryDetail / loadApps` read through it; tab switches repaint instantly. New Refresh button on Overview + Categories with `runWithRefreshSpinner` UX. Sudo footer pill now reads `html[data-adapter]` so first paint is correct on macOS (`elevation.sudo_active` vs `elevation.admin_authorized`). Numbered Overview action chips: 1. Build inventory (new, calls `/inventory/refresh`), 2. Quick check, 3. Safe update, 4. Full update. New `.adapter-hide-<name>` CSS pattern hides Windows-service card + service-indicator footer pill on macOS. Tauri icons regenerated (32, 128, 256, 512 PNG + multi-size .ico) from `app/frontend/assets/logo-mark.svg` via ImageMagick; new `bin/regenerate-icons.sh` documents the pipeline. Logs picker moved out of H2 into its own card with empty-state messaging; reserves 160px right padding so it can't hide behind the topbar capsule. First-run wizard trigger now ORs `!onboarded` with `!localStorage.ui-locale`; finalize() persists `ui-locale` so reloads stay quiet. |
+| `81193ce` | **Apps menu rework + Suggestions 3-step AI wizard + preloaded library.** Apps view rebuilt: debounced search, multi-select status/category chip filters with counts, Clear filters button, category grouping with sticky collapsible headers, candidate column populated via existing `_latest_check_overlay`. Suggestions replaced one-shot form with 3-step wizard (provider → connect → model). Provider catalog from new `/ai/providers`. New `/ai/test-connection` (5s timeout, urllib stdlib, anthropic + openai + openrouter + ollama implemented; google + lm_studio + litellm scaffolded with friendly "not yet implemented"). Credentials persist to `~/.config/ascendo/ai.json` with api_key redacted. New `/suggestions/library` with rule-based suggestions that POST `/runs/async`. +9 tests. |
+| `35ba409` | **`/sudo/*` shim delegation + i18n PL/EN parity.** `/sudo/status` + `/sudo/auth` in spa_stubs.py used to always return `cached=True`, so the SPA thought sudo was authenticated on macOS — clicking apply fired `sudo -A` with no SUDO_ASKPASS cache and the run silently failed. Now both endpoints delegate to `adapter.elevation()` when an IElevation backend with `register_password` is present (macOS); Windows / Linux without askpass keep returning cached=True so UAC / terminal sudo handle elevation per-call. **This is the fix for the user-reported "desktop app is not asking for sudo password at all" bug on macOS.** Plus 4 missing EN translations (`about.help_li4_*`, `categories.help_li5_*`) so `581/581` keys parity in both locales. |
+
+### What this session resolved (user's feedback list)
+
+| User complaint | Fix |
+|----------------|-----|
+| "mas is not updating at all, desktop app is not asking for sudo password" | `/sudo/*` shim now delegates to real IElevation on macOS (`35ba409`). Pop the modal on first apply. |
+| "i want to see in black box detailed view every detail of every step, every progress bar in terminal" | Live log streaming + overall progress bar + currently-processing label + per-package sentinels (`ee3c81f`). |
+| "first launch shows Administrator authorized (Windows leftover)" | Sudo footer pill reads `html[data-adapter]` on first paint; uses `elevation.sudo_active` on macOS (`f752038`). |
+| "replace logo with current dark mode one" | Regenerated all 5 Tauri icon sizes + multi-res .ico from `logo-mark.svg` (`f752038`). |
+| "scanning every time i switch to overview is annoying — refresh button instead" | `frontendCache` session-scoped, tab switches instant; explicit Refresh button (`f752038`). |
+| "scanning every time i expand categories is annoying" | Same cache; Categories Refresh button (`f752038`). |
+| "Apps menu populate candidate column" | Already-existing `_latest_check_overlay` merges `target_version` into `candidate`; Apps view now renders it (`81193ce`). |
+| "Suggestions: remodel as provider → api key → connect → pick model 3-step" | 3-step wizard with live model fetch + redacted persistence (`81193ce`). |
+| "base_url only when local LLM picked" | Wizard hides `base_url` for cloud providers; shows for ollama/lm_studio/litellm/openrouter (`81193ce`). |
+| "preloaded suggestions to help users" | Rule-based suggestion library at `/suggestions/library` with run-async actions (`81193ce`). |
+| "create one-liner installer (curl\|bash)" | `install.sh` with OS detection, language picker, 3 install profiles, dependency check, profile-tailored next-steps (`f1da8a6`). |
+| "ascendo CLI shows table of all subcommands with examples" | Bare `ascendo` invocation prints coloured banner with quick-start, subcommand table, examples, docs link (`f1da8a6`). |
+| "first-run language wizard not showing" | Trigger now ORs `!onboarded` with `!localStorage.ui-locale`; finalize() persists locale (`f752038`). |
+| "Overview buttons need numbered ordering (1. build inventory, 2. quick check, 3. safe update)" | Numbered action chips matching `.st-pill` styling (`f752038`). |
+| "NVIDIA + drivers buttons still visible on macOS" | `.adapter-hide-*` pattern + Windows-service card hidden on macOS (`f752038`). |
+| "Settings has Windows-only options on macOS" | Same gating; Windows-service card has `.adapter-hide-macos` (`f752038`). |
+| "Apps menu add grouping/filters/search" | Debounced search + multi-select status/category chips + Clear button + sticky group headers (`81193ce`). |
+| "Logs view picker hides behind topbar capsule" | Picker moved into its own card; 160px right padding reserved (`f752038`). |
+| "every UI string PL+EN" | 581/581 keys parity confirmed via flatten-and-diff (`35ba409`). |
+
+### Tests
+
+199 contract tests + 256 macOS adapter tests = **455 passing**. One pre-existing
+`test_service_endpoints` failure is unchanged (predates v0.2.0). +17 new
+tests this session (6 banner + 2 streaming + 9 AI/suggestions).
+
+### Still NOT done (deferred to Sesja 31)
+
+- Pre-apply Time Machine snapshot (APFS API closed; documented manual ritual in
+  `MACOS_QUICKSTART §9`).
+- Parallel apply (sequential per-category remains; lock coordination is M5.x).
+- Bulk-preview UI (per-category plan sidecars work; aggregation is a future
+  feature).
+- Google Gemini / LM Studio / LiteLLM AI providers (scaffolded, return friendly
+  "not yet implemented").
+
+---
+
 ## Sesja 29 (2026-05-05) — macOS apply-phase hardening + bulk-update wiring complete
 
 Post-v0.2.0 cleanup session. The user reported on Mac.r12.home that

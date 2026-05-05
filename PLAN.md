@@ -1,11 +1,18 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-05 (sesja 29) — macOS apply-phase hardening
-> complete (softwareupdate post-apply reconciliation, npm
-> ItemStatus.MISSING, server-side exclusion-filter plumbing,
-> Categories/Run Center parity). 438 tests passing. Bulk-update
-> via dashboard now works end-to-end on macOS for brew + mas +
-> npm + softwareupdate.
+> Last updated: 2026-05-05 (sesja 30) — major UX overhaul shipped:
+> live verbose log streaming in Run Center, one-liner curl|bash
+> installer + CLI banner, inventory cache + Refresh buttons,
+> numbered Overview actions, dark-mode app icon, adapter-gated UI
+> (NVIDIA + Windows-service hidden on macOS), Logs picker
+> repositioned, first-run wizard re-armed, Apps view filter +
+> grouping + search + candidate column, Suggestions 3-step AI
+> wizard with 4 working providers + preloaded library, /sudo/*
+> shim delegation that fixes the "no sudo prompt on macOS apply"
+> bug, EN/PL parity confirmed at 581/581 keys. 455 tests passing
+> (+17 new this session).
+>
+> Previous milestone: Sesja 29 (macOS apply-phase hardening).
 >
 > Previous milestone: v0.2.0 (sesja 28, M5 macOS adapter complete).
 >
