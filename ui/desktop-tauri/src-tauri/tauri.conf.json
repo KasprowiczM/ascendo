@@ -33,9 +33,6 @@
     "homepage": "https://github.com/KasprowiczM/ascendo",
     "license": "MIT",
     "licenseFile": "LICENSE",
-    "resources": [
-      "binaries/python-sidecar"
-    ],
     "windows": {
       "digestAlgorithm": "sha256",
       "wix": {
