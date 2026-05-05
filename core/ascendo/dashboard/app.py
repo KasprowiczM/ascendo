@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .inventory_db import InventoryDB
 from .routes.about import router as about_router
 from .routes.ai import router as ai_router
 from .routes.apps import router as apps_router
@@ -52,6 +53,12 @@ def _default_runs_dir() -> Path:
     return Path(override) if override else Path.home() / ".ascendo" / "runs"
 
 
+def _default_inventory_db_path() -> Path:
+    """Per-user inventory DB path. ``ASCENDO_INVENTORY_DB`` overrides."""
+    override = os.environ.get("ASCENDO_INVENTORY_DB")
+    return Path(override) if override else Path.home() / ".ascendo" / "inventory.db"
+
+
 def _resolve_frontend_dir() -> Path | None:
     """Locate the legacy SPA bundle at ``app/frontend`` relative to the repo.
 
@@ -76,6 +83,7 @@ def create_app(
     adapter: IAdapter | None = None,
     runs_dir: Path | None = None,
     cors_origins: list[str] | None = None,
+    inventory_db_path: Path | None = None,
 ) -> FastAPI:
     """Build the dashboard FastAPI application.
 
@@ -113,7 +121,13 @@ def create_app(
                 app.state.adapter = None
 
         yield
-        # No teardown needed yet.
+        # Teardown: close the inventory DB (no-op today; future-proofing).
+        db = getattr(app.state, "inventory_db", None)
+        if db is not None:
+            try:
+                db.close()
+            except Exception:  # noqa: BLE001 — teardown must never raise
+                _log.exception("inventory_db: close failed")
 
     app = FastAPI(
         title="Ascendo",
@@ -135,6 +149,18 @@ def create_app(
     # Per-app inventory cache (B1). Thread-safe, 60s TTL. Mutated via
     # POST /inventory/refresh.
     app.state.inventory_cache = InventoryCache()
+
+    # Persistent inventory DB (Sesja 32 — Apps/Categories parity). Stored
+    # at ``~/.ascendo/inventory.db`` by default; tests override the path
+    # via the ``inventory_db_path`` keyword. The DB is the single source
+    # of truth for both the Apps tab AND the Categories tab so they
+    # never disagree again.
+    db_path = inventory_db_path or _default_inventory_db_path()
+    try:
+        app.state.inventory_db = InventoryDB(db_path)
+    except Exception:  # noqa: BLE001
+        _log.exception("inventory_db: initial open failed at %s", db_path)
+        app.state.inventory_db = None
 
     # CORS -- permissive default for local-only usage on 127.0.0.1.
     app.add_middleware(

@@ -170,6 +170,20 @@ def _get_inventory_cache(request: Request) -> InventoryCache:
     return cache
 
 
+def _get_inventory_db(request: Request):  # type: ignore[no-untyped-def]
+    """Return the per-app InventoryDB or ``None`` if disabled.
+
+    Late-imported to avoid a routes-import cycle and to keep the test
+    seam (tests can inject ``inventory_db_path`` into ``create_app``).
+    """
+    return getattr(request.app.state, "inventory_db", None)
+
+
+def _adapter_id(adapter: IAdapter) -> str:
+    """Stable adapter identifier used as the ``inventory_meta`` key."""
+    return getattr(adapter, "name", None) or adapter.__class__.__name__
+
+
 def _category_key(pkg: Package) -> str:
     """Stable string key for a Package's source category."""
     cat = pkg.category
@@ -449,6 +463,110 @@ def _enrich_items(items: list[dict[str, Any]], category: str, runs_dir: Path | N
     return enriched
 
 
+# ── DB-backed inventory loader ────────────────────────────────────────────
+
+
+def _build_buckets_live(
+    adapter: IAdapter,
+    cache: InventoryCache,
+    runs_dir: Path | None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Compute the buckets via the live scan + check-sidecar overlay.
+
+    This is the legacy code path used as the "DB miss" fallback. It is
+    deliberately kept identical to the pre-DB behaviour so anything the
+    DB doesn't yet know about still surfaces in the SPA.
+    """
+    packages = cache.get(lambda: _load_packages(adapter))
+    buckets = _bucket(packages)
+    return _seed_buckets_from_sidecars(buckets, adapter, runs_dir)
+
+
+def _flatten_buckets_for_db(
+    buckets: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    """Flatten the bucketed dicts into ``inventory_db.bulk_upsert`` rows."""
+    rows: list[dict[str, Any]] = []
+    for cat, items in buckets.items():
+        for it in items:
+            name = it.get("name")
+            if not name:
+                continue
+            rows.append(
+                {
+                    "category": cat,
+                    "name": name,
+                    "installed": it.get("installed"),
+                    "candidate": it.get("candidate"),
+                    "status": it.get("status") or "unknown",
+                    "source_type": it.get("source") or cat,
+                    "vendor": it.get("vendor"),
+                    "metadata": None,
+                },
+            )
+    return rows
+
+
+def _buckets_from_db(db) -> dict[str, list[dict[str, Any]]]:  # type: ignore[no-untyped-def]
+    """Read every row from the DB and re-shape into ``{cat: [item, ...]}``."""
+    out: dict[str, list[dict[str, Any]]] = {}
+    for row in db.query():
+        cat = row["category"]
+        out.setdefault(cat, []).append(
+            {
+                "name": row["name"],
+                "installed": row.get("installed"),
+                "candidate": row.get("candidate"),
+                "source": row.get("source_type") or cat,
+                "status": row.get("status") or "ok",
+                "vendor": row.get("vendor"),
+            },
+        )
+    return out
+
+
+def _resolve_buckets(
+    request: Request,
+    adapter: IAdapter,
+) -> dict[str, list[dict[str, Any]]]:
+    """DB-first inventory resolver.
+
+    - When the DB has fresh data (set_meta was called within the freshness
+      window), serve from the DB without touching the adapter.
+    - Otherwise, run the live scan + check-sidecar overlay and populate
+      the DB as a side-effect so the next call is instant.
+    """
+    from ..inventory_db import is_fresh  # late import — avoid cycle
+
+    db = _get_inventory_db(request)
+    cache = _get_inventory_cache(request)
+    runs_dir = getattr(request.app.state, "runs_dir", None)
+    adapter_key = _adapter_id(adapter)
+
+    if db is not None:
+        try:
+            meta = db.get_meta(adapter_key)
+            if is_fresh(meta) and db.count() > 0:
+                return _buckets_from_db(db)
+        except Exception:  # noqa: BLE001
+            _log.exception("inventory_db: read-side failure; falling back to live scan")
+
+    buckets = _build_buckets_live(adapter, cache, runs_dir)
+
+    # Best-effort populate. Failure here must never block the request —
+    # the SPA still gets the live buckets.
+    if db is not None:
+        try:
+            rows = _flatten_buckets_for_db(buckets)
+            if rows:
+                db.bulk_upsert(rows)
+                db.set_meta(adapter_key, item_count=len(rows))
+        except Exception:  # noqa: BLE001
+            _log.exception("inventory_db: populate failed (non-fatal)")
+
+    return buckets
+
+
 # ── /categories ───────────────────────────────────────────────────────────
 
 
@@ -489,12 +607,9 @@ async def inventory_real(request: Request) -> dict[str, Any]:
     from . import apps as apps_mod
 
     adapter = _require_adapter(request)
-    cache = _get_inventory_cache(request)
     runs_dir = getattr(request.app.state, "runs_dir", None)
-    packages = cache.get(lambda: _load_packages(adapter))
     excluded = apps_mod.excluded_keys()
-    buckets = _bucket(packages)
-    buckets = _seed_buckets_from_sidecars(buckets, adapter, runs_dir)
+    buckets = _resolve_buckets(request, adapter)
     enriched = {
         cat: _enrich_items(items, cat, runs_dir, excluded)
         for cat, items in buckets.items()
@@ -513,12 +628,9 @@ async def inventory_summary_real(request: Request) -> dict[str, Any]:
     from . import apps as apps_mod
 
     adapter = _require_adapter(request)
-    cache = _get_inventory_cache(request)
     runs_dir = getattr(request.app.state, "runs_dir", None)
-    packages = cache.get(lambda: _load_packages(adapter))
     excluded = apps_mod.excluded_keys()
-    buckets = _bucket(packages)
-    buckets = _seed_buckets_from_sidecars(buckets, adapter, runs_dir)
+    buckets = _resolve_buckets(request, adapter)
 
     out = {
         "totals": {"ok": 0, "outdated": 0, "missing": 0, "total": 0},
@@ -555,11 +667,8 @@ async def inventory_category_real(category: str, request: Request) -> dict[str, 
     from . import apps as apps_mod  # avoid import cycle at module load
 
     adapter = _require_adapter(request)
-    cache = _get_inventory_cache(request)
     runs_dir = getattr(request.app.state, "runs_dir", None)
-    packages = cache.get(lambda: _load_packages(adapter))
-    buckets = _bucket(packages)
-    buckets = _seed_buckets_from_sidecars(buckets, adapter, runs_dir)
+    buckets = _resolve_buckets(request, adapter)
     items = buckets.get(category, [])
     enriched = _enrich_items(items, category, runs_dir, apps_mod.excluded_keys())
     return {"category": category, "items": enriched}
@@ -567,15 +676,69 @@ async def inventory_category_real(category: str, request: Request) -> dict[str, 
 
 @router.post("/inventory/refresh")
 async def inventory_refresh_real(request: Request) -> dict[str, Any]:
-    """Invalidate the inventory cache and report which categories will reload."""
+    """Invalidate the in-memory cache + bulk-refresh the DB.
+
+    The DB is the source of truth for the SPA, so a "refresh" must:
+    1. drop the in-memory ``InventoryCache`` so the next live scan fires,
+    2. re-run the live scan + sidecar overlay,
+    3. bulk-upsert into the persistent DB,
+    4. update the freshness marker.
+    """
     cache = _get_inventory_cache(request)
-    # Compute the list of categories currently cached BEFORE invalidating
-    # so the caller has a stable hint of what will be re-fetched.
     refreshed: list[str] = []
     if cache._items is not None:  # noqa: SLF001 — own-package access
         refreshed = sorted({_category_key(p) for p in cache._items})  # noqa: SLF001
     cache.invalidate()
-    return {"ok": True, "refreshed": refreshed}
+
+    adapter = getattr(request.app.state, "adapter", None)
+    db = _get_inventory_db(request)
+    item_count = 0
+    if adapter is not None and db is not None:
+        runs_dir = getattr(request.app.state, "runs_dir", None)
+        try:
+            buckets = _build_buckets_live(adapter, cache, runs_dir)
+            rows = _flatten_buckets_for_db(buckets)
+            item_count = db.bulk_upsert(rows) if rows else 0
+            db.set_meta(_adapter_id(adapter), item_count=item_count)
+            if not refreshed:
+                refreshed = sorted(buckets.keys())
+        except Exception:  # noqa: BLE001
+            _log.exception("inventory_db: /inventory/refresh DB sync failed")
+
+    return {"ok": True, "refreshed": refreshed, "item_count": item_count}
+
+
+@router.post("/inventory/db/refresh")
+async def inventory_db_refresh(request: Request) -> dict[str, Any]:
+    """Force a full inventory rescan + DB repopulation.
+
+    Distinct from ``/inventory/refresh`` only in that this endpoint
+    surfaces ``refreshed_at`` + ``item_count`` for the SPA's "Reset
+    cache" button. It always touches the DB even when the in-memory
+    cache was empty.
+    """
+    from ..inventory_db import _utcnow  # late import — avoid cycle
+
+    adapter = _require_adapter(request)
+    db = _get_inventory_db(request)
+    cache = _get_inventory_cache(request)
+    cache.invalidate()
+    runs_dir = getattr(request.app.state, "runs_dir", None)
+    buckets = _build_buckets_live(adapter, cache, runs_dir)
+    rows = _flatten_buckets_for_db(buckets)
+    item_count = 0
+    if db is not None:
+        try:
+            item_count = db.bulk_upsert(rows) if rows else 0
+            db.set_meta(_adapter_id(adapter), item_count=item_count)
+        except Exception:  # noqa: BLE001
+            _log.exception("inventory_db: /inventory/db/refresh failed")
+    return {
+        "ok": True,
+        "refreshed_at": _utcnow(),
+        "item_count": item_count,
+        "categories": sorted(buckets.keys()),
+    }
 
 
 # ── /health/check + /health/run ───────────────────────────────────────────

@@ -142,23 +142,28 @@ class AppsDetectResponse(BaseModel):
 
 
 def _load_inventory_apps(request: Request) -> list[dict[str, Any]]:
-    """Borrow the spa_real inventory cache + check-sidecar overlay so this
-    endpoint never disagrees with /inventory."""
+    """Borrow ``spa_real``'s DB-first resolver so Apps and Categories never
+    disagree.
+
+    Pre-Sesja-32 this endpoint had its own bucket-loading path that
+    bypassed the check-sidecar bucket-replacement logic, which is why
+    Apps showed only 1 brew row while Categories showed 143. Now both
+    code paths funnel through ``_resolve_buckets`` (DB-first; live scan
+    + DB populate on miss), guaranteeing parity.
+    """
     # Local import to avoid a routes-import cycle at module-load time.
     from . import spa_real
 
     adapter = getattr(request.app.state, "adapter", None)
     if adapter is None:
         return []
-    cache = spa_real._get_inventory_cache(request)  # noqa: SLF001 — own-package access
-    runs_dir = getattr(request.app.state, "runs_dir", None)
 
-    packages = cache.get(lambda: spa_real._load_packages(adapter))  # noqa: SLF001
-    bucketed = spa_real._bucket(packages)  # noqa: SLF001
+    runs_dir = getattr(request.app.state, "runs_dir", None)
+    bucketed = spa_real._resolve_buckets(request, adapter)  # noqa: SLF001
 
     # Overlay the most recent check sidecar per category so installed /
-    # candidate / status reflect reality, not the empty-version inventory
-    # bootstrap.
+    # candidate / status reflect reality even when the DB row was
+    # populated from a stale scan that didn't yet include version data.
     if runs_dir is not None:
         for cat, items in bucketed.items():
             overlay = spa_real._latest_check_overlay(runs_dir, cat)  # noqa: SLF001

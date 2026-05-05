@@ -136,6 +136,68 @@ class RunRegistry:
 # ── Public entry point ──────────────────────────────────────────────────────
 
 
+def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
+    """Walk the just-finished run's sidecars + bulk-upsert their items.
+
+    This is the "update inventory DB after each run" step. After every
+    apply / verify / check phase finishes, the freshly-written sidecars
+    in ``run_dir`` carry the most up-to-date installed + candidate
+    versions for every package the managers touched. We funnel them
+    into the persistent inventory DB so the next dashboard navigation
+    reflects what just changed without paying for a fresh scan.
+
+    Failures are swallowed (best-effort): a flaky disk should not poison
+    the run state. Returns the count of rows flushed (0 on failure or
+    when no sidecars exist yet).
+    """
+    if inventory_db is None or not run_dir.is_dir():
+        return 0
+    try:
+        from .sidecar_io import list_run_sidecars, read_sidecar
+    except Exception:  # noqa: BLE001
+        return 0
+    rows: list[dict[str, Any]] = []
+    for sidecar_path in list_run_sidecars(run_dir):
+        try:
+            sc = read_sidecar(sidecar_path)
+        except Exception:  # noqa: BLE001 — corrupt sidecars shouldn't block the flush
+            continue
+        category = (
+            sc.category.value if hasattr(sc.category, "value") else str(sc.category)
+        )
+        for item in (sc.items or []):
+            name = getattr(item, "name", None) or getattr(item, "id", None)
+            if not name:
+                continue
+            installed = (
+                getattr(item, "current_version", None)
+                or getattr(item, "resolved_version", None)
+            )
+            candidate = getattr(item, "target_version", None)
+            status_obj = getattr(item, "status", None)
+            status = (
+                status_obj.value if hasattr(status_obj, "value") else str(status_obj)
+            ) if status_obj else "unknown"
+            rows.append(
+                {
+                    "category": category,
+                    "name": str(name),
+                    "installed": installed,
+                    "candidate": candidate,
+                    "status": status,
+                    "source_type": category,
+                    "vendor": getattr(item, "vendor", None),
+                },
+            )
+    if not rows:
+        return 0
+    try:
+        return inventory_db.bulk_upsert(rows)
+    except Exception:  # noqa: BLE001
+        _log.exception("inventory_db: post-run flush failed")
+        return 0
+
+
 async def start_run_async(
     *,
     registry: RunRegistry,
@@ -147,6 +209,7 @@ async def start_run_async(
     categories: Iterable[SourceType] | None = None,
     stop_on_failure: bool = True,
     item_filter: Iterable[str] | None = None,
+    inventory_db: Any = None,
 ) -> RunState:
     """Register a run + spawn a worker thread to execute it.
 
@@ -211,6 +274,14 @@ async def start_run_async(
                 os.environ.pop(STREAM_LOG_ENV_VAR, None)
             else:
                 os.environ[STREAM_LOG_ENV_VAR] = prior_env
+            # Best-effort: flush the just-finished run's sidecars into the
+            # inventory DB so the next /inventory or /apps/detect call sees
+            # the up-to-date installed/candidate columns without a fresh
+            # OS-level scan.
+            try:
+                _flush_run_to_inventory_db(run_dir, inventory_db)
+            except Exception:  # noqa: BLE001
+                _log.exception("post-run inventory flush failed")
             state.finished_at = datetime.now(timezone.utc)
             state._completion_event.set()
 

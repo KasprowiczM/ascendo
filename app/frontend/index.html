@@ -76,6 +76,12 @@
       <a href="#help"       data-view="help"       data-icon="help"       class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.help">Help</span></a>
       <a href="#about"      data-view="about"      data-icon="about"      class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.about">About</span></a>
     </nav>
+    <!-- Contextual help block — populated by ui.updateSidebarHelp(view) so
+         the user always sees a 1–2 sentence "what does this menu do" hint
+         right where the menu is, instead of stealing space at the top of
+         every view. The text is sourced from the existing
+         <view>.help_summary i18n keys; no new translations required. -->
+    <div id="sidebar-help" class="sidebar-help dim" aria-live="polite"></div>
     <div class="sidebar-footer">
       <div id="hostbadge" class="dim"></div>
     </div>
@@ -184,8 +190,8 @@
             <span class="action-chip">5</span>
             <span class="action-label" data-i18n="overview.action_5_full">Full update</span>
           </button>
-          <button data-quick='{"profile":"full","extra_args":["--nvidia"]}' data-icon-prefix="nvidia" class="btn-nvidia adapter-only-linux adapter-only-windows" title="Apply NVIDIA driver upgrade (held by default)">Update NVIDIA</button>
-          <button data-quick='{"only":"drivers","phase":"apply","extra_args":["--nvidia"]}' class="secondary adapter-only-linux adapter-only-windows" title="Apply only the NVIDIA driver category">drivers only · with NVIDIA</button>
+          <button data-quick='{"profile":"full","extra_args":["--nvidia"]}' data-icon-prefix="nvidia" class="btn-nvidia adapter-only-linux adapter-only-windows adapter-hide-macos" title="Apply NVIDIA driver upgrade (held by default)">Update NVIDIA</button>
+          <button data-quick='{"only":"drivers","phase":"apply","extra_args":["--nvidia"]}' class="secondary adapter-only-linux adapter-only-windows adapter-hide-macos" title="Apply only the NVIDIA driver category">drivers only · with NVIDIA</button>
         </div>
         <div class="card">
           <h3 data-i18n="health.title">Post-run health</h3>
@@ -753,7 +759,7 @@
             <input type="text" name="ssh_alias" placeholder="laptop01" required />
           </label>
           <label><span data-i18n="hosts.f_repo">Repo path on the host</span>
-            <input type="text" name="repo_path" placeholder="~/Dev_Env/Ubuntu_Aktualizacje" />
+            <input type="text" name="repo_path" placeholder="~/Dev_Env/ascendo" />
           </label>
           <label style="grid-column: 1 / -1"><span data-i18n="hosts.f_desc">Description (optional)</span>
             <input type="text" name="description" placeholder="Dell Latitude, dev workstation" />
@@ -849,7 +855,7 @@
               Read-only, never installs anything.
             </p>
             <label><span data-i18n="settings.updates_repo">GitHub repo</span>
-              <input type="text" name="updates_check_repo" placeholder="KasprowiczM/Ubuntu_Aktualizacje" />
+              <input type="text" name="updates_check_repo" placeholder="KasprowiczM/ascendo" value="KasprowiczM/ascendo" />
             </label>
             <button type="button" id="updates-check-btn" class="secondary" data-i18n="settings.updates_check">Check now</button>
             <div id="updates-output" class="dim" style="margin-top:0.5rem;font-size:0.78rem"></div>
@@ -900,7 +906,7 @@
                 <option value="full">full</option>
               </select>
             </label>
-            <label class="inline adapter-only-linux adapter-only-windows">
+            <label class="inline adapter-only-linux adapter-only-windows adapter-hide-macos">
               <input type="checkbox" name="scheduler_no_drivers" />
               <span data-i18n="settings.skip_drivers">Skip drivers in scheduled run</span>
             </label>

@@ -283,7 +283,36 @@ const ui = {
     if (view === "about"      && !ui._loaded.about)      { ui._loaded.about = true;      ui.loadAbout(); }
     // Run Center is special: must always (re)bind active-stream subscription.
     if (view === "run") ui.loadRunCenter();
+    // Refresh the sidebar contextual help block. Pulls from the
+    // <view>.help_summary i18n key the per-view help cards already use,
+    // so we don't have to duplicate translations.
+    try { ui.updateSidebarHelp(view); } catch {}
   },
+
+  updateSidebarHelp(view) {
+    const el = document.getElementById("sidebar-help");
+    if (!el) return;
+    const keyMap = {
+      overview:   "overview.help_summary",
+      categories: "categories.help_summary",
+      run:        "run.help_summary",
+      history:    "history.help_summary",
+      logs:       "logs.help_summary",
+      sync:       "sync.help_summary",
+      apps:       "apps.help_summary",
+      suggest:    "suggest.help_summary",
+      hosts:      "hosts.help_summary",
+      settings:   "settings.help_summary",
+      help:       "help.help_summary",
+      about:      "about.help_summary",
+    };
+    const key = keyMap[view];
+    if (!key) { el.textContent = ""; return; }
+    const text = (window.tr && window.tr(key)) || "";
+    // textContent (not innerHTML) so translated copy can't inject markup.
+    el.textContent = text;
+  },
+
   invalidateCaches() {
     // Called after a run completes or when the user hits "Refresh".
     ui._loaded = {};
@@ -321,15 +350,47 @@ const ui = {
     ui.wizard.start();
   },
 
-  // Step-router for the 6-step Windows first-run wizard.
+  // Step-router for the 6-step first-run wizard.
   // Self-contained: every step is a function that builds DOM into
   // #wizard-step-host. Persists choices to localStorage as the user
   // moves so a refresh mid-wizard doesn't lose work; final POST to
   // /onboarding/complete writes the durable state file.
+  //
+  // Adapter-conditional: every step that mentions specific package
+  // sources, elevation method, or CLI examples reads per-adapter
+  // strings from wizard.os.<adapter> in i18n.js (see osTr()). Adapter
+  // is read from document.documentElement.dataset.adapter (set during
+  // boot()). Falls back to 'windows' for unknown adapters so the
+  // wizard never has empty strings.
   wizard: {
     state: null,
     steps: ["welcome", "prefs", "admin", "scan", "sources", "done"],
     currentIdx: 0,
+    // Resolve a per-adapter wizard string. Reads adapter from <html>
+    // and falls back to 'windows' if no per-adapter copy exists for
+    // the current adapter (or if the adapter is 'unknown'). 'ubuntu'
+    // and 'linux' both map to the 'linux' variant.
+    osTr(key) {
+      const adapter = (document.documentElement.dataset.adapter
+                       || window.ADAPTER_NAME
+                       || "unknown").toLowerCase();
+      const variant = (adapter === "ubuntu" || adapter === "linux")
+                      ? "linux"
+                      : (adapter === "macos" || adapter === "windows")
+                        ? adapter
+                        : "windows";
+      const v = tr(`wizard.os.${variant}.${key}`);
+      // tr() returns the path string when the lookup misses; fall back
+      // to the windows variant in that case so empty strings never ship.
+      if (v === `wizard.os.${variant}.${key}`) {
+        return tr(`wizard.os.windows.${key}`);
+      }
+      return v;
+    },
+    osList(key) {
+      const v = this.osTr(key);
+      return Array.isArray(v) ? v : [];
+    },
     start() {
       this.state = {
         language: window.UI_LANG || "en",
@@ -449,12 +510,16 @@ const ui = {
       h.textContent = tr("wizard.welcome.title");
       const tag = document.createElement("p");
       tag.className = "tagline";
-      tag.textContent = tr("wizard.welcome.tagline");
+      // Tagline is adapter-specific ("Unified updates for macOS" vs
+      // "...for Windows" vs "...for Linux").
+      tag.textContent = this.osTr("tagline");
       tx.appendChild(h); tx.appendChild(tag);
       hero.appendChild(tx);
       host.appendChild(hero);
       const body = document.createElement("p");
-      body.textContent = tr("wizard.welcome.body");
+      // Body names the four (or five on Linux) sources Ascendo manages
+      // for this OS — adapter-specific.
+      body.textContent = this.osTr("intro");
       host.appendChild(body);
       const preview = document.createElement("div");
       preview.className = "wizard-welcome-preview";
@@ -462,9 +527,18 @@ const ui = {
       ph.textContent = tr("wizard.welcome.preview");
       preview.appendChild(ph);
       const ol = document.createElement("ol");
-      ["bullet1","bullet2","bullet3","bullet4","bullet5"].forEach(k => {
+      // Bullets 2 + 5 are adapter-specific (admin term + dry-run
+      // category name); the rest are adapter-neutral.
+      const bullets = [
+        tr("wizard.welcome.bullet1"),
+        this.osTr("bullet_admin"),
+        tr("wizard.welcome.bullet3"),
+        tr("wizard.welcome.bullet4"),
+        this.osTr("bullet_dryrun"),
+      ];
+      bullets.forEach(text => {
         const li = document.createElement("li");
-        li.textContent = tr(`wizard.welcome.${k}`);
+        li.textContent = text;
         ol.appendChild(li);
       });
       preview.appendChild(ol);
@@ -569,21 +643,28 @@ const ui = {
         window.SETTINGS_CACHE = merged;
       } catch {}
     },
-    // ── Step 3: Administrator (UAC) ─────────────────────────────
+    // ── Step 3: Elevation (Administrator/UAC on Windows, sudo on
+    //                       macOS + Linux) ──────────────────────────
     build_admin(host) {
       const h = document.createElement("h3");
-      h.textContent = tr("wizard.admin.title");
+      // "Administrator (UAC) access" on Windows; "sudo access (askpass
+      // cache)" on macOS + Linux.
+      h.textContent = this.osTr("admin_title");
       host.appendChild(h);
       const body = document.createElement("p");
-      body.textContent = tr("wizard.admin.body");
+      // Names the actual elevation primitive (UAC vs sudo) and the
+      // categories that need it.
+      body.textContent = this.osTr("admin_body");
       host.appendChild(body);
+      // Two callouts: "Why we ask" (uses adapter-specific reasons) and
+      // "What you can do" (adapter-neutral guidance).
       ["why", "do"].forEach(k => {
         const co = document.createElement("div");
         co.className = "wizard-admin-callout";
         const t = document.createElement("h4");
         t.textContent = tr(`wizard.admin.${k}_h`);
         const b = document.createElement("p");
-        b.textContent = tr(`wizard.admin.${k}_b`);
+        b.textContent = this.osTr(`admin_${k}_b`);
         co.appendChild(t); co.appendChild(b);
         host.appendChild(co);
       });
@@ -631,7 +712,9 @@ const ui = {
       h.textContent = tr("wizard.scan.title");
       host.appendChild(h);
       const body = document.createElement("p");
-      body.textContent = tr("wizard.scan.body");
+      // "We're scanning the four sources Ascendo manages on Windows"
+      // vs "...on macOS" vs "...on Linux".
+      body.textContent = this.osTr("scan_body");
       host.appendChild(body);
       const prog = document.createElement("div");
       prog.className = "wizard-scan-progress";
@@ -660,12 +743,26 @@ const ui = {
       this.runInventoryScan(fill, lbl, summary);
     },
     async runInventoryScan(fillEl, lblEl, summaryEl) {
-      const sources = [
-        ["winget",         "wizard.scan.scanning_winget"],
-        ["msstore",        "wizard.scan.scanning_msstore"],
-        ["registry_arp",   "wizard.scan.scanning_arp"],
-        ["windows_update", "wizard.scan.scanning_wu"],
-      ];
+      // Build ticker labels from the adapter-specific sources_table.
+      // Each label is composed by substituting the source id into the
+      // generic "Scanning <id>…" template — avoids needing a translation
+      // key per source per locale per adapter. The original Windows-only
+      // strings (scanning_winget/_msstore/_arp/_wu) are preserved in
+      // i18n.js for backward-compat with anything that still references
+      // them, but the ticker no longer uses them directly.
+      const winLabel = tr("wizard.scan.scanning_winget"); // "Scanning winget…"
+      const sources = (this.osList("sources_table") || []).map(row => {
+        return [row.id, winLabel.replace("winget", row.id)];
+      });
+      // Defensive fallback if the adapter sources_table is missing.
+      if (sources.length === 0) {
+        sources.push(
+          ["winget",         tr("wizard.scan.scanning_winget")],
+          ["msstore",        tr("wizard.scan.scanning_msstore")],
+          ["registry_arp",   tr("wizard.scan.scanning_arp")],
+          ["windows_update", tr("wizard.scan.scanning_wu")],
+        );
+      }
       const t0 = performance.now();
       const minDuration = 2000;
       // Drive the user-facing progress bar through the labels while the
@@ -679,7 +776,8 @@ const ui = {
       const ticker = (async () => {
         for (; idx < totalSteps; idx++) {
           if (stopTicker) break;
-          lblEl.textContent = tr(sources[idx][1]);
+          // sources[idx][1] is now a literal label string, not an i18n key.
+          lblEl.textContent = sources[idx][1];
           fillEl.style.width = `${Math.round((idx + 0.5) / totalSteps * 90)}%`;
           await new Promise(r => setTimeout(r, stepDuration));
         }
@@ -725,7 +823,11 @@ const ui = {
       summaryLine.style.margin = "0";
       const tplVars = {
         total: totals.total || 0,
-        sources: Object.keys(summary.categories || {}).length || 4,
+        // Default to the adapter's source count if the backend hasn't
+        // reported any categories yet.
+        sources: Object.keys(summary.categories || {}).length
+                 || this.osList("sources_table").length
+                 || 4,
       };
       summaryLine.textContent = tr("wizard.scan.done_body")
         .replace("{total}", tplVars.total).replace("{sources}", tplVars.sources);
@@ -748,7 +850,9 @@ const ui = {
       h.textContent = tr("wizard.sources.title");
       host.appendChild(h);
       const body = document.createElement("p");
-      body.textContent = tr("wizard.sources.body");
+      // Adapter-specific intro ("These are the four places Windows
+      // installs apps from..." vs "...macOS..." vs "...Linux...").
+      body.textContent = this.osTr("sources_intro");
       host.appendChild(body);
       const summary = this.state.sources_summary || {categories: {}, totals: {}};
       const tbl = document.createElement("table");
@@ -761,21 +865,24 @@ const ui = {
         if (k === "col_total" || k === "col_outdated") th.classList.add("num");
         trh.appendChild(th);
       });
-      // Action column for Windows Update "Run check".
+      // Action column for the deferred per-adapter check (e.g. "Run
+      // check" on windows_update for Windows, softwareupdate on macOS).
       const thAct = document.createElement("th");
       thAct.textContent = "";
       trh.appendChild(thAct);
       thead.appendChild(trh);
       tbl.appendChild(thead);
       const tb = document.createElement("tbody");
-      const rows = [
-        ["winget",         "wizard.sources.winget_desc"],
-        ["msstore",        "wizard.sources.msstore_desc"],
-        ["registry_arp",   "wizard.sources.arp_desc"],
-        ["windows_update", "wizard.sources.wu_desc"],
-      ];
+      // Source rows + descriptions come from the per-adapter
+      // sources_table (array of {id, desc} objects).
+      const rows = (this.osList("sources_table") || []).map(r => [r.id, r.desc]);
+      // The "deferred check" is the source whose count is only known
+      // after running an explicit check (Windows Update on Windows
+      // because PSWindowsUpdate scan is slow; softwareupdate on macOS
+      // for the same reason). Linux has no deferred source today.
+      const deferredId = this.osTr("deferred_check_id") || null;
       let outdatedTotal = 0;
-      for (const [src, descKey] of rows) {
+      for (const [src, descText] of rows) {
         const cat = (summary.categories || {})[src] || {total: 0, outdated: 0};
         const trr = document.createElement("tr");
         const tdSrc = document.createElement("td");
@@ -784,7 +891,7 @@ const ui = {
         trr.appendChild(tdSrc);
         const tdDesc = document.createElement("td");
         tdDesc.className = "src-desc";
-        tdDesc.textContent = tr(descKey);
+        tdDesc.textContent = descText;
         trr.appendChild(tdDesc);
         const tdTotal = document.createElement("td");
         tdTotal.className = "num";
@@ -792,7 +899,7 @@ const ui = {
         trr.appendChild(tdTotal);
         const tdOut = document.createElement("td");
         tdOut.className = "num";
-        if (src === "windows_update" && (!cat || cat.total === 0)) {
+        if (src === deferredId && (!cat || cat.total === 0)) {
           if (this.state.wu_check && this.state.wu_check.status === "done") {
             tdOut.textContent = String(this.state.wu_check.count || 0);
             outdatedTotal += this.state.wu_check.count || 0;
@@ -809,7 +916,7 @@ const ui = {
         }
         trr.appendChild(tdOut);
         const tdAct = document.createElement("td");
-        if (src === "windows_update") {
+        if (deferredId && src === deferredId) {
           const btn = document.createElement("button");
           btn.type = "button";
           btn.className = "secondary";
@@ -819,7 +926,7 @@ const ui = {
             btn.disabled = true;
             btn.textContent = "…";
           }
-          btn.addEventListener("click", () => this.runWindowsUpdateCheck());
+          btn.addEventListener("click", () => this.runDeferredCheck());
           tdAct.appendChild(btn);
         }
         trr.appendChild(tdAct);
@@ -838,30 +945,37 @@ const ui = {
         banner.textContent = tr("wizard.sources.all_clear_banner");
       }
       host.appendChild(banner);
-      // Surface the live wu_check status under the table.
+      // Surface the live deferred-check status under the table.
+      // Per-adapter wording (e.g. "Running Windows Update check…" vs
+      // "Running softwareupdate check…").
       if (this.state.wu_check) {
         const note = document.createElement("p");
         note.className = "dim";
         note.style.fontSize = "0.82rem";
         if (this.state.wu_check.status === "running") {
-          note.textContent = tr("wizard.sources.wu_running");
+          note.textContent = this.osTr("deferred_check_running");
         } else if (this.state.wu_check.status === "done") {
-          note.textContent = tr("wizard.sources.wu_done")
+          note.textContent = this.osTr("deferred_check_done")
             .replace("{count}", String(this.state.wu_check.count || 0));
         } else if (this.state.wu_check.status === "failed") {
-          note.textContent = tr("wizard.sources.wu_failed");
+          note.textContent = this.osTr("deferred_check_failed");
         }
         if (note.textContent) host.appendChild(note);
       }
     },
-    async runWindowsUpdateCheck() {
+    // Renamed from runWindowsUpdateCheck — runs a check against the
+    // adapter's deferred-check source (windows_update / softwareupdate
+    // / etc.). Linux has no deferred source so this is a no-op there.
+    async runDeferredCheck() {
+      const deferredId = this.osTr("deferred_check_id");
+      if (!deferredId) return;
       this.state.wu_check = {status: "running"};
       this.render();
       try {
         const r = await api.post("/runs/async", {
           profile: "quick",
           phases: ["check"],
-          categories: ["windows_update"],
+          categories: [deferredId],
           dry_run: true,
         });
         const runId = r.run_id;
@@ -898,21 +1012,22 @@ const ui = {
       const h = document.createElement("h3");
       h.textContent = tr("wizard.done.title");
       host.appendChild(h);
-      // A — dry-run
+      // A — dry-run (against the adapter's primary category — winget on
+      // Windows, brew on macOS, apt on Linux).
       const dryS = document.createElement("div");
       dryS.className = "wizard-done-section";
       const dryH = document.createElement("h4");
-      dryH.textContent = tr("wizard.done.dry_h");
+      dryH.textContent = this.osTr("dry_h");
       dryS.appendChild(dryH);
       const dryP = document.createElement("p");
-      dryP.textContent = tr("wizard.done.dry_body");
+      dryP.textContent = this.osTr("dry_body");
       dryS.appendChild(dryP);
       const row = document.createElement("div");
       row.className = "wizard-dryrun-row";
       const runBtn = document.createElement("button");
       runBtn.type = "button";
       runBtn.id = "wizard-dryrun-btn";
-      runBtn.textContent = tr("wizard.done.dry_btn");
+      runBtn.textContent = this.osTr("dry_btn");
       const skipBtn = document.createElement("button");
       skipBtn.type = "button";
       skipBtn.className = "secondary";
@@ -927,10 +1042,10 @@ const ui = {
       dryStatus.id = "wizard-dryrun-status";
       dryStatus.style.fontSize = "0.85rem";
       if (this.state.dry_run && this.state.dry_run.status === "done") {
-        dryStatus.textContent = tr("wizard.done.dry_done")
+        dryStatus.textContent = this.osTr("dry_done")
           .replace("{items}", String(this.state.dry_run.items || 0));
       } else if (this.state.dry_run && this.state.dry_run.status === "running") {
-        dryStatus.textContent = tr("wizard.done.dry_running");
+        dryStatus.textContent = this.osTr("dry_running");
       } else if (this.state.dry_run && this.state.dry_run.status === "failed") {
         dryStatus.textContent = tr("wizard.done.dry_failed")
           .replace("{error}", this.state.dry_run.error || "");
@@ -943,16 +1058,23 @@ const ui = {
       dryOut.id = "wizard-dryrun-out";
       dryS.appendChild(dryOut);
       host.appendChild(dryS);
-      // B — apply for real
+      // B — apply for real. apply_1 + apply_2 are adapter-neutral; the
+      // CLI example (apply_3) names the adapter's primary category, so
+      // it's adapter-specific.
       const appS = document.createElement("div");
       appS.className = "wizard-done-section";
       const appH = document.createElement("h4");
       appH.textContent = tr("wizard.done.apply_h");
       appS.appendChild(appH);
       const ul = document.createElement("ul");
-      ["apply_1","apply_2","apply_3"].forEach(k => {
+      const applyLines = [
+        tr("wizard.done.apply_1"),
+        tr("wizard.done.apply_2"),
+        this.osTr("cli_apply"),
+      ];
+      applyLines.forEach(text => {
         const li = document.createElement("li");
-        li.textContent = tr(`wizard.done.${k}`);
+        li.textContent = text;
         ul.appendChild(li);
       });
       appS.appendChild(ul);
@@ -994,12 +1116,16 @@ const ui = {
       if (out) out.textContent = "";
       const btn = $("#wizard-dryrun-btn");
       if (btn) btn.disabled = true;
-      if (statusEl) statusEl.textContent = tr("wizard.done.dry_running");
+      if (statusEl) statusEl.textContent = this.osTr("dry_running");
+      // The dry-run targets the adapter's primary category — winget
+      // on Windows, brew on macOS, apt on Linux. dry_category falls
+      // back to 'winget' via osTr's windows-default if missing.
+      const dryCat = this.osTr("dry_category") || "winget";
       try {
         const r = await api.post("/runs/async", {
           profile: "quick",
           phases: ["plan"],
-          categories: ["winget"],
+          categories: [dryCat],
           dry_run: true,
         });
         const runId = r.run_id;
@@ -1712,14 +1838,24 @@ const ui = {
     }
     $$("#cats-table .cat-row").forEach(row => {
       row.addEventListener("click", e => {
-        if (e.target.tagName === "BUTTON") return;
+        // Defensive: any click that lands on (or inside) a button should
+        // never collapse/expand the row. The strict `tagName === "BUTTON"`
+        // check missed clicks on icons/spans nested inside buttons (e.g.
+        // an SVG inside `▶ run all`), which made the row toggle while the
+        // user thought they were running a phase. closest('button') is
+        // the canonical fix.
+        if (e.target.closest && e.target.closest("button")) return;
         const cat = row.dataset.cat;
         const det = row.nextElementSibling;
-        if (det.classList.contains("hidden")) {
-          det.classList.remove("hidden"); row.classList.add("open");
+        if (!det) return;
+        const isHidden = det.classList.contains("hidden");
+        if (isHidden) {
+          det.classList.remove("hidden");
+          row.classList.add("open");
           ui.loadCategoryDetail(cat);
         } else {
-          det.classList.add("hidden"); row.classList.remove("open");
+          det.classList.add("hidden");
+          row.classList.remove("open");
         }
       });
     });
@@ -2518,7 +2654,7 @@ function _showHostForm(host) {
   f.elements.id.value           = host?.id || "";
   f.elements.display_name.value = host?.display_name || "";
   f.elements.ssh_alias.value    = host?.ssh_alias || "";
-  f.elements.repo_path.value    = host?.repo_path || "~/Dev_Env/Ubuntu_Aktualizacje";
+  f.elements.repo_path.value    = host?.repo_path || "~/Dev_Env/ascendo";
   f.elements.description.value  = host?.description || "";
   f.elements.orig_id.value      = host?.id || "";
   f.elements.id.focus();

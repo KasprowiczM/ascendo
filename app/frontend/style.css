@@ -41,7 +41,9 @@
 :root[data-theme="dark"]  { color-scheme: dark;  }
 * { box-sizing: border-box; }
 :root {
-  --sidebar-w: 240px;
+  /* Widened from 240px so the PL tagline "ZUNIFIKOWANE AKTUALIZACJE"
+     and similar locales (DE / FR / ES) fit on a single line. */
+  --sidebar-w: 264px;
   --sidebar-w-collapsed: 0px;
   --topbar-h: 52px;
   --font-base: 14px;
@@ -134,6 +136,19 @@ html[data-adapter="ubuntu"]  .adapter-hide-linux { display: none !important; }
   border-top: 1px solid var(--border); padding-top: 0.6rem;
   font-size: 0.72rem; font-family: var(--mono);
 }
+/* Contextual help block at the bottom of the sidebar. Replaces the
+   per-view "What does this section do?" cards that used to steal
+   ~120 px at the top of every page. The text is short by design (one
+   sentence); deeper docs still live in the per-view <details> blocks. */
+.sidebar-help {
+  margin-top: auto;                  /* push to just above the footer */
+  padding: 0.5rem 0;
+  border-top: 1px dashed var(--border);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--fg-muted);
+}
+.sidebar-help:empty { display: none; }
 
 /* Ã¢ÂÂÃ¢ÂÂ Topbar (mobile only by default; visible on desktop too as utilities) Ã¢ÂÂÃ¢ÂÂ */
 .topbar {
@@ -218,13 +233,21 @@ main { padding: 1.25rem; min-width: 0; }
 }
 
 .grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 1rem;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.7rem;
 }
 .card {
   background: var(--panel); border: 1px solid var(--border);
-  border-radius: 10px; padding: 18px;
+  border-radius: 10px; padding: 14px 16px;
 }
+/* Overview-specific: the cards on Overview previously stole an entire
+   screen for 4 stat boxes. Tighter padding + denser readout sizes
+   compress the same content into ~60% of the previous height. */
+#view-overview .card { padding: 10px 14px; }
+#view-overview .card .big { font-size: 22px; }
+#view-overview .card .meta { font-size: 11px; margin-top: 4px; }
+#view-overview .grid { gap: 0.6rem; }
+#view-overview .grid + h3 { margin-top: 1rem; }
 /* Card eyebrow header â mockup .eye class. Mono, dark grey, wide tracking,
    uppercase. Applied to .card h3 + the explicit .eye class so old + new
    markup both render the same. */
@@ -1253,15 +1276,21 @@ td.duration, td.eta { font-family: var(--font-mono); font-size: var(--fs-xs); co
 .live-log-wrap[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .live-log-wrap > pre#live-log { margin: 0; max-height: 40vh; overflow: auto; background: #0a0d12; color: #cdd2e0; padding: 0.8rem; border-radius: 0 0 6px 6px; font-family: var(--mono, monospace); font-size: 12px; white-space: pre-wrap; }
 
-/* Per-tab inline help panels. Each view has a collapsible "How this works"
-   section at the top with a summary sentence and 4+ bullet points. */
+/* Per-tab inline help panels. Each view USED to have a "What does this
+   section do?" summary card at the top — the user complained about the
+   space it stole. The summary now renders in the sidebar-help block;
+   the bullet-point details live inside <details> here, collapsed by
+   default. The outer <p> (which carried the duplicate of the sidebar
+   summary) is hidden via :first-child below so views don't show the
+   same sentence twice. */
 .tab-help {
-  margin-bottom: 1rem;
-  padding: 0.7rem 0.9rem;
-  background: var(--bg-elev);
-  border-left: 3px solid var(--accent);
-  font-size: 0.85rem;
+  margin-bottom: 0.6rem;
+  padding: 0.4rem 0.7rem;
+  background: transparent;
+  border-left: 2px solid var(--border);
+  font-size: 0.82rem;
 }
+.tab-help > p:first-child { display: none; }
 .tab-help > p {
   margin: 0 0 0.3rem;
   font-weight: 500;

@@ -179,7 +179,11 @@ def adapter_with_inv(fake_packages: list[Package]) -> _FakeAdapter:
 
 @pytest.fixture
 def client(adapter_with_inv: _FakeAdapter, tmp_path: Path) -> TestClient:
-    app = create_app(adapter=adapter_with_inv, runs_dir=tmp_path)
+    app = create_app(
+        adapter=adapter_with_inv,
+        runs_dir=tmp_path,
+        inventory_db_path=tmp_path / "inventory.db",
+    )
     return TestClient(app)
 
 
@@ -310,7 +314,7 @@ def test_health_run_real(client: TestClient) -> None:
 
 def test_health_no_adapter_returns_503(tmp_path: Path) -> None:
     """B2: missing adapter -> 503 with a clear message."""
-    app = create_app(runs_dir=tmp_path)
+    app = create_app(runs_dir=tmp_path, inventory_db_path=tmp_path / "inventory.db")
     app.state.adapter = None
     client = TestClient(app)
     r = client.get("/health/check")
@@ -508,7 +512,11 @@ def test_inventory_no_inventory_returns_empty_buckets(tmp_path: Path) -> None:
     a clean install.
     """
     adapter = _FakeAdapter(inventory=None)
-    app = create_app(adapter=adapter, runs_dir=tmp_path)
+    app = create_app(
+        adapter=adapter,
+        runs_dir=tmp_path,
+        inventory_db_path=tmp_path / "inventory.db",
+    )
     client = TestClient(app)
     r = client.get("/inventory")
     assert r.status_code == 200

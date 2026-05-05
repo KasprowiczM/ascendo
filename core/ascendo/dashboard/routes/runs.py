@@ -455,6 +455,7 @@ async def create_run_async(req: RunRequest, request: Request) -> dict:
         categories=req.categories,
         stop_on_failure=req.stop_on_failure,
         item_filter=resolved_filter,
+        inventory_db=getattr(request.app.state, "inventory_db", None),
     )
 
     return {
