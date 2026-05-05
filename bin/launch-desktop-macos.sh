@@ -31,6 +31,9 @@ while [ $# -gt 0 ]; do
         --build|-b) MODE="build"; shift ;;
         --help|-h)
             sed -n '2,21p' "$0"; exit 0 ;;
+        # Tolerate inline shell-style `# comment` tails when users
+        # copy-paste a command-with-comment from documentation.
+        \#*) shift ;;
         *) printf "launch-desktop-macos.sh: unknown arg: %s\n" "$1" >&2; exit 2 ;;
     esac
 done
@@ -81,9 +84,30 @@ case "$MODE" in
         ;;
     build)
         step "npm run tauri build (~5-10 min on first run)"
-        npm run tauri build || fail "tauri build failed"
+        # The DMG bundler (bundle_dmg.sh) is a fragile post-step that often
+        # fails on macOS over network mounts, in CI sandboxes, or when the
+        # `hdiutil` create_dmg dependency tree drifts. We DON'T treat its
+        # failure as fatal: the .app bundle is what users actually launch
+        # via Cmd+Tab / Finder, and rebuilding the DMG on demand later is
+        # one helper invocation. Tauri build exit code is captured and
+        # reported separately from the .app existence check.
         BUNDLE_DIR="$TAURI_DIR/src-tauri/target/release/bundle"
+        APP_PATH="$BUNDLE_DIR/macos/Ascendo.app"
+        TAURI_RC=0
+        npm run tauri build || TAURI_RC=$?
+        if [ -d "$APP_PATH" ]; then
+            ok ".app bundle ready: $APP_PATH"
+            if [ "$TAURI_RC" -ne 0 ]; then
+                printf "  [WARN] tauri build returned %d but the .app exists.\n" "$TAURI_RC"
+                printf "         Most likely cause: DMG bundler post-step failed.\n"
+                printf "         The .app is launchable; DMG packaging is optional.\n"
+            fi
+        else
+            fail "tauri build failed and no .app produced"
+        fi
         printf "\nBundle artefacts:\n"
         find "$BUNDLE_DIR" -name 'Ascendo*' 2>/dev/null | sed 's/^/  /'
+        printf "\nTo launch:\n"
+        printf "  open '%s'\n" "$APP_PATH"
         ;;
 esac

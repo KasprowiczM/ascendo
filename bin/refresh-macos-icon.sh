@@ -27,6 +27,8 @@ while [ $# -gt 0 ]; do
         --no-sudo) USE_SUDO=0; shift ;;
         --help|-h)
             sed -n '2,21p' "$0"; exit 0 ;;
+        # Tolerate inline shell comments from copy-paste.
+        \#*) shift ;;
         *) echo "unknown flag: $1" >&2; exit 2 ;;
     esac
 done
