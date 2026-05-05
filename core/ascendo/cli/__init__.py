@@ -23,7 +23,7 @@ from ..orchestrator import run_phases
 app = typer.Typer(
     name="ascendo",
     help="Cross-platform update orchestrator.",
-    no_args_is_help=True,
+    no_args_is_help=False,  # we render our own banner via the callback below
 )
 runs_app = typer.Typer(
     name="runs",
@@ -88,6 +88,138 @@ def _resolve_categories(arg: str | None) -> list[SourceType] | None:
             typer.secho(f"error: unknown category '{n}'. valid: {valid}", fg=typer.colors.RED, err=True)
             raise typer.Exit(2) from None
     return out
+
+
+# ── Banner / first-run guide ──────────────────────────────────────────────
+# Bare `ascendo` (no subcommand) renders a translated banner with a
+# subcommand table and example flows. `ascendo --help` is unchanged
+# (Typer's auto-generated help). Locale resolution order:
+#   1. ASCENDO_LOCALE env var
+#   2. ~/.config/ascendo/locale.txt
+#   3. default 'en'
+
+_BANNER_EN = {
+    "title": "Ascendo — Unified updates. Every app. One click.",
+    "tagline": "Cross-platform update orchestrator (Windows / Linux / macOS).",
+    "quickstart_header": "Quick start",
+    "quickstart_lines": [
+        ("ascendo doctor",                  "5-component health snapshot of your system"),
+        ("ascendo run --phase check",       "find available updates (read-only, ~15 s)"),
+        ("ascendo run --phase apply",       "apply updates (gated, idempotent)"),
+    ],
+    "commands_header": "Commands",
+    "commands": [
+        ("version",         "Print Ascendo version."),
+        ("doctor",          "Adapter self-test: detect OS, check tool health."),
+        ("run",             "Drive the OS adapter through one or more phases."),
+        ("runs list",       "List runs on disk, newest first."),
+        ("runs show <id>",  "Show every phase + per-category status for a run."),
+        ("runs json <id>",  "Emit consolidated ascendo/run/v1 JSON (pipe to jq)."),
+        ("dashboard",       "Launch the FastAPI + SPA dashboard on 127.0.0.1."),
+        ("snapshot",        "Manage system snapshots (VSS / Time Machine / timeshift)."),
+        ("schedule",        "Manage scheduled runs (Task Scheduler / launchd / systemd)."),
+    ],
+    "examples_header": "Examples",
+    "examples": [
+        "ascendo run --category winget --phase check    # one source, one phase",
+        "ascendo run --phases check,plan --profile safe # safe profile, dry-survey",
+        "ascendo dashboard --background                 # detached web UI",
+        "ascendo runs json <id> --pretty | jq .summary  # scripting hook",
+    ],
+    "more_help": "Run `ascendo <command> --help` for details on any command.",
+    "docs_link":  "Docs: https://github.com/KasprowiczM/ascendo",
+}
+
+_BANNER_PL = {
+    "title": "Ascendo — Zunifikowane aktualizacje. Każda aplikacja. Jednym kliknięciem.",
+    "tagline": "Wieloplatformowy orchestrator aktualizacji (Windows / Linux / macOS).",
+    "quickstart_header": "Szybki start",
+    "quickstart_lines": [
+        ("ascendo doctor",                  "kontrola zdrowia systemu (5 komponentów)"),
+        ("ascendo run --phase check",       "wyszukaj dostępne aktualizacje (tylko-do-odczytu, ~15 s)"),
+        ("ascendo run --phase apply",       "zastosuj aktualizacje (z potwierdzeniem, idempotentne)"),
+    ],
+    "commands_header": "Komendy",
+    "commands": [
+        ("version",         "Wyświetl wersję Ascendo."),
+        ("doctor",          "Self-test adaptera: wykryj OS, sprawdź narzędzia."),
+        ("run",             "Uruchom adapter OS przez jedną lub więcej faz."),
+        ("runs list",       "Lista uruchomień na dysku, najnowsze pierwsze."),
+        ("runs show <id>",  "Szczegóły faz i kategorii pojedynczego uruchomienia."),
+        ("runs json <id>",  "Skonsolidowany JSON ascendo/run/v1 (do jq)."),
+        ("dashboard",       "Uruchom dashboard FastAPI + SPA na 127.0.0.1."),
+        ("snapshot",        "Zarządzaj snapshotami (VSS / Time Machine / timeshift)."),
+        ("schedule",        "Zarządzaj zaplanowanymi uruchomieniami (Task Scheduler / launchd / systemd)."),
+    ],
+    "examples_header": "Przykłady",
+    "examples": [
+        "ascendo run --category winget --phase check    # jedno źródło, jedna faza",
+        "ascendo run --phases check,plan --profile safe # profil 'safe', tylko podgląd",
+        "ascendo dashboard --background                 # web UI w tle",
+        "ascendo runs json <id> --pretty | jq .summary  # skrypty / automatyzacja",
+    ],
+    "more_help": "Uruchom `ascendo <komenda> --help` po szczegóły.",
+    "docs_link":  "Dokumentacja: https://github.com/KasprowiczM/ascendo",
+}
+
+
+def _resolve_locale() -> str:
+    """Pick the locale for the banner. Returns 'pl' or 'en'."""
+    env_locale = os.environ.get("ASCENDO_LOCALE", "").strip().lower()
+    if env_locale:
+        return "pl" if env_locale.startswith("pl") else "en"
+    cfg = Path.home() / ".config" / "ascendo" / "locale.txt"
+    if cfg.is_file():
+        try:
+            stored = cfg.read_text(encoding="utf-8").strip().lower()
+            if stored:
+                return "pl" if stored.startswith("pl") else "en"
+        except OSError:
+            pass
+    return "en"
+
+
+def render_banner(locale: str | None = None) -> str:
+    """Build the bare-`ascendo` banner string. Pure function — no I/O.
+
+    Public so the contract test can import + assert on its content
+    without driving a Typer CliRunner. ``locale=None`` resolves via
+    :func:`_resolve_locale`; pass ``"en"`` / ``"pl"`` to force.
+    """
+    loc = locale or _resolve_locale()
+    b = _BANNER_PL if loc == "pl" else _BANNER_EN
+
+    lines: list[str] = []
+    lines.append("")
+    lines.append(b["title"])
+    lines.append(b["tagline"])
+    lines.append("")
+    lines.append(b["quickstart_header"] + ":")
+    for cmd, desc in b["quickstart_lines"]:
+        lines.append(f"  {cmd:<32s} {desc}")
+    lines.append("")
+    lines.append(b["commands_header"] + ":")
+    for cmd, desc in b["commands"]:
+        lines.append(f"  {cmd:<18s} {desc}")
+    lines.append("")
+    lines.append(b["examples_header"] + ":")
+    for ex in b["examples"]:
+        lines.append(f"  {ex}")
+    lines.append("")
+    lines.append(b["more_help"])
+    lines.append(b["docs_link"])
+    lines.append("")
+    return "\n".join(lines)
+
+
+@app.callback(invoke_without_command=True)
+def _main_callback(ctx: typer.Context) -> None:
+    """Render the banner when no subcommand was invoked."""
+    # If a subcommand was selected, do nothing — let Typer dispatch normally.
+    if ctx.invoked_subcommand is not None:
+        return
+    # Plain `ascendo` with no args → print the banner and exit 0.
+    typer.echo(render_banner())
 
 
 @app.command()

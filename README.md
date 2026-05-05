@@ -65,6 +65,33 @@ Target releases:
   across all three OSes, plugin signing + verification.
 - **v1.0.0** — stable API + signed binaries + plugin marketplace.
 
+## Quick install (one-liner — macOS / Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh | bash
+```
+
+The installer:
+
+1. Detects your OS (macOS / Ubuntu+Debian / Fedora / Arch).
+2. Asks for language (`en` / `pl`) and persists it to
+   `~/.config/ascendo/locale.txt`.
+3. Installs missing system dependencies via your OS package manager
+   (`brew` / `apt` / `dnf` / `pacman`) — printing every `sudo` call
+   before invoking it.
+4. Asks for an install profile:
+   1. **CLI only** — fastest, sparse-checkout, ~30 MB.
+   2. **CLI + Web dashboard** — adds FastAPI + uvicorn.
+   3. **CLI + Web + Desktop** — adds Rust toolchain + Node 18+ + Tauri 2.x.
+5. Clones (or pulls) the repo to `~/.local/share/ascendo`, sets up a venv
+   under `.venv/`, pip-installs `core/` + `adapters/<os>/` editable, and
+   symlinks an `ascendo` shim into `~/.local/bin/`.
+6. Prints profile-tailored next steps.
+
+Re-running the script is safe: it pulls instead of re-cloning. Windows
+users: see the **Windows** section below; the curl|bash one-liner is
+not available on PowerShell yet.
+
 ## Install (when v0.1.0 ships)
 
 ### Linux
