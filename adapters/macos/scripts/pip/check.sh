@@ -135,6 +135,12 @@ while IFS='|' read -r DISPLAY PKG METHOD DESC; do
         case "$(_ascendo_pip_flavour "$(ascendo_pip_pip_bin)"):$PKG" in
             brew:pip|brew:setuptools|brew:wheel)
                 STATUS="up_to_date"
+                # Pin candidate to installed so the dashboard's
+                # _classify overlay (spa_real.py) doesn't re-flip
+                # status back to "outdated" via _version_gt — without
+                # this, the overlay sees installed=26.1 candidate=26.1.1
+                # and overrides our up_to_date verdict.
+                LATEST="$INSTALLED"
                 json_add_message "info" "$PKG is brew-managed; upgrade via 'brew upgrade python', not pip"
                 ;;
         esac
