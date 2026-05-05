@@ -103,12 +103,12 @@ class LaunchdScheduler(IScheduler):
                 bash,
                 str(script),
                 "--action", action,
-                "--output", str(output),
+                "--output-path", str(output),
             ]
             if payload is not None:
                 payload_path = Path(tmp) / "payload.json"
                 payload_path.write_text(json.dumps(payload), encoding="utf-8")
-                argv += ["--payload", str(payload_path)]
+                argv += ["--payload-path", str(payload_path)]
             try:
                 completed = subprocess.run(  # noqa: S603
                     argv, capture_output=True, text=True,
@@ -128,9 +128,12 @@ class LaunchdScheduler(IScheduler):
                 # install / uninstall / trigger may not produce output.
                 return None
             try:
-                return json.loads(output.read_text(encoding="utf-8"))
+                parsed = json.loads(output.read_text(encoding="utf-8"))
             except json.JSONDecodeError as exc:
                 raise SchedulerError(f"scheduler {action} emitted invalid JSON: {exc}") from exc
+            if completed.returncode != 0 and isinstance(parsed, dict) and "error" in parsed:
+                raise SchedulerError(f"scheduler {action} failed: {parsed['error']}")
+            return parsed
 
     def _parse_spec(self, item: dict) -> ScheduleSpec:
         return ScheduleSpec(

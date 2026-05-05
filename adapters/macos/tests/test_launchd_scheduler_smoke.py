@@ -250,6 +250,8 @@ def test_invoke_without_payload(mac_host):
         assert "--action" in args
         assert "list" in args
         assert "--payload" not in args
+        # Regression lock: bash driver only accepts --output-path, not --output
+        assert "--output-path" in args
 
 
 def test_invoke_with_payload(mac_host):
@@ -314,17 +316,23 @@ def test_invoke_nonzero_exit_without_output_raises_error(mac_host):
             s._invoke("install", payload={"name": "test"})
 
 
-def test_invoke_nonzero_exit_with_output_returns_json(mac_host):
-    """_invoke() should still return JSON if output exists even with nonzero exit."""
+def test_invoke_nonzero_exit_with_error_payload_raises(mac_host):
+    """_invoke() should raise SchedulerError when exit != 0 and output contains {"error": ...}.
+
+    Regression: trigger() of a non-existent schedule causes bash to emit
+    {"error": "no such schedule: foo"} and exit 30. Previously Python silently
+    returned the dict; now it must raise SchedulerError so callers are not
+    misled into thinking the trigger succeeded.
+    """
     s = _make_scheduler()
-    expected_output = {"status": "error", "message": "action not found"}
+    error_output = {"error": "no such schedule: foo"}
     with patch("ascendo_macos.managers.scheduler.subprocess.run") as mock_run, \
          patch.object(s, "_resolve_bash", return_value="/bin/bash"), \
          patch("pathlib.Path.exists", return_value=True), \
-         patch("pathlib.Path.read_text", return_value=json.dumps(expected_output)):
-        mock_run.return_value = MagicMock(returncode=1, stderr="")
-        result = s._invoke("unknown_action")
-        assert result == expected_output
+         patch("pathlib.Path.read_text", return_value=json.dumps(error_output)):
+        mock_run.return_value = MagicMock(returncode=30, stderr="")
+        with pytest.raises(SchedulerError, match="no such schedule"):
+            s._invoke("trigger")
 
 
 def test_invoke_invalid_json_output_raises_error(mac_host):
@@ -478,3 +486,25 @@ def test_resolve_bash_caches_discovered_path(mac_host):
         assert result1 == result2 == "/bin/bash"
         # shutil.which should only be called once
         assert mock_which.call_count == 1
+
+
+def test_invoke_with_payload_uses_payload_path_flag(mac_host):
+    """_invoke() must pass --payload-path (not --payload) to the bash driver.
+
+    Regression: the bash driver only accepts --output-path/--payload-path; using
+    --output/--payload caused every IScheduler call on a real Mac to fail with
+    'unknown arg: --output' and bash exit 2.
+    """
+    s = _make_scheduler()
+    with patch("ascendo_macos.managers.scheduler.subprocess.run") as mock_run, \
+         patch.object(s, "_resolve_bash", return_value="/bin/bash"), \
+         patch("pathlib.Path.write_text"), \
+         patch("pathlib.Path.exists", return_value=False):
+        mock_run.return_value = MagicMock(returncode=0)
+        s._invoke("install", payload={"name": "test"})
+        args = mock_run.call_args[0][0]
+        assert "--output-path" in args, "--output-path must be passed to bash driver"
+        assert "--payload-path" in args, "--payload-path must be passed to bash driver"
+        # bare --output and --payload must not appear as standalone tokens
+        assert "--output" not in args, "bare --output flag must not appear (use --output-path)"
+        assert "--payload" not in args, "bare --payload flag must not appear (use --payload-path)"

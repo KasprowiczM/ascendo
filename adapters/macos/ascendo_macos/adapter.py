@@ -173,7 +173,7 @@ class MacOSAdapter(IAdapter):
         return self._cached_scheduler
 
     def source(self) -> ISource | None:
-        """Not implemented in M5.1. Returns None."""
+        """Not implemented; reserved for M6 (cross-cutting source signature verification per ADR-0005). Returns None."""
         return None
 
     def elevation(self) -> IElevation | None:
