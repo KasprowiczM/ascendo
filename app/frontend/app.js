@@ -2654,7 +2654,7 @@ function _showHostForm(host) {
   f.elements.id.value           = host?.id || "";
   f.elements.display_name.value = host?.display_name || "";
   f.elements.ssh_alias.value    = host?.ssh_alias || "";
-  f.elements.repo_path.value    = host?.repo_path || "~/Dev_Env/ascendo";
+  f.elements.repo_path.value    = host?.repo_path || "~/Dev_Env/Ascendo";
   f.elements.description.value  = host?.description || "";
   f.elements.orig_id.value      = host?.id || "";
   f.elements.id.focus();

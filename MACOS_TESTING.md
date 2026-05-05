@@ -9,7 +9,7 @@ Homebrew 5.1.9, Python 3.13, jq 1.8.1, mas 7.0.0)**.
 ## Want a clickable Mac app? (skip the CLI)
 
 ```bash
-cd ~/Dev_Env/ascendo
+cd ~/Dev_Env/Ascendo
 bash bin/install-dev-macos.sh             # one-time install
 bash bin/launch-desktop-macos.sh --build  # builds .app + .dmg (≈ 5–10 min on first run)
 open ui/desktop-tauri/src-tauri/target/release/bundle/macos/Ascendo.app
@@ -92,7 +92,7 @@ brew install mas
 ## 2. Install
 
 ```bash
-cd ~/Dev_Env/ascendo
+cd ~/Dev_Env/Ascendo
 bash bin/install-dev-macos.sh
 ```
 

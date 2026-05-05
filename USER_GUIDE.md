@@ -396,7 +396,7 @@ rm -rf ~/.ascendo/                           # all runs + sidecars + logs
 ## 6. Where things live
 
 ```
-~/Dev_Env/ascendo/                  # the repo
+~/Dev_Env/Ascendo/                  # the repo
 ├── adapters/{macos,windows,ubuntu}/  # OS-specific managers
 ├── core/ascendo/                     # OS-agnostic core (CLI, dashboard, orchestrator)
 ├── ui/desktop-tauri/                 # Tauri 2.x native shell

@@ -104,6 +104,22 @@ apply_pip() {
         json_add_message "error" "pip not on PATH; cannot install $_display"
         return
     fi
+    # Brew-managed Python ships pip / setuptools / wheel without a
+    # RECORD file (Homebrew installs them via its own bottle, not via
+    # pip), so `pip install -U pip` on a brew Python errors with
+    # "uninstall-no-record-file". The upgrade path is `brew upgrade
+    # python` — running pip against itself only burns time and emits
+    # noise. Skip with a clear explanation.
+    case "$(_ascendo_pip_flavour "$PIP_BIN"):$_pkg" in
+        brew:pip|brew:setuptools|brew:wheel)
+            local _new
+            _new="$(ascendo_pip_installed_version "$_pkg")"
+            json_add_item "$_display" "$_new" "$_new" "skipped" "pip" "pip"
+            json_add_message "info" \
+                "skipped pip-self-upgrade of '$_pkg' on brew Python (installed without RECORD; run 'brew upgrade python' to bump)"
+            return
+            ;;
+    esac
     _stream_emit ">>> pip install -U $_pkg ($_display)"
     # Capture pip's combined stdout+stderr to a temp file AND tee to the
     # live stream. On failure we slice the last 12 lines into the sidecar

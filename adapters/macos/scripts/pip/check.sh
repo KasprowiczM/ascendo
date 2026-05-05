@@ -126,6 +126,19 @@ while IFS='|' read -r DISPLAY PKG METHOD DESC; do
     esac
 
     STATUS="$(classify "$INSTALLED" "$LATEST")"
+    # Brew-managed pip / setuptools / wheel cannot be self-upgraded by
+    # pip (no RECORD file). Reclassify as up_to_date so the user
+    # doesn't see them flapping between "planned" and "skipped" runs.
+    # `brew upgrade python` is the upgrade path; surface it via an
+    # info message so the dashboard can show it once.
+    if [ "$STATUS" = "planned" ]; then
+        case "$(_ascendo_pip_flavour "$(ascendo_pip_pip_bin)"):$PKG" in
+            brew:pip|brew:setuptools|brew:wheel)
+                STATUS="up_to_date"
+                json_add_message "info" "$PKG is brew-managed; upgrade via 'brew upgrade python', not pip"
+                ;;
+        esac
+    fi
     case "$STATUS" in
         planned)    COUNT_PLANNED=$((COUNT_PLANNED + 1)) ;;
         up_to_date) COUNT_UTD=$((COUNT_UTD + 1)) ;;

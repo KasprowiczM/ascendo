@@ -247,7 +247,7 @@ hook that calls `tmutil localsnapshot` is on the M5.x backlog.
 ## 11 · Where everything lives
 
 ```
-~/Dev_Env/ascendo/
+~/Dev_Env/Ascendo/
 ├── adapters/macos/
 │  ├── ascendo_macos/                    # Python: MacOSAdapter + 5 managers
 │  │   ├── adapter.py                    # capability flag, health_check, manager wiring

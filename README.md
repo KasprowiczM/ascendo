@@ -134,8 +134,8 @@ walks you through a dry-run before any real upgrade. See
 
 ```bash
 # Source / dev install today (v0.2.0):
-git clone https://github.com/KasprowiczM/ascendo.git ~/Dev_Env/ascendo
-cd ~/Dev_Env/ascendo
+git clone https://github.com/KasprowiczM/ascendo.git ~/Dev_Env/Ascendo
+cd ~/Dev_Env/Ascendo
 bash bin/install-dev-macos.sh             # core + adapter + smoke (≈ 3 min)
 bash bin/launch-desktop-macos.sh          # native Tauri window (dev mode)
 

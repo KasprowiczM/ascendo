@@ -73,6 +73,14 @@ while IFS='|' read -r DISPLAY PKG METHOD DESC; do
         *) continue ;;
     esac
     STATUS="$(classify "$INSTALLED" "$LATEST")"
+    # Brew-managed pip / setuptools / wheel cannot be self-upgraded —
+    # the apply phase will skip them, so don't list them in the plan
+    # either. Same rule as in check.sh.
+    if [ "$STATUS" = "planned" ]; then
+        case "$(_ascendo_pip_flavour "$(ascendo_pip_pip_bin)"):$PKG" in
+            brew:pip|brew:setuptools|brew:wheel) continue ;;
+        esac
+    fi
     # Only emit items that would CHANGE in apply (planned + missing).
     case "$STATUS" in
         planned|missing) json_add_item "$DISPLAY" "$INSTALLED" "$LATEST" "$STATUS" "pip" "$METHOD" ;;
