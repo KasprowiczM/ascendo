@@ -14,8 +14,44 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, HTTPException, Request
 
 from ...interfaces.package_manager import ManagerError
-from ...models.run import RunInfo, Trigger
+from ...models.run import Phase, RunInfo, Trigger
 from ...orchestrator import DEFAULT_PHASE_ORDER, RunReport, run_phases
+
+
+# Profile -> default phase set. Profiles are the user-facing knob; phases
+# are the orchestrator-facing primitive. The dashboard only exposes
+# profile, so we need an explicit map. Aligned with docs/agents/contract.md
+# §Profiles:
+#   quick — read-only sweep (CHECK only). No mutations, no sudo.
+#   safe  — full 5-phase, drivers excluded (driver exclusion happens at
+#           the categories layer; here we run the whole pipeline).
+#   full  — full 5-phase, every category.
+_PROFILE_PHASES: dict[str, tuple[Phase, ...]] = {
+    "quick": (Phase.CHECK,),
+    "safe":  DEFAULT_PHASE_ORDER,
+    "full":  DEFAULT_PHASE_ORDER,
+}
+
+
+def _phases_for_request(
+    explicit: list[Phase] | None,
+    profile: str | None,
+) -> tuple[Phase, ...]:
+    """Resolve which phases a run should execute.
+
+    Precedence: explicit > profile > DEFAULT_PHASE_ORDER.
+
+    A frontend sending `{profile: "quick"}` (no phases) expects a read-only
+    sweep — without this helper, the orchestrator falls back to
+    DEFAULT_PHASE_ORDER (all 5 phases including apply), which is exactly
+    what the user reported: clicking Quick check on Overview kicked off
+    `apply:mas` and failed.
+    """
+    if explicit:
+        return tuple(explicit)
+    if profile and profile in _PROFILE_PHASES:
+        return _PROFILE_PHASES[profile]
+    return DEFAULT_PHASE_ORDER
 from ...orchestrator.sidecar_io import (
     SidecarReadError,
     list_run_sidecars,
@@ -74,7 +110,7 @@ async def create_run(req: RunRequest, request: Request) -> RunResponse:
             adapter,
             run_info,
             host,
-            phases=req.phases if req.phases else DEFAULT_PHASE_ORDER,
+            phases=_phases_for_request(req.phases, req.profile),
             categories=req.categories,
             base_dir=runs_dir,
             stop_on_failure=req.stop_on_failure,
@@ -301,7 +337,7 @@ async def create_run_async(req: RunRequest, request: Request) -> dict:
         run=run_info,
         host=host,
         base_dir=runs_dir,
-        phases=req.phases if req.phases else DEFAULT_PHASE_ORDER,
+        phases=_phases_for_request(req.phases, req.profile),
         categories=req.categories,
         stop_on_failure=req.stop_on_failure,
         item_filter=req.item_filter,
