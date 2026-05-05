@@ -137,6 +137,20 @@ _filter_match() {
 # Global flag: set to 1 if any item fails (processing continues regardless).
 ANY_FAILED=0
 
+# Live-stream progress accounting (consumed by the SSE endpoint).
+TOTAL_ITEMS=0
+CURRENT_INDEX=0
+
+# Pre-compute total count for accurate ``pct`` in the PROGRESS sentinels.
+_count_targets() {
+    local _feed="$1"
+    ascendo_brew_parse_outdated "$TMP_OUTDATED" "$_feed" 2>/dev/null \
+        | awk -F',' 'NF >= 1 && length($1) > 0 { c++ } END { print c+0 }'
+}
+_FORMULA_COUNT="$(_count_targets formula)"
+_CASK_COUNT="$(_count_targets cask)"
+TOTAL_ITEMS="$(( _FORMULA_COUNT + _CASK_COUNT ))"
+
 # _apply_one <id> <current> <target> <feed>
 # feed: "formula" or "cask"
 _apply_one() {
@@ -157,6 +171,15 @@ _apply_one() {
     fi
 
     # -- real path -------------------------------------------------------------
+
+    # Live-stream: bump progress and announce the current package.
+    CURRENT_INDEX=$(( CURRENT_INDEX + 1 ))
+    local _pct=0
+    if [ "$TOTAL_ITEMS" -gt 0 ]; then
+        _pct=$(( CURRENT_INDEX * 100 / TOTAL_ITEMS ))
+    fi
+    _stream_progress "$_pct" "upgrading $_id ($_feed) $_current -> $_target"
+    _stream_emit ">>> upgrading $_id ($_feed) $_current -> $_target"
 
     # Gracefully quit running cask apps before upgrade.
     # Only for casks (formulae are CLI tools, no GUI app to quit).
@@ -182,9 +205,12 @@ _apply_one() {
             ;;
     esac
 
-    # Run brew upgrade. Capture exit code; do NOT abort the loop on failure.
+    # Run brew upgrade. Tee output through _stream_tee so the dashboard
+    # sees every download/install line in real time.
+    # PIPESTATUS[0] preserves brew's exit code despite the tee pipeline.
     local _brew_exit=0
-    brew upgrade "$_brew_flag" "$_id" >/dev/null 2>&1 || _brew_exit=$?
+    brew upgrade "$_brew_flag" "$_id" 2>&1 | _stream_tee >/dev/null
+    _brew_exit="${PIPESTATUS[0]:-0}"
 
     if [ "$_brew_exit" -eq 0 ]; then
         # Resolve the version actually installed post-upgrade.
@@ -203,6 +229,11 @@ _apply_one() {
     fi
 }
 
+# Announce overall start (no pct yet; lets the SPA show the bar at 0%).
+if [ "$DRY_RUN" != "true" ] && [ "$TOTAL_ITEMS" -gt 0 ]; then
+    _stream_progress 0 "brew apply: $TOTAL_ITEMS package(s)"
+fi
+
 # -- iterate outdated formulae then casks --------------------------------------
 while IFS=',' read -r _id _current _target; do
     [ -z "$_id" ] && continue
@@ -213,6 +244,12 @@ while IFS=',' read -r _id _current _target; do
     [ -z "$_id" ] && continue
     _apply_one "$_id" "$_current" "$_target" "cask"
 done < <(ascendo_brew_parse_outdated "$TMP_OUTDATED" "cask" 2>/dev/null || true)
+
+# Final 100% progress so the SPA's bar lands at 100 even if the last
+# item happened to round below.
+if [ "$DRY_RUN" != "true" ] && [ "$TOTAL_ITEMS" -gt 0 ]; then
+    _stream_progress 100 "brew apply: done"
+fi
 
 # -- final exit ----------------------------------------------------------------
 if [ "$ANY_FAILED" -ne 0 ]; then

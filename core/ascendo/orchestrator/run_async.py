@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
 from collections import OrderedDict
 from collections.abc import Iterable, Sequence
@@ -47,6 +48,13 @@ from uuid import UUID
 
 from ..models.run import Phase, RunInfo
 from .runner import RunReport, run_phases
+
+# Convention: per-run streaming log, written to by bash apply scripts via
+# `_stream_tee` (see adapters/<os>/scripts/<source>/apply.sh). The SSE
+# endpoint tails this file and emits ``log_line`` + ``progress`` events
+# so the Run Center can show every line of stdout/stderr in real time.
+STREAM_LOG_FILENAME = "_stream.log"
+STREAM_LOG_ENV_VAR = "ASCENDO_STREAM_LOG"
 
 if TYPE_CHECKING:
     from ..interfaces.adapter import IAdapter
@@ -158,9 +166,27 @@ async def start_run_async(
     """
     state = registry.register(run.id, base_dir=base_dir)
 
+    # Pre-create the per-run dir + an empty stream log so the SSE endpoint
+    # can start tailing immediately, even before the first manager boots.
+    run_dir = base_dir / str(run.id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    stream_log_path = run_dir / STREAM_LOG_FILENAME
+    try:
+        stream_log_path.touch(exist_ok=True)
+    except OSError:
+        # If we can't touch it (read-only disk?), the SSE endpoint just
+        # won't see log_line events — non-fatal.
+        pass
+
     def _worker() -> None:
         state.status = RunStatus.RUNNING
         state.started_at = datetime.now(timezone.utc)
+        # Publish the stream-log path to subprocesses spawned by managers.
+        # Threads share os.environ, so setting it before run_phases lets
+        # any bash script (`apply.sh` etc.) tee its output through
+        # `_stream_tee` if it cooperates. Restored in `finally`.
+        prior_env = os.environ.get(STREAM_LOG_ENV_VAR)
+        os.environ[STREAM_LOG_ENV_VAR] = str(stream_log_path)
         try:
             from .runner import DEFAULT_PHASE_ORDER  # noqa: PLC0415
 
@@ -181,6 +207,10 @@ async def start_run_async(
             state.error = f"{type(exc).__name__}: {exc}"
             state.status = RunStatus.FAILED
         finally:
+            if prior_env is None:
+                os.environ.pop(STREAM_LOG_ENV_VAR, None)
+            else:
+                os.environ[STREAM_LOG_ENV_VAR] = prior_env
             state.finished_at = datetime.now(timezone.utc)
             state._completion_event.set()
 
@@ -192,6 +222,8 @@ async def start_run_async(
 
 
 __all__ = [
+    "STREAM_LOG_ENV_VAR",
+    "STREAM_LOG_FILENAME",
     "RunRegistry",
     "RunState",
     "RunStatus",

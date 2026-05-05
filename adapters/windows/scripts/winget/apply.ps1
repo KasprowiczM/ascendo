@@ -223,7 +223,29 @@ function Invoke-WingetMutation {
     if ($Action -eq 'upgrade') { $argv += '--include-unknown' }
 
     Write-Verbose ("Invoke-WingetMutation: 'winget {0}'" -f ($argv -join ' '))
-    $raw = & winget @argv 2>&1 | Out-String
+
+    # Parity with macOS: when ASCENDO_STREAM_LOG is set (the dashboard's
+    # async run sets it to <run-id>/_stream.log), emit a "currently
+    # processing" marker + tee winget's output line-by-line so the SSE
+    # endpoint shows every download/install line in real time. Falls
+    # back to a single Out-String capture when the env var is unset
+    # (CLI / tests).
+    $streamLog = $env:ASCENDO_STREAM_LOG
+    if ($streamLog) {
+        try {
+            ">>> winget $($argv -join ' ')" | Out-File -FilePath $streamLog -Append -Encoding utf8 -ErrorAction SilentlyContinue
+        } catch { }
+        # Tee-Object preserves the lines on stdout for capture while
+        # appending them to the stream log.
+        $rawLines = & winget @argv 2>&1 | ForEach-Object {
+            $line = $_.ToString()
+            try { $line | Out-File -FilePath $streamLog -Append -Encoding utf8 -ErrorAction SilentlyContinue } catch { }
+            $line
+        }
+        $raw = ($rawLines -join "`n")
+    } else {
+        $raw = & winget @argv 2>&1 | Out-String
+    }
     $code = $LASTEXITCODE
 
     return [pscustomobject]@{

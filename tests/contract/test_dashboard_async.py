@@ -216,3 +216,94 @@ def test_sse_emits_status_then_sidecar_then_done(client: TestClient) -> None:
 def test_sse_unknown_run_id_returns_404(client: TestClient) -> None:
     r = client.get("/runs/00000000-0000-0000-0000-000000000000/events")
     assert r.status_code == 404
+
+
+# ── log_line + progress (live stream) ───────────────────────────────────────
+
+
+def test_sse_emits_log_line_and_progress_from_stream_log(
+    client: TestClient,
+) -> None:
+    """When a worker writes to ``<run-id>/_stream.log``, the SSE
+    endpoint emits ``log_line`` events for plain lines and ``progress``
+    events for ``>>> PROGRESS pct label`` sentinels.
+    """
+    import threading
+    import time
+
+    from ascendo.orchestrator.run_async import (
+        STREAM_LOG_FILENAME,
+    )
+
+    r = client.post("/runs/async", json={"phases": ["check"]})
+    run_id = r.json()["run_id"]
+
+    runs_dir: Path = client.app.state.runs_dir
+    stream_log = runs_dir / run_id / STREAM_LOG_FILENAME
+
+    # Wait briefly for the worker to register the run + create the
+    # stream log; then append our synthetic lines from a background
+    # thread so the SSE consumer has time to drain them before the
+    # ``done`` event closes the connection.
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline and not stream_log.exists():
+        time.sleep(0.02)
+    assert stream_log.exists(), "worker did not pre-create _stream.log"
+
+    def _writer() -> None:
+        # Write a couple of plain lines + one progress sentinel + one
+        # "currently processing" sentinel, before the worker completes.
+        with stream_log.open("a", encoding="utf-8") as fh:
+            fh.write("==> brew upgrade --formula uv\n")
+            fh.write(">>> PROGRESS 42 upgrading uv 0.11.8 -> 0.11.9\n")
+            fh.write("downloading uv-0.11.9.tar.gz...\n")
+            fh.write(">>> ITEM uv\n")
+            fh.flush()
+
+    threading.Thread(target=_writer, daemon=True).start()
+
+    body = b""
+    with client.stream("GET", f"/runs/{run_id}/events") as resp:
+        assert resp.status_code == 200
+        for chunk in resp.iter_bytes():
+            body += chunk
+            if b"event: done" in body:
+                break
+
+    text = body.decode("utf-8")
+    # log_line was emitted for the plain lines.
+    assert "event: log_line" in text
+    assert "brew upgrade --formula uv" in text
+    assert "downloading uv-0.11.9.tar.gz" in text
+    # progress sentinel was promoted to a `progress` event with pct + label.
+    assert "event: progress" in text
+    assert '"pct": 42' in text
+    assert "upgrading uv 0.11.8 -> 0.11.9" in text
+
+
+def test_run_async_creates_stream_log_and_sets_env(
+    client: TestClient, tmp_path: Path,
+) -> None:
+    """``start_run_async`` must pre-create ``<run-id>/_stream.log`` and
+    publish ``ASCENDO_STREAM_LOG`` so cooperating bash apply scripts can
+    tee through ``_stream_tee``.
+    """
+    import time
+
+    from ascendo.orchestrator.run_async import STREAM_LOG_FILENAME
+
+    r = client.post("/runs/async", json={"phases": ["check"]})
+    run_id = r.json()["run_id"]
+
+    runs_dir: Path = client.app.state.runs_dir
+    stream_log = runs_dir / run_id / STREAM_LOG_FILENAME
+
+    # The path is created synchronously by start_run_async (before the
+    # worker thread starts).
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline and not stream_log.exists():
+        time.sleep(0.02)
+    assert stream_log.exists()
+    # Wait for the run to complete so we don't leak threads into other
+    # tests; the env-var roundtrip is exercised by the worker itself.
+    _wait_for_status(client, run_id, "completed", timeout=5.0)

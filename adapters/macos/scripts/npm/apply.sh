@@ -74,15 +74,17 @@ apply_native_node() {
         json_add_item "$_display" "" "" "planned" "npm" "native-node"
         return
     fi
+    _stream_emit ">>> bootstrapping native-node ($_display)"
     # Need an npm to install `n`; if absent, fall back to brew's node so
     # we have an npm at all.
     if [ -z "$NPM_BIN" ] || [ ! -x "$NPM_BIN" ]; then
         if command -v brew >/dev/null 2>&1; then
-            brew install node >/dev/null 2>&1 || {
+            brew install node 2>&1 | _stream_tee >/dev/null
+            if [ "${PIPESTATUS[0]:-1}" -ne 0 ]; then
                 json_add_item "$_display" "" "" "failed" "npm" "native-node"
                 json_add_message "error" "node bootstrap failed (brew install node)"
                 return
-            }
+            fi
             NPM_BIN="$(command -v npm 2>/dev/null)"
         else
             json_add_item "$_display" "" "" "failed" "npm" "native-node"
@@ -91,11 +93,12 @@ apply_native_node() {
         fi
     fi
     # Install `n` to user prefix, then run `n lts` to put node in TOOLCHAIN_HOME.
-    "$NPM_BIN" install -g n >/dev/null 2>&1 || {
+    "$NPM_BIN" install -g n 2>&1 | _stream_tee >/dev/null
+    if [ "${PIPESTATUS[0]:-1}" -ne 0 ]; then
         json_add_item "$_display" "" "" "failed" "npm" "native-node"
         json_add_message "error" "'npm install -g n' failed"
         return
-    }
+    fi
     local _N="$NPM_GLOBAL_PREFIX/bin/n"
     [ -x "$_N" ] || _N="$(command -v n 2>/dev/null)"
     if [ -z "$_N" ] || [ ! -x "$_N" ]; then
@@ -103,11 +106,12 @@ apply_native_node() {
         json_add_message "error" "n CLI not on PATH after install"
         return
     fi
-    N_PREFIX="$(ascendo_npm_n_prefix)" "$_N" lts >/dev/null 2>&1 || {
+    N_PREFIX="$(ascendo_npm_n_prefix)" "$_N" lts 2>&1 | _stream_tee >/dev/null
+    if [ "${PIPESTATUS[0]:-1}" -ne 0 ]; then
         json_add_item "$_display" "" "" "failed" "npm" "native-node"
         json_add_message "error" "'n lts' failed"
         return
-    }
+    fi
     local _new="$(ascendo_npm_node_installed_version)"
     json_add_item "$_display" "$_new" "$_new" "success" "npm" "native-node"
 }
@@ -118,14 +122,17 @@ apply_native_bun() {
         json_add_item "$_display" "" "" "planned" "npm" "native-bun"
         return
     fi
+    _stream_emit ">>> bootstrapping native-bun ($_display)"
     if ! command -v curl >/dev/null 2>&1; then
         json_add_item "$_display" "" "" "failed" "npm" "native-bun"
         json_add_message "error" "curl missing; cannot bootstrap bun"
         return
     fi
-    BUN_INSTALL="$(ascendo_npm_bun_home)" curl -fsSL https://bun.sh/install \
-        | BUN_INSTALL="$(ascendo_npm_bun_home)" bash >/dev/null 2>&1
-    local _rc=$?
+    {
+        BUN_INSTALL="$(ascendo_npm_bun_home)" curl -fsSL https://bun.sh/install \
+            | BUN_INSTALL="$(ascendo_npm_bun_home)" bash 2>&1
+    } | _stream_tee >/dev/null
+    local _rc="${PIPESTATUS[0]:-1}"
     if [ "$_rc" -ne 0 ]; then
         json_add_item "$_display" "" "" "failed" "npm" "native-bun"
         json_add_message "error" "bun install script exited $_rc"
@@ -147,8 +154,9 @@ apply_npm() {
         json_add_message "error" "npm not installed; bootstrap node first ($_display)"
         return
     fi
-    "$NPM_BIN" install -g "$_pkg" >/dev/null 2>&1
-    local _rc=$?
+    _stream_emit ">>> npm install -g $_pkg ($_display)"
+    "$NPM_BIN" install -g "$_pkg" 2>&1 | _stream_tee >/dev/null
+    local _rc="${PIPESTATUS[0]:-1}"
     if [ "$_rc" -ne 0 ]; then
         json_add_item "$_display" "" "" "failed" "npm" "npm"
         json_add_message "error" "'npm install -g $_pkg' exited $_rc"
@@ -158,6 +166,14 @@ apply_npm() {
     json_add_item "$_display" "$_new" "$_new" "success" "npm" "npm"
 }
 
+# Total count for live-stream progress accounting.
+TOTAL_ITEMS="$(ascendo_npm_manifest_lines | awk -F'|' 'NR > 1 && length($1) > 0 { c++ } END { print c+0 }')"
+CURRENT_INDEX=0
+
+if [ "$DRY_RUN" != "true" ] && [ "$TOTAL_ITEMS" -gt 0 ]; then
+    _stream_progress 0 "npm apply: $TOTAL_ITEMS item(s)"
+fi
+
 # -- walk manifest ------------------------------------------------------------
 # Process substitution (not `manifest | while`) — see check.sh for the
 # bug class this avoids.
@@ -165,6 +181,14 @@ while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
     [ "$DISPLAY" = "display_name" ] && continue
     [ -z "$DISPLAY" ] && continue
     in_filter "$DISPLAY" || continue
+    if [ "$DRY_RUN" != "true" ]; then
+        CURRENT_INDEX=$(( CURRENT_INDEX + 1 ))
+        _pct=0
+        if [ "$TOTAL_ITEMS" -gt 0 ]; then
+            _pct=$(( CURRENT_INDEX * 100 / TOTAL_ITEMS ))
+        fi
+        _stream_progress "$_pct" "npm: $DISPLAY ($METHOD)"
+    fi
     case "$METHOD" in
         native-node) apply_native_node "$DISPLAY" ;;
         native-bun)  apply_native_bun  "$DISPLAY" ;;
@@ -172,5 +196,9 @@ while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
         *) json_add_message "warn" "unknown method '$METHOD' for $DISPLAY; skipping" ;;
     esac
 done < <(ascendo_npm_manifest_lines)
+
+if [ "$DRY_RUN" != "true" ] && [ "$TOTAL_ITEMS" -gt 0 ]; then
+    _stream_progress 100 "npm apply: done"
+fi
 
 exit 0

@@ -146,6 +146,17 @@ if [ -z "$TARGET_IDS" ]; then
     exit 0
 fi
 
+# Total count for live-stream progress accounting.
+TOTAL_ITEMS=0
+for _id in $TARGET_IDS; do
+    [ -n "$_id" ] && TOTAL_ITEMS=$(( TOTAL_ITEMS + 1 ))
+done
+CURRENT_INDEX=0
+
+if [ "$TOTAL_ITEMS" -gt 0 ]; then
+    _stream_progress 0 "mas apply: $TOTAL_ITEMS app(s)"
+fi
+
 # Per-id loop when --filter is set; bulk otherwise.
 if [ -n "$FILTER_CSV" ]; then
     for _id in $TARGET_IDS; do
@@ -160,10 +171,17 @@ if [ -n "$FILTER_CSV" ]; then
                     ;;
             esac
         done
-        if _sudo_mas_upgrade "$_id"; then
+        CURRENT_INDEX=$(( CURRENT_INDEX + 1 ))
+        _pct=0
+        if [ "$TOTAL_ITEMS" -gt 0 ]; then
+            _pct=$(( CURRENT_INDEX * 100 / TOTAL_ITEMS ))
+        fi
+        _stream_progress "$_pct" "upgrading mas:$_id $_cur -> $_tgt"
+        _sudo_mas_upgrade "$_id" 2>&1 | _stream_tee >/dev/null
+        _rc="${PIPESTATUS[0]:-0}"
+        if [ "$_rc" -eq 0 ]; then
             json_add_item "$_id" "$_cur" "$_tgt" "success" "mas"
         else
-            _rc=$?
             _status="$(mas_classify_exit "$_rc")"
             json_add_item "$_id" "$_cur" "$_tgt" "$_status" "mas"
             json_add_message "error" "mas upgrade $_id exited $_rc -> $_status"
@@ -171,8 +189,11 @@ if [ -n "$FILTER_CSV" ]; then
     done
 else
     # Bulk: pass all ids to a single sudo invocation
+    _stream_progress 10 "mas upgrade (bulk): $TOTAL_ITEMS app(s)"
     # shellcheck disable=SC2086
-    if _sudo_mas_upgrade $TARGET_IDS; then
+    _sudo_mas_upgrade $TARGET_IDS 2>&1 | _stream_tee >/dev/null
+    _rc="${PIPESTATUS[0]:-0}"
+    if [ "$_rc" -eq 0 ]; then
         for _pair in $TARGET_PAIRS; do
             _id="$(printf '%s' "$_pair" | awk -F'|' '{print $1}')"
             _cur="$(printf '%s' "$_pair" | awk -F'|' '{print $2}')"
@@ -180,7 +201,6 @@ else
             json_add_item "$_id" "$_cur" "$_tgt" "success" "mas"
         done
     else
-        _rc=$?
         _status="$(mas_classify_exit "$_rc")"
         for _pair in $TARGET_PAIRS; do
             _id="$(printf '%s' "$_pair" | awk -F'|' '{print $1}')"
@@ -190,6 +210,10 @@ else
         done
         json_add_message "error" "mas upgrade exited $_rc -> $_status"
     fi
+fi
+
+if [ "$TOTAL_ITEMS" -gt 0 ]; then
+    _stream_progress 100 "mas apply: done"
 fi
 
 exit 0

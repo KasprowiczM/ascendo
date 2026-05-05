@@ -158,10 +158,28 @@
         </div>
         <div class="card">
           <h3 data-i18n="overview.quick">Quick actions</h3>
-          <button data-quick='{"profile":"quick"}' data-i18n="overview.btn_quick">Quick check</button>
-          <button data-quick='{"profile":"safe"}'  data-i18n="overview.btn_safe">Safe update</button>
-          <button data-quick='{"profile":"full"}'  data-i18n="overview.btn_full">Full update</button>
-          <button data-quick='{"profile":"full","dry_run":true}' data-i18n="overview.btn_dry">Full dry-run</button>
+          <button id="action-1-inventory" class="action-numbered"
+                  data-action="inventory"
+                  title="" data-i18n-title="overview.action_1_inventory_hint">
+            <span class="action-chip">1</span>
+            <span class="action-label" data-i18n="overview.action_1_inventory">Build inventory</span>
+          </button>
+          <button class="action-numbered" data-quick='{"profile":"quick"}'
+                  title="" data-i18n-title="overview.action_2_quick_hint">
+            <span class="action-chip">2</span>
+            <span class="action-label" data-i18n="overview.action_2_quick">Quick check</span>
+          </button>
+          <button class="action-numbered" data-quick='{"profile":"safe"}'
+                  title="" data-i18n-title="overview.action_3_safe_hint">
+            <span class="action-chip">3</span>
+            <span class="action-label" data-i18n="overview.action_3_safe">Safe update</span>
+          </button>
+          <button class="action-numbered" data-quick='{"profile":"full"}'
+                  title="" data-i18n-title="overview.action_4_full_hint">
+            <span class="action-chip">4</span>
+            <span class="action-label" data-i18n="overview.action_4_full">Full update</span>
+          </button>
+          <button class="secondary" data-quick='{"profile":"full","dry_run":true}' data-i18n="overview.btn_dry">Full dry-run</button>
           <button data-quick='{"profile":"full","extra_args":["--nvidia"]}' data-icon-prefix="nvidia" class="btn-nvidia adapter-only-linux adapter-only-windows" title="Apply NVIDIA driver upgrade (held by default)">Update NVIDIA</button>
           <button data-quick='{"only":"drivers","phase":"apply","extra_args":["--nvidia"]}' class="secondary adapter-only-linux adapter-only-windows" title="Apply only the NVIDIA driver category">drivers only · with NVIDIA</button>
         </div>
@@ -220,12 +238,37 @@
         future update; install missing packages with one click.
       </p>
       <div id="apps-summary" class="dim" style="margin-bottom:0.5rem">…</div>
+      <!-- Apps filter bar: search + category chips + status chips -->
+      <div id="apps-filterbar" class="filterbar">
+        <div class="filterbar-row">
+          <input id="apps-search" type="search" autocomplete="off"
+                 placeholder="Search apps…"
+                 data-i18n-attr="placeholder:apps.search_placeholder" />
+          <button id="apps-clear-filters" type="button" class="secondary"
+                  data-i18n="apps.clear_filters">Clear filters</button>
+        </div>
+        <div class="filterbar-row">
+          <span class="filterbar-label" data-i18n="apps.filter_status">Status:</span>
+          <div id="apps-status-chips" class="chip-row" role="group"
+               aria-label="Status filter"></div>
+        </div>
+        <div class="filterbar-row">
+          <span class="filterbar-label" data-i18n="apps.filter_category">Category:</span>
+          <div id="apps-category-chips" class="chip-row" role="group"
+               aria-label="Category filter"></div>
+        </div>
+      </div>
       <div id="apps-table-wrap">…</div>
     </section>
 
     <!-- Categories -->
     <section id="view-categories" class="view hidden">
-      <h2 data-i18n="categories.title">Categories</h2>
+      <h2 style="display:flex;align-items:center;gap:0.5rem">
+        <span data-i18n="categories.title">Categories</span>
+        <button id="categories-refresh-btn" class="secondary"
+                style="margin-left:auto;font-size:0.8rem"
+                data-i18n="categories.refresh">Refresh</button>
+      </h2>
       <section class="tab-help card" style="margin-bottom:1rem">
         <p data-i18n="categories.help_summary"></p>
         <details style="margin-top:0.5rem">
@@ -311,6 +354,30 @@
         <div class="run-progress-bar"><div class="run-progress-fill"></div></div>
         <div class="run-progress-recent"></div>
       </div>
+      <!--
+        Stream box: overall progress bar + "currently processing"
+        + a terminal-style log that tails every stdout/stderr line from
+        the apply scripts in real time. Fed by SSE `progress` and
+        `log_line` events; the bash side (apply.sh) opts in via the
+        `_stream_tee` helper.
+      -->
+      <section id="run-stream" class="run-stream hidden" aria-live="polite">
+        <div class="run-stream-head">
+          <div class="run-stream-progress">
+            <div class="run-stream-progress-label">
+              <span data-i18n="run.stream.live">Live</span>
+              <span id="run-stream-pct" class="dim">0%</span>
+            </div>
+            <div class="run-stream-bar">
+              <div id="run-stream-bar-fill" class="run-stream-bar-fill"></div>
+            </div>
+          </div>
+          <div id="run-stream-current" class="run-stream-current dim">
+            <span data-i18n="run.stream.idle">waiting for output…</span>
+          </div>
+        </div>
+        <pre id="run-stream-log" class="run-stream-log" tabindex="0"></pre>
+      </section>
       <!--
         Live detail panel — appears below the per-phase summary cards above.
         The summary card is the at-a-glance "general step on green" view; this
@@ -401,11 +468,7 @@
 
     <!-- Logs -->
     <section id="view-logs" class="view hidden">
-      <h2 style="display:flex;align-items:center;gap:0.5rem">
-        <span data-i18n="logs.title">Logs</span>
-        <select id="logs-run-select" style="margin-left:auto;font-size:0.85rem;min-width:18rem"></select>
-        <button id="logs-refresh-btn" class="secondary" style="font-size:0.8rem">Refresh</button>
-      </h2>
+      <h2 data-i18n="logs.title">Logs</h2>
       <section class="tab-help card" style="margin-bottom:1rem">
         <p data-i18n="logs.help_summary"></p>
         <details style="margin-top:0.5rem">
@@ -418,12 +481,24 @@
           </ul>
         </details>
       </section>
-      <p class="dim" data-i18n="logs.hint_intro">
-        Pick a run from the dropdown above to inspect every phase. Click a phase
-        row for the full plain-text log; click the JSON link to see the sidecar.
+      <!-- Run picker — own row so it does not hide behind the topbar floating
+           capsule (lang/theme/font switchers, top-right on desktop). -->
+      <div class="logs-picker">
+        <label for="logs-run-select" class="logs-picker-label"
+               data-i18n="logs.pick_run">Pick a run</label>
+        <select id="logs-run-select" class="logs-picker-select"></select>
+        <button id="logs-refresh-btn" class="secondary"
+                style="font-size:0.8rem" data-i18n="categories.refresh">Refresh</button>
+      </div>
+      <p class="dim" data-i18n="logs.pick_run_hint">
+        Select a run from the dropdown to inspect every phase.
       </p>
       <div id="run-detail">
-        <p class="dim" data-i18n="logs.no_pick">Select a run above.</p>
+        <div class="logs-empty card">
+          <p class="dim" data-i18n="logs.empty_state">
+            Select a run from the dropdown above to view its logs.
+          </p>
+        </div>
       </div>
       <h3 style="margin-top:1rem" data-i18n="logs.viewer_title">Phase log</h3>
       <pre id="phase-log-viewer" style="height:40vh;overflow:auto;background:#08090d;color:#cdd2e0;padding:0.7rem;border-radius:8px;font-family:var(--mono);font-size:12px;white-space:pre-wrap"></pre>
@@ -566,33 +641,73 @@
       <p class="dim" data-i18n="suggest.ai_hint">
         Optional. Configure an LLM provider to enrich rule-based suggestions.
       </p>
-      <form id="ai-form" class="grid">
-        <label><span data-i18n="suggest.ai_provider">Provider</span>
-          <select name="ai_provider">
-            <option value="">(disabled)</option>
-            <option value="anthropic">Anthropic (Claude)</option>
-            <option value="openai">OpenAI</option>
-            <option value="gemini">Google Gemini</option>
-            <option value="ollama">Ollama (local)</option>
-            <option value="lmstudio">LM Studio (local)</option>
-            <option value="openai_compat">Other OpenAI-compatible (vLLM, llama.cpp, OpenRouter…)</option>
-          </select>
-        </label>
-        <label><span data-i18n="suggest.ai_apikey">API key</span>
-          <input type="password" name="ai_api_key" autocomplete="off" placeholder="(blank for local providers)" />
-        </label>
-        <label><span data-i18n="suggest.ai_model">Model</span>
-          <input type="text" name="ai_model" placeholder="claude-haiku-4-5 / gpt-4o-mini / gemini-1.5-flash / llama3" />
-        </label>
-        <label><span data-i18n="suggest.ai_baseurl">Base URL</span>
-          <input type="text" name="ai_base_url" placeholder="(optional) http://127.0.0.1:11434 for ollama, http://127.0.0.1:1234/v1 for LM Studio" autocomplete="off" />
-        </label>
-        <div style="display:flex;gap:0.4rem;align-items:end;flex-wrap:wrap">
-          <button type="submit" data-i18n="suggest.ai_save">Save AI settings</button>
-          <button type="button" id="ai-test-btn" class="secondary" data-i18n="suggest.ai_test">Test connection</button>
-        </div>
-      </form>
-      <pre id="ai-output" class="dim"></pre>
+
+      <!-- 3-step AI wizard ============================================== -->
+      <div id="ai-wizard" class="ai-wizard">
+        <ol class="ai-stepper" aria-label="AI provider wizard steps">
+          <li id="ai-step-tab-1" class="ai-step active" data-step="1">
+            <span class="ai-step-num">1</span>
+            <span class="ai-step-label" data-i18n="suggest.wiz.step1">Provider</span>
+          </li>
+          <li id="ai-step-tab-2" class="ai-step" data-step="2">
+            <span class="ai-step-num">2</span>
+            <span class="ai-step-label" data-i18n="suggest.wiz.step2">Connect</span>
+          </li>
+          <li id="ai-step-tab-3" class="ai-step" data-step="3">
+            <span class="ai-step-num">3</span>
+            <span class="ai-step-label" data-i18n="suggest.wiz.step3">Model</span>
+          </li>
+        </ol>
+
+        <section id="ai-step-1" class="ai-step-panel" data-step="1">
+          <p class="dim" data-i18n="suggest.wiz.step1_hint">
+            Pick an LLM provider. Cloud providers need an API key; local providers need a base URL.
+          </p>
+          <div id="ai-provider-grid" class="ai-provider-grid"></div>
+          <div class="ai-step-actions">
+            <button type="button" id="ai-step1-next" disabled
+                    data-i18n="suggest.wiz.next">Next</button>
+          </div>
+        </section>
+
+        <section id="ai-step-2" class="ai-step-panel hidden" data-step="2">
+          <p class="dim" id="ai-step2-hint" data-i18n="suggest.wiz.step2_hint">
+            Enter your API key, then click Test connection.
+          </p>
+          <form id="ai-connect-form" class="ai-connect-form" autocomplete="off">
+            <label id="ai-apikey-row">
+              <span data-i18n="suggest.ai_apikey">API key</span>
+              <input type="password" name="ai_api_key" autocomplete="off" />
+            </label>
+            <label id="ai-baseurl-row" class="hidden">
+              <span data-i18n="suggest.ai_baseurl">Base URL</span>
+              <input type="text" name="ai_base_url" autocomplete="off" />
+            </label>
+          </form>
+          <pre id="ai-test-output" class="dim ai-test-output"></pre>
+          <div class="ai-step-actions">
+            <button type="button" id="ai-step2-back" class="secondary"
+                    data-i18n="suggest.wiz.back">Back</button>
+            <button type="button" id="ai-step2-test"
+                    data-i18n="suggest.wiz.test">Test connection</button>
+          </div>
+        </section>
+
+        <section id="ai-step-3" class="ai-step-panel hidden" data-step="3">
+          <p class="dim" data-i18n="suggest.wiz.step3_hint">Pick a model and save.</p>
+          <label class="ai-model-row">
+            <span data-i18n="suggest.ai_model">Model</span>
+            <select id="ai-model-select"></select>
+          </label>
+          <pre id="ai-save-output" class="dim ai-test-output"></pre>
+          <div class="ai-step-actions">
+            <button type="button" id="ai-step3-back" class="secondary"
+                    data-i18n="suggest.wiz.back">Back</button>
+            <button type="button" id="ai-step3-save"
+                    data-i18n="suggest.wiz.save">Save settings</button>
+          </div>
+        </section>
+      </div>
     </section>
 
     <!-- Hosts -->

@@ -232,15 +232,27 @@ fi
 json_save "$OUTPUT_DIR"
 JSON_FINALIZED=1
 
-# 5. Invoke sudo. tee both stdout + stderr to a log file alongside the sidecar.
+# 5. Invoke sudo. tee both stdout + stderr to a log file alongside the sidecar
+#    AND through _stream_tee so the dashboard SSE endpoint sees every line in
+#    real time.
 mkdir -p "$OUTPUT_DIR/$RUN_ID" 2>/dev/null || true
 _log_path="$OUTPUT_DIR/$RUN_ID/apply__softwareupdate.log"
+
+_total_labels=0
+for _pair in $TARGET_PAIRS; do
+    _total_labels=$(( _total_labels + 1 ))
+done
+if [ "$_total_labels" -gt 0 ]; then
+    _stream_progress 5 "softwareupdate apply: $_total_labels update(s)"
+fi
+_stream_emit ">>> sudo softwareupdate $SU_ARGV"
 
 # Word-splitting on $SU_ARGV is intentional + safe — values are controlled
 # (literal flags + filter label which we sanitize to a single word).
 # shellcheck disable=SC2086
-_sudo_softwareupdate $SU_ARGV 2>&1 | tee -a "$_log_path"
+_sudo_softwareupdate $SU_ARGV 2>&1 | tee -a "$_log_path" | _stream_tee >/dev/null
 _RC="${PIPESTATUS[0]}"
+_stream_progress 100 "softwareupdate apply: done (rc=$_RC)"
 
 # 6. Post-apply reconciliation: re-init buffer + re-emit items with true
 #    status (success on RC=0, failed otherwise), then overwrite the sidecar.

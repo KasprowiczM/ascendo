@@ -515,9 +515,14 @@ async def stream_run_events(run_id: UUID, request: Request):
         import asyncio
         import json as _json
 
+        from ...orchestrator.run_async import STREAM_LOG_FILENAME
+
         seen: set[str] = set()
         # Per-log-file byte offset so we only stream NEW lines on each
         # poll cycle (not the whole file every 500 ms). Key = log path.
+        # Per-request bookkeeping — every connected client gets its own
+        # offsets so two browsers can stream the same run without
+        # cross-talk or skipped lines.
         log_offsets: dict[str, int] = {}
         # Initial status event.
         yield _sse("status", {"status": state.status.value, "run_id": str(run_id)})
@@ -537,14 +542,20 @@ async def stream_run_events(run_id: UUID, request: Request):
                     except SidecarReadError as exc:
                         yield _sse("sidecar_error", {"path": str(path), "error": str(exc)})
 
-                # NEW: tail any phase log files (.log) the manager wrote
-                # alongside its sidecars — winget's apply phase streams
-                # download bars + "Successfully installed" lines into
-                # <run-id>/<phase>__<source>.log via Popen + line read.
-                # Emit each new chunk as a 'log' SSE event; the SPA's
-                # raw event log already listens for these.
+                # Tail two kinds of log files:
+                #   1. ``_stream.log`` — the per-run aggregate written
+                #      by every cooperating apply.sh through ``_stream_tee``.
+                #      Carries every stdout/stderr line from brew, sudo,
+                #      mas, npm, softwareupdate, plus PROGRESS sentinels.
+                #   2. ``<phase>__<source>.log`` — per-phase logs the
+                #      managers may write directly (older convention,
+                #      kept for backward compat with winget's apply path).
                 try:
-                    log_files = sorted(run_dir.glob("*.log"))
+                    log_files: list[Path] = []
+                    stream_log = run_dir / STREAM_LOG_FILENAME
+                    if stream_log.is_file():
+                        log_files.append(stream_log)
+                    log_files.extend(sorted(run_dir.glob("*.log")))
                 except OSError:
                     log_files = []
                 for log_path in log_files:
@@ -563,16 +574,45 @@ async def stream_run_events(run_id: UUID, request: Request):
                         continue
                     log_offsets[str(log_path)] = size
                     text = chunk.decode("utf-8", errors="replace")
+                    is_stream = log_path.name == STREAM_LOG_FILENAME
                     # Stream line by line so the SPA can append per-line
                     # without re-parsing a multi-line blob.
                     for raw_line in text.splitlines():
                         line = raw_line.rstrip("\r")
                         if not line:
                             continue
-                        yield _sse("log", {
-                            "source": log_path.stem,  # e.g. "apply__winget"
-                            "line": line,
-                        })
+                        # Bash apply scripts emit progress sentinels of
+                        # the form ``>>> PROGRESS <pct> <label>`` (or
+                        # ``>>> ITEM <label>``) into the stream log. Lift
+                        # those to first-class events so the frontend can
+                        # update the progress bar without parsing log
+                        # lines twice.
+                        if is_stream and line.startswith(">>> PROGRESS "):
+                            payload = _parse_progress(line)
+                            if payload is not None:
+                                yield _sse("progress", payload)
+                                continue
+                        if is_stream and line.startswith(">>> ITEM "):
+                            label = line[len(">>> ITEM "):].strip()
+                            if label:
+                                yield _sse("progress", {
+                                    "label": label,
+                                    "pct": None,
+                                })
+                                continue
+                        # log_line for the new aggregate stream;
+                        # legacy ``log`` event for the per-phase logs so
+                        # the existing SPA handler keeps working.
+                        if is_stream:
+                            yield _sse("log_line", {
+                                "line": line,
+                                "stream": "stream",
+                            })
+                        else:
+                            yield _sse("log", {
+                                "source": log_path.stem,  # e.g. "apply__winget"
+                                "line": line,
+                            })
             if state.status in (RunStatus.COMPLETED, RunStatus.FAILED):
                 yield _sse("done", {
                     "status": state.status.value,
@@ -593,3 +633,28 @@ def _sse(event: str, data: object) -> bytes:
     import json as _json
     payload = _json.dumps(data, default=str)
     return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
+
+
+def _parse_progress(line: str) -> dict | None:
+    """Parse a ``>>> PROGRESS <pct> <label>`` sentinel line.
+
+    Returns ``{"pct": int, "label": str}`` or ``None`` if the line
+    doesn't follow the convention.
+
+    The bash side emits these from cooperating apply.sh scripts whenever
+    they start a new per-package operation. The percentage is computed
+    on the bash side as ``current_index / total_count * 100``; the label
+    is a free-form short description (e.g. ``upgrading uv 0.11.8 -> 0.11.9``).
+    """
+    body = line[len(">>> PROGRESS "):].strip()
+    if not body:
+        return None
+    parts = body.split(None, 1)
+    pct_raw = parts[0]
+    try:
+        pct = int(pct_raw)
+    except (TypeError, ValueError):
+        return None
+    label = parts[1] if len(parts) > 1 else ""
+    pct = max(0, min(100, pct))
+    return {"pct": pct, "label": label}

@@ -165,3 +165,61 @@ json_save_on_exit() {
     fi
     return "$_rc"
 }
+
+# =============================================================================
+# Live-stream helpers (consumed by the dashboard SSE endpoint).
+# =============================================================================
+# When a phase script runs under ``ascendo dashboard`` (or any wrapper
+# that exports $ASCENDO_STREAM_LOG), every apply mutation should be piped
+# through ``_stream_tee`` so the SSE endpoint can show every line of
+# stdout/stderr in the Run Center as it happens.
+#
+# Convention is best-effort: if $ASCENDO_STREAM_LOG is unset (CLI runs,
+# unit tests, plain bash invocation), tee becomes a no-op (cat) and
+# nothing is logged.
+#
+# Usage from inside an apply.sh:
+#     brew upgrade --formula foo 2>&1 | _stream_tee
+#     sudo -A softwareupdate -ir -R --verbose 2>&1 | _stream_tee
+#     sudo -A mas upgrade $TARGET_IDS 2>&1 | _stream_tee
+#
+# The exit code of the original command is preserved via PIPESTATUS[0]
+# (caller is responsible for reading it after the pipeline).
+# =============================================================================
+
+# _stream_tee — append every stdin line to $ASCENDO_STREAM_LOG and pass through.
+# If $ASCENDO_STREAM_LOG is unset/empty, behaves like ``cat`` (no-op pipe).
+_stream_tee() {
+    if [ -n "${ASCENDO_STREAM_LOG:-}" ]; then
+        # Best-effort: even if the file ends up unwritable (race on disk
+        # full / log rotated), we keep the pipeline producing output.
+        tee -a "$ASCENDO_STREAM_LOG" 2>/dev/null || cat
+    else
+        cat
+    fi
+}
+
+# _stream_emit <line>  — write a single sentinel/marker line into the
+#   stream log. Used for per-package "currently processing" markers and
+#   ``>>> PROGRESS <pct> <label>`` sentinels that the SSE endpoint
+#   promotes to first-class ``progress`` events.
+_stream_emit() {
+    if [ -n "${ASCENDO_STREAM_LOG:-}" ]; then
+        printf '%s\n' "$*" >> "$ASCENDO_STREAM_LOG" 2>/dev/null || true
+    fi
+}
+
+# _stream_progress <pct> <label> — emit a ``>>> PROGRESS <pct> <label>``
+#   sentinel. <pct> should be in [0, 100]; <label> is free text.
+_stream_progress() {
+    local _pct="${1:-0}"
+    shift 2>/dev/null || true
+    local _label="$*"
+    _stream_emit ">>> PROGRESS $_pct $_label"
+}
+
+# _stream_item <label> — emit a ``>>> ITEM <label>`` sentinel for the
+#   "currently processing" indicator (no percentage).
+_stream_item() {
+    _stream_emit ">>> ITEM $*"
+}

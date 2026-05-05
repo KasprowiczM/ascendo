@@ -25,6 +25,68 @@ const api = {
   },
 };
 
+// ---------------------------------------------------------------------
+// frontendCache — session-scoped read-through cache for slow scans.
+// The user complaint: re-scanning every time we switch back to Overview
+// or expand Categories is annoying. Keep results in module memory until
+// (a) the explicit Refresh button is clicked, or (b) a run completes
+// and ui.invalidateCaches() runs. Reload of the page also clears it
+// (cache is in JS heap; not persisted in localStorage). Keying by
+// adapter+os means a different machine reachable via the same dashboard
+// URL never picks up a cached payload from elsewhere.
+// ---------------------------------------------------------------------
+const frontendCache = {
+  _store: new Map(),
+  _key(path) {
+    const adapter = (window.ADAPTER_NAME || "unknown");
+    const os = (document.documentElement.dataset.platform || "");
+    return adapter + ":" + os + ":" + path;
+  },
+  async get(path, opts) {
+    opts = opts || {};
+    const key = this._key(path);
+    if (!opts.refresh && this._store.has(key)) {
+      return this._store.get(key);
+    }
+    const value = await api.get(path);
+    this._store.set(key, value);
+    return value;
+  },
+  set(path, value) {
+    this._store.set(this._key(path), value);
+  },
+  invalidate(path) {
+    if (!path) { this._store.clear(); return; }
+    for (const k of Array.from(this._store.keys())) {
+      if (k.endsWith(":" + path)) this._store.delete(k);
+    }
+  },
+  invalidatePrefix(prefix) {
+    for (const k of Array.from(this._store.keys())) {
+      const idx2 = k.indexOf(":", k.indexOf(":") + 1);
+      const tail = idx2 >= 0 ? k.slice(idx2 + 1) : k;
+      if (tail.startsWith(prefix)) this._store.delete(k);
+    }
+  },
+  clear() { this._store.clear(); },
+};
+window.frontendCache = frontendCache;
+
+// Mark a button as "refreshing" + run an async op, then unmark. Lets every
+// Refresh-button binding share spinner UX without copy-pasting try/finally.
+async function runWithRefreshSpinner(btn, fn) {
+  if (!btn) return await fn();
+  const wasDisabled = btn.disabled;
+  btn.classList.add("is-refreshing");
+  btn.disabled = true;
+  try {
+    return await fn();
+  } finally {
+    btn.classList.remove("is-refreshing");
+    btn.disabled = wasDisabled;
+  }
+}
+
 // -- sudo modal --------------------------------------------------------------
 const sudoMgr = {
   pending: null,  // resolve() of in-flight prompt
@@ -46,6 +108,19 @@ const sudoMgr = {
     }
     sudoMgr.refreshIndicator();
   },
+  // Adapter detection — fall through to the html[data-adapter] attribute
+  // so the very first paint (before /version resolves) still uses the
+  // right wording on macOS + Linux. Windows is the i18n default so missing
+  // detection is benign there.
+  _adapter() {
+    return (window.ADAPTER_NAME
+            || document.documentElement.dataset.adapter
+            || "unknown").toLowerCase();
+  },
+  _isUnix() {
+    const a = this._adapter();
+    return a === "macos" || a === "ubuntu" || a === "linux";
+  },
   async refreshIndicator() {
     try {
       const s = await api.get("/sudo/status");
@@ -55,30 +130,23 @@ const sudoMgr = {
       ind.textContent = "";
       const span = document.createElement("span");
       span.className = "badge " + (s.cached ? "ok" : "warn");
-      // Adapter-aware wording: macOS + Linux say "sudo", Windows says
-      // "Administrator". On Unix-like adapters we override the i18n
-      // string (which is Windows-flavored by default) with the sudo
-      // wording; on Windows we keep the legacy translation path.
-      const isUnix = window.ADAPTER_NAME === "macos"
-                  || window.ADAPTER_NAME === "ubuntu"
-                  || window.ADAPTER_NAME === "linux";
-      if (isUnix) {
-        span.textContent = s.cached ? "sudo cached" : "sudo not cached";
-      } else {
-        span.textContent = s.cached
-          ? ((window.tr && window.tr("sudo.cached")) || "Administrator authorized")
-          : ((window.tr && window.tr("sudo.not_cached")) || "Administrator not authorized");
-      }
+      // Adapter-aware wording. macOS + Linux say "sudo cached / not cached";
+      // Windows says "Administrator authorized / not authorized". The
+      // dedicated elevation.* namespace is the source of truth — sudo.*
+      // is preserved for legacy callers but the indicator text is what
+      // users see, so it gets the per-adapter copy.
+      const a = this._adapter();
+      const key = a === "macos" || a === "ubuntu" || a === "linux"
+        ? (s.cached ? "elevation.sudo_active" : "elevation.sudo_not_active")
+        : (s.cached ? "elevation.admin_authorized" : "elevation.admin_not_active");
+      span.textContent = (window.tr && window.tr(key)) || key;
       ind.appendChild(span);
     } catch {}
   },
   async ensure() {
     const s = await api.get("/sudo/status");
     if (s.cached) return true;
-    const isUnix = window.ADAPTER_NAME === "macos"
-                || window.ADAPTER_NAME === "ubuntu"
-                || window.ADAPTER_NAME === "linux";
-    const fallback = isUnix
+    const fallback = this._isUnix()
       ? "sudo credentials needed — enter your password to authenticate."
       : "Administrator credentials needed — enter your password to authenticate.";
     const prompt = (window.tr && window.tr("sudo.empty_prompt")) || fallback;
@@ -220,15 +288,37 @@ const ui = {
     // Called after a run completes or when the user hits "Refresh".
     ui._loaded = {};
     window.INV_SUMMARY = null;
+    frontendCache.clear();
   },
 
   async maybeShowWizard() {
+    // Two independent conditions can fire the wizard:
+    //   (a) the backend's onboarding.json says onboarded=false (fresh install,
+    //       or wizard skipped without saving), OR
+    //   (b) the user has never picked a language (localStorage.ui-locale
+    //       and ui-language both missing). This catches the case where a
+    //       previous install completed onboarding but the user wiped the
+    //       browser profile / cookies / opened the dashboard from a new
+    //       browser — the operator complaint that "language wizard is not
+    //       showing now during the first run" was exactly this.
+    let needsWizard = false;
+    let langPicked = false;
+    try {
+      langPicked = !!(localStorage.getItem("ui-locale")
+                   || localStorage.getItem("ui-language")
+                   || localStorage.getItem("ascendo_lang"));
+    } catch {}
     try {
       const s = await api.get("/onboarding/state");
-      if (s.onboarded) return;
-      // Initialise the step-router state machine before showing the modal.
-      ui.wizard.start();
-    } catch {}
+      if (!s.onboarded) needsWizard = true;
+    } catch {
+      // If the endpoint is unreachable on a fresh install, default to
+      // showing the wizard — better than silently swallowing the first run.
+      needsWizard = true;
+    }
+    if (!langPicked) needsWizard = true;
+    if (!needsWizard) return;
+    ui.wizard.start();
   },
 
   // Step-router for the 6-step Windows first-run wizard.
@@ -414,6 +504,9 @@ const ui = {
           this.state.language = val;
           window.UI_LANG = val;
           try { window.applyI18n(); } catch {}
+          // Persist immediately so reload + maybeShowWizard sees the
+          // language as picked and doesn't re-prompt.
+          try { localStorage.setItem("ui-locale", val); } catch {}
           this.saveScratch();
           // Re-render so all step copy switches language live.
           this.render();
@@ -964,6 +1057,12 @@ const ui = {
         skipped: !!skip,
         step: this.currentIdx + 1,
       };
+      // Persist language locally too so a fresh load doesn't re-prompt
+      // even before /onboarding/state has been written.
+      try {
+        localStorage.setItem("ui-locale", choices.language);
+        localStorage.setItem("ui-theme",  choices.theme);
+      } catch {}
       try {
         await api.post("/onboarding/complete", choices);
       } catch (e) { console.warn("wizard finalize:", e); }
@@ -1222,7 +1321,9 @@ const ui = {
       </p>`;
   },
 
-  async loadApps() {
+  async loadApps(opts) {
+    opts = opts || {};
+    const refresh = !!opts.refresh;
     // Default-include model (per resident operator's spec, 2026-05-03):
     // every detected app is in_config by default; user opts OUT per app
     // by toggling the "In config" checkbox (POST /apps/exclude). The
@@ -1230,15 +1331,18 @@ const ui = {
     const wrap = $("#apps-table-wrap");
     const summary = $("#apps-summary");
     if (!wrap) return;
-    wrap.textContent = "";
-    const spinner = document.createElement("span");
-    spinner.className = "spinner";
-    wrap.appendChild(spinner);
-    wrap.appendChild(document.createTextNode(" " + (tr("overview.scanning") || "Scanning…")));
-    if (summary) summary.textContent = "";
+    const cached = !refresh && frontendCache._store.has(frontendCache._key("/apps/detect"));
+    if (!cached) {
+      wrap.textContent = "";
+      const spinner = document.createElement("span");
+      spinner.className = "spinner";
+      wrap.appendChild(spinner);
+      wrap.appendChild(document.createTextNode(" " + (tr("overview.scanning") || "Scanning…")));
+      if (summary) summary.textContent = "";
+    }
 
     try {
-      const data = await api.get("/apps/detect");
+      const data = await frontendCache.get("/apps/detect", { refresh });
       const apps = data.apps || [];
       const sum = data.summary || {total: 0, tracked: 0, excluded: 0, missing: 0};
 
@@ -1402,13 +1506,20 @@ const ui = {
     ui._loaded.apps = false; ui.show("apps");
   },
 
-  async loadInventoryDashboard() {
+  async loadInventoryDashboard(opts) {
+    opts = opts || {};
+    const refresh = !!opts.refresh;
     const spin = `<span class="spinner"></span> ${tr("overview.scanning")}`;
-    $("#inv-donut").innerHTML  = spin;
-    $("#inv-bars").innerHTML   = spin;
-    $("#inv-updates").innerHTML = spin;
+    // Only paint the spinner if there is no cached value (so a tab
+    // switch back to Overview re-renders instantly from cache).
+    const haveSummary = window.INV_SUMMARY && !refresh;
+    if (!haveSummary) {
+      $("#inv-donut").innerHTML  = spin;
+      $("#inv-bars").innerHTML   = spin;
+      $("#inv-updates").innerHTML = spin;
+    }
     try {
-      const s = await api.get("/inventory/summary");
+      const s = await frontendCache.get("/inventory/summary", { refresh });
       window.INV_SUMMARY = s;
       ui.renderDonut("inv-donut", [
         { label: "ok",       value: s.totals.ok,       color: "var(--ok)" },
@@ -1418,7 +1529,7 @@ const ui = {
       ui.renderBars("inv-bars", s.categories);
     } catch (e) { $("#inv-donut").textContent = String(e); $("#inv-bars").textContent = ""; }
     try {
-      const all = (await api.get("/inventory")).categories;
+      const all = (await frontendCache.get("/inventory", { refresh })).categories;
       const upd = [];
       for (const [cat, items] of Object.entries(all))
         for (const it of items) if (it.status === "outdated") upd.push({cat, ...it});
@@ -1448,9 +1559,16 @@ const ui = {
     } catch (e) { $("#inv-updates").textContent = String(e); }
   },
 
-  async loadCategories() {
-    const cats = (await api.get("/categories")).categories;
-    const summary = window.INV_SUMMARY || (await api.get("/inventory/summary").catch(()=>({categories:{}})));
+  async loadCategories(opts) {
+    opts = opts || {};
+    const refresh = !!opts.refresh;
+    const cats = (await frontendCache.get("/categories", { refresh })).categories;
+    let summary = window.INV_SUMMARY;
+    if (refresh || !summary) {
+      try {
+        summary = await frontendCache.get("/inventory/summary", { refresh });
+      } catch { summary = { categories: {} }; }
+    }
     window.INV_SUMMARY = summary;
     const tb = $("#cats-table tbody");
     tb.innerHTML = "";
@@ -1528,15 +1646,24 @@ const ui = {
     }));
   },
 
-  async loadCategoryDetail(cat) {
+  async loadCategoryDetail(cat, opts) {
+    opts = opts || {};
+    const refresh = !!opts.refresh;
     const target = $("#cat-detail-" + cat);
-    target.innerHTML = `<span class="spinner"></span> ${tr("overview.scanning")}`;
+    // Only paint the spinner when we will actually fetch — a cached hit
+    // re-renders synchronously without the "scanning…" flash.
+    const path = `/inventory/${encodeURIComponent(cat)}`;
+    const cached = !refresh && frontendCache._store.has(frontendCache._key(path));
+    if (!cached) {
+      target.innerHTML = `<span class="spinner"></span> ${tr("overview.scanning")}`;
+    }
     try {
-      // Bust the 60s inventory cache before reading so the row reflects
-      // whatever check sidecar JUST landed (otherwise the user sees the
-      // pre-check state for up to 60s after running check).
-      await api.post(`/inventory/refresh?category=${encodeURIComponent(cat)}`, {}).catch(()=>{});
-      const items = (await api.get(`/inventory/${encodeURIComponent(cat)}`)).items;
+      if (refresh) {
+        // Explicit Refresh: bust the backend's 60s inventory cache so
+        // the row reflects whatever check sidecar JUST landed.
+        await api.post(`/inventory/refresh?category=${encodeURIComponent(cat)}`, {}).catch(()=>{});
+      }
+      const items = (await frontendCache.get(path, { refresh })).items;
       if (!items.length) {
         target.innerHTML = `<p class="dim">${tr("categories.no_items")}</p>`;
         return;
@@ -1876,7 +2003,70 @@ const ui = {
     if (window.runDetail && typeof window.runDetail.reset === "function") {
       window.runDetail.reset(runId);
     }
+    // Reset the terminal-style stream box (the "every line as it
+    // happens" panel above the structured detail panel).
+    const streamBox    = $("#run-stream");
+    const streamLog    = $("#run-stream-log");
+    const streamPct    = $("#run-stream-pct");
+    const streamFill   = $("#run-stream-bar-fill");
+    const streamCur    = $("#run-stream-current");
+    if (streamBox && streamLog && streamFill) {
+      streamBox.classList.add("hidden");
+      streamLog.textContent = "";
+      streamPct.textContent = "0%";
+      streamFill.style.width = "0%";
+      if (streamCur) streamCur.classList.remove("is-active");
+    }
+    // Sticky-bottom autoscroll: if the user scrolls up to read older
+    // output, stop following the tail until they scroll back down.
+    const streamScroll = { stick: true };
+    if (streamLog && !streamLog._scrollWired) {
+      streamLog._scrollWired = true;
+      streamLog.addEventListener("scroll", () => {
+        const nearBottom = streamLog.scrollTop + streamLog.clientHeight
+          >= streamLog.scrollHeight - 6;
+        streamScroll.stick = nearBottom;
+      });
+    }
     const stripAnsi = s => s.replace(/\x1b\[[0-9;]*m/g, "");
+    function classifyLine(s) {
+      const lower = s.toLowerCase();
+      if (s.startsWith(">>> ")) return "marker";
+      if (/\b(error|fatal|failed|panic)\b/.test(lower)) return "err";
+      if (/\b(warn|warning|deprecated)\b/.test(lower)) return "warn";
+      if (/^==>/.test(s) || /\b(success|installed|upgraded|done)\b/.test(lower)) return "info";
+      return "";
+    }
+    function appendStreamLine(rawLine) {
+      if (!streamLog) return;
+      streamBox && streamBox.classList.remove("hidden");
+      const line = stripAnsi(rawLine);
+      const cls = classifyLine(line);
+      const span = document.createElement("span");
+      if (cls) span.className = cls;
+      span.textContent = line + "\n";
+      streamLog.appendChild(span);
+      // Cap to ~2000 lines to keep DOM light on long runs.
+      while (streamLog.childNodes.length > 2000) {
+        streamLog.removeChild(streamLog.firstChild);
+      }
+      if (streamScroll.stick) {
+        streamLog.scrollTop = streamLog.scrollHeight;
+      }
+    }
+    function setStreamProgress(pct, label) {
+      if (!streamBox || !streamFill || !streamPct) return;
+      streamBox.classList.remove("hidden");
+      if (Number.isFinite(pct)) {
+        const clamped = Math.max(0, Math.min(100, pct));
+        streamFill.style.width = clamped + "%";
+        streamPct.textContent = clamped + "%";
+      }
+      if (streamCur && typeof label === "string" && label.length > 0) {
+        streamCur.textContent = label;
+        streamCur.classList.add("is-active");
+      }
+    }
 
     // Parse PROGRESS|... markers emitted by lib/progress.sh + apt awk parser.
     function handleMarker(line) {
@@ -1951,10 +2141,31 @@ const ui = {
       ui.status(`run ${runId} ${status}${ms ? ` (${(ms/1000).toFixed(1)}s)` : ""}`);
       const stopBtn = $("#stop-btn"); if (stopBtn) stopBtn.disabled = true;
       fill.style.width = "100%"; es.close();
+      // Lock the live stream bar at 100% and surface the terminal
+      // verdict in the "currently processing" line.
+      setStreamProgress(100, `${status}${ms ? ` (${(ms/1000).toFixed(1)}s)` : ""}`);
+      appendStreamLine(`>>> done - ${status}${ms ? ` in ${(ms/1000).toFixed(1)}s` : ""}`);
       if (window.runDetail) window.runDetail.onDone(runId, p);
       ui.invalidateCaches(); ui.checkRebootBanner(); ui.loadHealth();
     });
-    es.addEventListener("log", e => { try { const m=JSON.parse(e.data); const ln=m.line||""; if (!handleMarker(ln)) { log.textContent += ln + "\n"; log.scrollTop=log.scrollHeight; } } catch {} });
+    es.addEventListener("log", e => { try { const m=JSON.parse(e.data); const ln=m.line||""; if (!handleMarker(ln)) { log.textContent += ln + "\n"; log.scrollTop=log.scrollHeight; appendStreamLine(ln); } } catch {} });
+    es.addEventListener("log_line", e => {
+      try {
+        const m = JSON.parse(e.data);
+        const ln = m.line || "";
+        // Also tee into the legacy raw event log so the old <pre>
+        // collapsible keeps working for power users.
+        log.textContent += ln + "\n"; log.scrollTop = log.scrollHeight;
+        appendStreamLine(ln);
+      } catch {}
+    });
+    es.addEventListener("progress", e => {
+      try {
+        const m = JSON.parse(e.data);
+        const pct = (typeof m.pct === "number") ? m.pct : NaN;
+        setStreamProgress(pct, m.label || "");
+      } catch {}
+    });
     es.onerror = () => {
       if (!usingLegacy) {
         usingLegacy = true; try { es.close(); } catch {}
@@ -2615,28 +2826,74 @@ document.addEventListener("click", e => {
   if (e.target.id === "wizard-back") { ui.wizard.back(); return; }
 });
 
-// Reboot banner
-document.addEventListener("click", e => {
+// Reboot banner + every Refresh button on the SPA. The Refresh buttons
+// share a tiny pattern: bust the right cache slice, paint the spinner
+// on the button, and re-run the loader with refresh=true.
+document.addEventListener("click", async e => {
   if (e.target.id === "reboot-now-btn")     ui.rebootNow();
   if (e.target.id === "reboot-dismiss-btn") $("#reboot-banner").classList.add("hidden");
-  if (e.target.id === "overview-refresh-btn") {
-    ui.invalidateCaches();
-    ui._loaded.overview = true;
-    ui.loadOverview();
-    ui.checkRebootBanner();
+  const overviewBtn = e.target.closest("#overview-refresh-btn");
+  if (overviewBtn) {
+    await runWithRefreshSpinner(overviewBtn, async () => {
+      ui.invalidateCaches();
+      ui._loaded.overview = true;
+      await ui.loadOverview();
+      ui.checkRebootBanner();
+    });
+    return;
   }
-  if (e.target.id === "apps-refresh-btn") {
-    ui._loaded.apps = false; ui.loadApps();
+  const appsBtn = e.target.closest("#apps-refresh-btn");
+  if (appsBtn) {
+    await runWithRefreshSpinner(appsBtn, async () => {
+      frontendCache.invalidatePrefix("/apps");
+      ui._loaded.apps = false;
+      await ui.loadApps({ refresh: true });
+    });
+    return;
   }
   const addBtn = e.target.closest("[data-apps-add]");
   if (addBtn) ui.appsAdd(addBtn.dataset.pkg, addBtn.dataset.cat);
   const rmBtn = e.target.closest("[data-apps-rm]");
   if (rmBtn) ui.appsRemove(rmBtn.dataset.pkg, rmBtn.dataset.cat);
-  if (e.target.id === "inv-refresh-btn") {
-    // Inventory-only refresh: clears the backend cache too.
-    api.post("/inventory/refresh", {}).catch(()=>{});
-    window.INV_SUMMARY = null;
-    ui.loadInventoryDashboard();
+  const invBtn = e.target.closest("#inv-refresh-btn");
+  if (invBtn) {
+    await runWithRefreshSpinner(invBtn, async () => {
+      // Inventory-only refresh: clears the backend cache too, then forces
+      // a network re-read in the frontend cache.
+      api.post("/inventory/refresh", {}).catch(()=>{});
+      frontendCache.invalidatePrefix("/inventory");
+      window.INV_SUMMARY = null;
+      await ui.loadInventoryDashboard({ refresh: true });
+    });
+    return;
+  }
+  const catsBtn = e.target.closest("#categories-refresh-btn");
+  if (catsBtn) {
+    await runWithRefreshSpinner(catsBtn, async () => {
+      api.post("/inventory/refresh", {}).catch(()=>{});
+      frontendCache.invalidatePrefix("/inventory");
+      frontendCache.invalidatePrefix("/categories");
+      window.INV_SUMMARY = null;
+      ui._loaded.categories = false;
+      await ui.loadCategories({ refresh: true });
+    });
+    return;
+  }
+  // Action 1: Build inventory — explicit "scan now" button on Overview.
+  // Same effect as inv-refresh-btn but more discoverable + numbered.
+  const action1 = e.target.closest("#action-1-inventory");
+  if (action1) {
+    await runWithRefreshSpinner(action1, async () => {
+      api.post("/inventory/refresh", {}).catch(()=>{});
+      frontendCache.invalidatePrefix("/inventory");
+      frontendCache.invalidatePrefix("/apps");
+      window.INV_SUMMARY = null;
+      ui._loaded.categories = false;
+      await ui.loadInventoryDashboard({ refresh: true });
+      ui.status(tr("overview.action_1_inventory_hint")
+                || "inventory rebuilt");
+    });
+    return;
   }
 });
 
@@ -2926,6 +3183,7 @@ function bindSwitchers() {
     const cur = window.UI_LANG || "en";
     const next = cur === "en" ? "pl" : "en";
     window.UI_LANG = next; window.applyI18n();
+    try { localStorage.setItem("ui-locale", next); } catch {}
     fetch("/settings", {method:"PUT", headers:{"content-type":"application/json"},
       body: JSON.stringify({...(window.SETTINGS_CACHE||{}), ui:{...((window.SETTINGS_CACHE||{}).ui||{}), language: next}})}).catch(()=>{});
     ui.status(`language: ${next}`);
@@ -3048,7 +3306,9 @@ async function bootstrap() {
   // B7 — read localStorage.ascendo_theme synchronously on first paint so the
   // wizard's theme choice survives reload even before /settings resolves.
   let lsTheme = null;
+  let lsLocale = null;
   try { lsTheme = localStorage.getItem("ui-theme") || localStorage.getItem("ascendo_theme"); } catch {}
+  try { lsLocale = localStorage.getItem("ui-locale") || localStorage.getItem("ui-language"); } catch {}
   if (lsTheme) {
     try { window.applyTheme(lsTheme); } catch {}
   }
@@ -3057,7 +3317,7 @@ async function bootstrap() {
     window.SETTINGS_CACHE = s;
     // localStorage wins over /settings — the wizard wrote it last.
     const themePref = lsTheme || (s.ui && s.ui.theme) || "dark";
-    const langPref  = (s.ui && s.ui.language) || "auto";
+    const langPref  = lsLocale || (s.ui && s.ui.language) || "auto";
     window.applyTheme(themePref);
     window.UI_LANG = (langPref === "en" || langPref === "pl")
       ? langPref
@@ -3065,7 +3325,9 @@ async function bootstrap() {
     window.applyI18n();
   } catch {
     window.applyTheme(lsTheme || "dark");
-    window.UI_LANG = window.detectLanguage();
+    window.UI_LANG = (lsLocale === "en" || lsLocale === "pl")
+      ? lsLocale
+      : window.detectLanguage();
     window.applyI18n();
   }
   // Adapter identity → drives platform-conditional UI (e.g. NVIDIA buttons
