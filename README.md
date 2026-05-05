@@ -7,9 +7,9 @@
 > and a plugin system. **Open source, MIT.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Status: Windows v0.0.7](https://img.shields.io/badge/status-Windows%20v0.0.7-green)](HANDOFF.md)
+[![Status: macOS v0.2.0 + Windows v0.0.7](https://img.shields.io/badge/status-macOS%20v0.2.0%20%7C%20Windows%20v0.0.7-green)](HANDOFF.md)
 [![Made for: Windows | Linux | macOS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux%20%7C%20macOS-blue)](README.md)
-[![Tests: 70+8+5 green](https://img.shields.io/badge/tests-83%20green-brightgreen)](#tests)
+[![Tests: 242 macOS + 158 Windows green](https://img.shields.io/badge/tests-400%2B%20green-brightgreen)](#tests)
 
 ---
 
@@ -44,9 +44,9 @@ memory on the next.
 
 | Platform | Adapter | CLI | Dashboard | Tauri shell | Installer | Released |
 |---|---|---|---|---|---|---|
-| Windows  | ✅ MVP | ✅ | ✅ | ✅ | 🟡 in flight (v0.0.7) | tag pending |
-| Linux    | ✅ legacy code (migrating into `adapters/ubuntu/`) | ✅ | ✅ | 🟡 needs polish | ✅ `.deb` | v0.5 |
-| macOS    | 🟡 stub (`adapters/macos/`) | 🟡 | 🟡 | 🟡 | 🟡 | — |
+| macOS    | ✅ Tier-1 feature-complete (5 managers + scheduler + snapshot + elevation + inventory) | ✅ | ✅ | ✅ dev + unsigned `.app`/`.dmg` build | 🟡 brew tap (planned for v0.3.0) | **v0.2.0** |
+| Windows  | ✅ Tier-1 feature-complete (4 managers + scheduler + snapshot + elevation + inventory) | ✅ | ✅ | ✅ dev + signed `.msi`/`.exe` build | ✅ NSIS + WiX MSI | **v0.0.7** |
+| Linux    | ✅ legacy code (migrating into `adapters/ubuntu/`) | ✅ | ✅ | 🟡 needs polish | ✅ `.deb` | (rolling, M5+) |
 
 See [`HANDOFF.md`](HANDOFF.md) for the live session log,
 [`PLAN.md`](PLAN.md) for the forward roadmap, and
@@ -55,11 +55,15 @@ See [`HANDOFF.md`](HANDOFF.md) for the live session log,
 
 Target releases:
 
-- **v0.0.7 — Windows MVP** (in flight): MSI + NSIS installer, first-run
-  wizard, Windows service, winget manifest.
-- **v0.1.0 — Windows + Linux feature parity** under the new monorepo.
-- **v0.2.0 — macOS adapter** (full 3-OS support).
-- **v1.0.0** — security audit + code signing + stable API.
+- ✅ **v0.0.7 — Windows MVP** (shipped 2026-05-02): MSI + NSIS installer,
+  first-run wizard, Windows service, winget manifest.
+- ✅ **v0.2.0 — macOS adapter feature-complete** (shipped 2026-05-05):
+  brew + mas + softwareupdate + LaunchServices inventory + Time Machine
+  snapshot list + launchd scheduler + sudo elevation. Tier-1 minus
+  source-verification.
+- 🚧 **v0.3.0 (M6 hardening)** — security audit (T1-T7), code signing
+  across all three OSes, plugin signing + verification.
+- **v1.0.0** — stable API + signed binaries + plugin marketplace.
 
 ## Install (when v0.1.0 ships)
 
@@ -102,27 +106,47 @@ walks you through a dry-run before any real upgrade. See
 ### macOS
 
 ```bash
-# Recommended:
-brew install KasprowiczM/tap/ascendo
+# Source / dev install today (v0.2.0):
+git clone https://github.com/KasprowiczM/ascendo.git ~/Dev_Env/ascendo
+cd ~/Dev_Env/ascendo
+bash bin/install-dev-macos.sh             # core + adapter + smoke (≈ 3 min)
+bash bin/launch-desktop-macos.sh          # native Tauri window (dev mode)
 
-# Or .dmg direct download from GitHub Releases.
+# Or just CLI:
+python3 -m ascendo dashboard --port 8765  # http://127.0.0.1:8765
+```
+
+After install, see [`MACOS_QUICKSTART.md`](MACOS_QUICKSTART.md) for the
+operator guide and [`MACOS_TESTING.md`](MACOS_TESTING.md) for the full
+test matrix.
+
+```bash
+# Coming in v0.3.0 (signed brew tap):
+brew install KasprowiczM/tap/ascendo
 ```
 
 ## Quick start
 
-After installing, launch the dashboard:
+Three interfaces, all backed by the same orchestrator. Pick whichever
+fits the moment:
 
 ```bash
-ascendo dashboard       # opens local web UI in your browser
+# 1. CLI (best for scripting + cron / Task Scheduler / launchd)
+python3 -m ascendo run --profile=quick     # read-only sweep, ~15 s
+python3 -m ascendo run --profile=safe      # full 5-phase, no drivers
+python3 -m ascendo run --profile=full      # everything (drivers gated)
+
+# 2. Web app (best for visual exploration + ad-hoc apply with safety modal)
+python3 -m ascendo dashboard --port 8765
+# open http://127.0.0.1:8765/
+
+# 3. Desktop app (best for daily use — same SPA, native window)
+bash bin/launch-desktop-macos.sh           # macOS, dev mode
+.\bin\launch-desktop.ps1                   # Windows, dev mode
 ```
 
-Or run a one-shot update cycle from the CLI:
-
-```bash
-ascendo run --profile=safe       # check + plan + apply (no risky drivers)
-ascendo run --profile=quick      # read-only health check (~15s)
-ascendo run --profile=full       # everything including drivers
-```
+Full walkthrough across all three interfaces in
+[`USER_GUIDE.md`](USER_GUIDE.md).
 
 ## Architecture (high level)
 

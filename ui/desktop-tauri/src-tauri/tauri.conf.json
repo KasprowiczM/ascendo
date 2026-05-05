@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2.0.0-rc",
   "productName": "Ascendo",
-  "version": "0.0.7",
+  "version": "0.2.0",
   "identifier": "dev.ascendo.app",
   "build": {
     "beforeDevCommand": "",
@@ -17,7 +17,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi", "nsis"],
+    "targets": "all",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -26,7 +26,7 @@
       "icons/icon.png"
     ],
     "shortDescription": "Ascendo - Unified Updates",
-    "longDescription": "Ascendo desktop shell. Spawns the Python dashboard sidecar on a loopback port and opens it in a WebView2 window. Bundles a Python runtime so the user does not need Python installed.",
+    "longDescription": "Ascendo desktop shell. Spawns the Python dashboard sidecar on a loopback port and opens it in a native webview window (WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux). On Windows, bundles a Python runtime so the user does not need Python installed; on macOS/Linux, requires system Python 3.11+.",
     "category": "DeveloperTool",
     "publisher": "Ascendo Software",
     "copyright": "Copyright (c) 2026 KasprowiczM and Ascendo contributors",

@@ -7,9 +7,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned
+
+M6 — security audit (T1-T7 per ADR-0005), code signing across all three
+OSes, plugin signing + verification, plugin marketplace UX in dashboard.
+
+---
+
+## [0.2.0] — 2026-05-05
+
+**macOS adapter feature-complete (M5 done). Tier-1 minus source-verification.**
+Tested on Mac.r12.home (Apple Silicon, macOS 15.x, bash 3.2.57,
+Homebrew 5.1.9, mas 7.0.0, Python 3.13, jq 1.8.1).
+**34/34 PASS** via `bin/validate-macos.sh`.
+
 ### Added
 
-(in flight — see ## [0.0.7] below for the next release candidate.)
+- **`adapters/macos/ascendo_macos/managers/scheduler.py`** — `LaunchdScheduler`
+  implements `IScheduler` via per-user launchd LaunchAgents. Plists at
+  `~/Library/LaunchAgents/dev.ascendo.<name>.plist`; description metadata
+  in sidecar JSON at `~/Library/Application Support/Ascendo/schedules/<name>.json`.
+  DSL mirrors WindowsScheduler exactly (DAILY / WEEKLY / MONTHLY / HOURLY /
+  MINUTE → `StartCalendarInterval` plist dict; MINUTE → `StartInterval`).
+- **`adapters/macos/scripts/scheduler/scheduler.sh`** — bash 3.2 driver
+  for the launchd backend (install / uninstall / list / get / trigger).
+  Idempotent `bootout`-then-`bootstrap` semantics. Argv-only contract;
+  name regex `^[a-z0-9-]+$` enforced before plist filename interpolation.
+- **`adapters/macos/ascendo_macos/managers/softwareupdate.py`** —
+  `SoftwareUpdateManager` for macOS OS updates. `sudo -A softwareupdate
+  -i ... -R --verbose` (the `-R` flag is mandatory).
+- **`adapters/macos/ascendo_macos/snapshot.py`** — `TimeMachineSnapshot`
+  read-only via `tmutil listlocalsnapshots /`. `create()` raises
+  `SnapshotError` per APFS auto-management.
+- **`adapters/macos/ascendo_macos/inventory.py`** — `MacOSInventory` via
+  `system_profiler -json -detailLevel mini SPApplicationsDataType`. 387
+  apps enumerated on Mac.r12.home with 5-rule classification (SYSTEM /
+  MAS / BREW / WEB).
+- **`adapters/macos/ascendo_macos/managers/mas.py`** — `MasManager` for
+  the Mac App Store via `mas` CLI. `sudo mas upgrade <id>` enforced
+  (CVE-2025-43411 mitigation).
+- **`adapters/macos/ascendo_macos/managers/elevation.py`** —
+  `MacElevation` (`IElevation` impl) with sudo askpass cache for
+  dashboard-driven sudo. `POST /elevation/auth` round-trip on the
+  dashboard.
+- **`adapters/macos/ascendo_macos/managers/brew.py`** — `BrewManager`
+  for Homebrew formulae + casks via `brew outdated --json=v2`.
+- **`bin/install-dev-macos.sh` / `bin/validate-macos.sh` /
+  `bin/run-tag-release-macos.sh` / `bin/launch-desktop-macos.sh`** —
+  full bash equivalents of the Windows PowerShell launcher set.
+- **`MACOS_QUICKSTART.md` / `MACOS_TESTING.md` / `USER_GUIDE.md`** —
+  end-user-facing docs (operator install, full test matrix, cross-OS
+  three-interface walkthrough).
+- **Tauri 2.x macOS bundle** — `tauri.conf.json` `targets: "all"` now
+  produces `.app` + `.dmg` on macOS (unsigned — code signing is M6).
+
+### Changed
+
+- `MacOSAdapter.capabilities` now declares the full Tier-1 minus
+  `SOURCE_VERIFICATION`: `PACKAGE_MANAGEMENT | ELEVATION | INVENTORY |
+  SNAPSHOTS | SCHEDULING`. `health_check()` now reports 10 components
+  (was 9): added `launchctl`.
+- `core/ascendo/models/sidecar.py`: `needs_reboot` moved from `Summary`
+  to top-level `Sidecar` (consumer fix — dashboard router + CLI helper
+  both read from the top level; Summary placement would have silently
+  dropped the reboot signal on macOS softwareupdate runs).
+- `Tauri 2.x`: bundle `targets` from `["msi", "nsis"]` to `"all"` so
+  macOS / Linux builds produce native artefacts (.app/.dmg, .deb/.AppImage).
+
+### Fixed
+
+- **Critical (M5.5.11.1)** — `LaunchdScheduler._invoke` was passing
+  `--output` / `--payload` to `scheduler.sh`, but the bash driver only
+  accepts `--output-path` / `--payload-path`. Every `IScheduler` call on
+  a real Mac would have failed with bash exit 2 (`unknown arg: --output`).
+  Mock-only Python tests didn't catch it. Fix: rename to `--output-path` /
+  `--payload-path`. Added regression test
+  `test_invoke_with_payload_uses_payload_path_flag` so this can't drift
+  silently again.
+- **Important (M5.5.11.1)** — `trigger()` on a non-existent schedule
+  silently returned `None` instead of raising `SchedulerError`. The bash
+  driver emits `{"error": "no such schedule"}` + exit 30; Python's
+  `_invoke` was returning the error dict and `trigger() -> None` was
+  discarding it. Fix: when bash returns non-zero AND output JSON has an
+  `"error"` key, `_invoke` raises `SchedulerError(error)`.
+- **Operator-validation hotfix (M5.5.11.2)** — `bin/validate-macos.sh`
+  Stage 12.2 was passing `--expression` to `python3 -m ascendo schedule
+  install`, but the CLI's flag is `--calendar` (matches the Windows
+  scheduler's term, predates M5.5). Fix: one-character change in
+  validate-macos.sh.
+
+### Tests
+
+- 242 passing (was 158 on Windows-only at v0.0.7) on macOS:
+  ~46 brew (M5.1) + ~63 mas/elevation (M5.2) + ~19 inventory (M5.3) +
+  ~56 softwareupdate/snapshot (M5.4) + ~58 scheduler (M5.5).
+- 34/34 end-to-end via `bin/validate-macos.sh` Stage 1-12 (CLI +
+  dashboard + brew + mas + LaunchServices inventory + softwareupdate +
+  Time Machine + launchd scheduler).
 
 ---
 

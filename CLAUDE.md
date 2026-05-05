@@ -11,7 +11,7 @@ core/                    # platform-agnostic Python: ascendo CLI, dashboard, sch
 adapters/
   windows/               # winget / msstore / registry_arp / windows_update / snapshot / scheduler / elevation
   ubuntu/                # apt / snap / brew / npm / pip / flatpak / drivers / firmware (legacy app/ being migrated here)
-  macos/                 # brew / mas / time-machine / launchd  (stub — to be built)
+  macos/                 # brew / mas / softwareupdate / launchservices / time-machine / launchd / sudo (Tier-1 feature-complete @ v0.2.0)
 ui/
   desktop-tauri/         # Tauri 2.x shell (one binary, all platforms) — Python sidecar = core dashboard
   frontend/              # vanilla SPA served by FastAPI dashboard (Inter Tight + JetBrains Mono, self-hosted)
@@ -46,8 +46,9 @@ Read these in order when picking up:
 1. [PLAN.md](./PLAN.md) — what's next (single source of truth)
 2. [HANDOFF.md](./HANDOFF.md) — session log (what already shipped)
 3. Latest dated handoff in `docs/superpowers/specs/` — most recent context
-4. [WINDOWS_QUICKSTART.md](./WINDOWS_QUICKSTART.md) — operator install + first run
-5. [WINDOWS_TESTING.md](./WINDOWS_TESTING.md) — full test matrix
+4. [USER_GUIDE.md](./USER_GUIDE.md) — cross-OS CLI/web/desktop walkthrough (start here for end-user testing)
+5. [MACOS_QUICKSTART.md](./MACOS_QUICKSTART.md) + [MACOS_TESTING.md](./MACOS_TESTING.md) — macOS install + test matrix (v0.2.0)
+6. [WINDOWS_QUICKSTART.md](./WINDOWS_QUICKSTART.md) + [WINDOWS_TESTING.md](./WINDOWS_TESTING.md) — Windows install + test matrix (v0.0.7)
 
 ## Commands (Windows-first; Ubuntu/macOS commands live in their adapter docs)
 
