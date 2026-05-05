@@ -23,6 +23,8 @@
 #      + apply --dry-run; real apply EXCLUDED — would reboot the Mac)
 #  11. Time Machine read-only (M5.4): doctor reports tmutil,
 #      TimeMachineSnapshot.list() end-to-end (>=0 snapshots; no lower bound)
+#  12. launchd scheduler round-trip (M5.5): doctor reports launchctl,
+#      install + list + trigger + remove an `ascendo-validate-test` agent
 #
 # Exits 0 on full success, 1 with [FAIL] count otherwise.
 # Final line on success: ALL CHECKS PASSED.
@@ -571,6 +573,79 @@ if [ "$PY_TM_RC" -eq 0 ]; then
 else
     printf '%s\n' "$PY_TM_OUT" >&2
     result "11.2 TimeMachineSnapshot.list() end-to-end" 0 "see above"
+fi
+
+# ============================================================
+# Stage 12 — launchd scheduler round-trip (M5.5)
+# ============================================================
+step "12. launchd scheduler round-trip (M5.5)"
+
+# Stage 12 cleanup helper. Run on script exit AND once at start so a
+# failed prior run doesn't leak agents.
+SCHED_TEST_NAME="ascendo-validate-test"
+SCHED_TEST_PLIST="$HOME/Library/LaunchAgents/dev.ascendo.${SCHED_TEST_NAME}.plist"
+SCHED_TEST_SIDECAR="$HOME/Library/Application Support/Ascendo/schedules/${SCHED_TEST_NAME}.json"
+_cleanup_sched_test() {
+    /bin/launchctl bootout "gui/$(id -u)/dev.ascendo.${SCHED_TEST_NAME}" >/dev/null 2>&1 || true
+    rm -f "$SCHED_TEST_PLIST" "$SCHED_TEST_SIDECAR" 2>/dev/null || true
+}
+_cleanup_sched_test
+trap _cleanup_sched_test EXIT
+
+# Capture doctor once for the launchctl grep.
+DOCTOR_OUT_M55="$(python3 -m ascendo doctor 2>&1)"
+
+# 12.1 doctor reports launchctl
+step "12.1 doctor: launchctl component"
+if printf '%s\n' "$DOCTOR_OUT_M55" | grep -qE '^[[:space:]]+launchctl[[:space:]]+(ok|degraded|unavailable|error)'; then
+    printf '%s\n' "$DOCTOR_OUT_M55" | grep -E '^[[:space:]]+launchctl[[:space:]]+'
+    result "12.1 doctor: launchctl component" 1
+else
+    result "12.1 doctor: launchctl component" 0 "no launchctl line in doctor output"
+fi
+
+# 12.2 schedule install via CLI
+step "12.2 schedule install (MINUTE 1, profile=quick)"
+if python3 -m ascendo schedule install \
+        --name "$SCHED_TEST_NAME" \
+        --expression "MINUTE 1" \
+        --profile "quick" \
+        >/dev/null 2>&1; then
+    if [ -f "$SCHED_TEST_PLIST" ] && [ -f "$SCHED_TEST_SIDECAR" ]; then
+        result "12.2 schedule install (MINUTE 1, profile=quick)" 1 "plist + sidecar written"
+    else
+        result "12.2 schedule install (MINUTE 1, profile=quick)" 0 "files missing after install"
+    fi
+else
+    result "12.2 schedule install (MINUTE 1, profile=quick)" 0 "CLI exit non-zero"
+fi
+
+# 12.3 schedule list contains the new entry
+step "12.3 schedule list contains entry"
+if python3 -m ascendo schedule list 2>/dev/null | grep -q "$SCHED_TEST_NAME"; then
+    result "12.3 schedule list contains entry" 1
+else
+    result "12.3 schedule list contains entry" 0 "entry not visible in list"
+fi
+
+# 12.4 schedule trigger
+step "12.4 schedule trigger"
+if python3 -m ascendo schedule trigger --name "$SCHED_TEST_NAME" >/dev/null 2>&1; then
+    result "12.4 schedule trigger" 1
+else
+    result "12.4 schedule trigger" 0 "trigger exit non-zero"
+fi
+
+# 12.5 schedule remove
+step "12.5 schedule remove"
+if python3 -m ascendo schedule remove --name "$SCHED_TEST_NAME" >/dev/null 2>&1; then
+    if [ ! -f "$SCHED_TEST_PLIST" ] && [ ! -f "$SCHED_TEST_SIDECAR" ]; then
+        result "12.5 schedule remove" 1 "files cleaned up"
+    else
+        result "12.5 schedule remove" 0 "files left on disk after remove"
+    fi
+else
+    result "12.5 schedule remove" 0 "CLI exit non-zero"
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
