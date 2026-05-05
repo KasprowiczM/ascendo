@@ -22,12 +22,24 @@
 #                          (NOT comma-separated like mas's --filter; softwareupdate
 #                           takes one label per -i arg, MVP supports one label only)
 #
-# Reboot-survival:
+# Reboot-survival + post-apply reconciliation:
 #   Apply may reboot the Mac mid-run when any update has Action: restart.
-#   We pre-emit "success" items + call json_save BEFORE invoking sudo so the
+#   We pre-emit "planned" items + call json_save BEFORE invoking sudo so the
 #   sidecar persists across the reboot. JSON_FINALIZED is set to 1 to make
-#   the EXIT trap a no-op. Trade-off: if sudo fails, the pre-emitted items
-#   still show success — verify phase reconciles by re-running softwareupdate -l.
+#   the first EXIT trap a no-op.
+#
+#   When sudo returns normally (the typical case — softwareupdate -R only
+#   reboots AFTER its process exits, mediated by launchd), we re-init the
+#   buffer and re-emit items with their TRUE post-apply status: ``success``
+#   on RC=0, ``failed`` on non-zero. The re-emit overwrites the same
+#   sidecar path so the operator sees accurate state once apply finishes
+#   without rebooting.
+#
+#   If sudo IS killed mid-stream by a forced reboot, the original "planned"
+#   sidecar is what survives — verify phase reconciles by re-running
+#   softwareupdate -l. "planned" beats "success" as a default-on-disk
+#   state because it's truthful: we asked for the update but didn't
+#   confirm it landed.
 #
 # Exit codes (per docs/agents/contract.md):
 #   0  success
@@ -203,14 +215,14 @@ else
     SU_ARGV="-i -r -R --verbose"
 fi
 
-# 2. Pre-emit success items BEFORE sudo (reboot survival)
+# 2. Pre-emit PLANNED items BEFORE sudo (reboot survival; truthful default).
 for _pair in $TARGET_PAIRS; do
     _label="$(printf '%s' "$_pair" | awk -F'|' '{print $1}')"
     _ver="$(printf '%s' "$_pair" | awk -F'|' '{print $2}')"
-    json_add_item "$_label" "$_ver" "$_ver" "success" "softwareupdate"
+    json_add_item "$_label" "$_ver" "$_ver" "planned" "softwareupdate"
 done
 
-# 3. Set top-level needs_reboot flag if any item required restart
+# 3. Set top-level needs_reboot flag if any item required restart.
 if [ "$NEEDS_REBOOT" -eq 1 ]; then
     json_set_needs_reboot true
 fi
@@ -230,14 +242,49 @@ _log_path="$OUTPUT_DIR/$RUN_ID/apply__softwareupdate.log"
 _sudo_softwareupdate $SU_ARGV 2>&1 | tee -a "$_log_path"
 _RC="${PIPESTATUS[0]}"
 
-# 6. Exit-code logic
+# 6. Post-apply reconciliation: re-init buffer + re-emit items with true
+#    status (success on RC=0, failed otherwise), then overwrite the sidecar.
+#    If we get here, the process survived sudo — so the operator deserves
+#    accurate state on disk instead of the stale "planned" pre-emit.
+if [ "$_RC" -eq 0 ]; then
+    _final_status="success"
+else
+    _final_status="failed"
+fi
+
+json_init "apply" "softwareupdate" "$RUN_ID" "$TRIGGER" "$PROFILE_NAME" \
+          "softwareupdate" "$SU_VER" \
+          "$HOST_NAME" "$HOST_OS" "$HOST_OS_VERSION" "$HOST_ARCH" \
+          "$HOST_USER" "$HOST_IS_ELEVATED"
+
+# The trap was already armed before the first json_save (which set
+# JSON_FINALIZED=1). json_init resets JSON_FINALIZED to 0, so re-arm
+# the EXIT trap so a crash between here and the post-apply json_save
+# still produces SOMETHING on disk.
+trap 'json_save_on_exit "$OUTPUT_DIR"' EXIT
+
+for _pair in $TARGET_PAIRS; do
+    _label="$(printf '%s' "$_pair" | awk -F'|' '{print $1}')"
+    _ver="$(printf '%s' "$_pair" | awk -F'|' '{print $2}')"
+    json_add_item "$_label" "$_ver" "$_ver" "$_final_status" "softwareupdate"
+done
+
+if [ "$NEEDS_REBOOT" -eq 1 ]; then
+    json_set_needs_reboot true
+fi
+
+if [ "$_RC" -ne 0 ]; then
+    json_add_message "error" "sudo softwareupdate exited $_RC"
+fi
+
+json_save "$OUTPUT_DIR"
+
+# 7. Exit-code logic
 if [ "$NEEDS_REBOOT" -eq 1 ] && [ "$_RC" -eq 0 ]; then
     exit 75   # NEEDS_REBOOT (success, but operator must reboot)
 fi
 
 if [ "$_RC" -ne 0 ]; then
-    # The success items pre-emitted above won't be retroactively updated; verify
-    # phase will reconcile by re-running softwareupdate -l.
     exit 20   # apply-fail-known
 fi
 

@@ -52,6 +52,112 @@ def _phases_for_request(
     if profile and profile in _PROFILE_PHASES:
         return _PROFILE_PHASES[profile]
     return DEFAULT_PHASE_ORDER
+
+
+def _resolve_item_filter(
+    explicit_filter: list[str] | None,
+    categories: list[str] | None,
+    phases: tuple[Phase, ...],
+    runs_dir: Path,
+) -> list[str] | None:
+    """Auto-derive an inclusion list when the caller didn't pass one.
+
+    If the SPA fires apply with no explicit ``item_filter`` and the user
+    has excluded packages via ``/apps/exclude``, we materialise a
+    server-side filter = ``installed minus excluded``. This way clicking
+    "apply" on the Categories tab respects the per-package opt-out
+    without changes to the bash apply scripts.
+
+    Returns ``None`` when:
+      - explicit_filter was provided (caller wins)
+      - no apply/cleanup phase is in scope (filter only matters for
+        mutating phases; check/plan/verify list everything regardless)
+      - no exclusions exist (filter would be a no-op against all items)
+      - we can't read a recent check sidecar (no inclusion data yet)
+    """
+    if explicit_filter:
+        return list(explicit_filter)
+    has_mutating = any(
+        p in (Phase.APPLY, Phase.CLEANUP) for p in phases
+    )
+    if not has_mutating:
+        return None
+    # Local import — apps.excluded_keys() reads ~/.ascendo/apps_excluded.json
+    # which is shared module state. Importing at module-init would create a
+    # circular dep with the SPA real router (apps imports schemas which
+    # imports here in some paths).
+    from . import apps as apps_mod
+    excluded = apps_mod.excluded_keys()
+    if not excluded:
+        return None
+    # Read latest check sidecar per category to get the universe of items.
+    inclusion: list[str] = []
+    cats = categories or _enumerate_known_categories(runs_dir)
+    for cat in cats:
+        sidecar_items = _latest_check_items(runs_dir, cat)
+        for item in sidecar_items:
+            name = item.get("name") or item.get("id")
+            if not name:
+                continue
+            key = f"{cat}:{name}"
+            if key in excluded:
+                continue
+            inclusion.append(str(name))
+    return inclusion or None
+
+
+def _enumerate_known_categories(runs_dir: Path) -> list[str]:
+    """Best-effort: list categories that have a check sidecar in the
+    most recent run dir. Used when caller didn't pass categories."""
+    if not runs_dir.is_dir():
+        return []
+    try:
+        runs = sorted(
+            (p for p in runs_dir.iterdir() if p.is_dir()),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+    except OSError:
+        return []
+    out: set[str] = set()
+    for run_dir in runs[:5]:
+        for sidecar in run_dir.glob("check__*.json"):
+            stem = sidecar.stem  # "check__brew"
+            if "__" in stem:
+                out.add(stem.split("__", 1)[1])
+    return sorted(out)
+
+
+def _latest_check_items(runs_dir: Path, category: str) -> list[dict]:
+    """Return the items[] list from the freshest ``check__<category>.json``."""
+    if not runs_dir.is_dir():
+        return []
+    candidates: list[tuple[float, Path]] = []
+    try:
+        runs = sorted(
+            (p for p in runs_dir.iterdir() if p.is_dir()),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )[:50]
+    except OSError:
+        return []
+    for run_dir in runs:
+        sidecar = run_dir / f"check__{category}.json"
+        if sidecar.is_file():
+            try:
+                candidates.append((sidecar.stat().st_mtime, sidecar))
+            except OSError:
+                continue
+    if not candidates:
+        return []
+    candidates.sort(reverse=True)
+    import json as _json
+    try:
+        data = _json.loads(candidates[0][1].read_text(encoding="utf-8"))
+    except (OSError, _json.JSONDecodeError):
+        return []
+    items = data.get("items") or []
+    return [it for it in items if isinstance(it, dict)]
 from ...orchestrator.sidecar_io import (
     SidecarReadError,
     list_run_sidecars,
@@ -105,16 +211,20 @@ async def create_run(req: RunRequest, request: Request) -> RunResponse:
         started_at=datetime.now(timezone.utc),
     )
 
+    resolved_phases = _phases_for_request(req.phases, req.profile)
+    resolved_filter = _resolve_item_filter(
+        req.item_filter, req.categories, resolved_phases, runs_dir,
+    )
     try:
         report: RunReport = run_phases(
             adapter,
             run_info,
             host,
-            phases=_phases_for_request(req.phases, req.profile),
+            phases=resolved_phases,
             categories=req.categories,
             base_dir=runs_dir,
             stop_on_failure=req.stop_on_failure,
-            item_filter=req.item_filter,
+            item_filter=resolved_filter,
         )
     except ValueError as exc:
         # Bad input (e.g. empty phases list).
@@ -331,16 +441,20 @@ async def create_run_async(req: RunRequest, request: Request) -> dict:
         started_at=datetime.now(timezone.utc),
     )
 
+    resolved_phases = _phases_for_request(req.phases, req.profile)
+    resolved_filter = _resolve_item_filter(
+        req.item_filter, req.categories, resolved_phases, runs_dir,
+    )
     state = await start_run_async(
         registry=registry,
         adapter=adapter,
         run=run_info,
         host=host,
         base_dir=runs_dir,
-        phases=_phases_for_request(req.phases, req.profile),
+        phases=resolved_phases,
         categories=req.categories,
         stop_on_failure=req.stop_on_failure,
-        item_filter=req.item_filter,
+        item_filter=resolved_filter,
     )
 
     return {

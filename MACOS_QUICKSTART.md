@@ -197,6 +197,23 @@ python3 -m ascendo snapshot list                          # show snapshot ids + 
 python3 -m ascendo snapshot create -m "before-experiment" # raises SnapshotError; APFS is auto-managed
 ```
 
+**Recommended pre-apply ritual (manual, until Apple opens the API):**
+
+```bash
+# 1. Force a fresh local APFS snapshot before bulk apply
+tmutil localsnapshot
+# 2. Confirm Ascendo can see it
+python3 -m ascendo snapshot list | head -5
+# 3. Now run bulk apply with the dashboard or CLI
+python3 -m ascendo run --phase apply
+# If something goes wrong, restore via macOS Recovery → Restore From Time
+# Machine Backup, or `tmutil restore` to a specific snapshot.
+```
+
+This is a workaround for the fact that the orchestrator can't programatically
+create snapshots on macOS like it does on Windows (VSS). Plumbing a pre-apply
+hook that calls `tmutil localsnapshot` is on the M5.x backlog.
+
 ## 10 · Troubleshooting
 
 | Symptom | Likely cause | Fix |

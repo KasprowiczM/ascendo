@@ -6,6 +6,87 @@
 
 ---
 
+## Sesja 29 (2026-05-05) — macOS apply-phase hardening + bulk-update wiring complete
+
+Post-v0.2.0 cleanup session. The user reported on Mac.r12.home that
+end-to-end inventory + check + plan worked, but flagged five "flaky or
+unverified" gaps in apply/bulk update. This session closed the
+production-readiness gap.
+
+### Shipped this session
+
+| Commit    | What |
+|-----------|------|
+| `24dcb96` | **Stage 4 hotfix.** `ascendo_npm_installed_version` had `</dev/null` on the jq invocation that was meant for npm/curl helpers. On jq the redirect drained stdin AWAY from the printf pipe → every cache lookup returned empty → 5 of 9 npm CLIs silently misclassified `missing`. Removed the bad redirect. |
+| `53d1a29` | **Categories ↔ Run Center parity.** `_seed_buckets_from_sidecars` only seeded a bucket from a check sidecar when the bucket was completely empty. brew/mas/softwareupdate inventory buckets are NEVER empty (system_profiler classifies a handful of apps), so the 142 brew formulae + all OS patches got dropped. New rule: replace bucket from sidecar when the sidecar carries strictly more rows than inventory found. brew Categories: 1 → 143 rows. |
+| `cdb9dff` | **npm reporting fixes (3 in 1).** (a) Added `MISSING = "missing"` to ItemStatus enum + VALID_STATUSES — was silently rejected by Pydantic + bash emitter, dropping 5 of 9 npm items. (b) Node candidate column was empty because `n` CLI wasn't installed; added nodejs.org/dist/index.json fallback that picks the latest LTS via curl + jq. (c) `classify` now uses `sort -V` (semver) so Node Current 25.9.0 doesn't misclassify as needing a downgrade to LTS 24.15.0. Regenerated sidecar.v1.schema.json. |
+| (this)    | **softwareupdate apply post-apply reconciliation.** Apply previously pre-emitted items as `success` BEFORE sudo (reboot survival), so if sudo failed, the on-disk sidecar still showed success. Now pre-emits as `planned` + saves, runs sudo, and (when the process survives) re-init's the buffer + re-emits items with the TRUE post-apply status (`success` on RC=0, `failed` on non-zero), then overwrites the sidecar. Reboot-survival preserved: if sudo's `-R` triggers a forced reboot mid-stream, the original "planned" sidecar is what hits disk — verify reconciles via `softwareupdate -l`. |
+| (this)    | **Per-package exclusion plumbed to apply.** New `_resolve_item_filter` helper in `core/ascendo/dashboard/routes/runs.py`: when SPA fires apply with no explicit `item_filter` AND the user has opted out of packages via `POST /apps/exclude`, server-side derives an inclusion list = installed-minus-excluded by reading the latest check sidecar per category. Wired into both sync `POST /runs` and async `POST /runs/async`. +7 contract tests covering pass-through, no-op cases, and the inversion path. |
+| (this)    | **Verified mas apply already correct.** Earlier "mas apply error swallow" concern was unfounded — `_sudo_mas_upgrade` per-id loop and bulk-mode both capture `$?`, classify via `mas_classify_exit`, and emit failed sidecar items with the raw exit code in the message. No fix needed. |
+
+### Test count
+
+438 / 438 passing (175 contract + 256 macOS adapter + 7 new exclusion-filter
+tests). One pre-existing `test_service_endpoints` failure (predates v0.2.0)
+unchanged.
+
+### Bulk-update production readiness — explicit list of what works and what does NOT
+
+**Works end-to-end on macOS as of this session:**
+
+- Multi-category bulk apply via Run Center (Profile=full, Phase=apply,
+  click Start, type `apply` in the confirm modal). Orchestrator runs
+  each category's `apply.sh` sequentially, emits per-category sidecars,
+  aggregates into `run.json`.
+- Per-category apply via Categories tab. Same gate, same SSE stream.
+- Sudo handled once per run via `POST /elevation/auth` + `SUDO_ASKPASS`
+  cache. Password never on disk, never logged. Forwarded to
+  brew/mas/softwareupdate/npm child processes.
+- Reboot detection: softwareupdate's `-R` flag sets `needs_reboot` on
+  the sidecar; the dashboard renders the banner; CLI exits 75.
+- Sidecar reconciliation: verify phase re-checks installed versions and
+  flips items to failed if apply didn't actually take.
+- mas exit codes propagate (verified this session).
+- softwareupdate exit codes now propagate via the new reconcile pass
+  (fixed this session).
+- Per-package exclusions honoured: anything excluded via
+  `POST /apps/exclude` is filtered out of apply (wired this session).
+
+**Known limitations (NOT fixed this session, deferred):**
+
+- **No pre-apply Time Machine snapshot.** APFS local snapshots are
+  auto-managed; `tmutil snapshot` exists but Apple deprecated programmatic
+  initiation in macOS 12+. The orchestrator does NOT take a snapshot
+  before apply on macOS — users get whatever the OS auto-snapshotted in
+  the last hour. On Windows it's wired (VSS Checkpoint-Computer); macOS
+  parity is an M6 + Apple-API issue. **Document workaround:** users can
+  manually run `tmutil localsnapshot` from Terminal before bulk apply.
+- **Sequential, not parallel.** Categories run one after another. brew →
+  mas → npm → softwareupdate is several minutes total when there's
+  real work, not seconds. Parallel would require lock coordination
+  per-category and per-package — out of scope for v0.2.x.
+- **No unified bulk-preview UI.** The dashboard doesn't render a single
+  "12 things across 4 categories will change" diff. The plan phase
+  produces this data per-category; the SPA hasn't yet aggregated it
+  into one preview screen. M3 / Stage 6 future work.
+
+### Stage 5 tweaks bucket (still open, deferred)
+
+These showed up in earlier screenshots and are tracked but NOT shipped
+this session:
+
+- Status pill colors in History/Logs need contrast pass for light theme.
+- Last Run "staleness" indicator on Overview card.
+- NVIDIA buttons appearing on macOS — should be hidden via
+  `html[data-adapter=macos]` CSS gate.
+- `inventory` cache invalidation after apply (the SPA still shows
+  pre-apply versions until manual refresh).
+
+These don't block bulk-update from working; they're polish items for
+the next iteration.
+
+---
+
 ## Sesja 28 (2026-05-05) — macOS adapter M5.5 finish: Tasks 8–14 + v0.2.0 tagged
 
 Final milestone of the macOS adapter (M5). Picked up from Sesja 27's partial

@@ -1,10 +1,48 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-05 (sesja 28) — macOS adapter M5.5 shipped (launchd IScheduler, **v0.2.0** = full M5 macOS adapter feature-complete). 34/34 PASS via `bin/validate-macos.sh` Stage 12 on Mac.r12.home; tag `v0.2.0` cut locally.
+> Last updated: 2026-05-05 (sesja 29) — macOS apply-phase hardening
+> complete (softwareupdate post-apply reconciliation, npm
+> ItemStatus.MISSING, server-side exclusion-filter plumbing,
+> Categories/Run Center parity). 438 tests passing. Bulk-update
+> via dashboard now works end-to-end on macOS for brew + mas +
+> npm + softwareupdate.
+>
+> Previous milestone: v0.2.0 (sesja 28, M5 macOS adapter complete).
 >
 > This file is the **single source of truth for what comes next**. HANDOFF.md
 > is the historical session log; PLAN.md is the forward roadmap. Update this
 > file whenever priorities shift; prune completed items into HANDOFF.md.
+
+---
+
+## Immediate next steps (post-Sesja 29)
+
+The macOS adapter is now production-ready for everyday solo-machine use.
+What's left before declaring v0.3.0:
+
+### Stage 5 polish (low-risk, fast)
+
+- Status pill colors: contrast pass on light theme for History + Logs.
+- "Last Run" staleness indicator on the Overview card.
+- Hide NVIDIA driver buttons on macOS via `html[data-adapter=macos]`
+  CSS gate (currently visible but inert on macOS).
+- Invalidate inventory cache after apply finishes so SPA shows new
+  versions without manual refresh.
+
+### M5.x deferred follow-ups (medium scope)
+
+- **Pre-apply snapshot integration on macOS.** APFS auto-management
+  blocks `tmutil snapshot`; only fallback is to recommend the user
+  configure Time Machine and document `tmutil localsnapshot` as a
+  pre-apply manual step. Add a footer banner when no recent local
+  snapshot is found before bulk apply.
+- **Bulk-preview UI.** Aggregate plan-phase output across all
+  categories into one diff view: "12 packages will change". Right
+  now plan emits per-category sidecars and the SPA shows them
+  per-row.
+- **Parallel apply.** Run brew + mas + npm in parallel (softwareupdate
+  must stay sequential because of reboot semantics). Requires lock
+  coordination at the manager layer.
 
 ---
 
