@@ -6,6 +6,183 @@
 
 ---
 
+## Sesja 28 (2026-05-05) — macOS adapter M5.5 finish: Tasks 8–14 + v0.2.0 tagged
+
+Final milestone of the macOS adapter (M5). Picked up from Sesja 27's partial
+state (Tasks 1–7 of 14 shipped on `claude/cool-beaver-f1879c`, merged to
+main as `0adc0b9`). This session executed **Tasks 8–14** on a fresh
+`claude/busy-mclean-0b9896` worktree using subagent-driven-development with
+the same per-task spec-compliance + code-quality review pattern.
+
+### Shipped this session
+
+| Commit    | Sub-task   | Description |
+|-----------|-----------|-------------|
+| `f72377a` | M5.5.8    | Wire `LaunchdScheduler` into `MacOSAdapter` — `_cached_scheduler` slot, `scheduler()` returns cached singleton, `capabilities` declares `SCHEDULING`. +1 new test (`test_scheduler_returns_launchd_scheduler_singleton`); existing `test_capabilities_*` renamed and updated. |
+| `59419ef` | M5.5.9    | `health_check()` adds `launchctl` component (10 components, was 9). `_launchctl_status()` mirrors the `_softwareupdate_status()` fallback pattern (`launchctl version` → `launchctl help`). +2 new tests; pre-existing `test_health_check_reports_required_keys` extended. |
+| `5e42648` | M5.5.10   | `bin/validate-macos.sh` Stage 12 — 5 sub-steps: doctor reports launchctl, install + list + trigger + remove a throwaway `ascendo-validate-test` agent. EXIT-trap cleanup helper prevents agent leakage on failed prior runs. |
+| `ba3a35c` | M5.5.11   | `bin/run-tag-release-macos.sh` tag bump `v0.0.11-alpha` → `v0.2.0` + M5.5 message. |
+| `5813e8b` | M5.5.11.1 | **Critical fix-up from final code review.** See "Final review catches" below. |
+| `3f7b15b` | M5.5.11.2 | **Stage 12.2 hotfix from operator validation.** See "Operator validation catches" below. |
+| `4d12e15` | docs       | PLAN.md marks M5.5 ✅ done, M5 complete. |
+| (this)    | docs       | HANDOFF.md Sesja 28 entry. |
+
+**Test count after Task 9:** 238 → **242 passing** (+1 new wiring test, +2
+health tests, +1 regression test for the C1 fix-up; net +4).
+
+### Final review catches (commit `5813e8b`)
+
+The `superpowers:code-reviewer` final pass across all M5.5.* commits found
+**three real bugs in pre-existing M5.5.7 code** that mock-only tests had
+missed. All three would have surfaced on the operator's first real-Mac
+run; one would have failed Stage 12.2 (install) and silently cascaded
+through 12.3 + 12.4.
+
+- **C1 (CRITICAL — argv flag mismatch).** Python `_invoke()` built argv
+  with `--output` and `--payload`; the bash driver `scheduler.sh` only
+  accepts `--output-path` and `--payload-path`. Every `IScheduler` call
+  on a real Mac would have failed with bash exit 2 (`unknown arg:
+  --output`). Tests missed it because all Python smoke tests mock
+  `subprocess.run` and the bash-level tests build argv directly with the
+  correct flags. Fix: rename to `--output-path` / `--payload-path`. Added
+  regression test `test_invoke_with_payload_uses_payload_path_flag`
+  asserting both forms appear in the spawned argv so a future drift
+  cannot reintroduce C1 silently.
+
+- **I1 (IMPORTANT — silent error swallow).** `trigger()` on a
+  non-existent schedule had bash emit `{"error": "no such schedule"}` to
+  the output file with exit 30. Python's `_invoke` checked
+  `if returncode != 0 and not output.exists()` before raising, then
+  fell through to return the dict — and `trigger() -> None` discarded
+  it. Per spec §7, Python should raise `SchedulerError`. Fix: after
+  parsing the output JSON, check for `"error"` key on a non-zero exit
+  and raise. Renamed the existing
+  `test_invoke_nonzero_exit_with_output_returns_json` (which asserted
+  the buggy behaviour) to `test_invoke_nonzero_exit_with_error_payload_raises`.
+
+- **I3 (MINOR — stale docstring).** `MacOSAdapter.source()` docstring
+  said "Not implemented in M5.1." Updated to reference M6 + ADR-0005
+  (cross-cutting source signature verification per the threat model).
+
+The dual-review pattern (spec-compliance haiku + code-quality sonnet)
+was effective on Tasks 8–10. The final-review pass was the one that
+caught C1 + I1 + I3 — these were in code I did NOT touch this session.
+Lesson: even when a per-task review approves, **a milestone-wide final
+review across all commits** is worth the cost. Without it, the operator
+would have hit Stage 12 with broken argv contracts.
+
+### Operator validation catches (commit `3f7b15b`)
+
+First real-Mac run of `bin/validate-macos.sh` showed **31/34** —
+Stage 12.1 + 12.5 PASS, but 12.2/12.3/12.4 FAIL. The script's
+`>/dev/null 2>&1` had swallowed the error. Manual repro printed:
+
+```
+Usage: python -m ascendo schedule install [OPTIONS]
+Error: No such option: --expression
+```
+
+The CLI's `ascendo schedule install` accepts `--calendar` (matches
+WindowsScheduler's term, predates M5.5), but Stage 12 was passing
+`--expression`. The plan's prose used "expression" everywhere as the
+domain term, and the implementer copied that into the bash. The CLI
+was the source-of-truth, not the plan.
+
+Fix: one-character change in `bin/validate-macos.sh:611` —
+`--expression` → `--calendar`. Operator re-ran: **34/34 PASS**.
+
+Lesson: when a plan mentions a CLI invocation with named flags, the
+plan must cite the actual flag names from the CLI source, not the
+domain-language paraphrase. Spec-compliance review can't catch this
+because the plan is internally consistent.
+
+### Real run trace (Stage 12, 34/34)
+
+```
+==> 12.1 doctor: launchctl component
+  launchctl            ok: Darwin Bootstrapper Version 7.0.0:
+                       Fri Feb 27 01:10:45 PST 2026; root:libxpc_executables-3102.100.102~70/launchd/RELEASE_ARM64E
+  [PASS] 12.1 doctor: launchctl component
+
+==> 12.2 schedule install (MINUTE 1, profile=quick)   [PASS]   plist + sidecar written
+==> 12.3 schedule list contains entry                 [PASS]
+==> 12.4 schedule trigger                             [PASS]
+==> 12.5 schedule remove                              [PASS]   files cleaned up
+
+ALL CHECKS PASSED. (34/34)
+```
+
+Then `bash bin/run-tag-release-macos.sh` ran the 7-stage flow against
+brew (stage 5b mas was opt-in via `--mas`, deferred this run). Apply
+exit 0 on the one outdated formula. Stage 7 doctor printed all 10
+components green and the script printed:
+
+```
+    tagged v0.2.0. Run 'git push --tags' when ready.
+```
+
+Tag created locally at HEAD of `claude/busy-mclean-0b9896`. Pending:
+operator runs `git push --tags` after merging the worktree branch.
+
+### Architecture confirmed end-to-end
+
+- Layer 4 core: no changes. `IScheduler` + `ScheduleSpec` were already
+  complete from earlier milestones.
+- `MacOSAdapter.capabilities` flips to `PACKAGE_MANAGEMENT | ELEVATION |
+  INVENTORY | SNAPSHOTS | SCHEDULING`. `scheduler()` returns cached
+  `LaunchdScheduler` singleton with `scripts_dir=self.SCRIPTS_DIR,
+  lib_dir=self.LIB_DIR`.
+- Health check now reports 10 components (was 9): brew/jq/mas/system_profiler/
+  softwareupdate/tmutil + new launchctl + bash/ascendo_lib/ascendo_scripts.
+- Threat surface: per-user agents only — no root, no system-wide exposure.
+  `ProgramArguments` argv-only (`/usr/bin/env ascendo run --profile <p>`).
+  `<name>` constrained to `^[a-z0-9-]+$` by Pydantic, eliminating injection
+  via plist filenames or launchctl domain targets.
+
+### Known cosmetic issue (operator follow-up)
+
+The operator's `python3 -m ascendo doctor` output during Stage 7 of
+`run-tag-release-macos.sh` showed:
+
+```
+capabilities: AdapterCapability.PACKAGE_MANAGEMENT|INVENTORY|SNAPSHOTS|ELEVATION
+```
+
+— SCHEDULING is missing despite `scheduler()` working end-to-end (Stage
+12 install/list/trigger/remove all passed, which proves
+`adapter.scheduler()` returned a non-`None` `LaunchdScheduler`). Likely
+cause: stale editable install pointer or cached `.pyc`. On the
+controller's box (`PYTHONPATH=$PWD/core:$PWD/adapters/macos python3 -c
+...`) the same `MacOSAdapter().capabilities` correctly prints
+`...|SCHEDULING|ELEVATION`. Refresh with:
+
+```bash
+cd /Users/mk/Dev_Env/Ascendo/.claude/worktrees/busy-mclean-0b9896
+pip install -e adapters/macos --no-deps --force-reinstall
+find . -name '__pycache__' -type d -exec rm -rf {} +
+```
+
+Doesn't block v0.2.0 — the tag already points at the wired code. The
+discrepancy is purely in the operator's local pip install state.
+
+### Spec + plan
+
+- Spec: `docs/superpowers/specs/2026-05-04-macos-launchd-scheduler-design.md`
+- Plan: `docs/superpowers/plans/2026-05-04-macos-launchd-scheduler.md`
+- Sesja 27 partial-handoff (this file, below): describes Tasks 1–7
+  shipped on `cool-beaver-f1879c` before merge.
+
+### What's next (M6)
+
+- **M6** — hardening + v1.0 stable: security audit (T1–T7 threat-model
+  items per ADR-0005); code signing across all three OSes (Apple
+  Developer ID + Authenticode); plugin signing + verification
+  (FAZA II); plugin marketplace UX in dashboard; localization beyond
+  en/pl (tokens already support es/it/pt/de/fr); telemetry (opt-in,
+  100% local-only).
+
+---
+
 ## Sesja 27 (2026-05-04) — macOS adapter M5.5: launchd IScheduler (PARTIAL — Tasks 1-7 of 14)
 
 Started M5.5 (launchd `IScheduler`) on a `claude/cool-beaver-f1879c`
