@@ -55,17 +55,33 @@ const sudoMgr = {
       ind.textContent = "";
       const span = document.createElement("span");
       span.className = "badge " + (s.cached ? "ok" : "warn");
-      span.textContent = s.cached
-        ? ((window.tr && window.tr("sudo.cached")) || "Administrator authorized")
-        : ((window.tr && window.tr("sudo.not_cached")) || "Administrator not authorized");
+      // Adapter-aware wording: macOS + Linux say "sudo", Windows says
+      // "Administrator". On Unix-like adapters we override the i18n
+      // string (which is Windows-flavored by default) with the sudo
+      // wording; on Windows we keep the legacy translation path.
+      const isUnix = window.ADAPTER_NAME === "macos"
+                  || window.ADAPTER_NAME === "ubuntu"
+                  || window.ADAPTER_NAME === "linux";
+      if (isUnix) {
+        span.textContent = s.cached ? "sudo cached" : "sudo not cached";
+      } else {
+        span.textContent = s.cached
+          ? ((window.tr && window.tr("sudo.cached")) || "Administrator authorized")
+          : ((window.tr && window.tr("sudo.not_cached")) || "Administrator not authorized");
+      }
       ind.appendChild(span);
     } catch {}
   },
   async ensure() {
     const s = await api.get("/sudo/status");
     if (s.cached) return true;
-    const prompt = (window.tr && window.tr("sudo.empty_prompt"))
-      || "Administrator credentials needed — enter your password to authenticate.";
+    const isUnix = window.ADAPTER_NAME === "macos"
+                || window.ADAPTER_NAME === "ubuntu"
+                || window.ADAPTER_NAME === "linux";
+    const fallback = isUnix
+      ? "sudo credentials needed — enter your password to authenticate."
+      : "Administrator credentials needed — enter your password to authenticate.";
+    const prompt = (window.tr && window.tr("sudo.empty_prompt")) || fallback;
     return this.open(prompt);
   },
 };
@@ -3052,6 +3068,17 @@ async function bootstrap() {
     window.UI_LANG = window.detectLanguage();
     window.applyI18n();
   }
+  // Adapter identity → drives platform-conditional UI (e.g. NVIDIA buttons
+  // on Linux/Windows only, "Administrator authorized" wording on Windows).
+  try {
+    const v = await api.get("/version");
+    const adapter = (v && (v.adapter || v.adapter_name)) || "unknown";
+    document.documentElement.setAttribute("data-adapter", adapter);
+    window.ADAPTER_NAME = adapter;
+  } catch {
+    document.documentElement.setAttribute("data-adapter", "unknown");
+  }
+
   injectIcons();
   bindSidebar();
   bindSwitchers();

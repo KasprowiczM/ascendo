@@ -91,6 +91,19 @@ html, body {
 .brand-img--light { display: none; }
 :root[data-theme="light"] .brand-img--dark  { display: none; }
 :root[data-theme="light"] .brand-img--light { display: block; }
+
+/* Adapter-conditional UI. Bootstrap sets html[data-adapter] from
+   GET /version. Elements tagged with adapter-only-<name> are visible
+   only when that adapter is current. Multiple classes OR together
+   (an element with both adapter-only-linux and adapter-only-windows
+   shows on either Linux or Windows but not macOS). */
+.adapter-only-linux,
+.adapter-only-windows,
+.adapter-only-macos { display: none; }
+html[data-adapter="linux"]   .adapter-only-linux,
+html[data-adapter="ubuntu"]  .adapter-only-linux,
+html[data-adapter="windows"] .adapter-only-windows,
+html[data-adapter="macos"]   .adapter-only-macos { display: revert; }
 .sidebar-brand .brand-mark { width: 36px; height: 36px; border-radius: var(--radius-md); }
 .topbar-brand .brand-mark { width: 22px; height: 22px; border-radius: var(--radius-sm); }
 .sidebar-nav { display: flex; flex-direction: column; gap: 0.15rem; flex: 1; }

@@ -162,8 +162,8 @@
           <button data-quick='{"profile":"safe"}'  data-i18n="overview.btn_safe">Safe update</button>
           <button data-quick='{"profile":"full"}'  data-i18n="overview.btn_full">Full update</button>
           <button data-quick='{"profile":"full","dry_run":true}' data-i18n="overview.btn_dry">Full dry-run</button>
-          <button data-quick='{"profile":"full","extra_args":["--nvidia"]}' data-icon-prefix="nvidia" class="btn-nvidia" title="Apply NVIDIA driver upgrade (held by default)">Update NVIDIA</button>
-          <button data-quick='{"only":"drivers","phase":"apply","extra_args":["--nvidia"]}' class="secondary" title="Apply only the NVIDIA driver category">drivers only · with NVIDIA</button>
+          <button data-quick='{"profile":"full","extra_args":["--nvidia"]}' data-icon-prefix="nvidia" class="btn-nvidia adapter-only-linux adapter-only-windows" title="Apply NVIDIA driver upgrade (held by default)">Update NVIDIA</button>
+          <button data-quick='{"only":"drivers","phase":"apply","extra_args":["--nvidia"]}' class="secondary adapter-only-linux adapter-only-windows" title="Apply only the NVIDIA driver category">drivers only · with NVIDIA</button>
         </div>
         <div class="card">
           <h3 data-i18n="health.title">Post-run health</h3>
@@ -781,7 +781,7 @@
                 <option value="full">full</option>
               </select>
             </label>
-            <label class="inline">
+            <label class="inline adapter-only-linux adapter-only-windows">
               <input type="checkbox" name="scheduler_no_drivers" />
               <span data-i18n="settings.skip_drivers">Skip drivers in scheduled run</span>
             </label>
