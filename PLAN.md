@@ -1,6 +1,12 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-05 (sesja 32) — inventory SQLite DB cache,
+> Last updated: 2026-05-05 (sesja 33) — macOS adapter now has full
+> 5-manager parity with Ubuntu: brew · mas · npm · **pip** · softwareupdate.
+> 11-component health check (added `pip`). 495 tests passing
+> (+24 new this session: 16 PipManager smoke + 5 check-script
+> end-to-end + 3 adapter wiring).
+>
+> Previous milestone: Sesja 32 (inventory SQLite DB cache,
 > adapter-conditional onboarding wizard (macOS/Linux/Windows variants),
 > Apps↔Categories data parity, NVIDIA hard-hidden on macOS via
 > adapter-hide-macos, sidebar contextual help block (replacing

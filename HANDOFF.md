@@ -6,6 +6,63 @@
 
 ---
 
+## Sesja 33 (2026-05-05) — macOS pip / Python global CLI manager
+
+User asked: "implement pip for macos, ubuntu has it, mac doesn't". One
+focused subagent dispatched (`ab81087b7e9177f96`) — landed cleanly in
+commit `97b4cbb`. The macOS adapter now has 5 package managers
+(brew · mas · npm · **pip** · softwareupdate), full parity with the
+Ubuntu adapter's pip support.
+
+### Shipped (commit `97b4cbb`)
+
+| File | What |
+|------|------|
+| `adapters/macos/lib/ascendo_pip.sh` | Bash 3.2 helpers: pip-binary discovery (`$ASCENDO_PYTHON_PIP_OVERRIDE` → toolchain → pip3 → pip), cached `pip list --format=json` lookup, PyPI JSON latest-version via 5 s curl, flavour-aware `--break-system-packages` vs `--user` arg selection (PEP 668 detection: probes pip path under `/opt/homebrew` or `/usr/local/Homebrew`), manifest loader. Sesja 30 jq-stdin pitfall explicitly avoided. |
+| `adapters/macos/config/pip_global_clis.txt` | 11 default CLIs: pip, pipx, uv, ruff, black, isort, mypy, pytest, httpx, poetry, virtualenv. Pipe-delimited like the npm manifest. |
+| `adapters/macos/scripts/pip/{check,plan,apply,verify,cleanup}.sh` | Full 5-phase contract. Process-substitution loops (no `manifest \| while` subshell drain). `_stream_tee` + `_stream_progress` integration so live verbose log in Run Center shows pip-install progress lines. **NO sudo** — pip on macOS always installs to user-site or brew-Python-site (documented in `apply.sh` header). Idempotent `pip cache purge`. |
+| `adapters/macos/ascendo_macos/managers/pip.py` | `PipManager(IPackageManager)`. `category = SourceType.PIP`. `display_name = "Python global packages (pip + pipx)"`. `is_available(host)` probes pip via the bash helper. `_build_argv` mirrors `NpmManager` (run-id / trigger / profile / output-dir / optional --filter / optional --dry-run). Reads sidecar through M2.4 `sidecar_io`. |
+| `adapters/macos/ascendo_macos/adapter.py` | `package_managers()` now returns 5 entries — pip slotted between npm and softwareupdate (apply runs sequential and softwareupdate has reboot semantics so it stays last). New `_pip_status` health helper; component count 10 → **11**. |
+| `adapters/macos/tests/test_pip_manager_smoke.py` | **16 new tests**: identity, is_available matrix (mocked subprocess), 5× phase dispatch (parametrized), dry_run + filter argv shape. |
+| `adapters/macos/tests/test_pip_check_script.py` | **5 new tests** driving the real bash with a fake pip+curl on PATH: empty-manifest empty-items, planned/up_to_date/missing classification with semver, `--filter` propagation. |
+| `adapters/macos/tests/test_adapter_smoke.py` | Extended: bumped existing capability/manager assertions; added `test_health_check_includes_pip_component`, `test_package_managers_includes_pip_after_npm`, `test_health_check_has_eleven_components`. |
+
+`SourceType.PIP` was already in `core/ascendo/models/package.py` (the Linux adapter shipped it) — no schema regen needed.
+
+### Tests
+
+**495 / 495 passing** (215 contract + 280 macOS adapter, +24 new this
+session). One pre-existing `test_service_endpoints` failure unchanged.
+End-to-end smoke against real pip on Mac.r12.home produced a valid
+`ascendo/v1` sidecar.
+
+### What this enables
+
+The user can now manage Python global tools the same way they manage
+brew formulae or mas apps:
+
+```bash
+python3 -m ascendo run --category pip --phase check    # what's outdated
+python3 -m ascendo run --category pip --phase apply    # upgrade them
+```
+
+Or via the dashboard's Categories tab — a `pip` row now appears with
+the standard 5-phase buttons. The default manifest covers most power-
+user Python CLIs; users can edit `adapters/macos/config/pip_global_clis.txt`
+to add their own. Live `pip install` progress streams into the Run
+Center's terminal log box just like brew/mas/npm/softwareupdate.
+
+### Still open (Sesja 34)
+
+- Programmatic Touch ID enable (sudo write to `/etc/pam.d/sudo_local`)
+- `litellm` AI provider implementation
+- More suggestion-library rule templates
+- Pre-apply Time Machine snapshot integration (still APFS-API-blocked)
+- Parallel apply across categories
+- Bulk-preview UI
+
+---
+
 ## Sesja 32 (2026-05-05) — Inventory SQLite DB + adapter-conditional wizard + UX overhaul
 
 After Sesja 31's polish pass the user came back with a screenshot-driven
