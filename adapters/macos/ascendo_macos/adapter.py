@@ -29,6 +29,7 @@ from .managers.brew import BrewManager
 from .managers.elevation import MacElevation
 from .managers.mas import MasManager
 from .managers.npm import NpmManager
+from .managers.pip import PipManager
 from .managers.softwareupdate import SoftwareUpdateManager
 from .managers.scheduler import LaunchdScheduler
 from .snapshot import TimeMachineSnapshot
@@ -60,9 +61,13 @@ class MacOSAdapter(IAdapter):
     Capabilities declared:
         PACKAGE_MANAGEMENT — Homebrew formulae + casks via BrewManager;
                              Mac App Store via MasManager (sudo mas upgrade,
-                             CVE-2025-43411 rule enforced); macOS OS updates
-                             via SoftwareUpdateManager (sudo -A softwareupdate
-                             -i ... -R --verbose; -R flag mandatory).
+                             CVE-2025-43411 rule enforced); npm + Node + Bun
+                             toolchain via NpmManager; pip / Python global
+                             CLIs via PipManager (no sudo, --break-system-
+                             packages or --user added based on active pip's
+                             flavour); macOS OS updates via SoftwareUpdateManager
+                             (sudo -A softwareupdate -i ... -R --verbose; -R
+                             flag mandatory).
         ELEVATION          — sudo password cache via MacElevation; exposed as
                              POST /elevation/auth on the dashboard so the SPA
                              can prompt once and forward sudo to mas/brew/
@@ -130,14 +135,15 @@ class MacOSAdapter(IAdapter):
     # ── Sub-interface accessors ───────────────────────────────────────────
 
     def package_managers(self, host: HostInfo) -> list[IPackageManager]:
-        # Order matters: brew first, mas second, npm third, softwareupdate LAST.
-        # softwareupdate's apply may reboot the Mac mid-run (when any
-        # update has Action: restart) — putting it last lets the orchestrator
-        # complete brew + mas + npm first.
+        # Order matters: brew first, mas second, npm third, pip fourth,
+        # softwareupdate LAST. softwareupdate's apply may reboot the Mac
+        # mid-run (when any update has Action: restart) — putting it last
+        # lets the orchestrator complete brew + mas + npm + pip first.
         return [
             BrewManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
             MasManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, elevation=self.elevation()),
             NpmManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
+            PipManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
             SoftwareUpdateManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, elevation=self.elevation()),
         ]
 
@@ -221,9 +227,9 @@ class MacOSAdapter(IAdapter):
     def health_check(self) -> dict[str, str]:
         """Adapter self-test. Returns component→status_string for ``ascendo doctor``.
 
-        Components checked (10 total):
+        Components checked (11 total):
             brew, jq, mas, system_profiler, softwareupdate, tmutil,
-            launchctl, bash, ascendo_lib, ascendo_scripts
+            launchctl, pip, bash, ascendo_lib, ascendo_scripts
         """
         out: dict[str, str] = {}
         out["brew"] = self._brew_status()
@@ -233,6 +239,7 @@ class MacOSAdapter(IAdapter):
         out["softwareupdate"] = self._softwareupdate_status()
         out["tmutil"] = self._tmutil_status()
         out["launchctl"] = self._launchctl_status()  # M5.5
+        out["pip"] = self._pip_status()
         out["bash"] = self._bash_status()
         out["ascendo_lib"] = self._lib_status()
         out["ascendo_scripts"] = self._scripts_status()
@@ -473,6 +480,42 @@ class MacOSAdapter(IAdapter):
             return "ok"
         lines = (res.stdout or "").strip().splitlines()
         v = lines[0] if lines else ""
+        return f"ok: {v}" if v else "ok"
+
+    def _pip_status(self) -> str:
+        """Resolve the active pip the same way ascendo_pip.sh does and report.
+
+        Reports ``ok: pip <version>`` when a pip resolves AND ``pip --version``
+        succeeds; ``unavailable: pip not found`` when no pip is on PATH.
+        """
+        # Resolution order mirrors ascendo_pip_pip_bin (toolchain pip first,
+        # then pip3, then pip). We don't shell out to bash here — keep
+        # health_check pure-Python so it stays fast.
+        toolchain = (
+            os.environ.get("MAC_UPDATE_TOOLCHAIN_HOME")
+            or str(Path.home() / ".local/share/mac-update")
+        )
+        toolchain_pip = Path(toolchain) / "python-tools" / "bin" / "pip"
+        if toolchain_pip.is_file() and os.access(toolchain_pip, os.X_OK):
+            path: str | None = str(toolchain_pip)
+        else:
+            path = shutil.which("pip3") or shutil.which("pip")
+        if path is None:
+            return "unavailable: pip not found (install: brew install python or pipx)"
+        try:
+            res = subprocess.run(
+                [path, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"error: {exc}"
+        if res.returncode != 0:
+            return f"error: pip --version exited {res.returncode}"
+        line = (res.stdout or "").strip().splitlines()
+        v = line[0] if line else ""
         return f"ok: {v}" if v else "ok"
 
     def _bash_status(self) -> str:

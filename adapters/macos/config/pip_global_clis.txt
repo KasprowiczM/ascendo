@@ -1,0 +1,31 @@
+# Ascendo macOS — pip / Python global CLI manifest.
+#
+# Format (pipe-delimited, lines starting with # are comments):
+#   display_name|package_name|method|description
+#
+# Methods:
+#   pip — `pip install -U <package_name>` against the active pip
+#         (toolchain-local > pipx > pip3 > pip on PATH). Honours
+#         --break-system-packages or --user as appropriate for the
+#         active pip's flavour (brew vs system python vs venv).
+#
+# display_name is the row label shown in the dashboard Categories tab and
+# the value matched by --filter. package_name is what we install/query
+# against PyPI. description is informational only.
+#
+# To add a new tool: append a row, save, run `python -m ascendo run
+# --category pip --phase check`. The new row appears with status
+# planned/missing/up_to_date depending on local state.
+
+display_name|package_name|method|description
+pip|pip|pip|The Python package installer itself
+pipx|pipx|pip|Run Python apps in isolated environments
+uv|uv|pip|Fast Python package manager (Astral)
+ruff|ruff|pip|Fast Python linter + formatter
+black|black|pip|The uncompromising Python code formatter
+isort|isort|pip|Python import sorter
+mypy|mypy|pip|Static type checker
+pytest|pytest|pip|Python testing framework
+httpx|httpx|pip|Modern HTTP client
+poetry|poetry|pip|Python dependency manager
+virtualenv|virtualenv|pip|Virtual environment creator
