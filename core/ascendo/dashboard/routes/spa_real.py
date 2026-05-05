@@ -300,14 +300,33 @@ def _seed_buckets_from_sidecars(
     adapter: IAdapter,
     runs_dir: Path | None,
 ) -> dict[str, list[dict[str, Any]]]:
-    """Add a bucket-from-sidecar for every adapter category that's empty."""
+    """Replace each bucket with the check sidecar's item list when the
+    sidecar has strictly more entries than inventory found for that
+    category.
+
+    Why: the OS-level inventory (system_profiler on macOS, dpkg on
+    Linux, ARP on Windows) only sees apps that match the
+    classification heuristic. brew formulae, softwareupdate OS
+    patches, and npm globals are NOT ``.app`` bundles and never get
+    classified — yet their managers' check sidecars report the
+    authoritative installed list. We replace the bucket when the
+    sidecar carries more rows so Categories shows the same content
+    Run Center does.
+
+    The "strictly more" guard preserves Windows behaviour (winget /
+    msstore / registry_arp inventory items typically match sidecar
+    item count exactly, so inventory keeps its richer metadata; the
+    overlay applied later by ``_enrich_items`` still imports
+    installed/candidate versions from the sidecar).
+    """
     if runs_dir is None:
         return buckets
     for cat_id in _adapter_category_ids(adapter):
-        if cat_id in buckets and buckets[cat_id]:
-            continue  # inventory already populated this category
         items = _items_from_check_sidecar(runs_dir, cat_id)
-        if items:
+        if not items:
+            continue
+        existing = buckets.get(cat_id) or []
+        if len(items) > len(existing):
             buckets[cat_id] = items
     return buckets
 
