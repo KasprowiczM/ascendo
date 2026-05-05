@@ -105,25 +105,41 @@ OUTDATED_JSON="$(mas_outdated_json)"
 # Bash 3.2-safe: no arrays, use plain string with space sentinels.
 OUTDATED_IDS=" $(printf '%s' "$OUTDATED_JSON" | jq -r '.[].id' 2>/dev/null | tr '\n' ' ') "
 
-printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, .current_version, .target_version] | @tsv' 2>/dev/null | \
-while IFS="$(printf '\t')" read -r _id _cur _tgt; do
+printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, .name, .current_version, .target_version] | @tsv' 2>/dev/null | \
+while IFS="$(printf '\t')" read -r _id _name _cur _tgt; do
     [ -n "$_id" ] || continue
     if in_filter "$_id"; then
-        json_add_item "$_id" "$_cur" "$_tgt" "planned" "mas"
+        # Use display name as id when present so the dashboard's
+        # check-overlay can match against system_profiler-derived
+        # inventory items keyed by display name (e.g. "OneDrive").
+        # Without this the user sees installed=26.062 but candidate=blank
+        # because the overlay key (numeric id 823766827) never matches
+        # the inventory key (display name OneDrive).
+        if [ -n "$_name" ]; then
+            json_add_item "$_name" "$_cur" "$_tgt" "planned" "mas"
+        else
+            json_add_item "$_id" "$_cur" "$_tgt" "planned" "mas"
+        fi
     fi
 done
 
 # -- up_to_date (installed minus outdated) -------------------------------------
 LIST_JSON="$(mas_list_json)"
 
-printf '%s' "$LIST_JSON" | jq -r '.[] | [.id, .version] | @tsv' 2>/dev/null | \
-while IFS="$(printf '\t')" read -r _id _ver; do
+printf '%s' "$LIST_JSON" | jq -r '.[] | [.id, .name, .version] | @tsv' 2>/dev/null | \
+while IFS="$(printf '\t')" read -r _id _name _ver; do
     [ -n "$_id" ] || continue
     # Skip any id that is in the outdated set
     case "$OUTDATED_IDS" in
         (*" $_id "*) continue ;;
     esac
-    json_add_item "$_id" "$_ver" "$_ver" "up_to_date" "mas"
+    # Use display name as id (see comment above for the same issue in the
+    # planned-loop above). Falls back to numeric id when name is empty.
+    if [ -n "$_name" ]; then
+        json_add_item "$_name" "$_ver" "$_ver" "up_to_date" "mas"
+    else
+        json_add_item "$_id" "$_ver" "$_ver" "up_to_date" "mas"
+    fi
 done
 
 exit 0

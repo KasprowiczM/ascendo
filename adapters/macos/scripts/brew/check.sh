@@ -130,13 +130,24 @@ _filter_match() {
     return 1
 }
 
-# Emit one sidecar item per outdated package in the given bucket.
-# bucket: "formula" or "cask"
+# Build a set of outdated ids (space-padded sentinels) for O(1) membership
+# tests in the up_to_date loop. Bash 3.2-safe: no associative arrays.
+OUTDATED_IDS=" "
+_collect_outdated_ids() {
+    local _bucket="$1"
+    local _id _cur _tgt
+    while IFS=',' read -r _id _cur _tgt; do
+        [ -z "$_id" ] && continue
+        OUTDATED_IDS="$OUTDATED_IDS$_id "
+    done < <(ascendo_brew_parse_outdated "$TMP_OUTDATED" "$_bucket" 2>/dev/null || true)
+}
+_collect_outdated_ids "formula"
+_collect_outdated_ids "cask"
+
+# Emit one `planned` item per outdated package in the given bucket.
 _emit_outdated() {
     local _bucket="$1"
     local _count=0
-    # ascendo_brew_parse_outdated emits CSV: id,current_version,target_version
-    # Process substitution (<(...)) is available in bash 3.2 on macOS.
     while IFS=',' read -r _id _current _target; do
         [ -z "$_id" ] && continue
         if _filter_match "$_id"; then
@@ -147,12 +158,39 @@ _emit_outdated() {
     json_add_message "info" "outdated ${_bucket}: ${_count}"
 }
 
+# Emit one `up_to_date` item per installed package NOT in the outdated set.
+# `brew list --versions` outputs lines like "abseil 20240722.1" or
+# "node 25.9.0_3" — first whitespace-separated token is the id, the
+# remainder is the version (may contain spaces for some formulae).
+_emit_up_to_date() {
+    local _bucket="$1"
+    local _flag="$2"           # --formula or --cask
+    local _count=0
+    local _id _ver _line
+    while IFS= read -r _line; do
+        [ -z "$_line" ] && continue
+        _id="${_line%% *}"
+        _ver="${_line#* }"
+        # Some casks have no version reported by `brew list --versions`; treat
+        # the whole line as id and skip the version.
+        if [ "$_id" = "$_line" ]; then
+            _ver=""
+        fi
+        # Skip if id is in the outdated set (already emitted as `planned`).
+        case "$OUTDATED_IDS" in
+            (*" $_id "*) continue ;;
+        esac
+        if _filter_match "$_id"; then
+            json_add_item "$_id" "$_ver" "$_ver" "up_to_date" "brew" "$_bucket"
+            _count=$((_count + 1))
+        fi
+    done < <(brew list "$_flag" --versions 2>/dev/null || true)
+    json_add_message "info" "installed ${_bucket}: ${_count} up-to-date"
+}
+
 _emit_outdated "formula"
 _emit_outdated "cask"
-
-# Emit a summary info message with installed counts (cheap, read-only).
-_INSTALLED_F="$(brew list --formula 2>/dev/null | wc -l | tr -d ' ' || echo 0)"
-_INSTALLED_C="$(brew list --cask 2>/dev/null | wc -l | tr -d ' ' || echo 0)"
-json_add_message "info" "installed: ${_INSTALLED_F} formulae, ${_INSTALLED_C} casks"
+_emit_up_to_date "formula" "--formula"
+_emit_up_to_date "cask"    "--cask"
 
 exit 0

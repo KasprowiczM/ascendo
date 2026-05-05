@@ -165,4 +165,9 @@ def test_filter_limits_planned_items(tmp_path):
     assert res.returncode == 0, res.stderr
     sc = _parse_sidecar(out / rid / "check__mas.json")
     planned = [i for i in sc.items if i.status.value == "planned"]
-    assert all(i.id == "1153157709" for i in planned)
+    # Filter targets the numeric mas id; the emitted item now uses the
+    # human-readable name as `id` so the dashboard's check-overlay matches
+    # the system_profiler-derived inventory entry. (The fake mas list
+    # output for 1153157709 is "Keka".) See mas/check.sh for rationale.
+    assert len(planned) == 1
+    assert planned[0].id == "Keka"
