@@ -105,17 +105,39 @@ apply_pip() {
         return
     fi
     _stream_emit ">>> pip install -U $_pkg ($_display)"
+    # Capture pip's combined stdout+stderr to a temp file AND tee to the
+    # live stream. On failure we slice the last 12 lines into the sidecar
+    # message so the operator sees the real reason (PEP 668, missing build
+    # wheel, network refusal, etc.) without log-diving.
+    local _tmp_log
+    _tmp_log="$(mktemp -t ascendo-pip-apply.XXXXXX 2>/dev/null || mktemp /tmp/ascendo-pip-apply.XXXXXX)"
     if [ -n "$EXTRA_PIP_ARGS" ]; then
-        "$PIP_BIN" install -U "$_pkg" "$EXTRA_PIP_ARGS" --disable-pip-version-check 2>&1 | _stream_tee >/dev/null
+        "$PIP_BIN" install -U "$_pkg" "$EXTRA_PIP_ARGS" --disable-pip-version-check 2>&1 \
+            | tee "$_tmp_log" | _stream_tee >/dev/null
     else
-        "$PIP_BIN" install -U "$_pkg" --disable-pip-version-check 2>&1 | _stream_tee >/dev/null
+        "$PIP_BIN" install -U "$_pkg" --disable-pip-version-check 2>&1 \
+            | tee "$_tmp_log" | _stream_tee >/dev/null
     fi
     local _rc="${PIPESTATUS[0]:-1}"
     if [ "$_rc" -ne 0 ]; then
         json_add_item "$_display" "" "" "failed" "pip" "pip"
-        json_add_message "error" "'pip install -U $_pkg' exited $_rc"
+        # Last ~12 lines, trimmed to 1500 chars total (Pydantic Message has
+        # a 4096-char cap; we stay well under). Replace tabs with spaces
+        # and squash blank lines so the message reads cleanly in a UI.
+        local _tail
+        _tail="$(tail -n 12 "$_tmp_log" 2>/dev/null \
+                 | tr '\t' ' ' \
+                 | awk 'NF{print}' \
+                 | head -c 1500 || true)"
+        if [ -n "$_tail" ]; then
+            json_add_message "error" "pip install -U $_pkg exited $_rc — last output: $_tail"
+        else
+            json_add_message "error" "pip install -U $_pkg exited $_rc (no output captured)"
+        fi
+        rm -f "$_tmp_log" 2>/dev/null
         return
     fi
+    rm -f "$_tmp_log" 2>/dev/null
     # Bust the cache so post-install version lookup reads fresh state.
     _ASCENDO_PIP_LIST_CACHE=""
     _ASCENDO_PIP_LIST_CACHED=0

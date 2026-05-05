@@ -26,15 +26,26 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 TAURI_DIR="$REPO_ROOT/ui/desktop-tauri"
 
 MODE="dev"
+# Argument parser. We tolerate two shapes of accidental input that
+# shell users hit when copy-pasting our doc snippets:
+#   1. zsh interactive mode ignores `#` comments by default unless
+#      `interactive_comments` is set, so `bash bin/launch-…sh # foo`
+#      passes "#", "foo" as positional args. Tokens starting with `#`
+#      are silently dropped here.
+#   2. comment tail words after the `#` (e.g. "dev,", "instant",
+#      "reload") are not flag tokens. Anything that isn't one of our
+#      known flags is now a soft WARN — print and continue, instead of
+#      hard exit 2 — so a stray paste doesn't cancel the build/run.
 while [ $# -gt 0 ]; do
     case "$1" in
         --build|-b) MODE="build"; shift ;;
         --help|-h)
             sed -n '2,21p' "$0"; exit 0 ;;
-        # Tolerate inline shell-style `# comment` tails when users
-        # copy-paste a command-with-comment from documentation.
         \#*) shift ;;
-        *) printf "launch-desktop-macos.sh: unknown arg: %s\n" "$1" >&2; exit 2 ;;
+        *)
+            printf "launch-desktop-macos.sh: ignoring unknown arg: %s\n" "$1" >&2
+            shift
+            ;;
     esac
 done
 

@@ -27,9 +27,11 @@ while [ $# -gt 0 ]; do
         --no-sudo) USE_SUDO=0; shift ;;
         --help|-h)
             sed -n '2,21p' "$0"; exit 0 ;;
-        # Tolerate inline shell comments from copy-paste.
+        # Tolerate inline shell comments + stray comment tails from
+        # zsh-without-interactive_comments. See launch-desktop-macos.sh
+        # for the same reasoning.
         \#*) shift ;;
-        *) echo "unknown flag: $1" >&2; exit 2 ;;
+        *) echo "ignoring unknown arg: $1" >&2; shift ;;
     esac
 done
 
