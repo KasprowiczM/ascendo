@@ -203,6 +203,12 @@ if [ "$DRY_RUN" -eq 1 ]; then
 fi
 
 # -- real apply path -----------------------------------------------------------
+# Touch-ID-first sudo warming (Sesja 34). See ascendo_json.sh for the
+# rationale: native macOS auth dialog presents Touch ID first when
+# pam_tid is configured, password fallback otherwise. After this
+# returns, the `sudo -A` invocation below uses the warmed timestamp.
+_ascendo_sudo_warm
+
 # 1. Build sudo argv based on flags
 SU_ARGV=""
 if [ -n "$FILTER_LABEL" ]; then

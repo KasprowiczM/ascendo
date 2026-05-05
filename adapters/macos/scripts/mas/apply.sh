@@ -122,6 +122,13 @@ if [ "$DRY_RUN" -eq 1 ]; then
 fi
 
 # -- real apply path -----------------------------------------------------------
+# Touch-ID-first sudo warming. Asks the OS-native auth dialog (Touch ID
+# preferred when pam_tid is configured) BEFORE falling back to the
+# dashboard's askpass cache. After this returns, the `sudo -A` calls
+# below use the warmed timestamp and don't re-prompt. Best-effort —
+# doesn't change the failure path if Touch ID is unavailable.
+_ascendo_sudo_warm
+
 # Collect target ids + version pairs as space-separated strings (Bash 3.2-safe;
 # no declare -A). IDs are numeric-only so spaces are safe delimiters.
 # Use command substitution to avoid subshell variable scoping (Bash 3.2).

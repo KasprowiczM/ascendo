@@ -223,3 +223,61 @@ _stream_progress() {
 _stream_item() {
     _stream_emit ">>> ITEM $*"
 }
+
+# =============================================================================
+# Touch-ID-first sudo warming (Sesja 34)
+# =============================================================================
+# Apply scripts on macOS that need root (`mas`, `softwareupdate`) currently
+# rely on `sudo -A` + a SUDO_ASKPASS helper that supplies a password the
+# user typed once into the dashboard's elevation modal. That works, but it
+# bypasses PAM entirely, so even when the user has `auth sufficient
+# pam_tid.so` configured in /etc/pam.d/sudo_local, Touch ID never gets a
+# chance — the password is the FIRST credential probe.
+#
+# The user wants the inverse: try Touch ID first, fall back to password.
+# Cleanest macOS-native path: invoke `sudo -v` via osascript with
+# administrator privileges. macOS's authorization-services dialog does
+# pam_tid first when configured, and falls back to password if the
+# user opts out / fingerprint fails.
+#
+# After this helper returns (whether via Touch ID or askpass cache), the
+# subsequent `sudo -A` calls in the script use the warmed sudo
+# timestamp (5-min validity window) and don't prompt again.
+#
+# Usage:
+#     _ascendo_sudo_warm   # before the first `sudo -A …` in apply.sh
+#
+# Returns 0 always (best-effort). Apply scripts MUST still handle the
+# possibility that sudo will fail — this only improves the credential-
+# entry UX, doesn't guarantee elevation.
+_ascendo_sudo_warm() {
+    # Test-fixture opt-out: pytest exports PYTEST_CURRENT_TEST for every
+    # test it runs; ASCENDO_SUDO_WARM_DISABLE is the explicit operator
+    # escape hatch. Either makes the helper a no-op so test-stubbed
+    # `sudo` doesn't see surprise `-n -v` calls in its argv log.
+    if [ -n "${PYTEST_CURRENT_TEST:-}" ] || [ -n "${ASCENDO_SUDO_WARM_DISABLE:-}" ]; then
+        return 0
+    fi
+    # 1. Already authed in the last ~5 min? Done.
+    if sudo -n -v 2>/dev/null; then
+        return 0
+    fi
+    # 2. macOS-only path: osascript with admin privileges presents the
+    #    OS-native dialog (Touch ID first when pam_tid is configured,
+    #    password fallback). The shell script just calls `sudo -v` so
+    #    the timestamp is cached for subsequent `sudo -A` calls.
+    if [ "$(uname -s)" = "Darwin" ] && command -v osascript >/dev/null 2>&1; then
+        # If the user cancels the dialog, osascript exits non-zero — that's
+        # fine, we fall through to the existing `sudo -A` path which will
+        # use the cached askpass password if available. Stderr is silenced
+        # so a cancel doesn't pollute the run output.
+        osascript -e 'do shell script "/usr/bin/sudo -v" with administrator privileges' \
+            >/dev/null 2>&1 || true
+    fi
+    # 3. Re-validate. If we got Touch-ID-cached, this returns 0 and the
+    #    subsequent `sudo -A` calls run silently. If Touch ID failed /
+    #    user cancelled, this returns non-zero — apply script falls
+    #    through to its existing `sudo -A` path (askpass cache).
+    sudo -n -v 2>/dev/null || true
+    return 0
+}

@@ -155,13 +155,30 @@ apply_npm() {
         return
     fi
     _stream_emit ">>> npm install -g $_pkg ($_display)"
-    "$NPM_BIN" install -g "$_pkg" 2>&1 | _stream_tee >/dev/null
+    # Capture combined stdout+stderr to a temp log AND tee to live
+    # stream — same pattern as pip apply, so a failure surfaces npm's
+    # actual error (registry 404, EACCES, version conflict, etc.) in
+    # the sidecar message instead of a bare exit code.
+    local _tmp_log
+    _tmp_log="$(mktemp -t ascendo-npm-apply.XXXXXX 2>/dev/null || mktemp /tmp/ascendo-npm-apply.XXXXXX)"
+    "$NPM_BIN" install -g "$_pkg" 2>&1 | tee "$_tmp_log" | _stream_tee >/dev/null
     local _rc="${PIPESTATUS[0]:-1}"
     if [ "$_rc" -ne 0 ]; then
         json_add_item "$_display" "" "" "failed" "npm" "npm"
-        json_add_message "error" "'npm install -g $_pkg' exited $_rc"
+        local _tail
+        _tail="$(tail -n 12 "$_tmp_log" 2>/dev/null \
+                 | tr '\t' ' ' \
+                 | awk 'NF{print}' \
+                 | head -c 1500 || true)"
+        if [ -n "$_tail" ]; then
+            json_add_message "error" "npm install -g $_pkg exited $_rc — last output: $_tail"
+        else
+            json_add_message "error" "npm install -g $_pkg exited $_rc (no output captured)"
+        fi
+        rm -f "$_tmp_log" 2>/dev/null
         return
     fi
+    rm -f "$_tmp_log" 2>/dev/null
     local _new="$(ascendo_npm_installed_version "$_pkg")"
     json_add_item "$_display" "$_new" "$_new" "success" "npm" "npm"
 }

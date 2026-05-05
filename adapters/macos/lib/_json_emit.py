@@ -242,11 +242,20 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     planned = sum(1 for it in items if it.get("status") == "planned")
     partial = sum(1 for it in items if it.get("status") == "partial")
 
-    # Status heuristic mirrors AscendoJson.psm1 Save-Sidecar:
-    # - any failed -> "failed"
-    # - all skipped -> "skipped"
-    # - else -> "success"
-    if failed > 0:
+    # Status heuristic — refined Sesja 34:
+    #   any failed AND any success → "partial"  (most common: 10 ok, 1 broken)
+    #   all failed (success == 0)  → "failed"
+    #   all skipped                → "skipped"
+    #   else                       → "success"
+    #
+    # The previous rule "any failed → failed" caused the orchestrator's
+    # "all managers reported failed" abort to trigger on a single bad
+    # package (10/11 success was reported as failed). With "partial",
+    # mixed-outcome runs continue and the sidecar accurately reflects
+    # the state.
+    if failed > 0 and success > 0:
+        status = "partial"
+    elif failed > 0:
         status = "failed"
     elif total > 0 and skipped == total:
         status = "skipped"
