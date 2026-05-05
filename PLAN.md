@@ -1,6 +1,14 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-05 (sesja 31) — polish pass: app icon (.icns +
+> Last updated: 2026-05-05 (sesja 32) — inventory SQLite DB cache,
+> adapter-conditional onboarding wizard (macOS/Linux/Windows variants),
+> Apps↔Categories data parity, NVIDIA hard-hidden on macOS via
+> adapter-hide-macos, sidebar contextual help block (replacing
+> top-of-view summaries), Overview cards compacted, sidebar widened
+> for PL tagline. 471 tests green (+13 inventory_db); 693/693 EN/PL
+> i18n parity.
+>
+> Previous milestone: Sesja 31 (icon + AI providers Gemini/LMStudio +
 > cache flush), Overview reordered (1. inventory, 2. quick, 3. safe,
 > 4. dry run, 5. full), About release notes expand/collapse, Help view
 > fully populated for macOS / Linux (41 new keys, 624/624 EN+PL parity),

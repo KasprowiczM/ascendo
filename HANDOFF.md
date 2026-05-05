@@ -6,6 +6,56 @@
 
 ---
 
+## Sesja 32 (2026-05-05) — Inventory SQLite DB + adapter-conditional wizard + UX overhaul
+
+After Sesja 31's polish pass the user came back with a screenshot-driven
+list of 10 items. 2 subagents dispatched in parallel; both succeeded
+this time (Sesja 31's rate-limit pattern broke after the 9pm window
+reset). Plus extensive inline cleanup.
+
+### Shipped (single commit `610714c`)
+
+| Area | What |
+|------|------|
+| **Inventory SQLite DB (subagent A)** | New `core/ascendo/dashboard/inventory_db.py` — `InventoryDB` class with idempotent migration, `bulk_upsert` (single transaction, executemany), `query(category, status, search)`, `get_meta` / `set_meta`, `clear_category` / `clear_all`, `is_fresh()` 24h-default window. WAL mode + `synchronous=NORMAL`. Per-call connections (`check_same_thread=False`) so safe across uvicorn worker threads. Path defaults to `~/.ascendo/inventory.db`; `ASCENDO_INVENTORY_DB` env override. Lifespan-wired into `app.state.inventory_db`. New `_resolve_buckets` in `spa_real.py` reads DB-first when fresh, else live-scans + populates. `/inventory`, `/inventory/summary`, `/inventory/{cat}` all funnel through it. New `POST /inventory/db/refresh` endpoint. Post-run flush in `run_async.py` walks sidecars and bulk-upserts so subsequent navigations are instant — even after CLI runs. |
+| **Apps↔Categories parity** | The user reported brew showed 143 in Categories but only 1 in Apps. `routes/apps.py::_load_inventory_apps` now calls `spa_real._resolve_buckets` so both endpoints serve identical data. Verified via `test_apps_and_categories_see_same_data` regression test. |
+| **Adapter-conditional onboarding wizard (subagent B)** | New `wizard.os.{windows,macos,linux}` namespaces in `i18n.js` (en + pl, parity 693/693). Each holds adapter-specific `tagline`, `intro`, `bullet_admin`, `admin_title/body/why_b/do_b`, `scan_body`, `sources_intro`, `sources_table` (array of `{id, desc}`), `deferred_check_id` + `_running/_done/_failed`, `dry_h/body/btn/running/done/category`, `cli_apply`. `wizard.osTr(key)` + `wizard.osList(key)` helpers in `app.js` read `<html data-adapter>` (mapping `ubuntu`→`linux`, fallback `windows`). Refactored `build_welcome` / `build_admin` / `build_scan` / `build_sources` / `build_done` + `runInventoryScan` / `runDryRun` / `runDeferredCheck` (renamed from `runWindowsUpdateCheck`) to source per-OS strings. macOS users now see "Unified updates for macOS" + brew/mas/softwareupdate/npm sources + sudo (not UAC) + dry-run on brew (not winget). Linux gets apt/snap/flatpak/brew/npm. Windows preserved verbatim. |
+| **NVIDIA + drivers gating (item 2)** | The user reported NVIDIA buttons still visible on macOS despite `adapter-only-linux adapter-only-windows` classes. The base CSS rule was correct but I wanted defense-in-depth: added `adapter-hide-macos` (which uses `display: none !important`) to both Overview NVIDIA buttons + the Settings "Skip drivers in scheduled run" label. The `!important` rule wins over any future selector that might flip display back. |
+| **Settings repo URL (item 3)** | Replaced legacy `KasprowiczM/Ubuntu_Aktualizacje` placeholder with `KasprowiczM/ascendo` and set as the default value. Hosts edit form `repo_path` placeholder bumped from `~/Dev_Env/Ubuntu_Aktualizacje` to `~/Dev_Env/ascendo`; same for the JS default in `_showHostForm`. |
+| **Categories collapse/expand reliability (item 7)** | Row click handler used `e.target.tagName === "BUTTON"` to bail on button clicks. That missed clicks on icons/spans nested inside action buttons (e.g. an SVG inside `▶ run all`), which toggled the row open/closed while the user thought they'd triggered a phase. Replaced with `e.target.closest("button")` so any click within ANY button now skips the toggle. |
+| **Sidebar contextual help (item 8)** | New `<div id="sidebar-help">` block at the bottom of the sidebar. `ui.updateSidebarHelp(view)` runs on every `ui.show(view)` call and pulls the matching `<view>.help_summary` i18n key — no new translations required. The previously-mandatory top-of-view summary paragraph is now hidden via `.tab-help > p:first-child {display: none}` to free vertical space; the bullet-point details still live inside the collapsed `<details>` blocks for users who want depth. |
+| **Overview compact (item 9)** | Card padding 18px→14px globally; on Overview specifically 14→10 px. `.big` readout font size 26→22 px, `.meta` 12→11 px. Grid `minmax(260px, 1fr)` → `minmax(220px, 1fr)` so 4 cards fit cleanly on a typical screen. |
+| **Sidebar width (item 10)** | `--sidebar-w` bumped 240→264 px. The PL tagline "ZUNIFIKOWANE AKTUALIZACJE" (and similarly long DE/FR/ES translations) now stays on a single line. |
+
+### Tests
+
+**471 / 471 green** (215 contract — including 13 new inventory_db tests — + 256 macOS adapter). One pre-existing `test_service_endpoints` failure unchanged.
+
+### EN/PL parity
+
+693 / 693 keys — verified via the standard flatten-and-diff one-liner.
+
+### Subagent rate-limit retrospective
+
+Both Sesja 32 subagents completed successfully (the 9pm Europe/Warsaw
+window reset cleared the per-tier limit). The wizard agent took ~10
+min; the inventory-DB agent took ~10 min. Both worked their way to
+`git commit` autonomously and the controller's mid-session checkpoint
+absorbed both into commit `610714c`. Lesson holds: ≤2 subagents per
+session, dispatch only for genuinely independent multi-file work.
+
+### Still open (Sesja 33)
+
+- Programmatic Touch ID enable (sudo write to `/etc/pam.d/sudo_local`)
+- `litellm` AI provider implementation
+- More suggestion-library rule templates (CVE matching, staleness,
+  feature-add hints)
+- Pre-apply Time Machine snapshot integration (still APFS-API-blocked)
+- Parallel apply across categories
+- Bulk-preview UI aggregating per-category plan sidecars
+
+---
+
 ## Sesja 31 (2026-05-05) — Polish pass: icon + Help + AI providers + Touch ID + Overview reorder
 
 Mid-evening fix-up session after the user's screenshot-driven feedback.
