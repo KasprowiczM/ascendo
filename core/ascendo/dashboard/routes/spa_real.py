@@ -240,6 +240,78 @@ def _load_packages(adapter: IAdapter) -> list[Package]:
 import json as _json  # local alias so the new helper is self-contained
 
 
+def _items_from_check_sidecar(runs_dir: Path, category: str) -> list[dict[str, Any]]:
+    """Synthesise inventory items directly from the latest check sidecar.
+
+    Used when the OS-level inventory enumerator (system_profiler on macOS,
+    dpkg on Linux, ARP on Windows) doesn't know about a category's
+    packages — e.g. npm globals aren't ``.app`` bundles, so
+    system_profiler returns nothing for category=npm even though the
+    npm/check.sh sidecar has 9 real items.
+
+    Mirrors the shape produced by :func:`_package_to_item` so downstream
+    enrichment treats sidecar-derived items identically to inventory ones.
+    """
+    overlay = _latest_check_overlay(runs_dir, category)
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for key, rec in overlay.items():
+        # The overlay is keyed by both `name` and `id` — same record
+        # appears under both keys when they differ. Dedupe by record id.
+        rid = id(rec)
+        marker = f"{rid}"
+        if marker in seen:
+            continue
+        seen.add(marker)
+        items.append(
+            {
+                "name": str(key),
+                "installed": rec.get("installed"),
+                "candidate": rec.get("candidate"),
+                "source": category,
+                "status": _classify(rec.get("installed"), rec.get("candidate")),
+                "vendor": None,
+            }
+        )
+    return items
+
+
+def _adapter_category_ids(adapter: IAdapter) -> list[str]:
+    """Every package-manager category the adapter declares.
+
+    Used to seed empty buckets from check sidecars so categories with no
+    inventory representation (npm, pip, snap on systems where the OS
+    doesn't enumerate them) still surface in the dashboard.
+    """
+    try:
+        host = adapter.detect_host()
+        managers = adapter.package_managers(host)
+    except Exception:  # noqa: BLE001
+        return []
+    out: list[str] = []
+    for m in managers:
+        cat = m.category
+        out.append(cat.value if hasattr(cat, "value") else str(cat))
+    return out
+
+
+def _seed_buckets_from_sidecars(
+    buckets: dict[str, list[dict[str, Any]]],
+    adapter: IAdapter,
+    runs_dir: Path | None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Add a bucket-from-sidecar for every adapter category that's empty."""
+    if runs_dir is None:
+        return buckets
+    for cat_id in _adapter_category_ids(adapter):
+        if cat_id in buckets and buckets[cat_id]:
+            continue  # inventory already populated this category
+        items = _items_from_check_sidecar(runs_dir, cat_id)
+        if items:
+            buckets[cat_id] = items
+    return buckets
+
+
 def _latest_check_overlay(runs_dir: Path, category: str) -> dict[str, dict[str, Any]]:
     """Return ``{name|id: {installed, candidate, status}}`` from the latest
     successful check sidecar for ``category``, or ``{}`` if none exists.
@@ -403,6 +475,7 @@ async def inventory_real(request: Request) -> dict[str, Any]:
     packages = cache.get(lambda: _load_packages(adapter))
     excluded = apps_mod.excluded_keys()
     buckets = _bucket(packages)
+    buckets = _seed_buckets_from_sidecars(buckets, adapter, runs_dir)
     enriched = {
         cat: _enrich_items(items, cat, runs_dir, excluded)
         for cat, items in buckets.items()
@@ -426,6 +499,7 @@ async def inventory_summary_real(request: Request) -> dict[str, Any]:
     packages = cache.get(lambda: _load_packages(adapter))
     excluded = apps_mod.excluded_keys()
     buckets = _bucket(packages)
+    buckets = _seed_buckets_from_sidecars(buckets, adapter, runs_dir)
 
     out = {
         "totals": {"ok": 0, "outdated": 0, "missing": 0, "total": 0},
@@ -465,7 +539,9 @@ async def inventory_category_real(category: str, request: Request) -> dict[str, 
     cache = _get_inventory_cache(request)
     runs_dir = getattr(request.app.state, "runs_dir", None)
     packages = cache.get(lambda: _load_packages(adapter))
-    items = _bucket(packages).get(category, [])
+    buckets = _bucket(packages)
+    buckets = _seed_buckets_from_sidecars(buckets, adapter, runs_dir)
+    items = buckets.get(category, [])
     enriched = _enrich_items(items, category, runs_dir, apps_mod.excluded_keys())
     return {"category": category, "items": enriched}
 

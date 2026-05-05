@@ -84,9 +84,17 @@ COUNT_PLANNED=0
 COUNT_UTD=0
 COUNT_MISSING=0
 
+# Prime the `npm ls -g` cache once so per-package lookups are O(1) jq calls
+# instead of O(N) npm spawns.
+ascendo_npm_prime_installed_cache
+
 # Skip the header row (first non-comment/non-blank line). Manifest is
-# pipe-delimited: display_name|package_name|method|brew_formula|command
-ascendo_npm_manifest_lines | while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
+# pipe-delimited: display_name|package_name|method|brew_formula|command.
+# Using process substitution `< <(...)` (NOT `manifest | while`) so the
+# loop body can spawn npm/jq freely without draining the manifest pipe
+# stdin. The previous pipe form caused only 4 of 9 entries to be
+# processed because npm view's stdin handling was eating manifest lines.
+while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
     # Skip header
     if [ "$DISPLAY" = "display_name" ]; then continue; fi
     [ -z "$DISPLAY" ] && continue
@@ -122,7 +130,7 @@ ascendo_npm_manifest_lines | while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; 
     esac
 
     json_add_item "$DISPLAY" "$INSTALLED" "$LATEST" "$STATUS" "npm" "$METHOD"
-done
+done < <(ascendo_npm_manifest_lines)
 
 json_add_message "info" "npm: ${COUNT_PLANNED} outdated, ${COUNT_UTD} up-to-date, ${COUNT_MISSING} missing"
 exit 0

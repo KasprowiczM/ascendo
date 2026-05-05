@@ -159,7 +159,9 @@ apply_npm() {
 }
 
 # -- walk manifest ------------------------------------------------------------
-ascendo_npm_manifest_lines | while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
+# Process substitution (not `manifest | while`) — see check.sh for the
+# bug class this avoids.
+while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
     [ "$DISPLAY" = "display_name" ] && continue
     [ -z "$DISPLAY" ] && continue
     in_filter "$DISPLAY" || continue
@@ -169,6 +171,6 @@ ascendo_npm_manifest_lines | while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; 
         npm)         apply_npm "$DISPLAY" "$PKG"  ;;
         *) json_add_message "warn" "unknown method '$METHOD' for $DISPLAY; skipping" ;;
     esac
-done
+done < <(ascendo_npm_manifest_lines)
 
 exit 0

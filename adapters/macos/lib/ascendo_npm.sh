@@ -87,30 +87,55 @@ ascendo_npm_outdated_json() {
     local _npm
     _npm="$(ascendo_npm_npm_bin)"
     if [ -z "$_npm" ]; then printf '{}'; return 0; fi
-    local _out _rc
-    _out="$("$_npm" outdated -g --json 2>/dev/null || true)"
+    local _out
+    # IMPORTANT: redirect stdin from /dev/null so this never drains a
+    # parent's pipe (e.g. `manifest | while read ...; do call_this; done`
+    # would otherwise lose the manifest stream after the first iteration).
+    _out="$("$_npm" outdated -g --json </dev/null 2>/dev/null || true)"
     if [ -z "$_out" ]; then printf '{}'; else printf '%s' "$_out"; fi
 }
 
-# Installed version of one global package (or empty if not installed).
-# Uses `npm ls -g --depth=0 --json --silent` once and parses with jq.
-ascendo_npm_installed_version() {
-    local _pkg="$1"
+# Cache for `npm ls -g`. The full ls is expensive; called once per
+# script-run via ``ascendo_npm_prime_installed_cache`` and reused by
+# ``ascendo_npm_installed_version``.
+_ASCENDO_NPM_LS_CACHE=""
+_ASCENDO_NPM_LS_CACHED=0
+
+ascendo_npm_prime_installed_cache() {
     local _npm
     _npm="$(ascendo_npm_npm_bin)"
-    if [ -z "$_npm" ] || [ -z "$_pkg" ]; then return 0; fi
-    "$_npm" ls -g --depth=0 --json --silent 2>/dev/null \
-        | jq -r --arg pkg "$_pkg" '.dependencies[$pkg].version // empty' 2>/dev/null \
+    if [ -z "$_npm" ]; then _ASCENDO_NPM_LS_CACHE="{}"; _ASCENDO_NPM_LS_CACHED=1; return 0; fi
+    _ASCENDO_NPM_LS_CACHE="$("$_npm" ls -g --depth=0 --json </dev/null 2>/dev/null || true)"
+    if [ -z "$_ASCENDO_NPM_LS_CACHE" ]; then _ASCENDO_NPM_LS_CACHE="{}"; fi
+    _ASCENDO_NPM_LS_CACHED=1
+}
+
+# Installed version of one global package (or empty if not installed).
+# Uses the cached `npm ls -g` JSON populated by
+# ``ascendo_npm_prime_installed_cache`` to avoid running npm once per
+# manifest entry (would be ~9 npm spawns for the default list).
+ascendo_npm_installed_version() {
+    local _pkg="$1"
+    [ -z "$_pkg" ] && return 0
+    if [ "$_ASCENDO_NPM_LS_CACHED" = "0" ]; then
+        ascendo_npm_prime_installed_cache
+    fi
+    if ! command -v jq >/dev/null 2>&1; then return 0; fi
+    printf '%s' "$_ASCENDO_NPM_LS_CACHE" \
+        | jq -r --arg pkg "$_pkg" '.dependencies[$pkg].version // empty' \
+              </dev/null 2>/dev/null \
         || true
 }
 
 # Latest published version of one package (registry query).
+# `npm view` is per-call (no cheap batch API). Stdin pinned to /dev/null
+# to keep parent pipes intact.
 ascendo_npm_latest_version() {
     local _pkg="$1"
     local _npm
     _npm="$(ascendo_npm_npm_bin)"
     if [ -z "$_npm" ] || [ -z "$_pkg" ]; then return 0; fi
-    "$_npm" view "$_pkg" version --silent 2>/dev/null || true
+    "$_npm" view "$_pkg" version </dev/null 2>/dev/null || true
 }
 
 # Installed bun version (or empty).

@@ -43,7 +43,8 @@ in_filter() {
     case ",$FILTER," in (*",$1,"*) return 0 ;; (*) return 1 ;; esac
 }
 
-ascendo_npm_manifest_lines | while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
+ascendo_npm_prime_installed_cache
+while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
     [ "$DISPLAY" = "display_name" ] && continue
     [ -z "$DISPLAY" ] && continue
     in_filter "$DISPLAY" || continue
@@ -65,6 +66,6 @@ ascendo_npm_manifest_lines | while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; 
         fi
     fi
     json_add_item "$DISPLAY" "$INSTALLED" "$LATEST" "$STATUS" "npm" "$METHOD"
-done
+done < <(ascendo_npm_manifest_lines)
 
 exit 0
