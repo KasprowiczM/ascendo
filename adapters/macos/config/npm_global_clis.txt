@@ -1,0 +1,30 @@
+# Ascendo macOS — npm/native global CLI manifest.
+# Ported from /Users/mk/Dev_Env/Aktualizacje_MAC/config/npm_global_clis.txt
+#
+# Format (pipe-delimited, lines starting with # are comments):
+#   display_name|package_name|method|brew_formula|command
+#
+# Methods:
+#   native-node  — installed via `n` (Node version manager) under
+#                  $TOOLCHAIN_HOME/node. Self-bootstraps via npm install -g n.
+#   native-bun   — installed via curl https://bun.sh/install | bash
+#                  under $BUN_INSTALL.
+#   npm          — `npm install -g <package_name>`. Honors $NPM_GLOBAL_PREFIX.
+#
+# brew_formula:  if non-empty, ascendo will prefer the npm-installed copy
+#                and remove the Homebrew formula on apply (one-time
+#                migration). Set to empty when no brew analog exists.
+#
+# command:       the binary name on PATH that proves the install worked.
+#                Used by `verify` to confirm exit-code-0 on `<command> --version`.
+
+display_name|package_name|method|brew_formula|command
+node|node|native-node|node|node
+npm|npm|npm||npm
+pnpm|pnpm|npm||pnpm
+claude-code|@anthropic-ai/claude-code|npm||claude
+codex-cli|@openai/codex|npm||codex
+gemini-cli|@google/gemini-cli|npm|gemini-cli|gemini
+qwen-code|@qwen-code/qwen-code|npm|qwen-code|qwen
+opencode-cli|opencode-ai|npm|opencode|opencode
+bun|bun|native-bun|bun|bun

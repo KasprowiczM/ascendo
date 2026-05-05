@@ -28,6 +28,7 @@ from .inventory import MacOSInventory
 from .managers.brew import BrewManager
 from .managers.elevation import MacElevation
 from .managers.mas import MasManager
+from .managers.npm import NpmManager
 from .managers.softwareupdate import SoftwareUpdateManager
 from .managers.scheduler import LaunchdScheduler
 from .snapshot import TimeMachineSnapshot
@@ -129,13 +130,14 @@ class MacOSAdapter(IAdapter):
     # ── Sub-interface accessors ───────────────────────────────────────────
 
     def package_managers(self, host: HostInfo) -> list[IPackageManager]:
-        # Order matters: brew first, mas second, softwareupdate LAST.
+        # Order matters: brew first, mas second, npm third, softwareupdate LAST.
         # softwareupdate's apply may reboot the Mac mid-run (when any
         # update has Action: restart) — putting it last lets the orchestrator
-        # complete brew + mas first.
+        # complete brew + mas + npm first.
         return [
             BrewManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
             MasManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, elevation=self.elevation()),
+            NpmManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
             SoftwareUpdateManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, elevation=self.elevation()),
         ]
 

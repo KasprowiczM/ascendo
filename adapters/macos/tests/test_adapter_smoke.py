@@ -62,10 +62,10 @@ def test_scheduler_returns_launchd_scheduler_singleton() -> None:
 # ── package_managers ─────────────────────────────────────────────────────
 
 
-def test_package_managers_returns_brew_mas_softwareupdate() -> None:
-    """M5.4 adds SoftwareUpdateManager after BrewManager + MasManager.
+def test_package_managers_returns_brew_mas_npm_softwareupdate() -> None:
+    """M5.6 adds NpmManager between MasManager and SoftwareUpdateManager.
 
-    Order: brew first, mas second, softwareupdate LAST (apply may reboot
+    Order: brew, mas, npm, softwareupdate (last because apply may reboot
     the Mac mid-run).
     """
     a = MacOSAdapter()
@@ -78,10 +78,18 @@ def test_package_managers_returns_brew_mas_softwareupdate() -> None:
         is_elevated=False,
     )
     mgrs = a.package_managers(host)
-    assert len(mgrs) == 3
+    assert len(mgrs) == 4
     assert mgrs[0].category is SourceType.BREW
     assert mgrs[1].category is SourceType.MAS
-    assert mgrs[2].category is SourceType.SOFTWAREUPDATE
+    assert mgrs[2].category is SourceType.NPM
+    assert mgrs[3].category is SourceType.SOFTWAREUPDATE
+    # legacy alias kept for callers that imported by old name
+    return None
+
+
+def test_package_managers_returns_brew_mas_softwareupdate() -> None:
+    """Legacy alias of the test above. Kept so external callers don't break."""
+    test_package_managers_returns_brew_mas_npm_softwareupdate()
 
 
 # ── detect_host ──────────────────────────────────────────────────────────
@@ -195,16 +203,18 @@ def test_capabilities_includes_elevation() -> None:
     assert AdapterCapability.ELEVATION in a.capabilities
 
 
-def test_package_managers_includes_brew_mas_softwareupdate(mac_host: HostInfo) -> None:
-    """package_managers() returns [BrewManager, MasManager, SoftwareUpdateManager] in that order.
+def test_package_managers_includes_brew_mas_npm_softwareupdate(mac_host: HostInfo) -> None:
+    """package_managers() returns [BrewManager, MasManager, NpmManager,
+    SoftwareUpdateManager] in that order.
 
-    M5.4 added SoftwareUpdateManager. Order matters: softwareupdate is
-    LAST because apply may reboot the Mac mid-run.
+    M5.4 added SoftwareUpdateManager; M5.6 added NpmManager between mas
+    and softwareupdate. Order matters: softwareupdate is LAST because
+    apply may reboot the Mac mid-run.
     """
     a = MacOSAdapter()
     pkgs = a.package_managers(mac_host)
     names = [type(p).__name__ for p in pkgs]
-    assert names == ["BrewManager", "MasManager", "SoftwareUpdateManager"]
+    assert names == ["BrewManager", "MasManager", "NpmManager", "SoftwareUpdateManager"]
 
 
 def test_elevation_returns_macelevation() -> None:
@@ -260,8 +270,8 @@ def test_snapshot_returns_timemachinesnapshot_singleton() -> None:
     assert s1 is s2
 
 
-def test_package_managers_third_is_softwareupdate() -> None:
-    """package_managers() returns SoftwareUpdateManager as the THIRD entry (after brew, mas)."""
+def test_package_managers_last_is_softwareupdate() -> None:
+    """package_managers() returns SoftwareUpdateManager as the LAST entry."""
     from ascendo_macos.managers.softwareupdate import SoftwareUpdateManager
 
     a = MacOSAdapter()
@@ -270,8 +280,8 @@ def test_package_managers_third_is_softwareupdate() -> None:
         os_version="14.5", arch="arm64", user="mk", is_elevated=False,
     )
     mgrs = a.package_managers(host)
-    assert len(mgrs) == 3
-    assert isinstance(mgrs[2], SoftwareUpdateManager)
+    assert len(mgrs) == 4
+    assert isinstance(mgrs[-1], SoftwareUpdateManager)
 
 
 def test_health_check_includes_softwareupdate_component() -> None:
