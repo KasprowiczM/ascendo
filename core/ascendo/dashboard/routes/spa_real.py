@@ -179,22 +179,23 @@ def _category_key(pkg: Package) -> str:
 def _package_to_item(pkg: Package) -> dict[str, Any]:
     """Render a :class:`Package` as the SPA's inventory row schema.
 
-    The current ``Package`` model carries identity only (id, name,
-    category) — no installed/candidate version yet. We expose those as
-    ``None`` so the SPA renders the row but doesn't show a phantom
-    upgrade arrow. When inventory grows version awareness (M3+), this is
-    the single helper to update.
+    Reads ``installed_version`` + ``available_version`` from the Package
+    model (added when inventory enumerators grew per-app version
+    awareness — system_profiler on macOS, dpkg on Linux, ARP on Windows).
+    Older callers that built Packages without these fields surface as
+    ``installed=None`` / ``candidate=None``; the SPA renders the row
+    without a phantom upgrade arrow.
     """
     cat_key = _category_key(pkg)
-    installed = getattr(pkg, "version", None)
-    candidate = getattr(pkg, "available_version", None)
+    installed = pkg.installed_version
+    candidate = pkg.available_version
     return {
         "name": pkg.name,
         "installed": installed,
         "candidate": candidate,
         "source": cat_key,
         "status": _classify(installed, candidate),
-        "vendor": getattr(pkg, "vendor", None),
+        "vendor": pkg.vendor,
     }
 
 

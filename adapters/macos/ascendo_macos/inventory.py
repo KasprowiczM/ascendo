@@ -374,6 +374,8 @@ class MacOSInventory(IInventory):
                     name=item.name if item.name else item.id,
                     category=item.source.type,
                     source=item.source,
+                    installed_version=item.current_version,
+                    available_version=item.target_version,
                 )
             )
         return packages

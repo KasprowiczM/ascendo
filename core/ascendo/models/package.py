@@ -100,6 +100,31 @@ class Package(BaseModel):
             "tap name). None when only the category is known."
         ),
     )
+    installed_version: VersionStr | None = Field(
+        default=None,
+        description=(
+            "Currently-installed version, when known. Surfaced by inventory "
+            "enumerators that capture per-package version data (e.g. "
+            "system_profiler on macOS, dpkg on Linux, registry ARP on Windows). "
+            "None when the source doesn't expose a version."
+        ),
+    )
+    available_version: VersionStr | None = Field(
+        default=None,
+        description=(
+            "Latest candidate version known to the source, when known. "
+            "Populated by overlay from the most recent `check` sidecar; "
+            "the inventory enumerator itself usually leaves this None and "
+            "the dashboard fills it in when it has a current `check` result."
+        ),
+    )
+    vendor: str | None = Field(
+        default=None,
+        description=(
+            "Optional publisher/vendor display string. Used by the SPA's "
+            "Apps tab to disambiguate look-alike app names."
+        ),
+    )
 
 
 class ItemSource(BaseModel):
