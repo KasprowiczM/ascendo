@@ -320,3 +320,21 @@ def test_endpoints_503_when_elevation_lacks_askpass_methods(tmp_path: Path) -> N
         assert "password registration" in detail or "missing" in detail, (
             f"unexpected detail for {method} {path}: {r.json()['detail']}"
         )
+
+
+# ── GET /elevation/touchid/status ────────────────────────────────────────────
+
+
+def test_touchid_status_returns_dict(client_with_elev: TestClient) -> None:
+    """Endpoint always responds 200 with a dict; available flag depends on host OS."""
+    r = client_with_elev.get("/elevation/touchid/status")
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body, dict)
+    assert "available" in body
+    if body["available"]:
+        # On macOS the response includes the inspection metadata + manual instructions.
+        assert body["method"] == "pam_tid"
+        assert "instructions" in body
+        assert "pam_tid.so" in body["instructions"]
+

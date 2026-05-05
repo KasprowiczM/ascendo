@@ -6,6 +6,61 @@
 
 ---
 
+## Sesja 31 (2026-05-05) — Polish pass: icon + Help + AI providers + Touch ID + Overview reorder
+
+Mid-evening fix-up session after the user's screenshot-driven feedback.
+3 subagents dispatched but all bounced on the per-tier API rate limit
+("9pm Europe/Warsaw") — only the icon subagent landed disk artifacts
+before bouncing. Everything else was finished inline.
+
+### Shipped (single commit at end of session)
+
+| Area | What |
+|------|------|
+| **App icon** | `ui/desktop-tauri/src-tauri/icons/icon.icns` regenerated from `app/frontend/assets/logo-mark.svg` (663 KB, multi-resolution `iconutil`-built bundle). `tauri.conf.json` icon array now includes `icons/icon.icns`. `bin/refresh-macos-icon.sh` flushes IconServices cache + restarts Dock + Finder so Cmd+Tab picks up the new icon without a full reboot. `MACOS_QUICKSTART.md` documents the rebuild + cache-flush ritual after `git pull`. |
+| **Overview reorder** | Quick actions now: 1. Build inventory · 2. Quick check · 3. Safe update · **4. Full dry run** (NEW) · **5. Full update**. The standalone "Full dry-run" secondary button removed; numbered chip 4 takes its place. EN + PL i18n updated. |
+| **About → Release notes** | Wrapped in `<details><summary>` for expand/collapse. New i18n keys `about.release_toggle` (en + pl). |
+| **Run stream live** | Terminal-style box labels (`run.stream.live`, `.idle`, `.processing`, `.progress`) now translatable. EN + PL parity. |
+| **Apps cache invalidation** | After SSE `done` event, the live view repaints automatically when user is on Apps / Categories / Overview. Calls `ui.loadAppsView({refresh: true})` etc rather than waiting for the user to click Refresh. |
+| **Help: macOS / Linux article** | New `<article data-platforms="macos linux ubuntu">` with full 11-section content (install, first run, CLI cheat-sheet, per-OS managers, config paths, dashboard tour, scheduler, snapshots, dev-sync, AI, troubleshooting). Previously the Help view was empty on macOS because the existing article had `data-platforms="windows"`. 41 new i18n keys (`help.unix.*`) added in both EN and PL — full parity at **624/624 keys**. |
+| **Hosts editor** | Verified pre-existing — `loadHosts` already wires edit/delete buttons + form binding to `/hosts/upsert` + `/hosts/delete`. The user couldn't see them because they're rendered as small secondary buttons inside the last column. No code change needed. |
+| **AI providers: Gemini + LM Studio** | `_provider_google` (api.googleapis.com/v1beta/models?key=, filters by `generateContent` capability, strips `models/` prefix from id) and `_provider_lm_studio` (OpenAI-compatible /v1/models on port 1234) are now live. `/ai/providers` catalog flips both `implemented: true`. +2 happy-path tests with mocked `urllib.urlopen`. The unimplemented-provider test now targets `litellm` (still scaffolded). |
+| **Touch ID sudo (read-only)** | New `GET /elevation/touchid/status` endpoint reads `/etc/pam.d/sudo_local` (Sonoma 14+) or `/etc/pam.d/sudo` and reports whether `auth … pam_tid.so` is present. Returns `{available, enabled, method, inspected_path, instructions}`. Off macOS returns `{available: false}`. Includes a one-line bash snippet (`sudo tee /etc/pam.d/sudo_local <<<'auth sufficient pam_tid.so'`) the user runs ONCE; afterward every macOS sudo prompt — including Ascendo's apply-phase `sudo -A` — accepts a Touch ID tap. We don't write to `/etc/pam.d` directly because that requires mid-run sudo with no interactive prompt available, and the user-side one-liner is safer + auditable. +1 smoke test. |
+| **NVIDIA + drivers buttons** | Verified pre-existing `adapter-only-linux adapter-only-windows` classes already gate them; on macOS the CSS rule `.adapter-only-* { display: none }` applies. No additional changes needed. |
+
+### Tests
+
+**458 / 458 green** (202 contract + 256 macOS adapter, +3 new this
+session: 2 AI provider tests + 1 Touch ID smoke). One pre-existing
+`test_service_endpoints` failure unchanged.
+
+### Subagent rate-limit lesson
+
+3 of 3 dispatched subagents (icon, hosts/help/cache, AI/Touch ID)
+bounced on the API rate limit within seconds of being dispatched. Only
+the icon agent had time to write disk artifacts (icon.icns,
+refresh-macos-icon.sh, regenerate-icons.sh updates, MACOS_QUICKSTART
+section) before bouncing. The other two returned the bare "You've hit
+your limit · resets 9pm" string with no work done. This is the second
+session this happened (Sesja 26 had the same pattern). **Heuristic for
+future sessions:** dispatch at most 2 subagents per session, prefer
+inline work for items that can be done in 50-200 LOC, save subagent
+budget for genuinely independent multi-file refactors.
+
+### Still open (Sesja 32)
+
+- Touch ID `POST /elevation/touchid/enable` — write the PAM line
+  programmatically. Needs a sudo-cached path that doesn't require an
+  interactive prompt during the request.
+- `litellm` provider implementation.
+- Suggestions library: more rule templates (security CVE matching,
+  staleness detection, feature-add hints).
+- Pre-apply Time Machine snapshot integration (still APFS-API-blocked).
+- Parallel apply.
+- Bulk-preview UI.
+
+---
+
 ## Sesja 30 (2026-05-05) — Major UX overhaul: live progress streaming, installer, AI wizard, cache, icon, sudo shim
 
 Massive multi-front delivery driven by the user's screenshot-driven

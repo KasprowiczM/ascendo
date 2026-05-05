@@ -144,6 +144,55 @@ def test_test_connection_openai_happy_path(client: TestClient) -> None:
     assert {m["id"] for m in r.json()["models"]} == {"gpt-4o-mini", "gpt-4o"}
 
 
+def test_test_connection_google_happy_path(client: TestClient) -> None:
+    """Gemini's models[] uses name=models/<id> + supportedGenerationMethods."""
+    fake_payload = {
+        "models": [
+            {
+                "name": "models/gemini-1.5-pro",
+                "displayName": "Gemini 1.5 Pro",
+                "supportedGenerationMethods": ["generateContent"],
+            },
+            {
+                "name": "models/embedding-001",
+                "displayName": "Embedding 001",
+                "supportedGenerationMethods": ["embedContent"],
+            },
+        ],
+    }
+    with patch(
+        "ascendo.dashboard.routes.ai.urllib_request.urlopen",
+        return_value=_mock_urlopen_returning(fake_payload),
+    ):
+        r = client.post(
+            "/ai/test-connection",
+            json={"provider": "google", "api_key": "AIzaXxx"},
+        )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    # Embedding model is filtered out — only generateContent-capable.
+    assert [m["id"] for m in body["models"]] == ["gemini-1.5-pro"]
+    assert body["models"][0]["label"] == "Gemini 1.5 Pro"
+
+
+def test_test_connection_lm_studio_happy_path(client: TestClient) -> None:
+    """LM Studio is OpenAI-compatible; same /models response shape."""
+    fake_payload = {"data": [{"id": "Llama-3.2-3B-Instruct"}]}
+    with patch(
+        "ascendo.dashboard.routes.ai.urllib_request.urlopen",
+        return_value=_mock_urlopen_returning(fake_payload),
+    ):
+        r = client.post(
+            "/ai/test-connection",
+            json={"provider": "lm_studio", "base_url": "http://localhost:1234/v1"},
+        )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["models"][0]["id"] == "Llama-3.2-3B-Instruct"
+
+
 def test_test_connection_network_error_is_caught(client: TestClient) -> None:
     """A urllib URLError must NOT raise 500 — must return ok=false with msg."""
     with patch(
@@ -163,7 +212,9 @@ def test_test_connection_network_error_is_caught(client: TestClient) -> None:
 def test_test_connection_unimplemented_provider_returns_friendly_error(
     client: TestClient,
 ) -> None:
-    r = client.post("/ai/test-connection", json={"provider": "google", "api_key": "x"})
+    # litellm is the remaining scaffold-only provider; google + lm_studio
+    # were promoted to fully implemented in Sesja 31.
+    r = client.post("/ai/test-connection", json={"provider": "litellm", "api_key": "x"})
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is False

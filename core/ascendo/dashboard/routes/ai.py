@@ -27,6 +27,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any
+import urllib.parse
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
@@ -197,6 +198,50 @@ def _provider_ollama(api_key: str, base_url: str | None) -> dict[str, Any]:
     return {"ok": True, "models": models}
 
 
+def _provider_google(api_key: str, base_url: str | None) -> dict[str, Any]:
+    if not api_key:
+        return {"ok": False, "error": "Google Gemini requires an API key"}
+    base = (base_url or _DEFAULT_BASE_URLS["google"]).rstrip("/")
+    # API key is a query param, not a header. Filter to chat-capable models
+    # (those with generateContent in supportedGenerationMethods).
+    url = f"{base}/models?key={urllib.parse.quote(api_key, safe='')}"
+    payload = _http_get_json(url, headers={"accept": "application/json"})
+    raw_models = payload.get("models") or []
+    models: list[dict[str, str]] = []
+    for m in raw_models:
+        if not isinstance(m, dict):
+            continue
+        name = m.get("name") or ""
+        methods = m.get("supportedGenerationMethods") or []
+        if "generateContent" not in methods:
+            continue
+        # name comes back as "models/gemini-1.5-pro" — strip the prefix.
+        ident = name.split("/", 1)[1] if name.startswith("models/") else name
+        if not ident:
+            continue
+        models.append({"id": ident, "label": m.get("displayName") or ident})
+    return {"ok": True, "models": models}
+
+
+def _provider_lm_studio(api_key: str, base_url: str | None) -> dict[str, Any]:
+    # LM Studio is OpenAI-compatible. Default port 1234. Auth header is
+    # required by some clients but ignored server-side; send a sentinel.
+    base = (base_url or _DEFAULT_BASE_URLS["lm_studio"]).rstrip("/")
+    url = f"{base}/models"
+    headers = {
+        "Authorization": f"Bearer {api_key or 'not-needed'}",
+        "accept": "application/json",
+    }
+    payload = _http_get_json(url, headers=headers)
+    raw_models = payload.get("data") or []
+    models = [
+        {"id": m.get("id"), "label": m.get("id")}
+        for m in raw_models
+        if isinstance(m, dict) and m.get("id")
+    ]
+    return {"ok": True, "models": models}
+
+
 def _provider_not_implemented(name: str) -> dict[str, Any]:
     return {
         "ok": False,
@@ -209,6 +254,8 @@ _PROVIDER_DRIVERS = {
     "openai":     _provider_openai,
     "openrouter": _provider_openrouter,
     "ollama":     _provider_ollama,
+    "google":     _provider_google,
+    "lm_studio":  _provider_lm_studio,
 }
 
 
@@ -248,10 +295,10 @@ async def ai_providers() -> dict[str, Any]:
         "providers": [
             {"id": "anthropic",  "label": "Anthropic (Claude)",     "needs_url": False, "implemented": True},
             {"id": "openai",     "label": "OpenAI",                 "needs_url": False, "implemented": True},
-            {"id": "google",     "label": "Google Gemini",          "needs_url": False, "implemented": False},
+            {"id": "google",     "label": "Google Gemini",          "needs_url": False, "implemented": True},
             {"id": "openrouter", "label": "OpenRouter",             "needs_url": True,  "implemented": True},
             {"id": "ollama",     "label": "Ollama (local)",         "needs_url": True,  "implemented": True},
-            {"id": "lm_studio",  "label": "LM Studio (local)",      "needs_url": True,  "implemented": False},
+            {"id": "lm_studio",  "label": "LM Studio (local)",      "needs_url": True,  "implemented": True},
             {"id": "litellm",    "label": "LiteLLM (local proxy)",  "needs_url": True,  "implemented": False},
         ],
         "providers_with_url": sorted(_PROVIDERS_WITH_URL),

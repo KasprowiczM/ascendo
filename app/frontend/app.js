@@ -2257,6 +2257,18 @@ const ui = {
       appendStreamLine(`>>> done - ${status}${ms ? ` in ${(ms/1000).toFixed(1)}s` : ""}`);
       if (window.runDetail) window.runDetail.onDone(runId, p);
       ui.invalidateCaches(); ui.checkRebootBanner(); ui.loadHealth();
+      // After a run completes, force-repaint whichever live view the
+      // user is on so they see post-apply state without manually
+      // hitting Refresh. Apps + Categories + Overview are the most
+      // common views to be staring at while a run is finishing.
+      try {
+        const active = document.querySelector(".nav-link.active")?.dataset?.view
+                     || (window.ui && ui.activeView)
+                     || null;
+        if (active === "apps")       ui.loadAppsView({ refresh: true });
+        else if (active === "categories") ui.loadCategoriesView({ refresh: true });
+        else if (active === "overview")   ui.loadOverview({ refresh: true });
+      } catch {}
     });
     es.addEventListener("log", e => { try { const m=JSON.parse(e.data); const ln=m.line||""; if (!handleMarker(ln)) { log.textContent += ln + "\n"; log.scrollTop=log.scrollHeight; appendStreamLine(ln); } } catch {} });
     es.addEventListener("log_line", e => {

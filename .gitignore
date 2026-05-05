@@ -56,7 +56,9 @@ coverage.xml
 # ── Tauri / Rust build ───────────────────────────────────────────────────────
 **/src-tauri/target/
 **/src-tauri/Cargo.lock
-**/src-tauri/icons/
+# Icons are committed (regenerated via bin/regenerate-icons.sh) so the
+# build doesn't depend on a local rasterization toolchain. The legacy
+# wildcard `**/src-tauri/icons/` is intentionally NOT here.
 **/src-tauri/gen/
 
 # ── PyInstaller ──────────────────────────────────────────────────────────────

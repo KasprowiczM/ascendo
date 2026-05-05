@@ -1,6 +1,15 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-05 (sesja 30) — major UX overhaul shipped:
+> Last updated: 2026-05-05 (sesja 31) — polish pass: app icon (.icns +
+> cache flush), Overview reordered (1. inventory, 2. quick, 3. safe,
+> 4. dry run, 5. full), About release notes expand/collapse, Help view
+> fully populated for macOS / Linux (41 new keys, 624/624 EN+PL parity),
+> AI providers Gemini + LM Studio promoted to fully-implemented,
+> Touch ID detection endpoint with one-liner enablement instructions,
+> Apps view auto-repaint after run, run stream labels translatable.
+> 458 tests passing (+3 new).
+>
+> Previous milestone: Sesja 30 (UX overhaul:
 > live verbose log streaming in Run Center, one-liner curl|bash
 > installer + CLI banner, inventory cache + Refresh buttons,
 > numbered Overview actions, dark-mode app icon, adapter-gated UI

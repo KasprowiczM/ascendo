@@ -174,12 +174,16 @@
             <span class="action-chip">3</span>
             <span class="action-label" data-i18n="overview.action_3_safe">Safe update</span>
           </button>
-          <button class="action-numbered" data-quick='{"profile":"full"}'
-                  title="" data-i18n-title="overview.action_4_full_hint">
+          <button class="action-numbered" data-quick='{"profile":"full","dry_run":true}'
+                  title="" data-i18n-title="overview.action_4_dry_hint">
             <span class="action-chip">4</span>
-            <span class="action-label" data-i18n="overview.action_4_full">Full update</span>
+            <span class="action-label" data-i18n="overview.action_4_dry">Full dry run</span>
           </button>
-          <button class="secondary" data-quick='{"profile":"full","dry_run":true}' data-i18n="overview.btn_dry">Full dry-run</button>
+          <button class="action-numbered" data-quick='{"profile":"full"}'
+                  title="" data-i18n-title="overview.action_5_full_hint">
+            <span class="action-chip">5</span>
+            <span class="action-label" data-i18n="overview.action_5_full">Full update</span>
+          </button>
           <button data-quick='{"profile":"full","extra_args":["--nvidia"]}' data-icon-prefix="nvidia" class="btn-nvidia adapter-only-linux adapter-only-windows" title="Apply NVIDIA driver upgrade (held by default)">Update NVIDIA</button>
           <button data-quick='{"only":"drivers","phase":"apply","extra_args":["--nvidia"]}' class="secondary adapter-only-linux adapter-only-windows" title="Apply only the NVIDIA driver category">drivers only · with NVIDIA</button>
         </div>
@@ -945,6 +949,87 @@
         <a href="#help-troubleshoot">11. Troubleshooting</a>
       </div>
 
+      <article class="help-doc card" data-platforms="macos linux ubuntu">
+        <h3 id="help-install" data-i18n="help.unix.install_h">1 · Install</h3>
+        <p data-i18n="help.unix.install_p">One-liner via curl|bash from your terminal:</p>
+        <pre><code>curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh | bash</code></pre>
+        <p data-i18n="help.unix.install_p2">Picks language (en / pl), detects OS (macOS / Ubuntu / Fedora / Arch), asks for install profile (CLI / CLI+Web / CLI+Web+Desktop), then installs deps and clones the repo to <code>~/.local/share/ascendo</code>. Idempotent — re-running pulls updates.</p>
+
+        <h3 id="help-firstrun" data-i18n="help.unix.firstrun_h">2 · First run</h3>
+        <p data-i18n="help.unix.firstrun_p">After install, open the dashboard or use the CLI. The dashboard auto-launches at <code>http://127.0.0.1:8765</code> on first run; the desktop app spawns the same backend as a sidecar.</p>
+        <pre><code>python3 -m ascendo doctor              # health snapshot
+python3 -m ascendo run --phase check    # find updates (read-only)
+python3 -m ascendo run --phase apply    # apply updates (mutating)
+python3 -m ascendo dashboard            # open the web UI</code></pre>
+
+        <h3 id="help-cli" data-i18n="help.unix.cli_h">3 · CLI cheat-sheet</h3>
+        <p data-i18n="help.unix.cli_p">The 5-phase contract:</p>
+        <ul>
+          <li><b>check</b> — <span data-i18n="help.unix.phase_check">read-only inventory + outdated detection (no sudo)</span></li>
+          <li><b>plan</b> — <span data-i18n="help.unix.phase_plan">show what apply WOULD do (no sudo)</span></li>
+          <li><b>apply</b> — <span data-i18n="help.unix.phase_apply">mutate the system; mas + softwareupdate prompt for sudo once via the dashboard's askpass cache</span></li>
+          <li><b>verify</b> — <span data-i18n="help.unix.phase_verify">re-check installed versions after apply</span></li>
+          <li><b>cleanup</b> — <span data-i18n="help.unix.phase_cleanup">prune stale logs / cache</span></li>
+        </ul>
+        <pre><code>python3 -m ascendo runs list -n 5                    # last 5 runs
+python3 -m ascendo runs json &lt;run-id&gt; --pretty       # full sidecar
+python3 -m ascendo schedule install \
+    --name nightly --calendar "DAILY 03:30" --profile safe</code></pre>
+
+        <h3 id="help-scripts" data-i18n="help.unix.scripts_h">4 · Per-OS managers</h3>
+        <ul>
+          <li><b>macOS:</b> brew (formulae + casks), mas (Mac App Store), softwareupdate (OS patches), launchd (scheduler), Time Machine snapshots (read-only via tmutil), npm (Node + bun + global CLIs)</li>
+          <li><b>Linux:</b> apt, snap, flatpak, brew (Homebrew on Linux), npm, pip / pipx, fwupd, NVIDIA drivers</li>
+          <li><b>Windows:</b> winget, msstore, registry_arp, PSWindowsUpdate, Task Scheduler, VSS snapshots, UAC, Dell DCU plugin</li>
+        </ul>
+
+        <h3 id="help-config" data-i18n="help.unix.config_h">5 · Configuration paths</h3>
+        <ul>
+          <li><code>~/.config/ascendo/locale.txt</code> — UI language (en / pl)</li>
+          <li><code>~/.config/ascendo/ai.json</code> — AI provider credentials (api_key redacted on read)</li>
+          <li><code>~/.ascendo/runs/&lt;run-id&gt;/</code> — sidecars + per-run stream log</li>
+          <li><code>~/.ascendo/apps_excluded.json</code> — packages opted out of apply</li>
+          <li><code>~/Library/LaunchAgents/dev.ascendo.&lt;name&gt;.plist</code> (macOS) — installed schedules</li>
+        </ul>
+
+        <h3 id="help-dashboard" data-i18n="help.unix.dashboard_h">6 · Dashboard tour</h3>
+        <p data-i18n="help.unix.dashboard_p">Tabs in the sidebar:</p>
+        <ul>
+          <li><b>Overview</b> — health snapshot, numbered quick actions (1. Build inventory · 2. Quick check · 3. Safe update · 4. Full dry run · 5. Full update)</li>
+          <li><b>Categories</b> — per-source view with 5-phase buttons</li>
+          <li><b>Run Center</b> — custom run config + live verbose terminal stream</li>
+          <li><b>History</b> — past runs with sidecars</li>
+          <li><b>Logs</b> — pick a run to inspect raw logs</li>
+          <li><b>Apps</b> — every detected app with filters (search, category, status), in-config toggle</li>
+          <li><b>Suggestions</b> — rule-based + AI-powered (3-step provider wizard)</li>
+          <li><b>Hosts</b> — multi-machine config (edit / add / delete)</li>
+          <li><b>Sync</b> — Proton Drive / rclone overlay for private files</li>
+          <li><b>Settings</b> — defaults, theme, scheduler, AI, Touch ID (macOS)</li>
+        </ul>
+
+        <h3 id="help-scheduler" data-i18n="help.unix.scheduler_h">7 · Scheduler</h3>
+        <p data-i18n="help.unix.scheduler_p">macOS: per-user LaunchAgent. Linux: systemd timer. Windows: Task Scheduler. DSL: <code>DAILY HH:MM</code>, <code>WEEKLY &lt;DAY&gt; HH:MM</code>, <code>MONTHLY HH:MM</code>, <code>HOURLY HH:MM</code>, <code>MINUTE N</code>.</p>
+
+        <h3 id="help-snapshots" data-i18n="help.unix.snapshots_h">8 · Snapshots</h3>
+        <p data-i18n="help.unix.snapshots_p">macOS APFS local snapshots are auto-managed; <code>tmutil localsnapshot</code> as pre-apply ritual. Linux: timeshift / etckeeper. Windows: VSS via Checkpoint-Computer.</p>
+
+        <h3 id="help-devsync" data-i18n="help.unix.devsync_h">9 · Dev-sync</h3>
+        <p data-i18n="help.unix.devsync_p">GitHub remains source-of-truth for tracked code. Proton Drive (or any rclone-supported backend) holds the private overlay (.env.local, AI keys, machine-local config). Use <code>dev-sync-export.sh</code> / <code>dev-sync-import.sh</code>.</p>
+
+        <h3 id="help-ai" data-i18n="help.unix.ai_h">10 · AI Suggestions</h3>
+        <p data-i18n="help.unix.ai_p">3-step wizard: pick provider → enter API key (or local URL for Ollama / LM Studio) → click Connect → pick model. Implemented: Anthropic, OpenAI, OpenRouter, Ollama, Google Gemini, LM Studio. Suggestions library shows rule-based recommendations even without an AI provider configured.</p>
+
+        <h3 id="help-troubleshoot" data-i18n="help.unix.troubleshoot_h">11 · Troubleshooting</h3>
+        <ul>
+          <li><b data-i18n="help.unix.tsh_sudo_b">No sudo prompt on apply (macOS)</b> <span data-i18n="help.unix.tsh_sudo_t">— first apply pops the sudo modal automatically; if not, click the footer pill ("sudo cache") to authenticate manually.</span></li>
+          <li><b data-i18n="help.unix.tsh_icon_b">Cmd+Tab shows old icon</b> <span data-i18n="help.unix.tsh_icon_t">— rebuild the .app via <code>bash bin/launch-desktop-macos.sh --build</code> then run <code>bash bin/refresh-macos-icon.sh</code> to flush the cache.</span></li>
+          <li><b data-i18n="help.unix.tsh_inv_b">Apps list looks stale</b> <span data-i18n="help.unix.tsh_inv_t">— click the Refresh button (top-right of Apps view); the cache is session-scoped and the auto-invalidation only fires on run completion.</span></li>
+          <li><b data-i18n="help.unix.tsh_mas_b">mas apply silently fails</b> <span data-i18n="help.unix.tsh_mas_t">— make sure you're signed into the App Store (System Settings → Apple ID), and run <code>mas account</code> from a terminal to confirm.</span></li>
+          <li><b data-i18n="help.unix.tsh_logs_b">Where are the logs?</b> <span data-i18n="help.unix.tsh_logs_t">— <code>~/.ascendo/runs/&lt;run-id&gt;/_stream.log</code> (verbose) and <code>&lt;phase&gt;__&lt;source&gt;.log</code> (per-phase). The Logs tab in the dashboard reads these.</span></li>
+        </ul>
+        <p class="dim" data-i18n="help.unix.full_docs">For the full operator manual see <a href="https://github.com/KasprowiczM/ascendo/blob/main/MACOS_QUICKSTART.md">MACOS_QUICKSTART.md</a> and <a href="https://github.com/KasprowiczM/ascendo/blob/main/USER_GUIDE.md">USER_GUIDE.md</a> in the repo.</p>
+      </article>
+
       <article class="help-doc card" data-platforms="windows">
         <h3 id="help-install">1. Install</h3>
         <p>Three install paths on Windows 11 — pick whichever fits:</p>
@@ -1164,10 +1249,15 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
           <div id="about-system">…</div>
         </div>
         <div class="card" style="grid-column: 1 / -1">
-          <h3 data-i18n="about.release">Release notes</h3>
-          <p class="dim" data-i18n="about.release_hint">Auto-generated from git history.
-            See <code>RELEASE_NOTES.md</code> in the repo root for the full file.</p>
-          <div id="about-release" style="max-height:50vh;overflow:auto"></div>
+          <details class="release-notes-details">
+            <summary>
+              <h3 data-i18n="about.release" style="display:inline">Release notes</h3>
+              <span class="release-notes-toggle" data-i18n="about.release_toggle">Click to expand</span>
+            </summary>
+            <p class="dim" data-i18n="about.release_hint">Auto-generated from git history.
+              See <code>RELEASE_NOTES.md</code> in the repo root for the full file.</p>
+            <div id="about-release" style="max-height:50vh;overflow:auto"></div>
+          </details>
         </div>
       </div>
     </section>

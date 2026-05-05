@@ -47,6 +47,21 @@ Three equivalent paths — pick one:
 | **B** | `bash bin/launch-desktop-macos.sh` | Native Tauri 2.x window (WKWebView). The app in a real macOS window, not a browser tab. **Requires Rust + Node** — see prerequisites in the script header. |
 | **C** | (after `tauri build`) Double-click `Ascendo.app` | Production build with bundled icon. Lives in `ui/desktop-tauri/src-tauri/target/release/bundle/macos/`. |
 
+> **After `git pull`** — if the icon set changed (you'll see updates in
+> `ui/desktop-tauri/src-tauri/icons/`), you need to **rebuild the .app
+> bundle** for the new icon to appear in Cmd+Tab / Dock / Finder:
+>
+> ```bash
+> bash bin/launch-desktop-macos.sh --build   # embeds icon.icns into the .app
+> bash bin/refresh-macos-icon.sh             # flushes macOS icon caches
+> ```
+>
+> macOS caches app-bundle icons aggressively; without the cache flush
+> step, Cmd+Tab keeps rendering the previous icon even though the
+> .app on disk is fresh. The refresh script touches the bundle,
+> clears IconServices caches, and restarts Dock + Finder. Pass
+> `--no-sudo` if you've already cleared the system caches manually.
+
 The first time you launch any of these, the **Apps inventory** is
 populated by `system_profiler SPApplicationsDataType` (≈ 5–15 s on a
 typical box, 387 apps on Mac.r12.home). Click the Categories tab to see
@@ -227,6 +242,7 @@ hook that calls `tmutil localsnapshot` is on the M5.x backlog.
 | Tauri build .app won't open ("damaged") | Unsigned binary, Gatekeeper | Right-click → Open the first time; or `xattr -dr com.apple.quarantine Ascendo.app` |
 | `launchctl bootstrap` says "Service already loaded" | Re-installing same agent | Idempotent — the install action does `bootout` first; safe to re-run |
 | `python3 -m ascendo` says capabilities lack SCHEDULING | Stale `__pycache__` | `find . -name '__pycache__' -type d -exec rm -rf {} +` then re-run |
+| Cmd+Tab still shows old Ascendo icon after `git pull` | macOS IconServices cache + stale .app bundle | `bash bin/launch-desktop-macos.sh --build && bash bin/refresh-macos-icon.sh` |
 
 ## 11 · Where everything lives
 

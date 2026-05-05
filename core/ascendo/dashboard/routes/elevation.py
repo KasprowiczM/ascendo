@@ -157,3 +157,60 @@ async def post_invalidate(request: Request) -> OkResponse:
     elev = _elevation_or_503(request)
     elev.invalidate()
     return OkResponse(ok=True)
+
+
+@router.get("/touchid/status")
+async def get_touchid_status() -> dict:
+    """Detect whether sudo is wired to Touch ID via pam_tid on macOS.
+
+    Reads /etc/pam.d/sudo_local (Sonoma 14+) or /etc/pam.d/sudo and
+    looks for an active (uncommented) ``auth … pam_tid.so`` line.
+
+    Returns:
+        macOS: {available: bool, enabled: bool, method: "pam_tid",
+                instructions: "..."}.
+        Other OSes: {available: false}.
+
+    Once enabled (one-time system change with `sudo` write to
+    /etc/pam.d/sudo_local), every subsequent sudo prompt on macOS —
+    including Ascendo's apply-phase ``sudo -A`` invocation routed
+    through the askpass helper — accepts a Touch ID tap as
+    authentication. Ascendo doesn't trigger Touch ID itself; macOS
+    PAM does once pam_tid is in the auth chain.
+    """
+    import platform as _platform
+    if _platform.system() != "Darwin":
+        return {"available": False}
+    candidates = ["/etc/pam.d/sudo_local", "/etc/pam.d/sudo"]
+    enabled = False
+    inspected_path: str | None = None
+    for path in candidates:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                content = fh.read()
+        except OSError:
+            continue
+        inspected_path = path
+        for line in content.splitlines():
+            stripped = line.lstrip()
+            if stripped.startswith("#"):
+                continue
+            if "pam_tid.so" in stripped and stripped.startswith("auth"):
+                enabled = True
+                break
+        if enabled:
+            break
+    instructions = (
+        "Run once in Terminal:\n"
+        "  sudo tee /etc/pam.d/sudo_local <<<'auth       sufficient     pam_tid.so'\n"
+        "After this, every sudo prompt (including Ascendo's apply phase) "
+        "accepts Touch ID. Requires macOS Sonoma 14+ for sudo_local; on "
+        "earlier versions edit /etc/pam.d/sudo directly with the same line."
+    )
+    return {
+        "available": True,
+        "enabled": enabled,
+        "method": "pam_tid",
+        "inspected_path": inspected_path,
+        "instructions": instructions,
+    }
