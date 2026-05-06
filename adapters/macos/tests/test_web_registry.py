@@ -163,3 +163,34 @@ def test_find_returns_none_for_missing_slug(tmp_path: Path) -> None:
     reg = WebRegistry.load(p, None)
     assert reg.find("nonexistent") is None
     assert reg.find("x") is not None
+
+
+def test_squirrel_with_arch_rejected(tmp_path: Path) -> None:
+    p = _write_toml(
+        tmp_path, "s.toml",
+        VALID_HEADER + _entry(handler="squirrel", arch="x86_64"),
+    )
+    with pytest.raises(ValidationError, match="arch.*github_dmg"):
+        WebRegistry.load(p, None)
+
+
+def test_sparkle_http_appcast_rejected(tmp_path: Path) -> None:
+    p = _write_toml(
+        tmp_path, "s.toml",
+        VALID_HEADER + _entry(handler="sparkle",
+                              appcast_url="http://example.com/cast.xml"),
+    )
+    with pytest.raises(ValidationError):
+        WebRegistry.load(p, None)
+
+
+def test_malformed_toml_raises_with_line_info(tmp_path: Path) -> None:
+    """tomllib raises TOMLDecodeError with line/col context on malformed input."""
+    import tomllib
+    p = _write_toml(tmp_path, "bad.toml", 'schema = "ascendo-web-apps/v1"\n[[app\n')
+    with pytest.raises(tomllib.TOMLDecodeError) as exc:
+        WebRegistry.load(p, None)
+    # tomllib error messages include line context (no exact format guaranteed,
+    # but the line number should appear somewhere)
+    msg = str(exc.value).lower()
+    assert "1" in msg or "2" in msg or "line" in msg

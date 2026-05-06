@@ -3,6 +3,13 @@
 Loads the shipped registry at adapters/macos/config/web_apps.toml plus
 an optional user override at ~/.config/ascendo/web_apps.toml. Merge by
 slug (user wins; new slugs append).
+
+Note on handler-specific defaults: ``arch`` and ``prerelease`` are only
+meaningful for the ``github_dmg`` handler. They are declared as
+``Optional`` with a ``None`` default so the validator can reject them
+on other handlers (catches typos / wrong-section copy-paste). Consumers
+that need a materialised value for github_dmg entries should read
+:attr:`WebApp.effective_arch` / :attr:`WebApp.effective_prerelease`.
 """
 from __future__ import annotations
 
@@ -10,10 +17,12 @@ import tomllib
 from pathlib import Path
 from typing import Annotated, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
+from pydantic import AnyUrl, BaseModel, ConfigDict, Field, model_validator
+from pydantic.networks import UrlConstraints
 
-HANDLERS = ("sparkle", "github_dmg", "keystone", "squirrel",
-            "builtin", "msupdate", "docker")
+# https-only URL — appcast / update channels are signed-update channels
+# and must not be MITM-able (T3 threat model).
+HttpsUrl = Annotated[AnyUrl, UrlConstraints(allowed_schemes=["https"])]
 
 
 class WebApp(BaseModel):
@@ -29,20 +38,30 @@ class WebApp(BaseModel):
     notes: Optional[str] = None
 
     # Sparkle
-    appcast_url: Optional[HttpUrl] = None
+    appcast_url: Optional[HttpsUrl] = None
     apply_cli_argv: Optional[list[str]] = None
 
     # GitHub DMG
     github_repo: Annotated[Optional[str], Field(pattern=r"^[\w.-]+/[\w.-]+$")] = None
     asset_pattern: Optional[str] = None
-    arch: Literal["arm64", "x86_64", "universal"] = "arm64"
-    prerelease: bool = False
+    arch: Optional[Literal["arm64", "x86_64", "universal"]] = None
+    prerelease: Optional[bool] = None
 
     # Keystone
     ksadmin_product_id: Optional[str] = None
 
     # Builtin
-    update_url: Optional[HttpUrl] = None
+    update_url: Optional[HttpsUrl] = None
+
+    @property
+    def effective_arch(self) -> str:
+        """Materialised arch default for github_dmg consumers."""
+        return self.arch or "arm64"
+
+    @property
+    def effective_prerelease(self) -> bool:
+        """Materialised prerelease default for github_dmg consumers."""
+        return self.prerelease if self.prerelease is not None else False
 
     @model_validator(mode="after")
     def _validate_handler_fields(self) -> "WebApp":
@@ -68,6 +87,11 @@ class WebApp(BaseModel):
             if self.github_repo is not None or self.asset_pattern is not None:
                 raise ValueError(
                     f"github_repo / asset_pattern only valid for github_dmg; "
+                    f"got handler={h!r}"
+                )
+            if self.arch is not None or self.prerelease is not None:
+                raise ValueError(
+                    f"arch / prerelease only valid for github_dmg; "
                     f"got handler={h!r}"
                 )
         if h != "keystone" and self.ksadmin_product_id is not None:
