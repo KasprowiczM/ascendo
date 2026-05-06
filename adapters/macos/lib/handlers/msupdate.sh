@@ -16,5 +16,8 @@ msupdate_check() {
 msupdate_apply() {
     local slug="$1" cfg="$2"
     /usr/bin/command -v msupdate >/dev/null 2>&1 || return 30
-    sudo -A msupdate --install
+    # _ascendo_sudo (ascendo_json.sh) chooses -A vs plain sudo based on
+    # SUDO_ASKPASS, so the TTY-PAM / Touch-ID-only flow works without
+    # an askpass helper.
+    _ascendo_sudo msupdate --install
 }

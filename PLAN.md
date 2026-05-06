@@ -1,6 +1,36 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-06 (sesja 34) — multi-front polish session:
+> Last updated: 2026-05-06 (sesja 36) — sudo-prompt collapse: 3 prompts
+> per "Full update" (password modal + Touch ID + Touch ID) → **1 tap**
+> when PAM Touch ID is enabled. Four mechanical fixes:
+>   1. **WebManager now injects SUDO_ASKPASS** for Phase.APPLY (was
+>      missing — only mas + softwareupdate did, so web was always
+>      falling through to a Touch ID prompt even after the dashboard
+>      cached the password).
+>   2. New `_ascendo_sudo` helper (`lib/ascendo_json.sh`) picks
+>      `sudo -A` (askpass) or plain `sudo` (TTY-PAM) by env. Apply
+>      scripts use it instead of hard-coding `-A`, so the
+>      Touch-ID-only flow works without an askpass helper.
+>   3. `_ascendo_sudo_warm` short-circuits when SUDO_ASKPASS is
+>      already wired (avoids a duplicate Touch ID dialog stacked on
+>      top of the SPA modal cache). osascript fallback is now opt-in
+>      via ASCENDO_SUDO_ALLOW_GUI=1 (it bypasses PAM and never uses
+>      Touch ID, so it's the wrong tool when biometrics are wanted).
+>   4. SPA `sudoMgr.ensure()` polls `/elevation/touchid/status` on
+>      macOS — when `enabled=true`, the password modal is skipped
+>      entirely and the first apply phase's TTY-PAM Touch ID handles
+>      auth. Subsequent phases use the cached sudo timestamp.
+> 358/358 macOS adapter tests + 216/225 contract tests green
+> (9 pre-existing test_service_endpoints failures unchanged).
+>
+> Previous milestone: Sesja 35 — operator-reported SPA polish:
+> Quick-check no-prompt (profile=quick treated as read-only),
+> Overview re-scan suppression on tab switch (post-run repaint
+> marks `_loaded` so cache is honored), wizard footer pinned via
+> sticky position so Back/Next can't escape the modal-card on
+> transformed Tauri ancestors.
+>
+> Previous milestone: Sesja 34 — multi-front polish session:
 > partial-status heuristic in `_json_emit.py` so a single failed item
 > no longer aborts the whole run; npm + pip stderr capture (last 12
 > lines) into sidecar messages so the operator sees the actual install

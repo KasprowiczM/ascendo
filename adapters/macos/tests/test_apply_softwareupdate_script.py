@@ -146,12 +146,15 @@ def test_real_apply_invokes_sudo_a_softwareupdate_ir(tmp_path):
     assert res.returncode == 0, res.stderr
 
     log_lines = sudo_log.read_text().strip().splitlines()
-    # First sudo call: starts with -A and contains -i -r -R --verbose
+    # _ascendo_sudo picks `-A` (askpass) or plain sudo (TTY-PAM /
+    # Touch-ID-only) by env. Both flows MUST keep -i -r -R --verbose
+    # — the -R flag is mandatory per the legacy macOS update_system.sh
+    # rule.
     assert any(
-        line.startswith("-A ") and "-i" in line and "-r" in line
+        "-i" in line and "-r" in line
         and "-R" in line and "--verbose" in line
         for line in log_lines
-    ), f"sudo log lacks -A + -i -r -R --verbose: {log_lines}"
+    ), f"sudo log lacks -i -r -R --verbose: {log_lines}"
 
 
 def test_all_flag_invokes_dash_a_not_dash_r(tmp_path):
@@ -165,9 +168,11 @@ def test_all_flag_invokes_dash_a_not_dash_r(tmp_path):
     assert res.returncode == 0, res.stderr
 
     log_lines = sudo_log.read_text().strip().splitlines()
-    # Must have -a flag, must NOT have standalone -r flag
+    # Must have -a flag, must NOT have standalone -r flag. -A askpass
+    # prefix only present on dashboard flow; this test runs without
+    # SUDO_ASKPASS so plain sudo is picked.
     assert any(
-        line.startswith("-A ") and " -a " in (" " + line + " ")
+        " -a " in (" " + line + " ")
         and " -r " not in (" " + line + " ")
         for line in log_lines
     ), f"sudo log: expected -a but not -r, got: {log_lines}"

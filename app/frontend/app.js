@@ -146,6 +146,19 @@ const sudoMgr = {
   async ensure() {
     const s = await api.get("/sudo/status");
     if (s.cached) return true;
+    // macOS shortcut: if PAM Touch ID is wired (auth sufficient pam_tid.so
+    // in /etc/pam.d/sudo_local), skip the password modal entirely. The
+    // first apply phase's `_ascendo_sudo_warm` will trigger the Touch ID
+    // sheet via TTY-PAM, sudo timestamps are cached, and every later
+    // phase short-circuits via `sudo -n -v`. Apply scripts pick `sudo`
+    // vs `sudo -A` automatically (see _ascendo_sudo helper) so no
+    // askpass is needed.
+    if (this._adapter() === "macos") {
+      try {
+        const ti = await api.get("/elevation/touchid/status");
+        if (ti && ti.enabled) return true;
+      } catch {}
+    }
     const fallback = this._isUnix()
       ? "sudo credentials needed — enter your password to authenticate."
       : "Administrator credentials needed — enter your password to authenticate.";

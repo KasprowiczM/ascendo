@@ -82,10 +82,13 @@ json_init "apply" "mas" "$RUN_ID" "$TRIGGER" "$PROFILE_NAME" \
 trap 'json_save_on_exit "$OUTPUT_DIR"' EXIT
 
 # -- sudo invocation helper ----------------------------------------------------
-# Always uses -A (Strategy A). CLI users must run `sudo -v` to prime credentials
-# before calling apply without a SUDO_ASKPASS helper.
+# `_ascendo_sudo` (defined in ascendo_json.sh) picks `sudo -A` when an
+# askpass helper is wired by the dashboard, or plain `sudo` for the
+# TTY-PAM / Touch-ID-only flow. _ascendo_sudo_warm has already cached
+# credentials by the time this runs, so plain sudo proceeds without
+# prompting.
 _sudo_mas_upgrade() {
-    sudo -A "$MAS_BIN" upgrade "$@"
+    _ascendo_sudo "$MAS_BIN" upgrade "$@"
 }
 
 # -- sign-in probe (fail-fast; no sudo invocation on signed-out host) ----------

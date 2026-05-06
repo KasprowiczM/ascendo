@@ -124,9 +124,12 @@ def test_real_apply_invokes_sudo_a_mas_upgrade(tmp_path):
     res = _run_apply(fake_mas, fake_sudo, out, rid)
     assert res.returncode == 0, res.stderr
 
-    # First sudo call must START with `-A` (CVE-2025-43411: -A must be first arg)
+    # CVE-2025-43411: mas upgrade MUST be wrapped in sudo. _ascendo_sudo
+    # picks `-A` when SUDO_ASKPASS is wired (dashboard flow) or plain
+    # sudo for the TTY-PAM / Touch-ID-only flow; both prefix the mas
+    # call with sudo, which is what the CVE requires.
     log_lines = sudo_log.read_text().strip().splitlines()
-    assert any(line.startswith("-A ") and "upgrade" in line for line in log_lines), log_lines
+    assert any("upgrade" in line for line in log_lines), log_lines
 
 
 def test_signed_out_fail_fast_no_sudo(tmp_path):

@@ -17,6 +17,7 @@ def _run(snippet: str, fake_path: Path | None = None) -> subprocess.CompletedPro
         env["PATH"] = f"{fake_path}:{env.get('PATH', '')}"
     full = textwrap.dedent(f"""\
         set -eo pipefail
+        source {LIB}/ascendo_json.sh
         source {LIB}/ascendo_web.sh
         source {LIB}/handlers/msupdate.sh
         source {LIB}/handlers/docker.sh
@@ -51,7 +52,9 @@ def test_msupdate_apply_calls_msupdate_install(tmp_path: Path) -> None:
     fake.write_text(f"#!/bin/sh\necho \"$@\" > {log}\nexit 0\n")
     fake.chmod(0o755)
     sudo = tmp_path / "sudo"
-    sudo.write_text('#!/bin/sh\nshift\nexec "$@"\n')   # strip -A
+    # _ascendo_sudo picks `-A` (askpass) or plain `sudo` based on env;
+    # this fake handles both forms.
+    sudo.write_text('#!/bin/sh\nif [ "$1" = "-A" ]; then shift; fi\nexec "$@"\n')
     sudo.chmod(0o755)
 
     cfg = json.dumps({"slug": "ms365"})

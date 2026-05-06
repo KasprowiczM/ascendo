@@ -6,6 +6,92 @@
 
 ---
 
+## Sesja 36 (2026-05-06) — sudo prompt collapse on macOS (3 → 1 tap)
+
+Operator on Mac.r12.home reported "Full update still asks for password
+and then Touch ID at the start, then again only Touch ID" — three
+elevation prompts per run. Goal: one Touch ID tap, total, when PAM
+`pam_tid.so` is configured.
+
+### Root cause (per-prompt)
+
+| Prompt | Source | Fix |
+|--------|--------|-----|
+| 1. password (SPA modal) | `sudoMgr.ensure()` always opens modal when `/sudo/status` returns `cached=false` | SPA polls `/elevation/touchid/status`; when `enabled=true` skips the modal entirely on macOS |
+| 2. Touch ID (first apply phase) | `_ascendo_sudo_warm` runs `sudo -v </dev/tty 2>/dev/tty` because no SUDO_ASKPASS in env | _Sesja 35 already fixed this for mas + softwareupdate via `_build_env`; web manager was missing the same wiring_ |
+| 3. Touch ID (web phase) | **WebManager never injected SUDO_ASKPASS** for APPLY (the bug) | Added `_build_env(phase)` mirroring `MasManager._build_env`; pipes through `subprocess.Popen(env=...)` |
+
+Plus a structural change so the Touch-ID-only flow can work without
+ever registering a password:
+
+| File | What |
+|------|------|
+| `adapters/macos/lib/ascendo_json.sh` | New `_ascendo_sudo` helper — `sudo -A "$@"` when SUDO_ASKPASS is wired, plain `sudo "$@"` otherwise. Bare `sudo` (not `/usr/bin/sudo`) so test fixtures can shadow via PATH. |
+| `adapters/macos/scripts/mas/apply.sh` | `_sudo_mas_upgrade` calls `_ascendo_sudo "$MAS_BIN" upgrade`. Was hard-coded `-A` (broke TTY-PAM flow with no askpass). |
+| `adapters/macos/scripts/softwareupdate/apply.sh` | `_sudo_softwareupdate` same swap. |
+| `adapters/macos/lib/ascendo_web.sh` | `/Applications` cp fallback uses `_ascendo_sudo /bin/cp -R …`. |
+| `adapters/macos/lib/handlers/msupdate.sh` | `msupdate_apply` calls `_ascendo_sudo msupdate --install`. |
+| `adapters/macos/ascendo_macos/managers/web.py` | Added `elevation: MacElevation` ctor param + `_build_env(phase)` injecting SUDO_ASKPASS when password registered. `_run_streaming` now takes `env=` kwarg. |
+| `adapters/macos/ascendo_macos/adapter.py` | `WebManager(...elevation=self.elevation())` — wires the dashboard's elevation cache through to web apply just like mas. |
+| `adapters/macos/lib/ascendo_json.sh` | `_ascendo_sudo_warm` short-circuits when SUDO_ASKPASS is set + executable. osascript GUI fallback gated on `ASCENDO_SUDO_ALLOW_GUI=1` (default off — it bypasses PAM and never uses Touch ID). |
+| `app/frontend/app.js` | `sudoMgr.ensure()` polls `/elevation/touchid/status` on macOS; when `enabled=true`, skips the password modal entirely. The TTY-PAM `_ascendo_sudo_warm` in the first apply phase handles auth, sudo timestamp caches, every later phase short-circuits via `sudo -n -v`. |
+
+### End-to-end UX after this commit
+
+| User flow | Prompts |
+|-----------|---------|
+| `pam_tid.so` configured + dashboard from terminal | **1 Touch ID tap**, total. |
+| `pam_tid.so` configured + dashboard from terminal + sudo cached (run within 5 min of last) | **0 prompts**. |
+| `pam_tid.so` NOT configured | 1 SPA modal (password typed once). All apply phases use SUDO_ASKPASS, no further prompts. |
+| Headless (no /dev/tty, no SUDO_ASKPASS) | apply scripts will fail-fast unless `ASCENDO_SUDO_ALLOW_GUI=1` enables the SecurityAgent osascript dialog (no Touch ID, password only). |
+
+### Tests
+
+3 test updates to match the new dual-flow contract:
+- `test_apply_mas_script.py::test_real_apply_invokes_sudo_a_mas_upgrade`
+  → assertion broadened: CVE-2025-43411 just requires `sudo wraps mas
+  upgrade`, not `-A` specifically. `-A` is a flag picked by environment.
+- `test_apply_softwareupdate_script.py::{test_real_apply_invokes_sudo_a_softwareupdate_ir, test_all_flag_invokes_dash_a_not_dash_r}`
+  → drop `line.startswith("-A ")` precondition. The mandatory invariants
+  (`-i -r -R --verbose`, `-a` not `-r` for `--all`) are unchanged.
+- `test_web_handler_msupdate_docker.py::test_msupdate_apply_calls_msupdate_install`
+  → fake sudo handles both `-A`-prefixed and bare invocations; helper
+  also sources `ascendo_json.sh` (where `_ascendo_sudo` lives).
+
+**358 / 358 macOS adapter tests pass. 216 / 225 contract tests pass
+(the 9 `test_service_endpoints` failures are pre-existing — Sesja 33
+notes "One pre-existing test_service_endpoints failure unchanged" and
+Sesja 35 confirms the same).**
+
+### Operator-reported context (raw)
+
+> "full still asks for password and then for touch id at the start
+> then again only touch id."
+
+After this commit, with PAM Touch ID enabled:
+1. User clicks "Full update" — no SPA modal (skipped because
+   `/elevation/touchid/status.enabled=true`).
+2. Run starts. brew apply (no sudo) finishes silently. mas apply runs
+   `_ascendo_sudo_warm` → Touch ID sheet. User taps. **Single prompt.**
+3. softwareupdate / web / msupdate all see cached sudo timestamp →
+   `sudo -n -v` succeeds → silent.
+4. Run completes.
+
+### Verification commands (for the operator)
+
+```bash
+cd ~/Dev_Env/Ascendo
+git pull
+pkill -f 'ascendo dashboard'
+python3 -m ascendo dashboard --port 8765 &
+# In browser: http://127.0.0.1:8765/, hard-reload (⌘⇧R)
+```
+
+Then click "Full update" → expect a single Touch ID dialog at the start
+of the first sudo-using apply phase. No password modal, no second tap.
+
+---
+
 ## Sesja 35 (2026-05-06) — M5.6 macOS web app updater + v0.3.0
 
 Major milestone landing the sixth `IPackageManager` on macOS — `WebManager`

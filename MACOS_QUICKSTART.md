@@ -245,10 +245,10 @@ hook that calls `tmutil localsnapshot` is on the M5.x backlog.
 
 ## 10 · One-time Touch ID setup (skip the password prompt)
 
-Apply phases that need root (mas, softwareupdate, msupdate) prompt for
-elevation. By default macOS shows a password dialog. To use **Touch ID
-instead** (one tap, password fallback automatic via the "Use Password"
-button in the same prompt), enable PAM Touch ID once:
+Apply phases that need root (mas, softwareupdate, msupdate, web) prompt
+for elevation. By default macOS shows a password dialog. To use **Touch
+ID instead** (one tap per run, password fallback automatic via the "Use
+Password" button in the same prompt), enable PAM Touch ID once:
 
 ```bash
 # Ascendo prefers /etc/pam.d/sudo_local (Sonoma 14+, survives macOS upgrades).
@@ -268,6 +268,19 @@ python3 -m ascendo run --category mas --phase apply --dry-run
 # the standard password prompt at the same TTY — no extra dialog.
 ```
 
+After PAM Touch ID is wired:
+- The dashboard's **password modal is automatically skipped** when you
+  click "Full update" / "Safe update" — `sudoMgr.ensure()` polls
+  `/elevation/touchid/status` and short-circuits when `enabled=true`.
+- The first apply phase fires the Touch ID sheet via `_ascendo_sudo_warm`
+  (TTY-PAM). After you tap, the sudo timestamp is cached for ~5 minutes
+  and every later apply phase short-circuits via `sudo -n -v` — **one
+  Touch ID tap per run, total**.
+- Apply scripts call `_ascendo_sudo` (in `lib/ascendo_json.sh`), which
+  picks `sudo -A` (askpass) or plain `sudo` (TTY-PAM) by env. So both
+  the dashboard-typed-password flow and the TouchID-only flow work
+  without any code change.
+
 Why this matters: `osascript … with administrator privileges`
 **bypasses PAM entirely** (it goes through Apple's SecurityAgent /
 AuthorizationCreate path), so `pam_tid.so` would be ignored. Ascendo
@@ -275,7 +288,10 @@ calls `sudo -v` directly, which respects PAM order — Touch ID first
 when configured, password fallback automatic.
 
 If you're running Ascendo headless (cron / CI / SSH without TTY)
-and don't want any GUI dialog, set `ASCENDO_SUDO_NO_GUI=1`.
+and don't want any GUI dialog, set `ASCENDO_SUDO_NO_GUI=1`. To
+re-enable the SecurityAgent osascript fallback as a last resort, set
+`ASCENDO_SUDO_ALLOW_GUI=1` (default is off; SecurityAgent doesn't use
+Touch ID, so this only helps fully unattended automation).
 
 ## 11 · Troubleshooting
 

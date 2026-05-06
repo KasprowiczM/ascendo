@@ -250,6 +250,29 @@ _stream_item() {
 # Returns 0 always (best-effort). Apply scripts MUST still handle the
 # possibility that sudo will fail — this only improves the credential-
 # entry UX, doesn't guarantee elevation.
+# _ascendo_sudo <argv...>
+#
+# Wrapper that picks `sudo -A` (askpass-driven, dashboard SPA flow) or
+# plain `sudo` (TTY-PAM, Touch-ID-first flow) based on SUDO_ASKPASS.
+#
+# Why: `sudo -A` requires SUDO_ASKPASS pointing at an executable; if it
+# isn't set, sudo errors out. The dashboard sets it after the user types
+# their password into the SPA modal, but operators who skipped the modal
+# (PAM Touch-ID workflow) have no askpass — they want plain `sudo` so
+# the kernel falls through PAM and uses pam_tid.so.
+#
+# Apply scripts MUST `_ascendo_sudo_warm` before calling this so the
+# credentials are pre-cached; this helper assumes the timestamp is hot.
+_ascendo_sudo() {
+    # NB: bare `sudo`, not `/usr/bin/sudo`, so test fixtures can shadow
+    # via PATH (the existing fake_sudo pattern in test_apply_*_script.py).
+    if [ -n "${SUDO_ASKPASS:-}" ] && [ -x "${SUDO_ASKPASS}" ]; then
+        sudo -A "$@"
+    else
+        sudo "$@"
+    fi
+}
+
 _ascendo_sudo_warm() {
     # Test-fixture opt-out: pytest exports PYTEST_CURRENT_TEST for every
     # test it runs; ASCENDO_SUDO_WARM_DISABLE is the explicit operator

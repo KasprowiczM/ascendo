@@ -213,7 +213,11 @@ _web_install_dmg() {
     local target_dir
     target_dir="$(dirname "$app_path")"
     if ! /bin/cp -R "$src_app" "$target_dir/" 2>/dev/null; then
-        if ! /usr/bin/sudo -A /bin/cp -R "$src_app" "$target_dir/"; then
+        # _ascendo_sudo (ascendo_json.sh) picks -A vs plain sudo by env so
+        # the TTY-PAM / Touch-ID-only flow works alongside the SPA-askpass
+        # flow. apply.sh has already called _ascendo_sudo_warm so creds
+        # are hot.
+        if ! _ascendo_sudo /bin/cp -R "$src_app" "$target_dir/"; then
             rc=24
         fi
     fi

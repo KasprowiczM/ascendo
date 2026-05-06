@@ -114,10 +114,11 @@ json_init "apply" "softwareupdate" "$RUN_ID" "$TRIGGER" "$PROFILE_NAME" \
 trap 'json_save_on_exit "$OUTPUT_DIR"' EXIT
 
 # -- sudo invocation helper ----------------------------------------------------
-# Strategy A: always use -A. CLI users without SUDO_ASKPASS must `sudo -v`
-# to prime credentials before invoking apply. Dashboard supplies SUDO_ASKPASS.
+# `_ascendo_sudo` (ascendo_json.sh) picks `-A` for the SPA-askpass flow and
+# plain `sudo` for the TTY-PAM / Touch-ID-only flow. _ascendo_sudo_warm has
+# warmed the timestamp so plain sudo doesn't reprompt.
 _sudo_softwareupdate() {
-    sudo -A "$SU_BIN" "$@"
+    _ascendo_sudo "$SU_BIN" "$@"
 }
 
 # -- discover pending updates via softwareupdate -l ----------------------------

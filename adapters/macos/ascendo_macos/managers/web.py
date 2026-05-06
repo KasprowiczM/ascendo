@@ -18,6 +18,7 @@ Scope on macOS:
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 import tempfile
@@ -36,6 +37,8 @@ from ascendo.orchestrator.sidecar_io import (
     SidecarReadError,
     read_sidecar,
 )
+
+from ascendo_macos.managers.elevation import MacElevation
 
 _log = logging.getLogger(__name__)
 
@@ -64,11 +67,13 @@ class WebManager(IPackageManager):
         *,
         scripts_dir: Path,
         lib_dir: Path,
+        elevation: MacElevation | None = None,
         bash_path: str | None = None,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
     ) -> None:
         self._scripts_dir = Path(scripts_dir)
         self._lib_dir = Path(lib_dir)
+        self._elevation = elevation
         self._bash_override = bash_path
         self._timeout_sec = timeout_sec
 
@@ -137,8 +142,9 @@ class WebManager(IPackageManager):
             _log.debug("WebManager.run_phase phase=%s run_id=%s argv=%r",
                        phase.value, run.id, argv)
 
+            env = self._build_env(phase)
             try:
-                completed = self._run_streaming(argv, log_path, self._timeout_sec)
+                completed = self._run_streaming(argv, log_path, self._timeout_sec, env=env)
             except subprocess.TimeoutExpired as exc:
                 raise ManagerError(
                     f"web {phase.value} script timed out after "
@@ -199,11 +205,35 @@ class WebManager(IPackageManager):
                 argv.extend(["--filter", ",".join(cleaned)])
         return argv
 
+    def _build_env(self, phase: Phase) -> dict[str, str]:
+        """Build the env passed to the bash phase script.
+
+        For Phase.APPLY when an elevation cache is present, inject
+        SUDO_ASKPASS so apply.sh's `sudo -A …` (msupdate, /Applications
+        cp fallback) can authenticate non-interactively from the cached
+        password the user typed once into the SPA modal. Without this
+        the per-phase `_ascendo_sudo_warm` falls through to the TTY-PAM
+        path and fires a Touch ID prompt for every web run — exactly
+        the duplicate-prompt UX the operator reported on Mac.r12.home.
+        """
+        env = dict(os.environ)
+        if (
+            phase is Phase.APPLY
+            and self._elevation is not None
+            and self._elevation.has_password_registered()
+        ):
+            helper = self._elevation.askpass_path()
+            if helper is not None:
+                env["SUDO_ASKPASS"] = str(helper)
+        return env
+
     def _run_streaming(
         self,
         argv: list[str],
         log_path: Path,
         timeout: float,
+        *,
+        env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         proc = subprocess.Popen(  # noqa: S603 (argv list)
             argv,
@@ -211,6 +241,7 @@ class WebManager(IPackageManager):
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            env=env,
         )
         captured: list[str] = []
         started = time.monotonic()

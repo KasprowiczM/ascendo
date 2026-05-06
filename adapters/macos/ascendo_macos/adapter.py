@@ -146,7 +146,7 @@ class MacOSAdapter(IAdapter):
             MasManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, elevation=self.elevation()),
             NpmManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
             PipManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
-            WebManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
+            WebManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, elevation=self.elevation()),
             SoftwareUpdateManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, elevation=self.elevation()),
         ]
 
