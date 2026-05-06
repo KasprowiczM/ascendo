@@ -75,6 +75,9 @@ The Categories tab shows one row per source:
 |--------|---------------------------|--------------------|
 | **brew** | `brew outdated --json=v2` (formulae + casks) | Things you installed via `brew install …` |
 | **mas** | `mas outdated` | Mac App Store apps with pending upgrades |
+| **npm** | `npm outdated -g` + node/bun version probes | Global npm CLIs (claude-code, codex-cli, etc.) + Node + Bun |
+| **pip** | `pip list --outdated` for tracked Python CLIs | Global Python tools (ruff, black, pipx, uv, etc.) |
+| **web** *(M5.6)* | `_apps.toml` registry × 7 handlers | ~24 curated apps installed outside brew/mas — Sparkle (Brave/Opera/ChatGPT-Atlas), GitHub Releases (Firefox-DevEd/KeePassXC/Trezor/Ledger), Keystone (Chrome/Drive), Squirrel.Mac (Slack/Claude/ChatGPT/Warp/Gemini/etc.), MS AutoUpdate, Docker Desktop |
 | **softwareupdate** | `softwareupdate -l` | macOS OS / security / Safari updates |
 | **inventory** (Categories sub-rows: SYSTEM / MAS / BREW / WEB) | `system_profiler -json SPApplicationsDataType` | All installed `.app` bundles, classified by signature/origin |
 
@@ -98,6 +101,9 @@ via SSE as each phase finishes.
 |---------------|-------|
 | Find new **Homebrew** updates (formulae + casks) | brew → check |
 | Find new **Mac App Store** updates | mas → check |
+| Find new **npm global CLI** updates | npm → check |
+| Find new **Python global tool** updates | pip → check |
+| Find new updates for **web-installed apps** (Brave, Chrome, Slack, Claude, etc.) | web → check |
 | Find new **macOS OS / security** updates | softwareupdate → check |
 
 ## 5 · Apply updates
@@ -114,6 +120,9 @@ logged.
 |---------------|---------------|-------|
 | **Homebrew packages** | brew → apply | Idempotent; safe to re-run |
 | **Mac App Store apps** | mas → apply | `sudo mas upgrade <id>` enforced (CVE-2025-43411 mitigation) |
+| **npm global CLIs** | npm → apply | No sudo; user-site only |
+| **Python global tools** | pip → apply | No sudo; user-site or brew-Python-site depending on flavour |
+| **Web-installed apps** | web → apply | 7 handlers: silent updates for Sparkle/GH/Keystone/Squirrel/msupdate/Docker. Defer-if-running policy: sparkle/github_dmg/squirrel skip when app is open (close it and re-run); keystone/msupdate/docker apply regardless. `/Applications` writes try without sudo first; sudo on EACCES. spctl signature verify + quarantine xattr strip on installed bundles. |
 | **macOS itself** | softwareupdate → apply | `sudo -A softwareupdate -ir -R --verbose`. The `-R` flag is mandatory — without it updates download but never apply. May reboot the Mac mid-run. |
 
 After every apply phase, the dashboard invalidates the inventory cache
@@ -122,11 +131,16 @@ and a banner appears at the top if a reboot is required.
 ## 6 · From the CLI (no dashboard needed)
 
 ```bash
-python3 -m ascendo doctor                                     # 10-component health snapshot
+python3 -m ascendo doctor                                     # 12-component health snapshot
 python3 -m ascendo run --category brew         --phase check  # ≈ 5 s
 python3 -m ascendo run --category mas          --phase check
+python3 -m ascendo run --category npm          --phase check
+python3 -m ascendo run --category pip          --phase check
+python3 -m ascendo run --category web          --phase check  # M5.6 — ~24 web apps
 python3 -m ascendo run --category softwareupdate --phase check  # ≈ 30 s
 python3 -m ascendo run --category brew         --phase apply  # mutating
+python3 -m ascendo run --category web          --phase apply --filter chrome  # one app
+python3 -m ascendo run --category web          --phase apply --dry-run        # preview only
 python3 -m ascendo runs list -n 5                             # last 5 runs
 python3 -m ascendo runs json <run-id> --pretty | jq .summary
 python3 -m ascendo snapshot list                              # APFS local snapshots (read-only)
@@ -250,24 +264,41 @@ hook that calls `tmutil localsnapshot` is on the M5.x backlog.
 ```
 ~/Dev_Env/Ascendo/
 ├── adapters/macos/
-│  ├── ascendo_macos/                    # Python: MacOSAdapter + 5 managers
+│  ├── ascendo_macos/                    # Python: MacOSAdapter + 6 managers
 │  │   ├── adapter.py                    # capability flag, health_check, manager wiring
 │  │   ├── inventory.py                  # MacOSInventory (system_profiler)
 │  │   ├── snapshot.py                   # TimeMachineSnapshot (read-only)
+│  │   ├── web_registry.py               # Pydantic _apps.toml validator (M5.6)
 │  │   └── managers/
 │  │       ├── brew.py
 │  │       ├── mas.py
+│  │       ├── npm.py
+│  │       ├── pip.py
+│  │       ├── web.py                    # WebManager (M5.6)
 │  │       ├── elevation.py
 │  │       ├── softwareupdate.py
 │  │       └── scheduler.py              # LaunchdScheduler (M5.5)
+│  ├── config/
+│  │   └── web_apps.toml                 # ~24-app curated registry (M5.6)
 │  ├── scripts/                          # Per-category bash phase scripts
 │  │   ├── brew/{check,plan,apply,verify,cleanup}.sh
 │  │   ├── mas/...
+│  │   ├── npm/...
+│  │   ├── pip/...
+│  │   ├── web/...                       # M5.6 — dispatches to handlers/
 │  │   ├── softwareupdate/...
 │  │   ├── inventory/list.sh
 │  │   ├── snapshot/list.sh
 │  │   └── scheduler/scheduler.sh        # JSON-IPC bash driver (M5.5)
 │  └── lib/                              # Shared bash + Python helpers
+│      └── handlers/                     # 7 per-mechanism handlers (M5.6)
+│          ├── sparkle.sh                # appcast XML + DMG install
+│          ├── github_dmg.sh             # GH Releases + arm64 asset
+│          ├── keystone.sh               # Google Software Update agent
+│          ├── squirrel.sh               # Squirrel.Mac auto-on-relaunch
+│          ├── builtin.sh                # open + emit instruction
+│          ├── msupdate.sh               # Microsoft AutoUpdate suite
+│          └── docker.sh                 # Docker Desktop CLI updater
 ├── core/ascendo/                        # OS-agnostic CLI + orchestrator + REST API
 │  ├── cli/                              # python3 -m ascendo … entry point
 │  ├── dashboard/                        # FastAPI app, served at 127.0.0.1:8765
@@ -285,13 +316,14 @@ hook that calls `tmutil localsnapshot` is on the M5.x backlog.
 ## 12 · One-liner sanity check
 
 If anything seems off, run this first — exits 0 only when CLI + dashboard
-+ all 5 phases × 3 categories produce real sidecars and the SPA assets
-serve correctly. Stage 12 also exercises the launchd scheduler round-trip
-(install + list + trigger + remove a throwaway agent):
++ all 5 phases × 6 categories produce real sidecars and the SPA assets
+serve correctly. Stage 12 exercises the launchd scheduler round-trip
+(install + list + trigger + remove a throwaway agent); Stage 13 exercises
+the M5.6 web app updater across all 5 phases (24 apps in shipped registry):
 
 ```bash
 bash bin/validate-macos.sh
-# Expected: ALL CHECKS PASSED. (34/34)
+# Expected: ALL CHECKS PASSED. (41/41)
 ```
 
 Anything red names the failed component (CLI, manager, sidecar parse,

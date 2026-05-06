@@ -44,7 +44,7 @@ memory on the next.
 
 | Platform | Adapter | CLI | Dashboard | Tauri shell | Installer | Released |
 |---|---|---|---|---|---|---|
-| macOS    | ✅ Tier-1 feature-complete (5 managers + scheduler + snapshot + elevation + inventory) | ✅ | ✅ | ✅ dev + unsigned `.app`/`.dmg` build | 🟡 brew tap (planned for v0.3.0) | **v0.2.0** |
+| macOS    | ✅ Tier-1 feature-complete (6 managers + scheduler + snapshot + elevation + inventory) | ✅ | ✅ | ✅ dev + unsigned `.app`/`.dmg` build | 🟡 brew tap (planned) | **v0.3.0** |
 | Windows  | ✅ Tier-1 feature-complete (4 managers + scheduler + snapshot + elevation + inventory) | ✅ | ✅ | ✅ dev + signed `.msi`/`.exe` build | ✅ NSIS + WiX MSI | **v0.0.7** |
 | Linux    | ✅ legacy code (migrating into `adapters/ubuntu/`) | ✅ | ✅ | 🟡 needs polish | ✅ `.deb` | (rolling, M5+) |
 
@@ -61,8 +61,14 @@ Target releases:
   brew + mas + softwareupdate + LaunchServices inventory + Time Machine
   snapshot list + launchd scheduler + sudo elevation. Tier-1 minus
   source-verification.
-- 🚧 **v0.3.0 (M6 hardening)** — security audit (T1-T7), code signing
-  across all three OSes, plugin signing + verification.
+- ✅ **v0.3.0 — macOS web app updater** (shipped 2026-05-06): sixth
+  IPackageManager — `WebManager` — covers ~24 apps installed outside
+  brew/mas/softwareupdate via 7 update mechanisms (Sparkle, GitHub
+  Releases, Keystone, Squirrel.Mac auto-relaunch, built-in updater,
+  Microsoft AutoUpdate, Docker Desktop CLI). Pydantic-validated
+  `_apps.toml` registry + user override. Defer-if-running per-handler.
+- 🚧 **M6 hardening** — security audit (T1-T7), code signing across
+  all three OSes, plugin signing + verification.
 - **v1.0.0** — stable API + signed binaries + plugin marketplace.
 
 ## Quick install (one-liner — macOS / Linux)
