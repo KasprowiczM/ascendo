@@ -117,10 +117,33 @@ _github_dmg_fetch_release() {
         url="https://api.github.com/repos/${repo}/releases/latest"
     fi
     local hdr=()
-    [ -n "${GITHUB_TOKEN:-}" ] && hdr=(-H "Authorization: token $GITHUB_TOKEN")
-    /usr/bin/curl -fsSL --max-time 15 \
+    # Honour GITHUB_TOKEN ONLY when it looks like a real token. The
+    # placeholder value `ghp_yourtoken_here` (a literal that operators
+    # paste from docs) would be sent and rejected with 401, hiding the
+    # otherwise-valid anonymous request.
+    if [ -n "${GITHUB_TOKEN:-}" ] && [ "${GITHUB_TOKEN}" != "ghp_yourtoken_here" ] \
+       && [ "${#GITHUB_TOKEN}" -ge 20 ]; then
+        hdr=(-H "Authorization: token $GITHUB_TOKEN")
+    fi
+
+    # Fetch with explicit HTTP code capture so the caller can distinguish
+    # 403 (rate-limited or token rejected) from other failures.
+    local body status
+    body=$(/usr/bin/curl -sSL --max-time 15 -w '\n__HTTP__%{http_code}' \
         -H "Accept: application/vnd.github+json" \
-        "${hdr[@]}" "$url"
+        "${hdr[@]}" "$url" 2>/dev/null)
+    status=$(printf '%s' "$body" | /usr/bin/awk -F'__HTTP__' '/__HTTP__/{print $2}' | /usr/bin/tail -n 1)
+    body=$(printf '%s' "$body" | /usr/bin/sed -E '$ d' )   # strip trailing __HTTP__ line
+
+    if [ "$status" = "403" ] || [ "$status" = "401" ]; then
+        # Sentinel: caller (github_dmg_check) recognises this stdout
+        # marker and emits a "rate_limited" signal upward. Status mapped
+        # to skipped (try later) instead of failed (vendor change).
+        printf '__GH_RATE_LIMITED__\n'
+        return 0
+    fi
+    [ -z "$status" ] || [ "$status" -ge 400 ] 2>/dev/null && return 1
+    printf '%s\n' "$body"
 }
 
 # _github_dmg_pick_release <prerelease_flag>
@@ -179,9 +202,19 @@ github_dmg_check() {
     [ "$prerelease" = "true" ] || prerelease="false"
     [ -z "$repo" ] && return 0
 
+    local raw
+    raw=$(_github_dmg_fetch_release "$repo" "$prerelease" 2>/dev/null)
+
+    # Rate-limit/auth-rejection sentinel from _github_dmg_fetch_release —
+    # propagate up so check.sh can classify as skipped (transient) instead
+    # of failed (vendor change). Phase script recognises this marker.
+    if printf '%s' "$raw" | /usr/bin/grep -q '^__GH_RATE_LIMITED__$'; then
+        printf '__GH_RATE_LIMITED__\n'
+        return 0
+    fi
+
     local rel
-    rel=$(_github_dmg_fetch_release "$repo" "$prerelease" 2>/dev/null \
-        | _github_dmg_pick_release "$prerelease")
+    rel=$(printf '%s' "$raw" | _github_dmg_pick_release "$prerelease")
     [ -z "$rel" ] && return 0
 
     ASCENDO_WEB_REL="$rel" ASCENDO_WEB_PAT="$asset_pat" \

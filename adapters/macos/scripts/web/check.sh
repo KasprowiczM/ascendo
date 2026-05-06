@@ -111,6 +111,15 @@ while IFS= read -r SLUG; do
     esac
     LATEST=$(printf '%s' "$LATEST" | tr -d '[:space:]')
 
+    # Rate-limit sentinel from github_dmg handler: classify as skipped
+    # (transient, will resolve when GH window resets or GITHUB_TOKEN set).
+    if [ "$LATEST" = "__GH_RATE_LIMITED__" ]; then
+        json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+        json_add_message "warn" "${SLUG}: GitHub API rate-limited (60/hr unauthenticated). Set GITHUB_TOKEN or wait ~1h. https://github.com/settings/tokens"
+        COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+        continue
+    fi
+
     if [ -z "$LATEST" ]; then
         case "$HANDLER" in
             squirrel)

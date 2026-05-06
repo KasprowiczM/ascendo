@@ -103,10 +103,45 @@ _web_is_running() {
 # _web_extract_sparkle_latest_version
 # Reads stdin (appcast XML), echoes the FIRST sparkle:shortVersionString.
 # Sparkle convention puts the latest item first.
+#
+# Handles BOTH valid Sparkle conventions:
+#   1. ATTRIBUTE on <enclosure>: Brave/Opera-style
+#        <enclosure ... sparkle:shortVersionString="X" />
+#   2. CHILD ELEMENT of <item>:  ChatGPT Atlas-style
+#        <sparkle:shortVersionString>X</sparkle:shortVersionString>
+#
+# Strategy: try element form first (text content between tags), fall back
+# to attribute form. Element form is more common in modern Sparkle 2.x
+# appcasts and unambiguous; attribute form is a Sparkle 1.x shortcut.
+#
+# Wire pattern: read stdin into a bash local first, then pass to python
+# via env var. A naked heredoc into `python3 <<'PY'` would bind stdin to
+# the python source, not the upstream pipe — same gotcha as github_dmg's
+# heredoc/pipe interaction documented in the M5.6 handoff.
 _web_extract_sparkle_latest_version() {
-    /usr/bin/grep -oE 'sparkle:shortVersionString="[^"]*"' \
-        | /usr/bin/head -n 1 \
-        | /usr/bin/sed -E 's/sparkle:shortVersionString="([^"]*)"/\1/'
+    local _xml
+    _xml="$(cat)"
+    ASCENDO_WEB_XML="$_xml" /usr/bin/python3 <<'PY'
+import os
+import re
+import sys
+
+xml = os.environ.get("ASCENDO_WEB_XML", "")
+
+# Form 2: child element. Match the FIRST <sparkle:shortVersionString>X</...>
+m = re.search(r'<sparkle:shortVersionString>([^<]+)</sparkle:shortVersionString>', xml)
+if m:
+    print(m.group(1).strip())
+    sys.exit(0)
+
+# Form 1: attribute on enclosure / item.
+m = re.search(r'sparkle:shortVersionString="([^"]+)"', xml)
+if m:
+    print(m.group(1).strip())
+    sys.exit(0)
+
+# Neither form → empty (caller treats as "probe failed").
+PY
 }
 
 # _web_extract_sparkle_enclosure_url

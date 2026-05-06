@@ -98,6 +98,14 @@ while IFS= read -r SLUG; do
     esac
     LATEST=$(printf '%s' "$LATEST" | tr -d '[:space:]')
 
+    # GH rate-limit sentinel: skip with explanation, don't plan.
+    if [ "$LATEST" = "__GH_RATE_LIMITED__" ]; then
+        json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+        json_add_message "warn" "${SLUG}: GitHub API rate-limited; deferring. Set GITHUB_TOKEN or wait."
+        COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+        continue
+    fi
+
     IS_RUNNING=0
     _web_is_running "$BUNDLE_ID" && IS_RUNNING=1
 
