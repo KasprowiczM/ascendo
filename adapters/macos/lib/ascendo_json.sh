@@ -257,12 +257,21 @@ _ascendo_sudo_warm() {
     if [ -n "${PYTEST_CURRENT_TEST:-}" ] || [ -n "${ASCENDO_SUDO_WARM_DISABLE:-}" ]; then
         return 0
     fi
-    # 1. Already authed in the last ~5 min? Done — no prompt at all.
+    # 0. Already authed in the last ~5 min? Done — no prompt at all.
     if sudo -n -v 2>/dev/null; then
         return 0
     fi
+    # 0b. SUDO_ASKPASS already wired (user pre-authenticated via the
+    #     dashboard's /elevation/auth modal — MacElevation registered an
+    #     askpass helper that echoes the cached password). The subsequent
+    #     `sudo -A` calls will pick up the helper directly. No prompt at
+    #     all is needed here, and trying to warm via TTY would surface a
+    #     duplicate Touch ID dialog on top of the SPA-side cache.
+    if [ -n "${SUDO_ASKPASS:-}" ] && [ -x "${SUDO_ASKPASS}" ]; then
+        return 0
+    fi
 
-    # 2. PAM path (Touch ID first, password fallback at TTY).
+    # 1. PAM path (Touch ID first, password fallback at TTY).
     #    `osascript ... with administrator privileges` goes through Apple's
     #    SecurityAgent / AuthorizationCreate API — which BYPASSES PAM
     #    entirely and never uses Touch ID, even with pam_tid.so configured.
@@ -287,10 +296,17 @@ _ascendo_sudo_warm() {
         sudo -v && return 0 || true
     fi
 
-    # 3. Headless fallback (no /dev/tty — e.g. unattended cron, CI).
-    #    osascript dialog won't use Touch ID but keeps the run unblocked.
-    #    Skip when ASCENDO_SUDO_NO_GUI is set (scripted contexts).
+    # 2. Headless fallback (no /dev/tty + no SUDO_ASKPASS — unattended cron,
+    #    CI, or detached service). Touch ID is unreachable here, so we'd
+    #    have to fall through to osascript with administrator privileges
+    #    (Apple's SecurityAgent dialog: typed password only, no biometrics).
+    #
+    #    The user explicitly said "Touch ID only", so this fallback is
+    #    OPT-IN via ASCENDO_SUDO_ALLOW_GUI=1. Default behaviour: stay
+    #    silent and let the subsequent `sudo -A` raise its own error so
+    #    the operator knows to run `sudo -v` in their launching terminal.
     if [ "$(uname -s)" = "Darwin" ] \
+       && [ "${ASCENDO_SUDO_ALLOW_GUI:-0}" = "1" ] \
        && [ -z "${ASCENDO_SUDO_NO_GUI:-}" ] \
        && command -v osascript >/dev/null 2>&1; then
         osascript -e 'do shell script "/usr/bin/sudo -v" with administrator privileges' \
