@@ -37,8 +37,7 @@ bundle_id = "com.brave.Browser"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Brave Browser"
 handler = "sparkle"
 appcast_url = "https://updates.bravesoftware.com/sparkle/Brave-Browser/stable/appcast.xml"
-apply_cli_argv = ["/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-                  "--check-for-update"]
+notes = "Real-Mac smoke at v0.3.0: --check-for-update CLI flag returned non-zero (Brave doesn't accept it as documented). Removed apply_cli_argv so apply falls back to the appcast enclosure DMG download path, which is the universal sparkle default."
 
 [[app]]
 slug = "opera"
@@ -54,6 +53,7 @@ display_name = "Firefox Developer Edition"
 handler = "github_dmg"
 github_repo = "mozilla-firefox/firefox"
 asset_pattern = "Firefox.+arm64\\.dmg$"
+enabled = false  # Firefox is NOT distributed via GitHub releases — Mozilla uses CDN with versioned URL pattern. Disabled until a direct-URL handler ships. Real-Mac smoke at v0.3.0 confirmed the GH probe can't reach Mozilla's release feed. Re-enable via user override once you implement a custom path.
 
 # ───────────────────────── Security / Crypto ─────────────────────────
 
@@ -156,7 +156,8 @@ display_name = "Visual Studio Code"
 handler = "github_dmg"
 github_repo = "microsoft/vscode"
 asset_pattern = "VSCode-darwin-arm64\\.zip$"
-notes = "many users prefer brew cask 'visual-studio-code' — disable via override if so"
+enabled = false  # microsoft/vscode GH releases don't include arm64 zip assets at the documented URL pattern; VS Code uses its own update server and most users get it via brew cask 'visual-studio-code'. Real-Mac smoke at v0.3.0 confirmed the asset_pattern doesn't match. Re-enable + correct pattern via user override if needed.
+notes = "Disabled: brew cask 'visual-studio-code' is the recommended path."
 
 [[app]]
 slug = "codeedit"
@@ -165,6 +166,7 @@ display_name = "CodeEdit"
 handler = "github_dmg"
 github_repo = "CodeEditApp/CodeEdit"
 asset_pattern = "CodeEdit-arm64\\.dmg$"
+enabled = false  # CodeEditApp/CodeEdit GH releases don't expose arm64.dmg assets at the documented URL. Real-Mac smoke at v0.3.0 confirmed asset_pattern doesn't match. Re-enable via user override once correct pattern is identified.
 
 [[app]]
 slug = "rdm"
@@ -173,6 +175,7 @@ display_name = "Remote Desktop Manager"
 handler = "github_dmg"
 github_repo = "Devolutions/RemoteDesktopManagerMac"
 asset_pattern = "RemoteDesktopManager.+arm64\\.dmg$"
+enabled = false  # Devolutions distributes RDM via devolutions.net direct downloads, not GitHub. Real-Mac smoke at v0.3.0 confirmed the GH repo doesn't expose mac releases. Re-enable via user override once a sparkle/direct-URL handler exists.
 
 # ───────────────────────── Productivity / Multimedia ─────────────────────────
 
@@ -183,7 +186,8 @@ display_name = "MacWhisper"
 handler = "github_dmg"
 github_repo = "JordiBros/MacWhisper-releases"
 asset_pattern = "MacWhisper-.+-arm64\\.dmg$"
-notes = "vendor's distribution repo (not main source); confirm during validate"
+enabled = false  # JordiBros/MacWhisper-releases is a GUESS — real distribution is goodsnooze.com direct downloads. Real-Mac smoke at v0.3.0 confirmed the repo doesn't exist or doesn't expose arm64 assets. Re-enable via user override once correct source identified.
+notes = "vendor's distribution repo (placeholder; not confirmed)"
 
 # ───────────────────────── Microsoft 365 + Docker ─────────────────────────
 

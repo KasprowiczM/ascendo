@@ -133,14 +133,40 @@ while IFS= read -r SLUG; do
                 COUNT_PLANNED=$((COUNT_PLANNED + 1))
             fi
             ;;
-        keystone|msupdate|docker)
-            # Non-defer: emit planned if outdated OR if probe returned empty
-            # (the daemon will reconcile during apply).
+        keystone)
+            # Keystone introspection is opaque — always plan. ksadmin
+            # is part of GoogleSoftwareUpdate; if Chrome/Drive are
+            # installed, ksadmin is too. Apply triggers the daemon.
             if [ -n "$LATEST" ] && ! _version_gt "$LATEST" "$INSTALLED"; then
                 continue
             fi
             json_add_item "web:${SLUG}" "$INSTALLED" "${LATEST:-}" "planned" "web" "$HANDLER"
             COUNT_PLANNED=$((COUNT_PLANNED + 1))
+            ;;
+        msupdate)
+            # msupdate binary missing -> manager not available; skip
+            if ! /usr/bin/command -v msupdate >/dev/null 2>&1; then
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: msupdate not available on this host"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+            elif [ -n "$LATEST" ] && ! _version_gt "$LATEST" "$INSTALLED"; then
+                continue
+            else
+                json_add_item "web:${SLUG}" "$INSTALLED" "${LATEST:-}" "planned" "web" "$HANDLER"
+                COUNT_PLANNED=$((COUNT_PLANNED + 1))
+            fi
+            ;;
+        docker)
+            if ! /usr/bin/command -v docker >/dev/null 2>&1; then
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: docker CLI not available on this host"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+            elif [ -n "$LATEST" ] && ! _version_gt "$LATEST" "$INSTALLED"; then
+                continue
+            else
+                json_add_item "web:${SLUG}" "$INSTALLED" "${LATEST:-}" "planned" "web" "$HANDLER"
+                COUNT_PLANNED=$((COUNT_PLANNED + 1))
+            fi
             ;;
     esac
 done < <(python3 "$REG_SHIM" "${_reg_args[@]}" --list-slugs 2>/dev/null)

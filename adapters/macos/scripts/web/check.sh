@@ -123,6 +123,21 @@ while IFS= read -r SLUG; do
                 json_add_message "info" "${SLUG}: manual_required — open app and use Help → Check for Updates"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 ;;
+            keystone)
+                # Keystone introspection is opaque by design — ksadmin
+                # doesn't expose "what's the latest version?". Apply
+                # triggers the daemon and the daemon reconciles.
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: auto_on_apply — Keystone daemon reconciles when apply triggers it"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
+            msupdate|docker)
+                # Manager binary missing → can't probe and can't apply.
+                # Skipped (manager not installed), not failed.
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: ${HANDLER} not available on this host"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
             *)
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "failed" "web" "$HANDLER"
                 json_add_message "error" "${SLUG}: ${HANDLER} probe returned empty (network or vendor change?)"
