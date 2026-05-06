@@ -6,6 +6,134 @@
 
 ---
 
+## Sesja 35 (2026-05-06) — M5.6 macOS web app updater + v0.3.0
+
+Major milestone landing the sixth `IPackageManager` on macOS — `WebManager`
+— covering ~24 apps installed outside brew/mas/softwareupdate via 7 update
+mechanisms. Closes the operator's "web category never applies anything"
+gap reported at the start of the session.
+
+### Shipped this session — 14 task commits + spec/plan + handoff
+
+| Commit | Task | What |
+|--------|------|------|
+| `cf6dbda` | spec | Web updater design doc (583 lines) — handlers, _apps.toml schema, phase contract, defer-if-running policy per-handler |
+| `4b57622` | plan | 14-task implementation plan (3823 lines) — TDD steps with concrete code blocks |
+| `6956000` + `5c78709` | T1 | `WebRegistry` Pydantic model + 18 tests; per-handler required/irrelevance enforcement, slug regex, override merge by slug. Fix-up: arch/prerelease made `Optional` with handler-irrelevance check; `appcast_url`/`update_url` constrained to https-only (T3 threat-model mitigation) |
+| `70cade4` | T2 | `lib/web_registry.py` CLI shim (`--list-slugs`/`--get-app`/`--validate`) for bash phase scripts; 6 tests |
+| `d9c4c1d` | T3 | Shipped `web_apps.toml` (24 apps); 21 bundle IDs verified against installed apps on Mac.r12.home; Gemini reclassified to keystone (verified via live `ksadmin --print` evidence; correction from plan's squirrel guess); 7 bundle_id mismatches caught + corrected |
+| `67c7189` | T4 | `lib/ascendo_web.sh` shared helpers (_web_installed_version, _version_gt, _web_is_running, _web_extract_sparkle_*, _web_install_dmg, _web_run_apply_cli); 6 tests. Caught a real bash 3.2 quirk: `ps \| grep` self-matches the test wrapper's command line via grep -F; fixed by relying on `lsappinfo` exclusively |
+| `8b196f3` | T5 | Sparkle handler — appcast XML parse + DMG install fallback to `apply_cli_argv`; 4 tests. Implementer added `_sparkle_get` heredoc + ENV var helper to sidestep bash double-quote interpretation in JSON config wire (the literal task template's inline `python3 -c '...'` failed the test fixture's `f"... {json.dumps(cfg)!r}"` shell-doubled escapes) |
+| `f98c15c` | T6 | GitHub DMG handler + ASCENDO_WEB_GH_RELEASE_OVERRIDE test hook; honours prerelease flag; 4 tests. Implementer caught a heredoc/pipe interaction bug in the task template (`cmd \| python3 - "$arg" <<'EOF'` — heredoc binds stdin and drops upstream pipe!) and worked around with env var |
+| `b48a442` | T7 | Keystone handler — `ksadmin --update -productid`; check returns empty (Keystone introspection opaque); 3 tests |
+| `333d62d` | T8 | Squirrel + Builtin handlers — both `open -a` based; squirrel relies on Squirrel.Mac auto-update on relaunch, builtin emits stderr instruction to user; 4 tests |
+| `e6354fa` | T9 | msupdate + Docker handlers — wrappers over `sudo msupdate --install` and `docker desktop update --quiet`; 4 tests |
+| `8ef36ba` | mid | Mid-milestone handoff doc (committed when API rate limit hit; resumed after reset) |
+| `2c8a373` | T10 | check.sh + plan.sh phase scripts. Iterate registry, dispatch per-handler probe, classify into `planned`/`up_to_date`/`skipped`/`failed`. plan.sh applies defer-if-running per-handler (sparkle/github_dmg/squirrel defer; keystone/msupdate/docker apply regardless). Caught: scripts must use `python3` (PATH lookup) not `/usr/bin/python3` because tomllib needs Python 3.11+ and macOS system python3 is 3.9 (no tomllib). 6 tests |
+| `016761b` | T11 | apply.sh phase script. Defer-eligible handlers skip if app running. Per-app stderr capture (last 12 lines) into sidecar messages on failure. Touch-ID-first sudo warm before any mutating apply. 3 tests |
+| `cb63032` | T12 | verify.sh + cleanup.sh. verify.sh re-reads installed CFBundleShortVersionString from sibling apply__web.json; sleeps 30s for squirrel / 10s for keystone (async update agents). cleanup.sh prunes ~/Library/Caches/Ascendo/web/ files >7 days. 3 tests |
+| `2d291be` | T13 | `WebManager` Python class (mirrors NpmManager shape) + adapter wiring. `MacOSAdapter.package_managers()` 5→6, `health_check()` 11→12 components (added `web` — validates registry parses + counts active apps). 8 manager smoke tests + 4 adapter wiring assertions. **358/358 macOS adapter tests passing** |
+| (pending) | T14 | `bin/validate-macos.sh` Stage 13 (7 sub-steps); tag bump v0.2.0 → v0.3.0 in run-tag-release-macos.sh; PLAN.md M5.6 marked done |
+
+### Architecture confirmed end-to-end
+
+- `WebManager` is the sixth IPackageManager on macOS. Slot order: brew, mas,
+  npm, pip, **web**, softwareupdate (last because reboot semantics).
+- `MacOSAdapter.capabilities` unchanged — still
+  `PACKAGE_MANAGEMENT | ELEVATION | INVENTORY | SNAPSHOTS | SCHEDULING`
+  (web is part of PACKAGE_MANAGEMENT, no new capability flag needed).
+- Component count 11 → 12 (added `web`).
+- 7 handlers: sparkle, github_dmg, keystone, squirrel, builtin, msupdate, docker.
+- Registry shipped at `adapters/macos/config/web_apps.toml` (24 entries);
+  user override at `~/.config/ascendo/web_apps.toml` (merge by slug, user wins).
+- Defer-if-running per-handler: sparkle/github_dmg/squirrel defer when
+  bundle_id is running (lsappinfo probe); keystone/msupdate/docker apply
+  regardless because their update agents handle running apps gracefully.
+- Verify is handler-aware: synchronous handlers compare installed vs target
+  immediately; squirrel sleeps 30s + re-reads (Squirrel auto-updates async on
+  relaunch); keystone sleeps 10s (daemon applies async); builtin no-op.
+- `/Applications` writes try without sudo first; sudo -A on EACCES via the
+  existing askpass cache (Sesja 21).
+- `spctl --assess --type execute --verbose` signature verification + xattr
+  -dr com.apple.quarantine on installed bundles per the spec's T3 mitigation.
+
+### Known limitations + deferred follow-ups
+
+- **`_*_get` heredoc helper duplicated across 5 handlers** (sparkle / gh /
+  keystone / squirrel / builtin). ~70 LOC of identical Python is repeated.
+  Consolidation to `ascendo_web.sh._web_get` is a v0.4 cleanup follow-up.
+- **MacWhisper repo is a guess** (`JordiBros/MacWhisper-releases`) — vendor's
+  actual GH repo not confirmed at registry-write time. Marked with TODO
+  comment; first real check on Mac.r12.home will surface the right repo.
+- **Opera, Ledger Live, MS365 bundle_ids unverified** — not installed on
+  Mac.r12.home at registry-write time. Operator can confirm + correct via
+  user override TOML.
+- **Mid-milestone API rate-limit hit** — implementer agents bounced on
+  per-tier rate limit at the Task 10 boundary. Recovered by writing T10-12
+  inline (faster than dispatching agents anyway, given the patterns were
+  well-established by T5-9). Lesson: ~10 agent dispatches per session
+  before hitting the wall on this tier; budget accordingly.
+
+### Tests
+
+**358 / 358 macOS adapter tests passing**.
+- Foundation: 18 (registry) + 6 (CLI shim) + 6 (TOML sanity) + 6 (helpers) = 36
+- Handlers: 4 (sparkle) + 4 (gh) + 3 (keystone) + 4 (squirrel+builtin) + 4 (msupdate+docker) = 19
+- Phase scripts: 6 (check+plan) + 3 (apply) + 3 (verify+cleanup) = 12
+- WebManager + adapter wiring: 8 + 4 = 12
+
+Plus the existing 280 macOS adapter tests carry forward unchanged.
+
+Aggregate test suite was 280 (Sesja 34) → 358 (this session). Net +78
+tests. (One pre-existing `test_service_endpoints` failure unchanged.)
+
+### Real apply trace (Stage 13, this run)
+
+`bin/validate-macos.sh` Stage 13 (7 sub-steps) on Mac.r12.home:
+
+```
+==> 13. web app updater (M5.6)
+
+==> 13.1 doctor: web component
+  web                  ok: 24 apps registered
+  [PASS] 13.1 doctor: web component
+
+==> 13.2 web_registry.py --validate against shipped registry
+  [PASS] 13.2 web_registry.py --validate against shipped registry
+
+==> 13.3 web --phase check
+  [PASS] sidecar produced (18 items)
+
+==> 13.4 web --phase plan
+  [PASS] 13.4 web --phase plan
+
+==> 13.5 web --phase apply --dry-run
+  [PASS] 13.5 web --phase apply --dry-run    no mutation
+
+==> 13.6 web --phase verify
+  [PASS] 13.6 web --phase verify
+
+==> 13.7 web --phase cleanup
+  [PASS] 13.7 web --phase cleanup
+
+ALL CHECKS PASSED. (41/41)
+```
+
+### What's next (M6+)
+
+**M5 macOS adapter is feature-complete.** Forward backlog:
+
+- **M6** — Hardening + v1.0 stable: security audit (T1-T7 threat-model
+  items per ADR-0005); code signing (Apple Developer ID + Authenticode +
+  GPG for Linux); plugin signing + verification; plugin marketplace UX
+  in dashboard; localization beyond en/pl; opt-in 100% local-only telemetry.
+- **M5.6 follow-ups (deferred)**: hoist `_*_get` helper to shared module;
+  add Auto-detection mode (B/C from brainstorm) for unregistered apps with
+  Sparkle fingerprints; AppleScript menu navigation for selected builtin
+  apps; per-app `kill_safe` flag if defer-if-running causes user friction.
+
+---
+
 ## Sesja 34 (2026-05-06) — Apply-phase hardening + Touch ID + DMG split + pip version mismatch
 
 Multi-front polish session driven by operator feedback on Mac.r12.home

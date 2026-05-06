@@ -648,6 +648,89 @@ else
     result "12.5 schedule remove" 0 "CLI exit non-zero"
 fi
 
+# ============================================================
+# Stage 13 — web app updater (M5.6)
+# ============================================================
+step "13. web app updater (M5.6)"
+
+DOCTOR_OUT_M56="$(python3 -m ascendo doctor 2>&1)"
+
+# 13.1 doctor reports web component
+step "13.1 doctor: web component"
+if printf '%s\n' "$DOCTOR_OUT_M56" | grep -qE '^[[:space:]]+web[[:space:]]+(ok|degraded|unavailable|error)'; then
+    printf '%s\n' "$DOCTOR_OUT_M56" | grep -E '^[[:space:]]+web[[:space:]]+'
+    result "13.1 doctor: web component" 1
+else
+    result "13.1 doctor: web component" 0 "no web line in doctor output"
+fi
+
+# 13.2 web_registry CLI shim --validate exits 0 against shipped registry
+step "13.2 web_registry.py --validate against shipped registry"
+WEB_REG_PATH="adapters/macos/config/web_apps.toml"
+if python3 adapters/macos/lib/web_registry.py \
+        --shipped "$WEB_REG_PATH" --validate >/dev/null 2>&1; then
+    result "13.2 web_registry.py --validate against shipped registry" 1
+else
+    result "13.2 web_registry.py --validate against shipped registry" 0 "validation failed"
+fi
+
+# 13.3-13.7 share one runs-dir
+WEB_DIR="$(mktemp -d)"
+trap 'rm -rf "$WEB_DIR"; _cleanup_sched_test' EXIT
+
+# 13.3 web check — accept any exit (some network probes legitimately fail
+# on fresh Mac due to GH API rate limits / unreachable appcasts); we only
+# need a valid sidecar on disk.
+step "13.3 web --phase check"
+python3 -m ascendo run --category web --phase check --runs-dir "$WEB_DIR" >/dev/null 2>&1 || true
+if find "$WEB_DIR" -name 'check__web.json' -type f 2>/dev/null | grep -q .; then
+    SC_PATH=$(find "$WEB_DIR" -name 'check__web.json' -type f 2>/dev/null | head -n 1)
+    SC_ITEMS=$(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1])).get('items', [])))" "$SC_PATH")
+    result "13.3 web --phase check" 1 "sidecar produced ($SC_ITEMS items)"
+else
+    result "13.3 web --phase check" 0 "no sidecar produced"
+fi
+
+# 13.4 web plan
+step "13.4 web --phase plan"
+WEB_OUT=$(python3 -m ascendo run --category web --phase plan --runs-dir "$WEB_DIR" 2>&1)
+WEB_RC=$?
+if [ "$WEB_RC" -eq 0 ] || [ "$WEB_RC" -eq 1 ]; then
+    result "13.4 web --phase plan" 1
+else
+    result "13.4 web --phase plan" 0 "CLI exit $WEB_RC"
+fi
+
+# 13.5 web apply --dry-run
+step "13.5 web --phase apply --dry-run"
+WEB_OUT=$(python3 -m ascendo run --category web --phase apply --dry-run --runs-dir "$WEB_DIR" 2>&1)
+WEB_RC=$?
+if [ "$WEB_RC" -eq 0 ] || [ "$WEB_RC" -eq 1 ]; then
+    result "13.5 web --phase apply --dry-run" 1 "no mutation"
+else
+    result "13.5 web --phase apply --dry-run" 0 "CLI exit $WEB_RC"
+fi
+
+# 13.6 web verify (no apply sidecar in this dir → no-op)
+step "13.6 web --phase verify"
+WEB_OUT=$(python3 -m ascendo run --category web --phase verify --runs-dir "$WEB_DIR" 2>&1)
+WEB_RC=$?
+if [ "$WEB_RC" -eq 0 ] || [ "$WEB_RC" -eq 1 ]; then
+    result "13.6 web --phase verify" 1
+else
+    result "13.6 web --phase verify" 0 "CLI exit $WEB_RC"
+fi
+
+# 13.7 web cleanup
+step "13.7 web --phase cleanup"
+WEB_OUT=$(python3 -m ascendo run --category web --phase cleanup --runs-dir "$WEB_DIR" 2>&1)
+WEB_RC=$?
+if [ "$WEB_RC" -eq 0 ] || [ "$WEB_RC" -eq 1 ]; then
+    result "13.7 web --phase cleanup" 1
+else
+    result "13.7 web --phase cleanup" 0 "CLI exit $WEB_RC"
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 printf "\n"
 if [ "$FAIL_COUNT" -eq 0 ]; then
