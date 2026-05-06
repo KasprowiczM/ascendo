@@ -2401,9 +2401,20 @@ const ui = {
         const active = document.querySelector(".nav-link.active")?.dataset?.view
                      || (window.ui && ui.activeView)
                      || null;
-        if (active === "apps")       ui.loadAppsView({ refresh: true });
-        else if (active === "categories") ui.loadCategoriesView({ refresh: true });
-        else if (active === "overview")   ui.loadOverview({ refresh: true });
+        // Repaint the active view AND mark it loaded so a subsequent
+        // tab-switch back to it doesn't re-trigger the slow scan.
+        // Every view we re-fetch here also primes frontendCache, so the
+        // _loaded flag tells ui.show() "use the cache, don't refetch".
+        if (active === "apps") {
+          ui.loadAppsView({ refresh: true });
+          ui._loaded.apps = true;
+        } else if (active === "categories") {
+          ui.loadCategoriesView({ refresh: true });
+          ui._loaded.categories = true;
+        } else if (active === "overview") {
+          ui.loadOverview({ refresh: true });
+          ui._loaded.overview = true;
+        }
       } catch {}
     });
     es.addEventListener("log", e => { try { const m=JSON.parse(e.data); const ln=m.line||""; if (!handleMarker(ln)) { log.textContent += ln + "\n"; log.scrollTop=log.scrollHeight; appendStreamLine(ln); } } catch {} });
@@ -3130,7 +3141,11 @@ async function startRunWithSudo(body) {
   const phaseList = (Array.isArray(body.phases) && body.phases.length)
     ? body.phases
     : (body.phase ? [body.phase] : []);
-  const mutating = !body.dry_run && (
+  // Profile=quick maps to CHECK only on the backend (see runs.py
+  // _PROFILE_PHASES). Treat it as read-only here so the user doesn't get
+  // a sudo prompt for a read-only sweep.
+  const isReadOnlyProfile = body.profile === "quick";
+  const mutating = !body.dry_run && !isReadOnlyProfile && (
     phaseList.length === 0
     || phaseList.some(p => p === "apply" || p === "cleanup")
   );

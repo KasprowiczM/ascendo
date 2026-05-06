@@ -483,6 +483,12 @@ dialog.modal-dialog #apply-modal-confirm:disabled {
   max-width: 720px;
   min-width: 320px;
   padding: 0;
+  /* `position: relative` keeps the sticky footer below pinned to THIS card
+     even when the modal sits inside a transformed ancestor (Tauri shell
+     renders inside an animated container; without `relative` the sticky
+     footer's containing block can escape to the viewport, which is what
+     made Back / Next render outside the popup). */
+  position: relative;
   display: flex;
   flex-direction: column;
   max-height: 88vh;
@@ -546,9 +552,17 @@ dialog.modal-dialog #apply-modal-confirm:disabled {
 .wizard-step-host ul { margin: 0.35rem 0 0.6rem 1.1rem; line-height: 1.6; }
 
 .wizard-footer {
+  /* Pin Back / Next visibly inside the card no matter how tall the step
+     content grows. `flex: 0 0 auto` defends against any future `flex: 1`
+     mishap on a sibling stretching this row to 0px height. */
+  flex: 0 0 auto;
   display: flex; gap: 0.5rem; align-items: center;
   padding: 0.85rem 1.2rem;
   border-top: 1px solid var(--border);
+  background: var(--panel);
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
 }
 .wizard-footer .wizard-spacer { flex: 1 1 auto; }
 .wizard-footer button[disabled] { opacity: 0.45; cursor: not-allowed; }
