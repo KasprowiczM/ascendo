@@ -79,12 +79,13 @@ def test_package_managers_returns_brew_mas_npm_softwareupdate() -> None:
         is_elevated=False,
     )
     mgrs = a.package_managers(host)
-    assert len(mgrs) == 5
+    assert len(mgrs) == 6
     assert mgrs[0].category is SourceType.BREW
     assert mgrs[1].category is SourceType.MAS
     assert mgrs[2].category is SourceType.NPM
     assert mgrs[3].category is SourceType.PIP
-    assert mgrs[4].category is SourceType.SOFTWAREUPDATE
+    assert mgrs[4].category is SourceType.WEB    # M5.6
+    assert mgrs[5].category is SourceType.SOFTWAREUPDATE
     # legacy alias kept for callers that imported by old name
     return None
 
@@ -122,10 +123,10 @@ def test_detect_host_is_cached() -> None:
 
 
 def test_health_check_reports_required_keys() -> None:
-    """health_check() must return all 11 expected component keys.
+    """health_check() must return all 12 expected component keys.
 
     M5.3 added system_profiler. M5.4 adds softwareupdate + tmutil.
-    M5.5 adds launchctl. M5.7 adds pip.
+    M5.5 adds launchctl. M5.7 adds pip. M5.6 adds web.
     """
     a = MacOSAdapter()
     h = a.health_check()
@@ -137,6 +138,7 @@ def test_health_check_reports_required_keys() -> None:
     assert "tmutil" in h           # M5.4
     assert "launchctl" in h        # M5.5
     assert "pip" in h              # M5.7
+    assert "web" in h              # M5.6
     assert "bash" in h
     assert "ascendo_lib" in h
     assert "ascendo_scripts" in h
@@ -208,18 +210,18 @@ def test_capabilities_includes_elevation() -> None:
 
 def test_package_managers_includes_brew_mas_npm_softwareupdate(mac_host: HostInfo) -> None:
     """package_managers() returns [BrewManager, MasManager, NpmManager,
-    PipManager, SoftwareUpdateManager] in that order.
+    PipManager, WebManager, SoftwareUpdateManager] in that order.
 
-    M5.4 added SoftwareUpdateManager; M5.6 added NpmManager; M5.7 added
-    PipManager. Order matters: softwareupdate is LAST because apply may
-    reboot the Mac mid-run.
+    M5.4 added SoftwareUpdateManager; M5.6 added NpmManager + WebManager;
+    M5.7 added PipManager. Order matters: softwareupdate is LAST because
+    apply may reboot the Mac mid-run.
     """
     a = MacOSAdapter()
     pkgs = a.package_managers(mac_host)
     names = [type(p).__name__ for p in pkgs]
     assert names == [
         "BrewManager", "MasManager", "NpmManager",
-        "PipManager", "SoftwareUpdateManager",
+        "PipManager", "WebManager", "SoftwareUpdateManager",
     ]
 
 
@@ -286,7 +288,7 @@ def test_package_managers_last_is_softwareupdate() -> None:
         os_version="14.5", arch="arm64", user="mk", is_elevated=False,
     )
     mgrs = a.package_managers(host)
-    assert len(mgrs) == 5
+    assert len(mgrs) == 6
     assert isinstance(mgrs[-1], SoftwareUpdateManager)
 
 
@@ -317,21 +319,28 @@ def test_health_check_includes_launchctl():
 
 
 def test_health_check_has_ten_components():
-    """Legacy alias, kept for callers. The actual count is 11 since M5.7
-    (pip). Asserts the count via the dedicated 11-component test below.
+    """Legacy alias, kept for callers. The actual count is 12 since M5.6
+    (web added). Asserts the count via the dedicated 12-component test below.
     """
-    test_health_check_has_eleven_components()
+    test_health_check_has_twelve_components()
 
 
 def test_health_check_has_eleven_components():
-    """M5.7 raises the macOS health-check component count from 10 to 11
-    (pip added)."""
+    """Legacy alias for the pre-M5.6 count. The actual count is 12 since
+    M5.6 (web added). Asserts via the 12-component test below."""
+    test_health_check_has_twelve_components()
+
+
+def test_health_check_has_twelve_components():
+    """M5.6 raises the macOS health-check component count from 11 to 12
+    (web added)."""
     a = MacOSAdapter()
     components = a.health_check()
-    assert len(components) == 11
+    assert len(components) == 12
     expected = {
         "brew", "jq", "mas", "system_profiler", "softwareupdate",
-        "tmutil", "launchctl", "pip", "bash", "ascendo_lib", "ascendo_scripts",
+        "tmutil", "launchctl", "pip", "web",
+        "bash", "ascendo_lib", "ascendo_scripts",
     }
     assert set(components.keys()) == expected
 
@@ -359,11 +368,42 @@ def test_package_managers_includes_pip_after_npm() -> None:
         os_version="14.5", arch="arm64", user="mk", is_elevated=False,
     )
     mgrs = a.package_managers(host)
-    assert len(mgrs) == 5
+    assert len(mgrs) == 6
     names = [type(p).__name__ for p in mgrs]
     assert names == [
         "BrewManager", "MasManager", "NpmManager",
-        "PipManager", "SoftwareUpdateManager",
+        "PipManager", "WebManager", "SoftwareUpdateManager",
     ]
     assert isinstance(mgrs[3], PipManager)
     assert mgrs[3].category is SourceType.PIP
+
+
+# ── M5.6 (WebManager) wiring assertions ───────────────────────────────────
+
+
+def test_health_check_includes_web_component() -> None:
+    """health_check() must include a 'web' component key (M5.6)."""
+    a = MacOSAdapter()
+    h = a.health_check()
+    assert "web" in h
+    s = h["web"]
+    assert s.startswith(("ok", "unavailable", "error", "degraded"))
+
+
+def test_package_managers_includes_web_after_pip() -> None:
+    """package_managers() returns [Brew, Mas, Npm, Pip, Web, SoftwareUpdate].
+
+    Web slots between pip and softwareupdate so softwareupdate (which
+    may reboot the Mac) remains LAST.
+    """
+    from ascendo_macos.managers.web import WebManager
+
+    a = MacOSAdapter()
+    host = HostInfo(
+        hostname="macbook.local", os=OperatingSystem.MACOS,
+        os_version="14.5", arch="arm64", user="mk", is_elevated=False,
+    )
+    mgrs = a.package_managers(host)
+    assert len(mgrs) == 6
+    assert isinstance(mgrs[4], WebManager)
+    assert mgrs[4].category is SourceType.WEB

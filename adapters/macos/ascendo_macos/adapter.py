@@ -32,6 +32,7 @@ from .managers.npm import NpmManager
 from .managers.pip import PipManager
 from .managers.softwareupdate import SoftwareUpdateManager
 from .managers.scheduler import LaunchdScheduler
+from .managers.web import WebManager
 from .snapshot import TimeMachineSnapshot
 
 _log = logging.getLogger(__name__)
@@ -136,14 +137,16 @@ class MacOSAdapter(IAdapter):
 
     def package_managers(self, host: HostInfo) -> list[IPackageManager]:
         # Order matters: brew first, mas second, npm third, pip fourth,
-        # softwareupdate LAST. softwareupdate's apply may reboot the Mac
-        # mid-run (when any update has Action: restart) — putting it last
-        # lets the orchestrator complete brew + mas + npm + pip first.
+        # web fifth (M5.6), softwareupdate LAST. softwareupdate's apply
+        # may reboot the Mac mid-run (when any update has Action: restart)
+        # — putting it last lets the orchestrator complete brew + mas +
+        # npm + pip + web first.
         return [
             BrewManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
             MasManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, elevation=self.elevation()),
             NpmManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
             PipManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
+            WebManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
             SoftwareUpdateManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, elevation=self.elevation()),
         ]
 
@@ -227,9 +230,9 @@ class MacOSAdapter(IAdapter):
     def health_check(self) -> dict[str, str]:
         """Adapter self-test. Returns component→status_string for ``ascendo doctor``.
 
-        Components checked (11 total):
+        Components checked (12 total):
             brew, jq, mas, system_profiler, softwareupdate, tmutil,
-            launchctl, pip, bash, ascendo_lib, ascendo_scripts
+            launchctl, pip, web, bash, ascendo_lib, ascendo_scripts
         """
         out: dict[str, str] = {}
         out["brew"] = self._brew_status()
@@ -240,10 +243,25 @@ class MacOSAdapter(IAdapter):
         out["tmutil"] = self._tmutil_status()
         out["launchctl"] = self._launchctl_status()  # M5.5
         out["pip"] = self._pip_status()
+        out["web"] = self._web_status()  # M5.6
         out["bash"] = self._bash_status()
         out["ascendo_lib"] = self._lib_status()
         out["ascendo_scripts"] = self._scripts_status()
         return out
+
+    def _web_status(self) -> str:
+        """Validate the web_apps.toml registry is parseable + count active apps."""
+        shipped = self.SCRIPTS_DIR.parent / "config" / "web_apps.toml"
+        if not shipped.is_file():
+            return f"error: shipped registry not found at {shipped}"
+        try:
+            from .web_registry import WebRegistry
+            user = Path("~/.config/ascendo/web_apps.toml").expanduser()
+            user_arg = user if user.exists() else None
+            reg = WebRegistry.load(shipped, user_arg)
+            return f"ok: {len(reg.active_apps())} apps registered"
+        except Exception as exc:    # noqa: BLE001
+            return f"error: registry validation failed: {exc}"
 
     # ── Private: OS detection ─────────────────────────────────────────────
 
