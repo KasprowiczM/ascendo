@@ -1,0 +1,201 @@
+# adapters/macos/config/web_apps.toml
+# Schema: ascendo-web-apps/v1
+# MVP curated registry — 24 apps across 6 handlers.
+# User override at ~/.config/ascendo/web_apps.toml; user entries with
+# matching `slug` replace shipped entries; new slugs append.
+#
+# Bundle IDs annotated with "verified on Mac.r12.home (2026-05-06)" were
+# probed live via `defaults read /Applications/<App>.app/Contents/Info
+# CFBundleIdentifier`. Entries marked "TODO: confirm bundle_id" were
+# unavailable on Mac.r12.home and use vendor-documented IDs that should
+# be re-verified during validate-macos.sh Stage 13 on a host with the
+# app installed.
+
+schema = "ascendo-web-apps/v1"
+
+# ───────────────────────── Browsers ─────────────────────────
+
+[[app]]
+slug = "chrome"
+bundle_id = "com.google.Chrome"  # verified on Mac.r12.home (2026-05-06)
+display_name = "Google Chrome"
+handler = "keystone"
+ksadmin_product_id = "com.google.Chrome"
+notes = "Keystone ticket reports productID=com.google.chrome (lowercase) on Mac.r12.home; ksadmin product IDs are case-insensitive on lookup but the canonical ticket form is mixed-case per Google's docs."
+
+[[app]]
+slug = "gdrive"
+bundle_id = "com.google.drivefs"  # verified on Mac.r12.home (2026-05-06)
+display_name = "Google Drive"
+handler = "keystone"
+ksadmin_product_id = "com.google.drivefs"
+notes = "drivefs is migrating from legacy Keystone to GoogleUpdater; keystone handler still resolves the version through ksadmin --print. Confirm during validate-macos.sh Stage 13."
+
+[[app]]
+slug = "brave"
+bundle_id = "com.brave.Browser"  # verified on Mac.r12.home (2026-05-06)
+display_name = "Brave Browser"
+handler = "sparkle"
+appcast_url = "https://updates.bravesoftware.com/sparkle/Brave-Browser/stable/appcast.xml"
+apply_cli_argv = ["/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+                  "--check-for-update"]
+
+[[app]]
+slug = "opera"
+bundle_id = "com.operasoftware.Opera"  # TODO: confirm bundle_id (not installed on Mac.r12.home)
+display_name = "Opera"
+handler = "sparkle"
+appcast_url = "https://autoupdate.geo.opera.com/pub/opera/desktop/appcast.xml"
+
+[[app]]
+slug = "firefox-dev"
+bundle_id = "org.mozilla.firefoxdeveloperedition"  # verified on Mac.r12.home (2026-05-06)
+display_name = "Firefox Developer Edition"
+handler = "github_dmg"
+github_repo = "mozilla-firefox/firefox"
+asset_pattern = "Firefox.+arm64\\.dmg$"
+
+# ───────────────────────── Security / Crypto ─────────────────────────
+
+[[app]]
+slug = "keepassxc"
+bundle_id = "org.keepassxc.keepassxc"  # verified on Mac.r12.home (2026-05-06)
+display_name = "KeePassXC"
+handler = "github_dmg"
+github_repo = "keepassxreboot/keepassxc"
+asset_pattern = "KeePassXC-.+-arm64\\.dmg$"
+
+[[app]]
+slug = "trezor-suite"
+bundle_id = "io.trezor.TrezorSuite"  # verified on Mac.r12.home (2026-05-06)
+display_name = "Trezor Suite"
+handler = "github_dmg"
+github_repo = "trezor/trezor-suite"
+asset_pattern = "Trezor-Suite-.+-mac-arm64\\.dmg$"
+
+[[app]]
+slug = "ledger-live"
+bundle_id = "com.ledger.live"  # TODO: confirm bundle_id (not installed on Mac.r12.home)
+display_name = "Ledger Live"
+handler = "github_dmg"
+github_repo = "LedgerHQ/ledger-live-desktop"
+asset_pattern = "ledger-live-desktop-.+-mac-arm64\\.dmg$"
+
+# ───────────────────────── AI desktop apps (Squirrel/auto-relaunch) ─────────────────────────
+
+[[app]]
+slug = "claude"
+bundle_id = "com.anthropic.claudefordesktop"  # verified on Mac.r12.home (2026-05-06)
+display_name = "Claude"
+handler = "squirrel"
+notes = "Anthropic Claude desktop"
+
+[[app]]
+slug = "chatgpt"
+bundle_id = "com.openai.chat"  # verified on Mac.r12.home (2026-05-06)
+display_name = "ChatGPT"
+handler = "squirrel"
+
+[[app]]
+slug = "chatgpt-atlas"
+bundle_id = "com.openai.atlas"  # verified on Mac.r12.home (2026-05-06)
+display_name = "ChatGPT Atlas"
+handler = "sparkle"
+appcast_url = "https://persistent.oaistatic.com/atlas/public/sparkle_public_appcast.xml"
+
+[[app]]
+slug = "warp"
+bundle_id = "dev.warp.Warp-Stable"  # verified on Mac.r12.home (2026-05-06)
+display_name = "Warp"
+handler = "squirrel"
+
+[[app]]
+slug = "gemini"
+bundle_id = "com.google.GeminiMacOS"  # verified on Mac.r12.home (2026-05-06; was com.google.Gemini in template)
+display_name = "Gemini"
+handler = "keystone"
+ksadmin_product_id = "com.google.GeminiMacOS"
+notes = "Keystone ticket on Mac.r12.home registered as productID=com.google.geminimacos with KSChannelID=m1-prod; the Squirrel template guess was wrong — Google Gemini uses Keystone."
+
+[[app]]
+slug = "lm-studio"
+bundle_id = "ai.elementlabs.lmstudio"  # verified on Mac.r12.home (2026-05-06; was com.lmstudio.app in template)
+display_name = "LM Studio"
+handler = "squirrel"
+
+[[app]]
+slug = "perplexity"
+bundle_id = "ai.perplexity.mac"  # verified on Mac.r12.home (2026-05-06; was ai.perplexity.app in template)
+display_name = "Perplexity"
+handler = "squirrel"
+
+[[app]]
+slug = "comet"
+bundle_id = "ai.perplexity.comet"  # verified on Mac.r12.home (2026-05-06)
+display_name = "Comet"
+handler = "squirrel"
+
+[[app]]
+slug = "codex"
+bundle_id = "com.openai.codex"  # verified on Mac.r12.home (2026-05-06)
+display_name = "Codex Desktop"
+handler = "squirrel"
+
+[[app]]
+slug = "opencode"
+bundle_id = "ai.opencode.desktop"  # verified on Mac.r12.home (2026-05-06; was io.opencode.app in template)
+display_name = "OpenCode Desktop"
+handler = "squirrel"
+
+# ───────────────────────── Dev tools ─────────────────────────
+
+[[app]]
+slug = "vscode"
+bundle_id = "com.microsoft.VSCode"  # verified on Mac.r12.home (2026-05-06)
+display_name = "Visual Studio Code"
+handler = "github_dmg"
+github_repo = "microsoft/vscode"
+asset_pattern = "VSCode-darwin-arm64\\.zip$"
+notes = "many users prefer brew cask 'visual-studio-code' — disable via override if so"
+
+[[app]]
+slug = "codeedit"
+bundle_id = "app.codeedit.CodeEdit"  # verified on Mac.r12.home (2026-05-06)
+display_name = "CodeEdit"
+handler = "github_dmg"
+github_repo = "CodeEditApp/CodeEdit"
+asset_pattern = "CodeEdit-arm64\\.dmg$"
+
+[[app]]
+slug = "rdm"
+bundle_id = "com.devolutions.remotedesktopmanager"  # verified on Mac.r12.home (2026-05-06; was *.mac in template)
+display_name = "Remote Desktop Manager"
+handler = "github_dmg"
+github_repo = "Devolutions/RemoteDesktopManagerMac"
+asset_pattern = "RemoteDesktopManager.+arm64\\.dmg$"
+
+# ───────────────────────── Productivity / Multimedia ─────────────────────────
+
+[[app]]
+slug = "macwhisper"
+bundle_id = "com.goodsnooze.MacWhisper"  # verified on Mac.r12.home (2026-05-06; was com.appsforartists.MacWhisper in template)
+display_name = "MacWhisper"
+handler = "github_dmg"
+github_repo = "JordiBros/MacWhisper-releases"
+asset_pattern = "MacWhisper-.+-arm64\\.dmg$"
+notes = "vendor's distribution repo (not main source); confirm during validate"
+
+# ───────────────────────── Microsoft 365 + Docker ─────────────────────────
+
+[[app]]
+slug = "ms365"
+bundle_id = "com.microsoft.autoupdate2"  # TODO: confirm bundle_id (Microsoft AutoUpdate not installed on Mac.r12.home)
+display_name = "Microsoft 365 Suite"
+handler = "msupdate"
+notes = "covers Word/Excel/PowerPoint/Outlook/OneNote/Teams in one msupdate call"
+
+[[app]]
+slug = "docker"
+bundle_id = "com.docker.docker"  # verified on Mac.r12.home (2026-05-06)
+display_name = "Docker Desktop"
+handler = "docker"
