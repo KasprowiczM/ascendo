@@ -253,31 +253,49 @@ _stream_item() {
 _ascendo_sudo_warm() {
     # Test-fixture opt-out: pytest exports PYTEST_CURRENT_TEST for every
     # test it runs; ASCENDO_SUDO_WARM_DISABLE is the explicit operator
-    # escape hatch. Either makes the helper a no-op so test-stubbed
-    # `sudo` doesn't see surprise `-n -v` calls in its argv log.
+    # escape hatch.
     if [ -n "${PYTEST_CURRENT_TEST:-}" ] || [ -n "${ASCENDO_SUDO_WARM_DISABLE:-}" ]; then
         return 0
     fi
-    # 1. Already authed in the last ~5 min? Done.
+    # 1. Already authed in the last ~5 min? Done — no prompt at all.
     if sudo -n -v 2>/dev/null; then
         return 0
     fi
-    # 2. macOS-only path: osascript with admin privileges presents the
-    #    OS-native dialog (Touch ID first when pam_tid is configured,
-    #    password fallback). The shell script just calls `sudo -v` so
-    #    the timestamp is cached for subsequent `sudo -A` calls.
-    if [ "$(uname -s)" = "Darwin" ] && command -v osascript >/dev/null 2>&1; then
-        # If the user cancels the dialog, osascript exits non-zero — that's
-        # fine, we fall through to the existing `sudo -A` path which will
-        # use the cached askpass password if available. Stderr is silenced
-        # so a cancel doesn't pollute the run output.
+
+    # 2. PAM path (Touch ID first, password fallback at TTY).
+    #    `osascript ... with administrator privileges` goes through Apple's
+    #    SecurityAgent / AuthorizationCreate API — which BYPASSES PAM
+    #    entirely and never uses Touch ID, even with pam_tid.so configured.
+    #    THAT was the cause of the "password popup every time" UX.
+    #
+    #    `sudo -v` goes through PAM, which respects /etc/pam.d/sudo_local
+    #    ordering. With `auth sufficient pam_tid.so` configured, you get:
+    #      * macOS Touch ID prompt FIRST (graphical sheet)
+    #      * "Use Password" button in the same prompt for fallback
+    #    With pam_tid.so NOT configured, you get the standard sudo password
+    #    prompt at /dev/tty. Either way: ONE prompt, no osascript double-up.
+    #
+    #    sudo always reads its prompt from /dev/tty when available; we
+    #    redirect explicitly so sudo doesn't get confused if the helper is
+    #    invoked from a wrapper that closed stdin.
+    if [ "$(uname -s)" = "Darwin" ] && [ -e /dev/tty ]; then
+        if sudo -v </dev/tty 2>/dev/tty; then
+            return 0
+        fi
+    elif [ "$(uname -s)" != "Darwin" ]; then
+        # Linux / other Unix: sudo -v on the inherited TTY.
+        sudo -v && return 0 || true
+    fi
+
+    # 3. Headless fallback (no /dev/tty — e.g. unattended cron, CI).
+    #    osascript dialog won't use Touch ID but keeps the run unblocked.
+    #    Skip when ASCENDO_SUDO_NO_GUI is set (scripted contexts).
+    if [ "$(uname -s)" = "Darwin" ] \
+       && [ -z "${ASCENDO_SUDO_NO_GUI:-}" ] \
+       && command -v osascript >/dev/null 2>&1; then
         osascript -e 'do shell script "/usr/bin/sudo -v" with administrator privileges' \
             >/dev/null 2>&1 || true
     fi
-    # 3. Re-validate. If we got Touch-ID-cached, this returns 0 and the
-    #    subsequent `sudo -A` calls run silently. If Touch ID failed /
-    #    user cancelled, this returns non-zero — apply script falls
-    #    through to its existing `sudo -A` path (askpass cache).
     sudo -n -v 2>/dev/null || true
     return 0
 }

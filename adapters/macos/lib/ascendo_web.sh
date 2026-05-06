@@ -203,12 +203,44 @@ import json, shlex, sys
 argv = json.load(sys.stdin)
 print(" ".join(shlex.quote(a) for a in argv))
 ')
+
+    # gtimeout (coreutils) is the safe path: kills only the spawned PID
+    # tree, never escalates into other processes.
     if command -v gtimeout >/dev/null 2>&1; then
         /usr/bin/env gtimeout "$timeout" /bin/sh -c "$cmd"
-    else
-        /bin/sh -c "$cmd" &
-        local pid=$!
-        ( sleep "$timeout"; kill "$pid" 2>/dev/null ) &
-        wait "$pid"
+        return $?
     fi
+
+    # Fallback: spawn + watcher. SAFETY GUARD added 2026-05-06 after a
+    # real-Mac incident where Brave was passed `--check-for-update`
+    # (an unsupported flag), and the 60s kill-watcher killed the
+    # singleton process — crashing Brave's running window.
+    #
+    # The fix has TWO layers: (a) we already removed apply_cli_argv that
+    # invoked an app's main binary directly, and (b) here we use
+    # `kill -TERM` (graceful) before -KILL, AND we bail out if the PID
+    # has terminated naturally before the timeout.
+    /bin/sh -c "$cmd" &
+    local pid=$!
+    (
+        # Watcher: wait up to $timeout, then graceful TERM; if still
+        # alive after 5s, SIGKILL. If pid is already gone, do nothing.
+        local elapsed=0
+        while [ $elapsed -lt "$timeout" ]; do
+            if ! kill -0 "$pid" 2>/dev/null; then
+                exit 0
+            fi
+            sleep 1
+            elapsed=$((elapsed + 1))
+        done
+        kill -TERM "$pid" 2>/dev/null || exit 0
+        sleep 5
+        kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null || true
+    ) &
+    local watcher=$!
+    wait "$pid"
+    local rc=$?
+    # Watcher cleanup so we don't leave a sleep loop running.
+    kill "$watcher" 2>/dev/null || true
+    return $rc
 }

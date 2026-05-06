@@ -243,12 +243,48 @@ This is a workaround for the fact that the orchestrator can't programatically
 create snapshots on macOS like it does on Windows (VSS). Plumbing a pre-apply
 hook that calls `tmutil localsnapshot` is on the M5.x backlog.
 
-## 10 · Troubleshooting
+## 10 · One-time Touch ID setup (skip the password prompt)
+
+Apply phases that need root (mas, softwareupdate, msupdate) prompt for
+elevation. By default macOS shows a password dialog. To use **Touch ID
+instead** (one tap, password fallback automatic via the "Use Password"
+button in the same prompt), enable PAM Touch ID once:
+
+```bash
+# Ascendo prefers /etc/pam.d/sudo_local (Sonoma 14+, survives macOS upgrades).
+# Older macOS: edit /etc/pam.d/sudo directly with the same auth line.
+sudo tee /etc/pam.d/sudo_local <<'EOF'
+auth       sufficient     pam_tid.so
+EOF
+```
+
+Verify:
+
+```bash
+sudo -K              # clear any cached sudo timestamp
+python3 -m ascendo run --category mas --phase apply --dry-run
+# Expected: macOS Touch ID prompt sheet (NOT a password dialog).
+# If you click "Use Password" or pam_tid fails, sudo falls back to
+# the standard password prompt at the same TTY — no extra dialog.
+```
+
+Why this matters: `osascript … with administrator privileges`
+**bypasses PAM entirely** (it goes through Apple's SecurityAgent /
+AuthorizationCreate path), so `pam_tid.so` would be ignored. Ascendo
+calls `sudo -v` directly, which respects PAM order — Touch ID first
+when configured, password fallback automatic.
+
+If you're running Ascendo headless (cron / CI / SSH without TTY)
+and don't want any GUI dialog, set `ASCENDO_SUDO_NO_GUI=1`.
+
+## 11 · Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | `pip: command not found` | Homebrew Python uses `pip3` or `python3 -m pip` | Use `python3 -m pip ...` |
 | `error: externally-managed-environment` | PEP 668 (Homebrew Python 3.12+) | Use `--break-system-packages` (already in `install-dev-macos.sh`) |
+| Sudo password dialog appears every run instead of Touch ID | `pam_tid.so` not configured in `/etc/pam.d/sudo_local` | See §10 above — one-line fix, persistent across reboots |
+| Brave / Chrome / etc. crashed mid-apply | Vendor's `--check-for-update` CLI flag failed and our timeout-watcher killed the spawned PID. Fixed in v0.3.0 fix-ups (graceful TERM before KILL, plus apply_cli_argv removed from Brave entry). | `git pull` to get the fixes; user override your registry to drop apply_cli_argv on any app where it misbehaves |
 | `ascendo doctor` shows `mas: unavailable` | mas not installed | `brew install mas` |
 | `mas` apply fails with "no entitlements" | iPad-only App Store app | Currently unsupported headlessly — install via App Store GUI |
 | softwareupdate apply hangs forever | macOS dialog asking for password | Set `SUDO_PW='...'` env var first, or run interactively |
@@ -259,7 +295,7 @@ hook that calls `tmutil localsnapshot` is on the M5.x backlog.
 | Cmd+Tab still shows old Ascendo icon after `git pull` | macOS IconServices cache + stale .app bundle | `bash bin/launch-desktop-macos.sh --build && bash bin/refresh-macos-icon.sh` |
 | `zsh: command not found: #` / `not enough directory stack entries` when copy-pasting commands | zsh by default does not honour `#` comments in interactive mode, AND treats `~N` (e.g. `~15` from "~15 s") as a directory-stack reference | One-time fix: `echo 'setopt interactive_comments' >> ~/.zshrc && source ~/.zshrc`. After that, lines like `command # comment` work as expected. As a side-note, our launch script auto-strips `#` and unknown args so the build still completes — but the SECOND command in a multi-line paste won't run if the first one trips zsh. |
 
-## 11 · Where everything lives
+## 12 · Where everything lives
 
 ```
 ~/Dev_Env/Ascendo/
@@ -313,7 +349,7 @@ hook that calls `tmutil localsnapshot` is on the M5.x backlog.
 └── ~/.ascendo/runs/<uuid>/              # All sidecars + per-phase logs (NB: home, not repo)
 ```
 
-## 12 · One-liner sanity check
+## 13 · One-liner sanity check
 
 If anything seems off, run this first — exits 0 only when CLI + dashboard
 + all 5 phases × 6 categories produce real sidecars and the SPA assets
