@@ -67,8 +67,13 @@ asset_pattern = "Trezor-Suite-.+-mac-arm64\\.dmg$"
 slug = "claude"
 bundle_id = "com.anthropic.claudefordesktop"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Claude"
-handler = "squirrel"
-notes = "Anthropic Claude desktop"
+handler = "release_feed"
+notes = "Discovered via app.asar reverse-engineering (M5.7.2): Squirrel.Mac fetches updates from api.anthropic.com/api/desktop/<platform>/<arch>/<installer>/update?device_id=<uuid>. The device_id is for server-side analytics — a fixed zero UUID returns the same currentRelease as a real client. Response is JSON; release_feed handler reads it. Live response 2026-05-08: currentRelease=1.6608.0."
+
+[app.release_feed]
+url = "https://api.anthropic.com/api/desktop/darwin/universal/squirrel/update?device_id=00000000-0000-0000-0000-000000000000"
+version_path = "currentRelease"
+http_timeout_s = 8
 
 [[app]]
 slug = "chatgpt"
@@ -119,7 +124,9 @@ handler = "squirrel"
 slug = "codex"
 bundle_id = "com.openai.codex"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Codex Desktop"
-handler = "squirrel"
+handler = "sparkle"
+appcast_url = "https://persistent.oaistatic.com/codex-app-prod/appcast.xml"
+notes = "Discovered via app.asar reverse-engineering (M5.7.2): OpenAI's Codex desktop bundles BOTH Squirrel.framework and Sparkle.framework, but the active updater is Sparkle pointing at this public appcast. Response is RSS XML with sparkle:shortVersionString. Live response 2026-05-08: 26.506.21252."
 
 # opencode moved to M5.7.1 vendor-probe section as github_dmg (disabled
 # pending repo verification — sst/opencode vs anomalyco/opencode).
@@ -282,7 +289,52 @@ notes = "Two candidate repos exist (sst/opencode, anomalyco/opencode); confirm w
 # ─── Trezor Suite ──────────────────────────────────────────────────────────
 # (Already shipped in M5.6 as github_dmg; no override needed.)
 
-# ─── Warp / Cursor / Claude / ChatGPT / Notion Calendar / MEGAsync / Spotify
-# These remain Tier-B (squirrel) for now — their update endpoints are not
-# publicly documented at the time of writing. mitmproxy on app launch
-# would discover them; M5.7.2 follow-up.
+# ═════════════════════════════ M5.7.2 Vendor Probes ═════════════════════════
+# Added 2026-05-08 via app.asar reverse-engineering (asar grep of binary
+# strings + setFeedURL extraction). Three high-confidence URLs found:
+# Claude (above, switched in-place), Codex (above, switched in-place),
+# Notion Calendar (below, new entry), and Cursor (below, new entry —
+# discovered ToDesktop's predictable URL pattern). All four verified
+# live with `curl` returning the expected response shape.
+# ────────────────────────────────────────────────────────────────────────────
+
+# ─── Notion Calendar (formerly Cron) ───────────────────────────────────────
+[[app]]
+slug = "notion-calendar"
+bundle_id = "com.cron.electron"
+display_name = "Notion Calendar"
+handler = "release_feed"
+notes = "Electron-builder latest-mac.yml on Notion's CDN. Discovered via app.asar reverse-engineering (M5.7.2). Files list contains arm64 DMG + universal/x64 zips. files[2] is typically the arm64 DMG (after the two zips). Live response 2026-05-08: version 1.133.0."
+
+[app.release_feed]
+url = "https://calendar-desktop-release.notion-static.com/latest-mac.yml"
+version_path = "version"
+download_path = "files[2].url"
+http_timeout_s = 8
+
+# ─── Cursor (ToDesktop-distributed Electron app) ───────────────────────────
+[[app]]
+slug = "cursor"
+bundle_id = "com.todesktop.230313mzl4w4u92"
+display_name = "Cursor"
+handler = "release_feed"
+enabled = true  # tested live 2026-05-08; URL responds 200 even when app not installed locally
+notes = "ToDesktop is the distribution platform; their app-id 230313mzl4w4u92 is Cursor's. URL pattern is ToDesktop's standard Electron-builder latest-mac.yml. Filenames have spaces ('Cursor 0.45.14 - Build ...-arm64-mac.zip'); release_feed_apply will URL-encode when resolving relative URLs. files[1] is typically arm64-mac.zip. Cursor not installed on this Mac at probe-time; entry verifies endpoint shape against the live ToDesktop CDN."
+
+[app.release_feed]
+url = "https://download.todesktop.com/230313mzl4w4u92/latest-mac.yml"
+version_path = "version"
+http_timeout_s = 8
+
+# ─── Apps that still need mitmproxy on launch ──────────────────────────────
+# ChatGPT (com.openai.chat) — Sparkle but SUFeedURL injected at runtime; not
+#    in the app.asar. Capture appcast URL via mitmproxy.
+# Warp (dev.warp.Warp-Stable) — custom Rust updater hitting GCS bucket;
+#    binary strings showed releases.warp.dev as the host but no path scheme.
+# MEGAsync (mega.mac) — proprietary Qt updater; no URL patterns found.
+# LM Studio (ai.elementlabs.lmstudio) — private Cloudflare R2 bucket.
+# Antigravity (com.google.antigravity) — endpoint requires per-build commit
+#    hash; not probeable without exact value.
+# Comet (ai.perplexity.comet) — Omaha4/Keystone protobuf; not JSON-probeable.
+# All retain Tier-B trigger-only semantics until the operator captures their
+# URL via mitmproxy on app launch and adds an override.
