@@ -112,6 +112,18 @@ window.I18N = {
       st_missing:         "missing",
       no_match:           "No apps match the current filters.",
       items_label:        "items",
+      // Per-app update history (Apps view -> click "History" on a row).
+      history: {
+        link:   "History",
+        title:  "Update history",
+        empty:  "No update history yet — try an apply phase.",
+        column: {
+          when:   "When",
+          from:   "From",
+          to:     "To",
+          status: "Status",
+        },
+      },
     },
     wizard: {
       title:        "Welcome to Ascendo",
@@ -375,6 +387,13 @@ window.I18N = {
       action_4_dry_hint:       "Simulate apply across every source — no actual changes.",
       action_5_full_hint:      "Apply updates on every source. Mutating.",
       no_runs:      "no runs yet",
+      staleness_prefix:     "Last run:",
+      staleness_just_now:   "just now",
+      staleness_minutes_ago: "{n} minutes ago",
+      staleness_hours_ago:  "{n} hours ago",
+      staleness_days_ago:   "{n} days ago",
+      staleness_never:      "Last run: no runs yet",
+      staleness_ok:         "ok",
       reboot_pending: "reboot pending",
       reboot_required: "reboot required",
       reboot_required_banner: "Restart required to finish applying updates.",
@@ -924,9 +943,18 @@ window.I18N = {
       help_li3_t: "Zaznaczone = aplikacja będzie aktualizowana. Niezaznaczone = Ascendo ją ignoruje (nie odinstalowuje).",
       help_li4_b: "Przyciski Add/Remove",
       help_li4_t: "Przełącz czy aplikacja jest w konfigu. Przydatne gdy odkryjesz nową aplikację którą chcesz uwzględnić.",
-
-
-
+      // Historia aktualizacji per-aplikacja (Apps -> "Historia" w wierszu).
+      history: {
+        link:   "Historia",
+        title:  "Historia aktualizacji",
+        empty:  "Brak historii aktualizacji — uruchom najpierw apply.",
+        column: {
+          when:   "Kiedy",
+          from:   "Z wersji",
+          to:     "Do wersji",
+          status: "Status",
+        },
+      },
 
     },
     wizard: {
@@ -1190,6 +1218,13 @@ window.I18N = {
       action_4_dry_hint:       "Symuluje apply we wszystkich źródłach — bez rzeczywistych zmian.",
       action_5_full_hint:      "Stosuje aktualizacje we wszystkich źródłach. Mutująca.",
       no_runs:      "brak uruchomień",
+      staleness_prefix:     "Ostatni run:",
+      staleness_just_now:   "przed chwilą",
+      staleness_minutes_ago: "{n} minut temu",
+      staleness_hours_ago:  "{n} godz. temu",
+      staleness_days_ago:   "{n} dni temu",
+      staleness_never:      "Ostatni run: brak uruchomień",
+      staleness_ok:         "ok",
       reboot_pending: "wymagany restart",
       reboot_required: "WYMAGANY RESTART",
       reboot_required_banner: "Wymagany restart aby zakończyć aktualizacje.",

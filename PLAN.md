@@ -1,6 +1,25 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-08 (sesja 42) — **M5.7.5 Omaha protocol +
+> Last updated: 2026-05-08 (sesja 43) — **post-update reports,
+> per-app history, github_dmg apply-guard, and SPA staleness shipped
+> as v0.5.0**. Operator audit asked for: inventory health
+> confirmation (✅ 223/223 apps Tier-A), main functionality
+> verification (✅ all 5 phases × 6 categories green = 30/30 sidecars),
+> human-readable post-apply report (✅ shipped — `REPORT.md` auto-
+> generated; `ascendo runs report <id>` CLI; `GET /runs/{id}/report`
+> endpoint), update history per app (✅ shipped — new
+> `update_history` SQLite table populated automatically from apply
+> sidecars; `GET /apps/{cat}/{name}/history` endpoint; SPA "History"
+> link per app row). Plus 1 inline bug fix: github_dmg apps were
+> failing on apply with misleading "exit 26" when GitHub API rate-
+> limited; web/apply.sh now skips with `probe_unavailable` instead of
+> falling through to a doomed apply. Plus Last-run staleness indicator
+> (colored relative-time on Overview) + post-apply DB refresh hook so
+> SPA shows fresh versions without manual reload. Bulk-preview UI
+> deferred. Real Mac.r12.home: 377/377 macOS tests + 247/256 contract
+> tests (+27 new). See HANDOFF.md Sesja 43.
+>
+> Previous milestone (sesja 42): **M5.7.5 Omaha protocol +
 > last-mile static research shipped as v0.4.5**. **100% real-candidate
 > coverage achieved** on Mac.r12.home: 223 of 224 apps; the 1 remaining
 > is `ascendo` itself (intentionally `enabled = false` because the

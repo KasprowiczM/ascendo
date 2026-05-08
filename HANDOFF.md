@@ -6,6 +6,201 @@
 
 ---
 
+## Sesja 43 (2026-05-08) — Reports + history + apply-guard + UX polish + v0.5.0
+
+User audit ask: "check all last runs, fix any errors, tell me if
+inventory is working fine, apps and categories have actual candidates
+after quick check, if main functionality of Ascendo app now fully
+works (unified updates, building inventory, checks for updates, plan,
+apply updates etc.). I believe it would also be nice after each update
+to have a report, what was exactly done in simple, human readable
+format. It would also be nice to have a history of app updates in
+inventory. Three subagents in parallel + inline fixes shipped the bug
+fix, both UX features, and last-run staleness polish. The bulk-preview
+view was scoped out (parking as M5.x backlog).
+
+### Issues found in audit + fixes (inline)
+
+**Bug 1: 3 github_dmg apps failing on apply with `exit 26`.**
+`trezor-suite`, `obsidian`, `opencode` were silently failing when the
+GitHub API rate-limited (60 req/hour anonymous). Root cause: when the
+pre-dispatch `<handler>_check` probe in `web/apply.sh` returned empty
+(rate-limited), apply.sh fell through and INVOKED apply anyway —
+which hit the same upstream and produced the same misleading
+"handler exit 26" failure. Fixed: when CAND is empty for any Tier-A
+handler (sparkle / github_dmg / release_feed / docker / msupdate /
+omaha), apply.sh now skips with `probe_unavailable` reason instead.
+Also wired `omaha` into the pre-dispatch case (was missing).
+Verified live: trezor-suite/obsidian/opencode now correctly classify
+as up_to_date (or upgrade in opencode's case 1.14.40 → 1.14.41 ✓).
+
+**Bug 2: InventoryDB stale rows.** The dashboard's SQLite cache had
+350 web entries while live discovery reports 38 — orphan rows from
+pre-discovery-filter scans. Cleared via direct SQL. The Sesja 40
+auto-clear-before-bulk-upsert fix prevents new drift; this was just
+old data from before the fix landed.
+
+### What landed (3 features + 1 bugfix)
+
+**A. REPORT.md — human-readable post-apply summary** (subagent E):
+
+After every apply run, the orchestrator writes `<run_dir>/REPORT.md`:
+- Header: run id, timestamp, host, profile, duration, overall status
+- "At a glance" line: `3 upgraded, 211 already up-to-date, 3 triggered,
+  6 deferred, 3 failed`
+- Per-category sections grouping upgrades alphabetically with version
+  transitions (`Firefox Dev 151.0 → 151.0b8`)
+- Reboot banner at top when sidecar.needs_reboot=true
+- Trigger-only summary ("X apps will self-update on next launch")
+- Deferred items with friendly reason ("was running during the update —
+  re-run apply to upgrade it")
+- Failed items with the actual error message parsed from sidecars
+
+CLI: `ascendo runs report <run-id>` prints to stdout; `--open` opens
+in default viewer; `--regenerate` rebuilds. Dashboard endpoint:
+`GET /runs/{id}/report` returns text/markdown (404 for check-only).
+
+Generator at `core/ascendo/orchestrator/report.py` (~371 LOC, pure
+stdlib + Pydantic). +12 contract tests.
+
+**B. update_history table** (subagent F):
+
+New SQLite table on `~/.ascendo/inventory.db`:
+```
+update_history(id, category, name, from_version, to_version, status,
+               run_id, applied_at, handler, notes)
+```
+
+Two indices: `(category, name, applied_at DESC)` for per-app history
+queries; `(run_id)` for batch lookups.
+
+Population: `flush_apply_history(run_dir, run_id, db)` walks apply
+sidecars, inserts one row per item with `status ∈ {success, failed,
+triggered}` (skips up_to_date / planned / skipped). Idempotent on
+`(category, name, run_id)` — running flush twice doesn't duplicate.
+For `triggered` items, `to_version=""` until the verify phase backfills
+via `backfill_triggered_history`. Both helpers wired into
+`run_async.py`'s post-run finally block.
+
+Endpoint: `GET /apps/{category}/{name}/history?limit=N` returns
+`{category, name, history: [{applied_at, from, to, status, run_id,
+handler}]}` newest-first; default limit 20, max 500.
+
+SPA: each app row in the Apps view gets a "History" link that toggles
+an inline table showing past version transitions with status icons
+(✓ success, ⚠ failed, ⏳ triggered). i18n keys
+`apps.history.{link, title, empty, column.{when, from, to, status}}`
+in en + pl.
+
++15 contract tests.
+
+**C. Last-run staleness + cache invalidation** (subagent G):
+
+Overview card now shows a colored relative-time line under "Last run":
+- `Last run: 12 minutes ago` (--ok green, <1h fresh)
+- `Last run: 3 hours ago` (--ok-soft, <6h fresh)
+- `Last run: 1 day ago` (--fg-muted neutral, <24h ok)
+- `Last run: 3 days ago` (--warn yellow, <7d stale)
+- `Last run: 14 days ago` (--err red, ≥7d very stale)
+- `No runs yet` (--fg-muted neutral, never)
+
+After SSE `done` event from any apply run, the SPA fires
+`POST /inventory/db/refresh` (fire-and-forget) so the server-side
+SQLite is repopulated with post-apply versions, then repaints
+Apps/Categories/Overview without manual refresh.
+
+7 new i18n keys in `overview.staleness_*` namespace × 2 languages
+(EN + PL parity).
+
+**Bulk plan preview** (item 2 in subagent G's spec) was deferred to
+M5.x backlog — the table-rendering scope didn't fit alongside items
+1+3 in the agent's budget without churn risk against the parallel
+agents' edits. Tracked in PLAN.md.
+
+### Coverage / functional health on Mac.r12.home
+
+| Question | Answer |
+|----------|--------|
+| Inventory working? | ✅ Yes. 223 apps tracked across 6 categories. |
+| Apps + categories have real candidates after quick check? | ✅ 100% (223/223). 7 outdated apps detected. |
+| Unified updates working? | ✅ All 5 phases × 6 categories = 30/30 sidecars green end-to-end. |
+| Build inventory works? | ✅ /inventory/refresh + db.clear_category + bulk_upsert all wired. |
+| Check for updates works? | ✅ All 6 categories real candidate detection. |
+| Plan works? | ✅ 13 web items planned this run. |
+| Apply works? | ✅ Last successful real-apply: opencode 1.14.40 → 1.14.41. |
+
+### Tests
+
+- 377/377 macOS adapter tests (unchanged)
+- 247/256 contract tests (was 220, +27: 12 apply_report + 15 update_history)
+- 9 pre-existing test_service_endpoints failures unchanged (predate
+  this work, documented in Sesja 33+)
+
+### Files changed
+
+```
+NEW:
+  core/ascendo/orchestrator/report.py             | 371 LOC
+  tests/contract/test_apply_report.py             | 330 LOC, 12 tests
+  tests/contract/test_update_history.py           | ~280 LOC, 15 tests
+
+MODIFIED:
+  adapters/macos/scripts/web/apply.sh             |  20 ++ (apply guard + omaha)
+  app/frontend/app.js                             | 180 ++ (history link + staleness + cache refresh)
+  app/frontend/i18n.js                            |  41 ~  (history + staleness × 2 langs)
+  core/ascendo/cli/__init__.py                    |  64 ++ (runs report subcommand)
+  core/ascendo/dashboard/inventory_db.py          | 366 ++ (update_history table + helpers)
+  core/ascendo/dashboard/routes/apps.py           |  34 ++ (history endpoint)
+  core/ascendo/dashboard/routes/runs.py           |  35 ++ (report endpoint)
+  core/ascendo/orchestrator/runner.py             |  15 ~  (auto REPORT.md after apply)
+  core/ascendo/orchestrator/run_async.py          |  15 ++ (flush_apply_history hook)
+  core/ascendo/orchestrator/__init__.py           |   3 ~  (export new symbols)
+```
+
+### Operator command to verify
+
+```bash
+cd ~/Dev_Env/Ascendo
+git pull
+# 1. Confirm inventory + checks
+PYTHONPATH=core:adapters/macos python3 -m ascendo run \
+    -c brew,mas,npm,pip,web,softwareupdate -p check \
+    --runs-dir /tmp/ascendo-coverage
+
+# 2. Generate a human-readable report from the most recent run
+LATEST=$(ls -t ~/.ascendo/runs | head -1)
+PYTHONPATH=core:adapters/macos python3 -m ascendo runs report $LATEST
+
+# 3. Apply-history table (after at least one apply run)
+sqlite3 ~/.ascendo/inventory.db 'SELECT category, name, from_version,
+    to_version, status, applied_at FROM update_history
+    ORDER BY applied_at DESC LIMIT 10'
+
+# 4. Dashboard endpoints
+PYTHONPATH=core:adapters/macos python3 -m ascendo dashboard --background &
+sleep 3
+curl -s http://127.0.0.1:8765/runs/$LATEST/report | head -20
+curl -s http://127.0.0.1:8765/apps/web/web:docker/history?limit=5 | jq
+pkill -f 'ascendo dashboard'
+```
+
+### M5.x deferred / Stage 5 polish status
+
+Status as of Sesja 43:
+
+- ✅ **Inventory cache invalidation after apply** — done (Sesja 43)
+- ✅ **"Last Run" staleness indicator** — done (Sesja 43)
+- ✅ **Hide NVIDIA driver buttons on macOS** — already done (Sesja 32 via adapter-hide-macos)
+- ⏳ **Status pill colors light theme contrast** — operator hasn't reported
+  this as visible problem; defer
+- ⏳ **Pre-apply Time Machine snapshot footer banner** — APFS-blocked;
+  defer to operator-side work
+- ⏳ **Bulk-preview UI** — M5.x backlog (planning shows per-category;
+  unified diff table is nice-to-have)
+- ⏳ **Parallel apply** — M6 perf work; needs lock coordination
+
+---
+
 ## Sesja 42 (2026-05-08) — M5.7.5 Omaha protocol + last-mile static + v0.4.5
 
 User: "go further with operator-side and m6 work and finish it, use

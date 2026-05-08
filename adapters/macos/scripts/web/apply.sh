@@ -121,7 +121,7 @@ while IFS= read -r SLUG; do
     # (keystone/squirrel/builtin) have no synchronous candidate — daemon
     # reconciles, so we always invoke them when filter matches.
     case "$HANDLER" in
-        sparkle|github_dmg|release_feed|docker|msupdate)
+        sparkle|github_dmg|release_feed|docker|msupdate|omaha)
             CAND=""
             case "$HANDLER" in
                 sparkle)      CAND=$(sparkle_check      "$SLUG" "$CFG" 2>/dev/null) ;;
@@ -129,14 +129,28 @@ while IFS= read -r SLUG; do
                 release_feed) CAND=$(release_feed_check "$SLUG" "$CFG" 2>/dev/null) ;;
                 docker)       CAND=$(docker_check       "$SLUG" "$CFG" 2>/dev/null) ;;
                 msupdate)     CAND=$(msupdate_check     "$SLUG" "$CFG" 2>/dev/null) ;;
+                omaha)        CAND=$(omaha_check        "$SLUG" "$CFG" 2>/dev/null) ;;
             esac
             if [ -n "$CAND" ] && [ "$CAND" = "$INSTALLED" ]; then
                 json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "up_to_date" "web" "$HANDLER"
                 COUNT_UPTODATE=$((COUNT_UPTODATE + 1))
                 continue
             fi
-            # If CAND empty (probe failed), still attempt apply — handler will
-            # surface the real failure reason in stderr capture below.
+            # If the pre-dispatch probe returned EMPTY (rate-limit, network
+            # blip, transient vendor 502, etc.), do NOT fall through to apply
+            # — the apply call will hit the same upstream and almost
+            # certainly produce the same failure, surfacing as a misleading
+            # "handler exit 26" failed item. Skip with a clear reason so
+            # the operator sees the actual cause and the run can be retried.
+            # Tier-A handlers (github_dmg/release_feed/sparkle) all rely on
+            # external HTTPS — when the probe fails, "skip & retry" is the
+            # correct semantic, not "blindly mutate".
+            if [ -z "$CAND" ]; then
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: probe_unavailable (vendor endpoint unreachable / rate limited; retry later)"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                continue
+            fi
             ;;
     esac
 

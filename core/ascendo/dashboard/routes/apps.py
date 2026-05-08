@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 _log = logging.getLogger(__name__)
@@ -260,6 +260,38 @@ async def apps_include(entry: ExclusionEntry) -> dict[str, Any]:
 async def apps_excluded() -> dict[str, Any]:
     """Read the raw exclusion list as stored on disk."""
     return {"excluded": _read_excluded(), "file": str(excluded_file())}
+
+
+@router.get("/apps/{category}/{name}/history")
+async def apps_history(
+    category: str,
+    name: str,
+    request: Request,
+    limit: int = Query(20, ge=1, le=500),
+) -> dict[str, Any]:
+    """Per-app update history.
+
+    Returns up to ``limit`` past version transitions (newest first) for
+    one ``(category, name)`` pair, sourced from the ``update_history``
+    SQLite table written after every apply run.
+    """
+    db = getattr(request.app.state, "inventory_db", None)
+    if db is None:
+        return {"category": category, "name": name, "history": []}
+    rows = db.get_update_history(category, name, limit=limit)
+    history = [
+        {
+            "applied_at": r["applied_at"],
+            "from": r["from_version"],
+            "to": r["to_version"],
+            "status": r["status"],
+            "run_id": r["run_id"],
+            "handler": r["handler"],
+            "notes": r["notes"],
+        }
+        for r in rows
+    ]
+    return {"category": category, "name": name, "history": history}
 
 
 __all__ = [

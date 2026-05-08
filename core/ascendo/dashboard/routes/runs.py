@@ -382,6 +382,41 @@ async def list_runs(request: Request) -> RunListResponse:
     return RunListResponse(runs=entries, total=len(entries))
 
 
+@router.get("/{run_id}/report", response_class=None)
+async def get_run_report(run_id: UUID, request: Request):
+    """Return the human-readable ``REPORT.md`` for ``run_id``.
+
+    Returns ``text/markdown`` content when the file exists. If no report
+    is on disk and the run has an apply phase, the report is generated
+    on-demand. Returns 404 when the run never had an apply phase (and
+    therefore has nothing to report on).
+    """
+    from fastapi.responses import PlainTextResponse
+
+    from ...orchestrator.report import REPORT_FILENAME, generate_apply_report
+
+    runs_dir: Path = request.app.state.runs_dir
+    run_dir = runs_dir / str(run_id)
+    if not run_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+
+    report_path = run_dir / REPORT_FILENAME
+    if report_path.is_file():
+        try:
+            markdown = report_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"could not read report: {exc}") from exc
+    else:
+        markdown = generate_apply_report(run_dir)
+        if markdown is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"no apply report available for run {run_id}",
+            )
+
+    return PlainTextResponse(content=markdown, media_type="text/markdown")
+
+
 @router.get("/{run_id}", response_model=list)
 async def get_run(run_id: UUID, request: Request) -> list[dict]:
     """Return all sidecars for ``run_id`` as raw JSON dicts.

@@ -219,13 +219,26 @@ def run_phases(
             aborted = phase
             break
 
-    return RunReport(
+    report = RunReport(
         run=run,
         host=host,
         sidecars=sidecars,
         skipped_managers=skipped,
         aborted_after_phase=aborted,
     )
+
+    # Best-effort: write a human-readable REPORT.md when an apply phase
+    # ran. Non-fatal — generator swallows its own errors.
+    if Phase.APPLY in set(ordered):
+        try:
+            from .report import generate_apply_report  # noqa: PLC0415
+
+            run_dir = base_dir / str(run.id)
+            generate_apply_report(run_dir, host=host)
+        except Exception:  # noqa: BLE001
+            _log.exception("post-run report generation failed for %s", run.id)
+
+    return report
 
 
 # ── Internals ───────────────────────────────────────────────────────────────

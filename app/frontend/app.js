@@ -1255,6 +1255,43 @@ const ui = {
     if (isNaN(d.getTime())) return s;
     return d.toLocaleString();
   },
+  // Compute a relative-time staleness label + a token-based color hint
+  // for the Overview "Last run" card. Buckets:
+  //   <  1h         -> fresh      (--ok)
+  //   <  6h         -> fresh      (--ok)
+  //   < 24h         -> ok         (--fg-muted)
+  //   <  7d         -> stale      (--warn)
+  //   >= 7d         -> very_stale (--err)
+  //   no timestamp  -> never      (--fg-muted)
+  staleness(isoStr) {
+    if (!isoStr) return { key: "never", color: "var(--fg-muted)", label: tr("overview.staleness_never") };
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return { key: "never", color: "var(--fg-muted)", label: tr("overview.staleness_never") };
+    const ms = Date.now() - d.getTime();
+    if (ms < 0) return { key: "ok", color: "var(--fg-muted)", label: tr("overview.staleness_prefix") + " " + tr("overview.staleness_just_now") };
+    const min = Math.floor(ms / 60000);
+    const hr  = Math.floor(ms / 3600000);
+    const day = Math.floor(ms / 86400000);
+    let key, color, rel;
+    if (min < 60) {
+      key = "fresh"; color = "var(--ok)";
+      rel = (min <= 1) ? tr("overview.staleness_just_now")
+                       : tr("overview.staleness_minutes_ago").replace("{n}", min);
+    } else if (hr < 6) {
+      key = "fresh"; color = "var(--ok)";
+      rel = tr("overview.staleness_hours_ago").replace("{n}", hr);
+    } else if (hr < 24) {
+      key = "ok"; color = "var(--fg-muted)";
+      rel = tr("overview.staleness_hours_ago").replace("{n}", hr);
+    } else if (day < 7) {
+      key = "stale"; color = "var(--warn)";
+      rel = tr("overview.staleness_days_ago").replace("{n}", day);
+    } else {
+      key = "very_stale"; color = "var(--err)";
+      rel = tr("overview.staleness_days_ago").replace("{n}", day);
+    }
+    return { key, color, label: tr("overview.staleness_prefix") + " " + rel };
+  },
 
   async loadHealth() {
     const card = $("#health-card");
@@ -1350,12 +1387,18 @@ const ui = {
     try {
       const runs = (await api.get("/runs?limit=1")).runs;
       const last = runs[0];
-      $("#last-run").innerHTML = last
-        ? `${ui.badge(last.status)} <code>${last.id}</code><br>
+      if (last) {
+        const stale = ui.staleness(last.started_at);
+        $("#last-run").innerHTML = `${ui.badge(last.status)} <code>${last.id}</code><br>
            <span class="dim">${ui.fmtTime(last.started_at)} → ${ui.fmtTime(last.ended_at)}</span><br>
            profile: ${last.profile || "-"}, dry-run: ${last.dry_run ? "yes" : "no"}<br>
-           ${last.needs_reboot ? `<b>${tr("overview.reboot_required")}</b>` : ""}`
-        : `<span class='dim'>${tr("overview.no_runs")}</span>`;
+           ${last.needs_reboot ? `<b>${tr("overview.reboot_required")}</b><br>` : ""}
+           <span class="meta" style="color:${stale.color};font-weight:600" data-staleness="${stale.key}">${stale.label}</span>`;
+      } else {
+        const stale = ui.staleness(null);
+        $("#last-run").innerHTML = `<span class='dim'>${tr("overview.no_runs")}</span><br>
+           <span class="meta" style="color:${stale.color}" data-staleness="${stale.key}">${stale.label}</span>`;
+      }
     } catch (e) { $("#last-run").textContent = String(e); }
     try {
       const p = await api.get("/preflight");
@@ -1721,6 +1764,20 @@ const ui = {
       btn.dataset.cat = it.category;
       btn.dataset.name = it.name;
       tdAction.appendChild(btn);
+
+      // "View history" link — fetches /apps/{cat}/{name}/history and
+      // renders an inline <tr> with the past version transitions.
+      tdAction.appendChild(document.createTextNode(" "));
+      const histLink = document.createElement("button");
+      histLink.type = "button";
+      histLink.className = "secondary";
+      histLink.style.fontSize = "0.78rem";
+      histLink.textContent = tr("apps.history.link") || "History";
+      histLink.dataset.appsHistory = "1";
+      histLink.dataset.cat = it.category;
+      histLink.dataset.name = it.name;
+      tdAction.appendChild(histLink);
+
       trRow.appendChild(tdAction);
 
       tbody.appendChild(trRow);
@@ -2410,14 +2467,26 @@ const ui = {
       // user is on so they see post-apply state without manually
       // hitting Refresh. Apps + Categories + Overview are the most
       // common views to be staring at while a run is finishing.
+      //
+      // Step 1: kick the server-side InventoryDB refresh so the
+      // SQLite cache is repopulated with post-apply versions BEFORE
+      // we re-fetch any view. Fire-and-forget — we don't await it
+      // because the next view-load will use frontendCache miss path
+      // which calls /inventory anyway, and the DB refresh races with
+      // it harmlessly.
+      try {
+        fetch("/inventory/db/refresh", { method: "POST" })
+          .catch(() => {/* endpoint may not exist on older backends */});
+      } catch {}
+      // Step 2: repaint the active view AND mark it loaded so a
+      // subsequent tab-switch back to it doesn't re-trigger the slow
+      // scan. Every view we re-fetch here also primes frontendCache,
+      // so the _loaded flag tells ui.show() "use the cache, don't
+      // refetch".
       try {
         const active = document.querySelector(".nav-link.active")?.dataset?.view
                      || (window.ui && ui.activeView)
                      || null;
-        // Repaint the active view AND mark it loaded so a subsequent
-        // tab-switch back to it doesn't re-trigger the slow scan.
-        // Every view we re-fetch here also primes frontendCache, so the
-        // _loaded flag tells ui.show() "use the cache, don't refetch".
         if (active === "apps") {
           ui.loadAppsView({ refresh: true });
           ui._loaded.apps = true;
@@ -3508,6 +3577,101 @@ document.addEventListener("click", async e => {
       ui._loaded.apps = false; ui._loaded.categories = false;
       ui.loadApps();
     } catch (err) { ui.status(String(err)); }
+  }
+  // Per-app update history toggle. Inserts/removes a sibling <tr> with
+  // the last N version transitions (newest first) for the clicked app.
+  const hist = e.target.closest("[data-apps-history]");
+  if (hist) {
+    const row = hist.closest("tr");
+    if (!row) return;
+    const next = row.nextElementSibling;
+    if (next && next.classList.contains("apps-history-row")) {
+      next.remove();
+      return;
+    }
+    const cat = hist.dataset.cat;
+    const name = hist.dataset.name;
+    try {
+      const cols = row.children.length || 7;
+      const histRow = document.createElement("tr");
+      histRow.className = "apps-history-row";
+      const td = document.createElement("td");
+      td.colSpan = cols;
+      td.style.background = "var(--bg-sunk, transparent)";
+      td.style.padding = "10px 14px";
+      const data = await api.get(
+        `/apps/${encodeURIComponent(cat)}/${encodeURIComponent(name)}/history?limit=20`,
+      );
+      const entries = (data && data.history) || [];
+      if (!entries.length) {
+        td.textContent = tr("apps.history.empty")
+          || "No update history yet — try an apply phase.";
+      } else {
+        const title = document.createElement("div");
+        title.style.fontWeight = "600";
+        title.style.marginBottom = "6px";
+        title.textContent = (tr("apps.history.title") || "Update history")
+          + ` (${entries.length})`;
+        td.appendChild(title);
+        const tbl = document.createElement("table");
+        tbl.className = "tbl";
+        tbl.style.width = "100%";
+        const thead = document.createElement("thead");
+        const trh = document.createElement("tr");
+        [
+          tr("apps.history.column.when")   || "When",
+          tr("apps.history.column.from")   || "From",
+          tr("apps.history.column.to")     || "To",
+          tr("apps.history.column.status") || "Status",
+        ].forEach(label => {
+          const th = document.createElement("th");
+          th.textContent = label;
+          trh.appendChild(th);
+        });
+        thead.appendChild(trh);
+        tbl.appendChild(thead);
+        const tb = document.createElement("tbody");
+        entries.forEach(h => {
+          const r = document.createElement("tr");
+          // When (best-effort: cut microseconds; show local-ish form).
+          const tdWhen = document.createElement("td");
+          tdWhen.className = "mono";
+          let when = String(h.applied_at || "—");
+          // "2026-05-08T22:47:00+00:00" -> "2026-05-08 22:47"
+          when = when.replace("T", " ").slice(0, 16);
+          tdWhen.textContent = when;
+          r.appendChild(tdWhen);
+          const tdFrom = document.createElement("td");
+          tdFrom.className = "mono";
+          tdFrom.textContent = h.from || "—";
+          r.appendChild(tdFrom);
+          const tdTo = document.createElement("td");
+          tdTo.className = "mono";
+          tdTo.textContent = h.to || "—";
+          r.appendChild(tdTo);
+          const tdSt = document.createElement("td");
+          const stMap = {
+            success:  {sym: "✓", cls: "st-ok"},
+            failed:   {sym: "⚠", cls: "st-err"},
+            triggered:{sym: "⏳", cls: "st-info"},
+            missing:  {sym: "+", cls: "st-warn"},
+          };
+          const sym = stMap[h.status] || {sym: h.status || "?", cls: "st-skip"};
+          const span = document.createElement("span");
+          span.className = "st-pill " + sym.cls;
+          span.textContent = `${sym.sym} ${h.status || ""}`.trim();
+          tdSt.appendChild(span);
+          r.appendChild(tdSt);
+          tb.appendChild(r);
+        });
+        tbl.appendChild(tb);
+        td.appendChild(tbl);
+      }
+      histRow.appendChild(td);
+      row.parentNode.insertBefore(histRow, row.nextSibling);
+    } catch (err) {
+      ui.status(String(err));
+    }
   }
 });
 

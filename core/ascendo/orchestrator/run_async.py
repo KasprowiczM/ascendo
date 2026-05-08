@@ -282,6 +282,21 @@ async def start_run_async(
                 _flush_run_to_inventory_db(run_dir, inventory_db)
             except Exception:  # noqa: BLE001
                 _log.exception("post-run inventory flush failed")
+            # Also persist per-app version-transition history so the
+            # Apps view can render "this app was upgraded N times…".
+            # apply phase records the transition; verify backfills the
+            # to_version for triggered items once the vendor agent
+            # reconciles.
+            try:
+                from ..dashboard.inventory_db import (  # noqa: PLC0415
+                    backfill_triggered_history,
+                    flush_apply_history,
+                )
+
+                flush_apply_history(run_dir, str(run.id), inventory_db)
+                backfill_triggered_history(run_dir, str(run.id), inventory_db)
+            except Exception:  # noqa: BLE001
+                _log.exception("post-run update_history flush failed")
             state.finished_at = datetime.now(timezone.utc)
             state._completion_event.set()
 

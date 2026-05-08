@@ -927,6 +927,70 @@ def runs_json(
     typer.echo(_json.dumps(payload, indent=2 if pretty else None, default=str))
 
 
+@runs_app.command("report")
+def runs_report(
+    run_id: str = typer.Argument(..., help="Run id (the directory name under runs_dir)."),
+    runs_dir: Path | None = typer.Option(None, "--runs-dir"),
+    open_in_viewer: bool = typer.Option(
+        False, "--open",
+        help="Open the report in the default markdown viewer (macOS: `open`).",
+    ),
+    regenerate: bool = typer.Option(
+        False, "--regenerate",
+        help="Force re-render the report from sidecars even if REPORT.md already exists.",
+    ),
+) -> None:
+    """Print the human-readable post-apply report for a run.
+
+    The report is normally generated automatically at the end of any run
+    that included an ``apply`` phase. This command prints the on-disk
+    ``REPORT.md`` to stdout (or regenerates it on demand from sidecars).
+    """
+    from ..orchestrator.report import REPORT_FILENAME, generate_apply_report
+
+    base_dir = runs_dir or _default_runs_dir()
+    run_dir = base_dir / run_id
+    if not run_dir.is_dir():
+        typer.secho(f"error: run not found: {run_dir}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    report_path = run_dir / REPORT_FILENAME
+    markdown: str | None = None
+    if regenerate or not report_path.is_file():
+        markdown = generate_apply_report(run_dir)
+        if markdown is None:
+            typer.secho(
+                "no apply phase in this run — nothing to report.",
+                fg=typer.colors.YELLOW, err=True,
+            )
+            raise typer.Exit(0)
+    else:
+        try:
+            markdown = report_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            typer.secho(f"error: could not read {report_path}: {exc}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(1) from None
+
+    typer.echo(markdown)
+
+    if open_in_viewer:
+        opener: list[str] | None = None
+        if sys.platform == "darwin":
+            opener = ["open", str(report_path)]
+        elif sys.platform.startswith("linux"):
+            opener = ["xdg-open", str(report_path)]
+        elif sys.platform == "win32":
+            opener = ["cmd", "/c", "start", "", str(report_path)]
+        if opener is not None:
+            try:
+                subprocess.run(opener, check=False)  # noqa: S603 — argv only
+            except OSError as exc:
+                typer.secho(
+                    f"warning: could not open viewer: {exc}",
+                    fg=typer.colors.YELLOW, err=True,
+                )
+
+
 def main() -> None:
     app()
 
