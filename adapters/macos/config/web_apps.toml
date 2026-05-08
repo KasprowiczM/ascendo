@@ -1,8 +1,11 @@
 # adapters/macos/config/web_apps.toml
-# Schema: ascendo-web-apps/v1
-# MVP curated registry — 24 apps across 6 handlers.
+# Schema: ascendo-web-apps/v2 (M5.7+)
+# Override registry — discovery layer (lib/web_discovery.sh) walks
+# /Applications and emits the canonical inventory; this file is
+# consulted to override per-bundle handler/config when the auto-
+# fingerprint isn't right.
 # User override at ~/.config/ascendo/web_apps.toml; user entries with
-# matching `slug` replace shipped entries; new slugs append.
+# matching `bundle_id` replace shipped entries; new bundle_ids append.
 #
 # Bundle IDs annotated with "verified on Mac.r12.home (2026-05-06)" were
 # probed live via `defaults read /Applications/<App>.app/Contents/Info

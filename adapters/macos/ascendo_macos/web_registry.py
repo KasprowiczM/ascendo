@@ -40,11 +40,11 @@ class ReleaseFeedConfig(BaseModel):
 
     url: HttpsUrl
     version_path: Annotated[str, Field(min_length=1, max_length=256,
-                                       pattern=r"^[A-Za-z0-9_.\[\]]+$")]
+                                       pattern=r"^[A-Za-z0-9_.\-\[\]]+$")]
     download_path: Optional[Annotated[str, Field(min_length=1, max_length=256,
-                                                  pattern=r"^[A-Za-z0-9_.\[\]]+$")]] = None
+                                                  pattern=r"^[A-Za-z0-9_.\-\[\]]+$")]] = None
     arch_path: Optional[Annotated[str, Field(min_length=1, max_length=256,
-                                              pattern=r"^[A-Za-z0-9_.\[\]]+$")]] = None
+                                              pattern=r"^[A-Za-z0-9_.\-\[\]]+$")]] = None
     expected_arch: Optional[Literal["arm64", "x86_64", "universal"]] = None
     http_timeout_s: Annotated[int, Field(ge=1, le=60)] = 8
 

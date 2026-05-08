@@ -43,7 +43,7 @@ SCHEMA_ID = "ascendo/v1"
 VALID_PHASES = {"check", "plan", "apply", "verify", "cleanup"}
 VALID_STATUSES = {"success", "skipped", "failed", "planned", "up_to_date", "partial", "missing", "triggered"}
 VALID_LEVELS = {"debug", "info", "warn", "error"}
-COUNTER_BUCKETS = {"success", "skipped", "failed"}
+COUNTER_BUCKETS = {"success", "skipped", "failed", "triggered"}
 
 
 def _bufdir(arg: str) -> Path:
@@ -77,7 +77,7 @@ def _read_jsonl(path: Path) -> list[dict]:
 
 def _read_counters(path: Path) -> dict[str, int | bool]:
     out: dict[str, int | bool] = {
-        "success": 0, "skipped": 0, "failed": 0, "needs_reboot": False,
+        "success": 0, "skipped": 0, "failed": 0, "triggered": 0, "needs_reboot": False,
     }
     if not path.exists():
         return out
@@ -97,6 +97,7 @@ def _write_counters(path: Path, counters: dict[str, int | bool]) -> None:
         f"success={counters['success']}",
         f"skipped={counters['skipped']}",
         f"failed={counters['failed']}",
+        f"triggered={counters.get('triggered', 0)}",
         f"needs_reboot={'true' if counters['needs_reboot'] else 'false'}",
     ]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -143,7 +144,8 @@ def cmd_init(args: argparse.Namespace) -> int:
     (bufdir / "items.jsonl").write_text("", encoding="utf-8")
     (bufdir / "msgs.jsonl").write_text("", encoding="utf-8")
     _write_counters(bufdir / "counters.env",
-                    {"success": 0, "skipped": 0, "failed": 0, "needs_reboot": False})
+                    {"success": 0, "skipped": 0, "failed": 0,
+                     "triggered": 0, "needs_reboot": False})
     return 0
 
 
@@ -236,12 +238,12 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     success = int(counters["success"])
     skipped = int(counters["skipped"])
     failed = int(counters["failed"])
+    triggered = int(counters.get("triggered", 0))
 
     # Count items by status for the summary buckets
     up_to_date = sum(1 for it in items if it.get("status") == "up_to_date")
     planned = sum(1 for it in items if it.get("status") == "planned")
     partial = sum(1 for it in items if it.get("status") == "partial")
-    triggered = sum(1 for it in items if it.get("status") == "triggered")
 
     # Status heuristic — refined Sesja 34:
     #   any failed AND any success → "partial"  (most common: 10 ok, 1 broken)

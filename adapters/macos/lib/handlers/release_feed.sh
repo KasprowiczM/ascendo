@@ -200,6 +200,14 @@ release_feed_apply() {
     dmg_url=$(_rf_walk_json "$body" "$download_path") || return 28
     [ -z "$dmg_url" ] && return 28
 
+    # T3 mitigation: enforce https on the response-body URL too. The feed
+    # URL is Pydantic-validated https-only, but a hostile or compromised
+    # vendor feed could embed an http:// DMG link.
+    case "$dmg_url" in
+        https://*) ;;
+        *) return 32 ;;
+    esac
+
     # Delegate to the shared DMG installer helper (from ascendo_web.sh,
     # loaded by check.sh / apply.sh before sourcing handlers).
     _web_install_dmg "$slug" "$dmg_url"

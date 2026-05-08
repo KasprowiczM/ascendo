@@ -752,7 +752,7 @@ python3 -m http.server "$RF_PORT" --bind 127.0.0.1 \
     --directory "$REPO_ROOT/adapters/macos/tests/fixtures/release_feed" \
     >/tmp/ascendo-validate-rf.log 2>&1 &
 RF_PID=$!
-trap 'kill "$RF_PID" 2>/dev/null || true' EXIT
+trap 'kill "$RF_PID" 2>/dev/null || true; rm -rf "$WEB_DIR"; _cleanup_sched_test' EXIT
 sleep 0.7
 # Build the config JSON in a separate step (avoids nested-heredoc quoting hell).
 RF_CFG=$(RF_PORT="$RF_PORT" python3 <<'PY'

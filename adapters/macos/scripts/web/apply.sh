@@ -77,6 +77,7 @@ in_filter() {
 }
 
 COUNT_SUCCESS=0
+COUNT_TRIGGERED=0
 COUNT_FAILED=0
 COUNT_SKIPPED=0
 COUNT_PLANNED=0
@@ -142,7 +143,7 @@ while IFS= read -r SLUG; do
                     squirrel) json_add_message "info" "${SLUG}: app relaunched; Squirrel will self-update on next quit/relaunch" ;;
                     builtin)  json_add_message "info" "${SLUG}: app opened for user (manual update path)" ;;
                 esac
-                COUNT_SUCCESS=$((COUNT_SUCCESS + 1))
+                COUNT_TRIGGERED=$((COUNT_TRIGGERED + 1))
                 ;;
             *)
                 # Tier-A: synchronous swap completed
@@ -162,5 +163,5 @@ while IFS= read -r SLUG; do
     fi
 done < <(python3 "$REG_SHIM" "${_reg_args[@]}" --list-slugs 2>/dev/null)
 
-json_add_message "info" "web apply: ${COUNT_SUCCESS} success, ${COUNT_FAILED} failed, ${COUNT_SKIPPED} skipped, ${COUNT_PLANNED} planned (dry-run)"
+json_add_message "info" "web apply: ${COUNT_SUCCESS} success, ${COUNT_TRIGGERED} triggered, ${COUNT_FAILED} failed, ${COUNT_SKIPPED} skipped, ${COUNT_PLANNED} planned (dry-run)"
 exit 0

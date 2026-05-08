@@ -1,19 +1,30 @@
-"""WebManager - sixth IPackageManager on macOS, covers ~24 web-installed apps.
+"""WebManager - sixth IPackageManager on macOS, covers every web-orphan app.
 
 Mirrors :class:`NpmManager` shape: bash phase scripts under
 ``adapters/macos/scripts/web/``, JSON-IPC via temp dir, JSON-v1 sidecar
 contract unchanged.
 
-Scope on macOS:
-  * apps installed outside brew / mas / softwareupdate (the 309 apps
-    inventory currently labels :class:`SourceType.WEB`)
-  * 7 update mechanisms: sparkle (appcast XML + DMG), github_dmg
-    (GH Releases API + arm64 asset DMG), keystone (Google Software
-    Update agent), squirrel (Squirrel.Mac auto-on-relaunch), builtin
-    (open + emit instruction to user), msupdate (Microsoft AutoUpdate),
-    docker (Docker Desktop's CLI updater)
-  * registry shipped at ``adapters/macos/config/web_apps.toml``;
-    user override at ``~/.config/ascendo/web_apps.toml`` (merge by slug)
+Scope on macOS (M5.7 v0.4.0+):
+  * Every installed ``/Applications/*.app`` not owned by brew / mas /
+    softwareupdate. Discovery layer (``adapters/macos/lib/web_discovery.sh``)
+    walks Info.plist fingerprints + ownership exclusions; ~50 apps on
+    a typical Mac.
+  * 8 update mechanisms via two tiers:
+
+    Tier-A (real candidate-version probe):
+      sparkle (appcast XML + DMG), github_dmg (GH Releases API +
+      arm64 asset), release_feed (NEW — generic JSON-over-HTTPS probe),
+      msupdate (Microsoft AutoUpdate), docker (Docker Desktop's CLI).
+
+    Tier-B (trigger-only with honest async semantics):
+      keystone (Google Software Update agent), squirrel (Squirrel.Mac
+      auto-on-relaunch), builtin (open + emit manual-update instruction).
+      Apply emits ItemStatus.TRIGGERED; verify reports
+      triggered_pending / triggered_confirmed via informational messages.
+
+  * registry shipped at ``adapters/macos/config/web_apps.toml`` (schema
+    v2, bundle_id-keyed); user override at ``~/.config/ascendo/web_apps.toml``
+    (merge by bundle_id, user replaces shipped wholesale).
 """
 from __future__ import annotations
 
