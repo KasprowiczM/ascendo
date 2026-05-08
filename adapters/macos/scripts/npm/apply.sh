@@ -59,12 +59,17 @@ in_filter() {
 }
 
 # -- bootstrap npm-global prefix (idempotent, safe to repeat) -----------------
+# We deliberately do NOT write the prefix into ~/.npmrc (legacy bug:
+# `npm config set prefix` did exactly that, and nvm refuses to load
+# Node when ~/.npmrc carries `prefix=` or `globalconfig=`). Use
+# NPM_CONFIG_PREFIX env var instead — precedence env > .npmrc — and
+# scrub any stale lines from a prior install once per apply run so an
+# old `prefix=` line written by another tool can't keep tripping nvm.
 TOOLCHAIN_HOME="$(ascendo_npm_toolchain_home)"
 NPM_GLOBAL_PREFIX="$(ascendo_npm_global_prefix)"
 mkdir -p "$NPM_GLOBAL_PREFIX/bin" 2>/dev/null || true
-if [ -n "$NPM_BIN" ] && [ -x "$NPM_BIN" ]; then
-    "$NPM_BIN" config set prefix "$NPM_GLOBAL_PREFIX" >/dev/null 2>&1 || true
-fi
+ascendo_npm_scrub_npmrc || true
+export NPM_CONFIG_PREFIX="$NPM_GLOBAL_PREFIX"
 export PATH="$NPM_GLOBAL_PREFIX/bin:$PATH"
 
 # -- per-method handlers ------------------------------------------------------

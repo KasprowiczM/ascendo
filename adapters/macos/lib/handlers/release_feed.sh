@@ -329,17 +329,59 @@ release_feed_check() {
     return 0
 }
 
+# _rf_pick_asset_url <body> <pattern>
+#
+# For GitHub Releases API responses (or any JSON with an
+# ``assets: [{name, browser_download_url}, ...]`` shape): walks the
+# assets array and prints the ``browser_download_url`` of the first
+# asset whose ``name`` field matches the supplied regex.
+#
+# Echoes empty + non-zero rc when:
+#   - body is not JSON
+#   - assets[] missing or not a list
+#   - no asset name matches
+_rf_pick_asset_url() {
+    ASCENDO_RF_BODY="$1" ASCENDO_RF_PAT="$2" \
+    /usr/bin/python3 <<'PY_EOF'
+import json, os, re, sys
+body = os.environ.get("ASCENDO_RF_BODY", "")
+pat = os.environ.get("ASCENDO_RF_PAT", "")
+try:
+    data = json.loads(body)
+except Exception:
+    sys.exit(28)
+assets = data.get("assets") if isinstance(data, dict) else None
+if not isinstance(assets, list):
+    sys.exit(28)
+try:
+    rx = re.compile(pat)
+except re.error:
+    sys.exit(28)
+for a in assets:
+    if not isinstance(a, dict):
+        continue
+    name = a.get("name", "")
+    if rx.search(name):
+        url = a.get("browser_download_url", "")
+        if url:
+            print(url)
+            sys.exit(0)
+sys.exit(28)
+PY_EOF
+}
+
 release_feed_apply() {
     local slug="$1" cfg="$2"
 
-    local url download_path timeout
+    local url download_path download_asset_pattern timeout
     url=$(printf '%s' "$cfg" | _rf_get "release_feed.url")
     download_path=$(printf '%s' "$cfg" | _rf_get "release_feed.download_path")
+    download_asset_pattern=$(printf '%s' "$cfg" | _rf_get "release_feed.download_asset_pattern")
     timeout=$(printf '%s' "$cfg" | _rf_get "release_feed.http_timeout_s")
     [ -z "$timeout" ] && timeout=8
 
-    if [ -z "$download_path" ]; then
-        # No download_path configured — open the app so it can self-update
+    if [ -z "$download_path" ] && [ -z "$download_asset_pattern" ]; then
+        # No download path configured — open the app so it can self-update
         local app_path display_name
         display_name=$(printf '%s' "$cfg" | _rf_get "display_name")
         app_path=$(printf '%s' "$cfg" | _rf_get "app_path")
@@ -352,7 +394,12 @@ release_feed_apply() {
     body=$(/usr/bin/curl -fsSL --max-time "$timeout" "$url" 2>/dev/null) || return 25
 
     local dmg_url
-    dmg_url=$(_rf_walk_json "$body" "$download_path") || return 28
+    if [ -n "$download_asset_pattern" ]; then
+        # GitHub Releases API shape: walk assets[] and pick by name regex.
+        dmg_url=$(_rf_pick_asset_url "$body" "$download_asset_pattern") || return 28
+    else
+        dmg_url=$(_rf_walk_json "$body" "$download_path") || return 28
+    fi
     [ -z "$dmg_url" ] && return 28
 
     # Electron-builder yml gives relative URLs (e.g. "Notion-7.16.0.dmg").
@@ -378,7 +425,12 @@ print(urlunparse((u.scheme, u.netloc, safe_path, u.params, u.query, u.fragment))
         *) return 32 ;;
     esac
 
+    # Optional explicit app_path override; empty string => let
+    # _web_install_dmg pick "/Applications/<basename>.app".
+    local app_path
+    app_path=$(printf '%s' "$cfg" | _rf_get "app_path")
+
     # Delegate to the shared DMG installer helper (from ascendo_web.sh,
     # loaded by check.sh / apply.sh before sourcing handlers).
-    _web_install_dmg "$slug" "$dmg_url"
+    _web_install_dmg "$slug" "$dmg_url" "$app_path"
 }

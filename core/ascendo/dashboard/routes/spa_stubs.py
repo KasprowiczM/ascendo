@@ -368,15 +368,45 @@ async def sudo_status_stub(request: Request) -> dict[str, Any]:
 
     Linux without sudo askpass falls back to cached=True too — the user
     must `sudo -v` from the terminal that launched the dashboard.
+
+    macOS Touch ID path: when the operator authenticates via Touch ID
+    in a TTY-PAM apply phase, the OS sudo timestamp is refreshed but
+    MacElevation never sees a password. Probe `sudo -n -v` so the
+    footer pill flips to "sudo active" within ~30 s of a Touch ID
+    success — without this, the pill stays "sudo not active" forever
+    even though every subsequent apply succeeds silently.
     """
     adapter = getattr(request.app.state, "adapter", None)
+    cached_via_password = False
     if adapter is not None:
         try:
             elev = adapter.elevation()
         except Exception:  # noqa: BLE001
             elev = None
         if elev is not None and callable(getattr(elev, "has_password_registered", None)):
-            return {"cached": bool(elev.has_password_registered())}
+            cached_via_password = bool(elev.has_password_registered())
+            if cached_via_password:
+                return {"cached": True, "method": "askpass"}
+            # No password registered — probe the OS sudo timestamp on
+            # POSIX. `sudo -n -v` exits 0 when there's a fresh cached
+            # credential (Touch ID, prior sudo -v, etc.) and non-zero
+            # otherwise. Bounded 1-second timeout so a wedged sudo
+            # never blocks the polling pill.
+            import platform
+            import subprocess
+            if platform.system() in ("Darwin", "Linux"):
+                try:
+                    r = subprocess.run(
+                        ["sudo", "-n", "-v"],
+                        capture_output=True,
+                        timeout=1,
+                        check=False,
+                    )
+                    if r.returncode == 0:
+                        return {"cached": True, "method": "timestamp"}
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+            return {"cached": False}
     return {"cached": True, "stub": True}
 
 

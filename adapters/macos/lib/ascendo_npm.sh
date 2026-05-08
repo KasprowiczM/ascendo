@@ -33,6 +33,44 @@ ascendo_npm_global_prefix() {
     printf '%s/npm-global' "$(ascendo_npm_toolchain_home)"
 }
 
+# Path to the user's ~/.npmrc (override-able for tests).
+ascendo_npm_npmrc_path() {
+    printf '%s' "${ASCENDO_NPMRC_PATH:-$HOME/.npmrc}"
+}
+
+# Strip `prefix=` and `globalconfig=` lines from ~/.npmrc.
+#
+# Why: writing the npm-global prefix to ~/.npmrc is incompatible with
+# nvm — every nvm shell-init logs a warning and refuses to load the
+# Node it would otherwise pick. We use NPM_CONFIG_PREFIX env var
+# instead (precedence: env > .npmrc), but a stale prefix line written
+# by an earlier Ascendo run, by `npm config set prefix` issued
+# manually, or by a third-party tool would still trigger the warning.
+# Mirror the legacy macOS toolkit's `remove_npmrc_prefix` (cf.
+# Aktualizacje_MAC/update_npm_cli.sh:77-89) and scrub on every apply.
+#
+# Idempotent and safe when ~/.npmrc is absent.
+ascendo_npm_scrub_npmrc() {
+    local _npmrc
+    _npmrc="$(ascendo_npm_npmrc_path)"
+    [ -f "$_npmrc" ] || return 0
+    local _tmp
+    _tmp="$(mktemp "${TMPDIR:-/tmp}/ascendo_npmrc.XXXXXX")" || return 1
+    # `grep -Ev` exits 1 when ALL input lines match the filter (i.e.
+    # the result would be empty); treat that as success so the empty
+    # output still replaces the original file.
+    /usr/bin/grep -Ev '^[[:space:]]*(prefix|globalconfig)[[:space:]]*=' \
+        "$_npmrc" > "$_tmp" 2>/dev/null || true
+    if ! mv "$_tmp" "$_npmrc"; then
+        rm -f "$_tmp"
+        return 1
+    fi
+    # An empty .npmrc is functionally equivalent to no .npmrc; remove
+    # so subsequent tooling (nvm, npm itself) doesn't even open it.
+    [ -s "$_npmrc" ] || rm -f "$_npmrc"
+    return 0
+}
+
 ascendo_npm_bun_home() {
     printf '%s' "${BUN_INSTALL:-$HOME/.bun}"
 }

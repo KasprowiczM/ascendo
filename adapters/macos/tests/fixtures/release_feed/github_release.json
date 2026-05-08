@@ -1,0 +1,26 @@
+{
+  "name": "Release v1.90.121 (Chromium 148.0.7778.96) ",
+  "tag_name": "v1.90.121",
+  "assets": [
+    {
+      "name": "Brave-Browser-arm64.dmg",
+      "browser_download_url": "https://example.test/brave/Brave-Browser-arm64.dmg"
+    },
+    {
+      "name": "Brave-Browser-arm64.pkg",
+      "browser_download_url": "https://example.test/brave/Brave-Browser-arm64.pkg"
+    },
+    {
+      "name": "Brave-Browser-universal.dmg",
+      "browser_download_url": "https://example.test/brave/Brave-Browser-universal.dmg"
+    },
+    {
+      "name": "Brave-Browser-universal.pkg",
+      "browser_download_url": "https://example.test/brave/Brave-Browser-universal.pkg"
+    },
+    {
+      "name": "Brave-Browser-x64.dmg",
+      "browser_download_url": "https://example.test/brave/Brave-Browser-x64.dmg"
+    }
+  ]
+}

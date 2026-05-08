@@ -338,3 +338,83 @@ def test_touchid_status_returns_dict(client_with_elev: TestClient) -> None:
         assert "instructions" in body
         assert "pam_tid.so" in body["instructions"]
 
+
+
+# ── GET /sudo/status — Touch ID timestamp probe (Bug 2) ─────────────────────
+
+
+def test_sudo_status_password_registered_short_circuits(
+    client_with_elev: TestClient,
+) -> None:
+    """When MacElevation has a password registered, /sudo/status returns
+    cached=True without probing `sudo -n -v` — the askpass path is the
+    canonical signal in that case."""
+    # Register a password first.
+    client_with_elev.post("/elevation/auth", json={"password": "correct"})
+    r = client_with_elev.get("/sudo/status")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["cached"] is True
+    assert body.get("method") == "askpass"
+
+
+def test_sudo_status_probes_timestamp_when_no_password(
+    client_with_elev: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No password registered → endpoint probes `sudo -n -v`. When the
+    OS sudo timestamp is fresh (Touch ID just succeeded), exit 0 →
+    cached=True with method='timestamp'. This is the cache-hit path
+    that flips the SPA footer pill from 'sudo not active' to
+    'sudo active' after a Touch ID grant.
+    """
+    import platform
+    import subprocess
+
+    # Force the platform check to take the POSIX path even in CI.
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
+
+    class _FakeCompletedProcess:
+        returncode = 0
+        stdout = b""
+        stderr = b""
+
+    def _fake_run(argv, **kwargs):
+        # Verify we're calling sudo -n -v with a bounded timeout.
+        assert argv == ["sudo", "-n", "-v"]
+        assert kwargs.get("timeout") == 1
+        assert kwargs.get("check") is False
+        return _FakeCompletedProcess()
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+
+    r = client_with_elev.get("/sudo/status")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["cached"] is True
+    assert body.get("method") == "timestamp"
+
+
+def test_sudo_status_returns_false_when_no_password_and_no_timestamp(
+    client_with_elev: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No password + sudo -n -v exits non-zero (no fresh timestamp) →
+    cached=False. The SPA pill stays 'sudo not active' and the next
+    apply-needing-elevation will trigger the appropriate prompt."""
+    import platform
+    import subprocess
+
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
+
+    class _FakeCompletedProcess:
+        returncode = 1
+        stdout = b""
+        stderr = b"a password is required"
+
+    def _fake_run(argv, **kwargs):
+        return _FakeCompletedProcess()
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+
+    r = client_with_elev.get("/sudo/status")
+    assert r.status_code == 200
+    assert r.json()["cached"] is False

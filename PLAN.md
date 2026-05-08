@@ -1,8 +1,25 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-08 (sesja 43) — **post-update reports,
-> per-app history, github_dmg apply-guard, and SPA staleness shipped
-> as v0.5.0**. Operator audit asked for: inventory health
+> Last updated: 2026-05-09 (sesja 44) — **5 operator bug fixes + 1
+> portability doc shipped as v0.5.1**. Fixes: (1) Brave x86_64 Mac
+> bundle replaced with arm64 + new `download_asset_pattern` field on
+> release_feed selects universal DMG from GitHub release assets so
+> future Tier-A applies auto-replace wrong-arch bundles; (2) `.npmrc`
+> `prefix=` line stops coming back — replaced our `npm config set
+> prefix` with `NPM_CONFIG_PREFIX` env var + scrub_npmrc helper;
+> (3) Categories collapse-back fixed via missing CSS rule
+> `.cat-detail.hidden { display: none }` + chevron explicit-click
+> hardening; (4) Touch ID sudo cache now honoured — `/sudo/status`
+> probes `sudo -n -v` (1s cap) when no SPA password registered;
+> (5) Discovery brew classification fixed — `_flatten()` handles
+> str/list, app filename matching, zap.trash plist mining, opt-in
+> codesign deep ownership. Plus `docs/PORTABILITY.md` (181 lines)
+> answers cross-machine portability question. 391/391 macOS tests
+> + 249 contract tests (+13 elevation, +26 brave/npm, +7 discovery).
+> See HANDOFF.md Sesja 44.
+>
+> Previous milestone (sesja 43): **post-update reports, per-app
+> history, github_dmg apply-guard, and SPA staleness shipped as v0.5.0**. Operator audit asked for: inventory health
 > confirmation (✅ 223/223 apps Tier-A), main functionality
 > verification (✅ all 5 phases × 6 categories green = 30/30 sidecars),
 > human-readable post-apply report (✅ shipped — `REPORT.md` auto-

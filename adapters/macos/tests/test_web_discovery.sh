@@ -45,9 +45,16 @@ for line in sys.stdin:
 }
 
 test_emits_one_line_per_app() {
+    # 4 original orphans + FakeBrewByApp + FakeOrphan = 6
+    # FakeMasReceipt and FakeApple/FakeShortcut auto-classify as
+    # mas/softwareupdate/ineligible and are filtered. Apple is filtered
+    # before _MASReceipt check; com.apple.* prefix wins.
+    # With empty env vars: only FakeBrewByApp + Sparkle/Keystone/Squirrel/Orphan
+    # are unowned. FakeMasReceipt -> mas (filtered), FakeApple -> softwareupdate
+    # (filtered), FakeShortcut -> ineligible (filtered).
     local count
     count=$(run_disc "" "" "" "" | wc -l | tr -d ' ')
-    assert_eq "test_emits_one_line_per_app" "4" "$count"
+    assert_eq "test_emits_one_line_per_app" "5" "$count"
 }
 
 test_classifies_sparkle() {
@@ -77,13 +84,13 @@ test_orphan_falls_to_builtin() {
 test_brew_excluded_from_output() {
     local count
     count=$(run_disc "com.fixture.fakeorphan" "" "" "" | wc -l | tr -d ' ')
-    assert_eq "test_brew_excluded_from_output" "3" "$count"
+    assert_eq "test_brew_excluded_from_output" "4" "$count"
 }
 
 test_mas_excluded_from_output() {
     local count
     count=$(run_disc "" "com.fixture.fakesparkle" "" "" | wc -l | tr -d ' ')
-    assert_eq "test_mas_excluded_from_output" "3" "$count"
+    assert_eq "test_mas_excluded_from_output" "4" "$count"
 }
 
 test_emits_version() {
@@ -106,6 +113,114 @@ for line in sys.stdin:
     assert_eq "test_emits_owned_by_brew" "brew" "$owned"
 }
 
+test_brew_app_filename_match() {
+    # Cask metadata may not always include a bundle id (some casks only
+    # ship an `app:` artifact). Match by app filename via "app:Foo.app"
+    # entries in ASCENDO_WEB_BREW_CASKS.
+    local count
+    count=$(run_disc "app:FakeBrewByApp.app" "" "" "" | wc -l | tr -d ' ')
+    assert_eq "test_brew_app_filename_match" "4" "$count"
+}
+
+test_brew_app_filename_owned_by_field() {
+    local owned
+    owned=$(run_disc "app:FakeBrewByApp.app" "" "" "1" \
+            | python3 -c '
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line: continue
+    d = json.loads(line)
+    if d.get("bundle_id") == "org.fixture.brew.byapp":
+        print(d.get("owned_by") or "null")
+        break
+')
+    assert_eq "test_brew_app_filename_owned_by_field" "brew" "$owned"
+}
+
+test_mas_receipt_auto_filters() {
+    # FakeMasReceipt has Contents/_MASReceipt/, so even without
+    # ASCENDO_WEB_MAS_BUNDLE_IDS set it should be filtered as mas.
+    local count
+    count=$(run_disc "" "" "" "1" | python3 -c '
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line: continue
+    d = json.loads(line)
+    if d.get("bundle_id") == "com.fixture.fakemas":
+        print(d.get("owned_by") or "null")
+        break
+')
+    assert_eq "test_mas_receipt_auto_filters" "mas" "$count"
+}
+
+test_apple_prefix_filtered() {
+    # com.apple.* gets softwareupdate
+    local owned
+    owned=$(run_disc "" "" "" "1" | python3 -c '
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line: continue
+    d = json.loads(line)
+    if d.get("bundle_id") == "com.apple.fixture":
+        print(d.get("owned_by") or "null")
+        break
+')
+    assert_eq "test_apple_prefix_filtered" "softwareupdate" "$owned"
+}
+
+test_drivefs_shortcut_ineligible() {
+    local owned
+    owned=$(run_disc "" "" "" "1" | python3 -c '
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line: continue
+    d = json.loads(line)
+    if d.get("bundle_id") == "com.google.drivefs.shortcuts.docs":
+        print(d.get("owned_by") or "null")
+        break
+')
+    assert_eq "test_drivefs_shortcut_ineligible" "ineligible" "$owned"
+}
+
+test_user_ineligible_pattern_extension() {
+    # ASCENDO_WEB_INELIGIBLE_PATTERNS lets the operator extend the
+    # ineligible list without a code change.
+    local owned
+    owned=$(ASCENDO_WEB_INELIGIBLE_PATTERNS="com.fixture.fakesparkle" \
+            run_disc "" "" "" "1" | python3 -c '
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line: continue
+    d = json.loads(line)
+    if d.get("bundle_id") == "com.fixture.fakesparkle":
+        print(d.get("owned_by") or "null")
+        break
+')
+    assert_eq "test_user_ineligible_pattern_extension" "ineligible" "$owned"
+}
+
+test_brew_match_takes_precedence_over_mas_receipt() {
+    # Some homebrew casks ship apps that ALSO carry a stale _MASReceipt
+    # (rehosted from MAS originals). brew ownership should win.
+    local owned
+    owned=$(run_disc "com.fixture.fakemas" "" "" "1" | python3 -c '
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line: continue
+    d = json.loads(line)
+    if d.get("bundle_id") == "com.fixture.fakemas":
+        print(d.get("owned_by") or "null")
+        break
+')
+    assert_eq "test_brew_match_takes_precedence_over_mas_receipt" "brew" "$owned"
+}
+
 test_emits_one_line_per_app
 test_classifies_sparkle
 test_classifies_keystone
@@ -115,6 +230,13 @@ test_brew_excluded_from_output
 test_mas_excluded_from_output
 test_emits_version
 test_emits_owned_by_brew
+test_brew_app_filename_match
+test_brew_app_filename_owned_by_field
+test_mas_receipt_auto_filters
+test_apple_prefix_filtered
+test_drivefs_shortcut_ineligible
+test_user_ineligible_pattern_extension
+test_brew_match_takes_precedence_over_mas_receipt
 
 echo
 echo "$PASS passed, $FAIL failed"

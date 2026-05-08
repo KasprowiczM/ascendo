@@ -128,6 +128,13 @@ class ReleaseFeedConfig(BaseModel):
                                                 pattern=r"^[A-Za-z0-9_.\-\[\]]+$")]] = None
     download_path: Optional[Annotated[str, Field(min_length=1, max_length=256,
                                                   pattern=r"^[A-Za-z0-9_.\-\[\]]+$")]] = None
+    # download_asset_pattern (M5.7.5) — for GitHub Releases API responses
+    # where ``assets`` is a list of objects with stable ``name`` fields
+    # but unstable ordering. The handler walks ``assets[]``, picks the
+    # first whose ``name`` matches this regex, and uses its
+    # ``browser_download_url``. Mutually exclusive with download_path.
+    # Used by Brave (universal DMG buried among ~30 platform assets).
+    download_asset_pattern: Optional[Annotated[str, Field(min_length=1, max_length=256)]] = None
     arch_path: Optional[Annotated[str, Field(min_length=1, max_length=256,
                                               pattern=r"^[A-Za-z0-9_.\-\[\]]+$")]] = None
     expected_arch: Optional[Literal["arm64", "x86_64", "universal"]] = None
@@ -166,6 +173,21 @@ class ReleaseFeedConfig(BaseModel):
             except _re.error as exc:
                 raise ValueError(
                     f"version_regex is not a valid Python regex: {exc}")
+        # download_asset_pattern (M5.7.5) is mutually exclusive with
+        # download_path — they're two different ways to point at a DMG
+        # in the response body, and supplying both would be ambiguous.
+        if (self.download_asset_pattern is not None
+                and self.download_path is not None):
+            raise ValueError(
+                "download_asset_pattern and download_path are mutually "
+                "exclusive (pick one)")
+        if self.download_asset_pattern is not None:
+            import re as _re
+            try:
+                _re.compile(self.download_asset_pattern)
+            except _re.error as exc:
+                raise ValueError(
+                    f"download_asset_pattern is not a valid Python regex: {exc}")
         return self
 
 

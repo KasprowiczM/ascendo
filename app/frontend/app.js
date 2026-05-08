@@ -1906,27 +1906,50 @@ const ui = {
       det.innerHTML = `<td colspan="7"><div class="cat-detail-inner" id="cat-detail-${c.id}"></div></td>`;
       tb.appendChild(det);
     }
+    // Toggle the cat-detail TR for a given .cat-row. Bidirectional:
+    // first call expands (loads detail), second call collapses.
+    const toggleCatRow = (row) => {
+      const cat = row.dataset.cat;
+      const det = row.nextElementSibling;
+      if (!det || !det.classList.contains("cat-detail")) return;
+      const isHidden = det.classList.contains("hidden");
+      if (isHidden) {
+        det.classList.remove("hidden");
+        row.classList.add("open");
+        ui.loadCategoryDetail(cat);
+      } else {
+        det.classList.add("hidden");
+        row.classList.remove("open");
+      }
+    };
     $$("#cats-table .cat-row").forEach(row => {
+      // Row click — toggle, except when click landed on (or inside) any
+      // button. closest('button') catches icons/spans nested in buttons
+      // so e.g. an SVG inside `▶ run all` doesn't trigger collapse.
       row.addEventListener("click", e => {
-        // Defensive: any click that lands on (or inside) a button should
-        // never collapse/expand the row. The strict `tagName === "BUTTON"`
-        // check missed clicks on icons/spans nested inside buttons (e.g.
-        // an SVG inside `▶ run all`), which made the row toggle while the
-        // user thought they were running a phase. closest('button') is
-        // the canonical fix.
         if (e.target.closest && e.target.closest("button")) return;
-        const cat = row.dataset.cat;
-        const det = row.nextElementSibling;
-        if (!det) return;
-        const isHidden = det.classList.contains("hidden");
-        if (isHidden) {
-          det.classList.remove("hidden");
-          row.classList.add("open");
-          ui.loadCategoryDetail(cat);
-        } else {
-          det.classList.add("hidden");
-          row.classList.remove("open");
-        }
+        toggleCatRow(row);
+      });
+    });
+    // Explicit chevron-cell click handler so clicks on the chevron itself
+    // (or its parent TD) ALWAYS toggle, even if a future restyling adds a
+    // ::before/::after pseudo-element that swallows the row-level event.
+    // Belt-and-suspenders fix for the operator-reported "collapse-back
+    // not working" — phase buttons live in the rightmost cell, and a near-
+    // miss click during fast collapse-collapse cycles could hit the action
+    // column. The chevron cell is the dedicated toggle target.
+    $$("#cats-table .cat-row > td:first-child").forEach(td => {
+      td.addEventListener("click", e => {
+        e.stopPropagation();          // prevent row-handler double-fire
+        toggleCatRow(td.parentElement);
+      });
+    });
+    // Stop clicks INSIDE the expanded detail row from bubbling up and
+    // accidentally triggering the parent cat-row's toggle if the operator
+    // clicks on a non-button area (e.g. the table header of the detail).
+    $$("#cats-table .cat-detail").forEach(det => {
+      det.addEventListener("click", e => {
+        e.stopPropagation();
       });
     });
     // Per-category phase buttons → start the run directly (with sudo for mutating).

@@ -764,6 +764,7 @@ dialog.modal-dialog #apply-modal-confirm:disabled {
 .cat-row .toggle { color: var(--dim); width: 1.2em; display: inline-block; transition: transform 0.15s; }
 .cat-row.open .toggle { transform: rotate(90deg); }
 .cat-detail { background: var(--bg); }
+.cat-detail.hidden { display: none; }
 .cat-detail .cat-detail-inner { padding: 0.5rem 1rem; }
 .spinner {
   display: inline-block; width: 0.8em; height: 0.8em; border-radius: 50%;

@@ -61,7 +61,12 @@ def test_shipped_registry_brave_uses_release_feed_with_regex() -> None:
     CFBundleShortVersionString is `<chromium_milestone>.<brave_internal>`
     (e.g. 148.1.90.121 = Chromium 148 + Brave 1.90.121). The GitHub
     release `name` field carries both pieces; version_regex rewrites
-    "Release v1.90.121 (Chromium 148.0.7778.96)" -> "148.1.90.121"."""
+    "Release v1.90.121 (Chromium 148.0.7778.96)" -> "148.1.90.121".
+
+    M5.7.5 (2026-05-09): apply path now downloads the universal DMG
+    (the published `Brave-Browser-arm64.dmg` is for Apple Silicon
+    only — operators on x86_64 hardware would get the wrong arch
+    via that asset; ditto vice-versa. Universal works everywhere)."""
     reg = WebRegistry.load(SHIPPED, None)
     brave = reg.find("brave")
     assert brave is not None
@@ -71,6 +76,13 @@ def test_shipped_registry_brave_uses_release_feed_with_regex() -> None:
     assert brave.release_feed.version_path == "name"
     assert brave.release_feed.version_regex is not None
     assert brave.release_feed.version_replace is not None
+    # M5.7.5: apply path enabled via download_asset_pattern.
+    assert brave.release_feed.download_asset_pattern is not None
+    assert "universal" in brave.release_feed.download_asset_pattern.lower()
+    # Mutually exclusive — must not also have download_path.
+    assert brave.release_feed.download_path is None
+    # GitHub asset binary is ~234 MiB; default 8s timeout is too tight.
+    assert brave.release_feed.http_timeout_s >= 12
 
 
 def test_shipped_registry_docker_uses_sparkle_handler() -> None:

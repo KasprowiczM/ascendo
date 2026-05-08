@@ -197,6 +197,43 @@ print(json.dumps(d))
         "v0.2026.05.06.15.42.stable_02" "$v"
 }
 
+# M5.7.5: download_asset_pattern selects from GitHub Releases assets[]
+# by name regex. Used by Brave (universal DMG buried in ~30 platform
+# assets including arm64-only binaries that won't run if installed by
+# mistake on x86_64 hardware).
+test_pick_asset_url_matches_first_qualifying_asset() {
+    local body url
+    body=$(/usr/bin/curl -fsS --max-time 5 "http://127.0.0.1:$PORT/github_release.json")
+    url=$(_rf_pick_asset_url "$body" '^Brave-Browser-universal\.dmg$')
+    assert_eq "test_pick_asset_url_matches_first_qualifying_asset" \
+        "https://example.test/brave/Brave-Browser-universal.dmg" "$url"
+}
+
+test_pick_asset_url_no_match_returns_empty_nonzero() {
+    local body url rc
+    body=$(/usr/bin/curl -fsS --max-time 5 "http://127.0.0.1:$PORT/github_release.json")
+    url=$(_rf_pick_asset_url "$body" '^Definitely-Not-Real\.dmg$') ; rc=$?
+    if [ -z "$url" ] && [ "$rc" -ne 0 ]; then
+        echo "PASS test_pick_asset_url_no_match_returns_empty_nonzero"
+        PASS=$((PASS+1))
+        return
+    fi
+    echo "FAIL test_pick_asset_url_no_match: url='$url' rc=$rc"
+    FAIL=$((FAIL+1))
+}
+
+test_pick_asset_url_malformed_json_returns_empty_nonzero() {
+    local url rc
+    url=$(_rf_pick_asset_url 'this is not json' '.*\.dmg$') ; rc=$?
+    if [ -z "$url" ] && [ "$rc" -ne 0 ]; then
+        echo "PASS test_pick_asset_url_malformed_json_returns_empty_nonzero"
+        PASS=$((PASS+1))
+        return
+    fi
+    echo "FAIL test_pick_asset_url_malformed_json: url='$url' rc=$rc"
+    FAIL=$((FAIL+1))
+}
+
 test_happy_path_emits_version
 test_404_is_skipped
 test_malformed_json_is_skipped
@@ -205,6 +242,9 @@ test_arch_mismatch_is_skipped
 test_arch_match_succeeds
 test_version_regex_transforms_raw_version
 test_version_regex_no_match_falls_back_to_raw
+test_pick_asset_url_matches_first_qualifying_asset
+test_pick_asset_url_no_match_returns_empty_nonzero
+test_pick_asset_url_malformed_json_returns_empty_nonzero
 
 echo
 echo "$PASS passed, $FAIL failed"

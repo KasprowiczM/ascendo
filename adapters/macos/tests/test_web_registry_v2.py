@@ -177,6 +177,77 @@ version_replace = "x"
     assert "regex" in str(exc.value).lower()
 
 
+def test_release_feed_download_asset_pattern_loads(tmp_path: Path) -> None:
+    """M5.7.5: download_asset_pattern lets release_feed apply pick a
+    DMG out of GitHub's assets[] by name regex (Brave use case —
+    ~30 platform assets per release; we want only universal DMG)."""
+    p = _write(tmp_path, """
+schema = "ascendo-web-apps/v2"
+
+[[apps]]
+slug = "brave"
+bundle_id = "com.brave.Browser"
+display_name = "Brave Browser"
+handler = "release_feed"
+
+[apps.release_feed]
+url = "https://api.github.com/repos/brave/brave-browser/releases/latest"
+version_path = "name"
+download_asset_pattern = "^Brave-Browser-universal\\\\.dmg$"
+http_timeout_s = 12
+""")
+    reg = WebRegistry.load(p, None)
+    app = reg.apps[0]
+    assert app.handler == "release_feed"
+    assert app.release_feed is not None
+    assert app.release_feed.download_asset_pattern == r"^Brave-Browser-universal\.dmg$"
+    assert app.release_feed.download_path is None
+
+
+def test_release_feed_download_asset_pattern_xor_download_path(tmp_path: Path) -> None:
+    """M5.7.5: download_asset_pattern + download_path together is ambiguous."""
+    p = _write(tmp_path, """
+schema = "ascendo-web-apps/v2"
+
+[[apps]]
+slug = "brave"
+bundle_id = "com.brave.Browser"
+display_name = "Brave Browser"
+handler = "release_feed"
+
+[apps.release_feed]
+url = "https://api.github.com/repos/brave/brave-browser/releases/latest"
+version_path = "name"
+download_path = "assets[0].browser_download_url"
+download_asset_pattern = "^Brave-Browser-universal\\\\.dmg$"
+""")
+    with pytest.raises(Exception) as exc:
+        WebRegistry.load(p, None)
+    msg = str(exc.value).lower()
+    assert "download_asset_pattern" in msg and "download_path" in msg
+
+
+def test_release_feed_download_asset_pattern_invalid_regex_rejected(tmp_path: Path) -> None:
+    """M5.7.5: a malformed asset regex must fail at registry load time."""
+    p = _write(tmp_path, """
+schema = "ascendo-web-apps/v2"
+
+[[apps]]
+slug = "brave"
+bundle_id = "com.brave.Browser"
+display_name = "Brave Browser"
+handler = "release_feed"
+
+[apps.release_feed]
+url = "https://api.github.com/repos/brave/brave-browser/releases/latest"
+version_path = "name"
+download_asset_pattern = "[unclosed"
+""")
+    with pytest.raises(Exception) as exc:
+        WebRegistry.load(p, None)
+    assert "regex" in str(exc.value).lower()
+
+
 def test_find_by_bundle_id(tmp_path: Path) -> None:
     p = _write(tmp_path, """
 schema = "ascendo-web-apps/v2"

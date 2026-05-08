@@ -6,6 +6,89 @@
 
 ---
 
+## Sesja 44 (2026-05-09) — Brave + npm prefix + classification + portability + v0.5.1
+
+Operator hit 5 issues at once + asked an architectural question. Three
+parallel subagents + inline fixes shipped the whole batch.
+
+### Issues + outcomes
+
+| # | Issue | Root cause | Fix |
+|---|-------|------------|-----|
+| 1 | Brave wouldn't launch ("not supported on this Mac") | x86_64 binary on arm64 Mac (manually-installed Intel build at some point) | (a) Manual reinstall live: downloaded arm64 DMG, replaced bundle, stripped xattrs, Brave running PID 28643 ✓. (b) Promoted brave's `release_feed` entry to Tier-A apply: new `download_asset_pattern` field selects `Brave-Browser-universal.dmg` from GitHub release assets; future Tier-A applies will replace the broken bundle automatically. |
+| 2 | `.npmrc` `prefix=` line keeps coming back after Ascendo apply runs | Our `adapters/macos/scripts/npm/apply.sh` line 66 called `npm config set prefix` — npm writes that to `~/.npmrc` (incompatible with nvm) | Replaced with `export NPM_CONFIG_PREFIX="$NPM_GLOBAL_PREFIX"` (env > .npmrc precedence). Added `ascendo_npm_scrub_npmrc` helper that strips `prefix=` + `globalconfig=` lines (idempotent; preserves `registry=`, `fund=`, etc.) at the start of every npm apply. Tests assert no `config set prefix` call ever fires. |
+| 3 | Categories collapse-back not working | `app/frontend/style.css` had **no** `.cat-detail.hidden { display: none; }` rule — JS toggle was a visual no-op | (a) Added the missing CSS rule (subagent C). (b) Inline hardening: explicit chevron-cell click handler + stop-propagation guard on inner detail row clicks. |
+| 4 | Touch ID sudo cache not honoured (footer pill stays "no sudo" after Touch ID succeeds) | `/sudo/status` only reported `cached=True` when SPA-modal password was registered. Touch ID via TTY-PAM refreshes OS sudo timestamp but never registers a password | `/sudo/status` now probes `sudo -n -v` (1s timeout) when no password is registered; exit 0 → `cached=True, method="timestamp"`. SPA footer pill flips correctly after Touch ID succeeds. |
+| 5 | Many "system apps" appearing in web category | Brew bundle-id extractor was iterating strings character-by-character for inconsistent `quit`/`pkgutil`/`launchctl` shapes (str vs list); casks with only an `app:` artifact (Inkscape) had no bundle-id signal at all | Discovery `_owned_by` improved: `_flatten()` helper handles both shapes; `app:` artifact extraction matches casks by app filename; `zap.trash` plist paths mined for additional bundle ids. Plus opt-in `ASCENDO_WEB_DEEP_OWNERSHIP=1` runs codesign Apple-team detection (~1.2s extra, cached). Inkscape now correctly attributed to brew. |
+
+### Operator's portability question — answered in `docs/PORTABILITY.md`
+
+The operator asked: "what happens when somebody else clones Ascendo
+on a different macOS? Do they get my apps installed automatically? Are
+their different apps tracked?"
+
+Answers (full doc at `docs/PORTABILITY.md`, 181 lines):
+
+1. **Inventory IS dynamic.** Discovery walks `${ASCENDO_WEB_APPS_ROOT:-/Applications}` on every check phase. New users see THEIR apps automatically.
+
+2. **The shipped registry is overrides, not a manifest.** `web_apps.toml` entries are keyed by `bundle_id`; an entry only "fires" when discovery finds the matching bundle on disk. Apps in the registry that the user doesn't have are simply ignored (NOT auto-installed).
+
+3. **Ascendo NEVER auto-installs apps.** All apply paths assume the app is already installed. There's no "install from manifest" workflow.
+
+4. **Per-OS package managers are also user-driven.** brew/mas/npm/pip/bun all reflect what's actually installed (`brew list`, `mas list`, etc.). The `npm_global_clis.txt` / `pip_global_clis.txt` manifests declare what to TRACK if installed; they never auto-install.
+
+5. **Web/DMG apps**: three scenarios — (a) user has app + registry has it → full Tier-A; (b) user has app, registry doesn't → discovery auto-classifies via Info.plist fingerprints (sparkle/keystone/squirrel/builtin); (c) user adds custom override at `~/.config/ascendo/web_apps.toml` (merged on load, user wins per bundle_id, can upstream as PR for the community).
+
+6. **No shared state between users.** Per-machine data lives under `~/.ascendo/` (runs, inventory.db, sudo cache) and `~/.config/ascendo/` (overrides, AI creds). Repo only ships code + the canonical registry.
+
+### What landed (3 features + 2 bug fixes + 1 doc)
+
+- `download_asset_pattern` field on ReleaseFeedConfig (Brave-style: pick asset from GitHub releases by filename regex). Mutually exclusive with `download_path`. +3 schema tests + 3 bash tests.
+- `ascendo_npm_scrub_npmrc` helper + `NPM_CONFIG_PREFIX` env-var approach. +11 tests across 2 new test files.
+- `_owned_by` enhancements: `_flatten()` for str-or-list, `app:` artifact extraction, `zap.trash` plist mining, `ASCENDO_WEB_DEEP_OWNERSHIP=1` codesign opt-in. +7 bash tests + 4 new fixture bundles.
+- `/sudo/status` timestamp probe (sudo -n -v with 1s cap). +13 elevation tests including 3 new.
+- `.cat-detail.hidden { display: none; }` CSS rule (1 line, root-cause fix).
+- `app.js` defense-in-depth: explicit chevron-cell click + stop-propagation on inner detail.
+- `docs/PORTABILITY.md` (1244 words).
+
+### Tests
+
+- 391/391 macOS adapter tests (was 380, +11)
+- 249/258 contract tests (+9 elevation; same 9 pre-existing service_endpoints failures unchanged)
+
+### Files changed
+
+```
+NEW:
+  docs/PORTABILITY.md                                     | 181 lines
+  adapters/macos/tests/fixtures/release_feed/github_release.json
+  adapters/macos/tests/fixtures/discovery/.../FakeBrewByApp.app
+  adapters/macos/tests/fixtures/discovery/.../FakeMasReceipt.app/_MASReceipt/
+  adapters/macos/tests/fixtures/discovery/.../FakeApple.app
+  adapters/macos/tests/fixtures/discovery/.../FakeShortcut.app
+  + 4 new test files (npm helpers, npm apply script, elevation, etc.)
+
+MODIFIED:
+  adapters/macos/ascendo_macos/web_registry.py      |  +22  (download_asset_pattern + validators)
+  adapters/macos/config/web_apps.toml               |   +5  (brave entry)
+  adapters/macos/lib/ascendo_npm.sh                 |  +38  (scrub_npmrc helpers)
+  adapters/macos/lib/handlers/release_feed.sh       |  +62  (_rf_pick_asset_url + apply branch)
+  adapters/macos/lib/web_discovery.sh               | +197  (deep ownership + better brew)
+  adapters/macos/scripts/npm/apply.sh               |  +11  (env-var prefix + scrub)
+  app/frontend/app.js                               |  +30  (chevron click + bubbling guard)
+  app/frontend/style.css                            |   +1  (cat-detail.hidden display:none)
+  core/ascendo/dashboard/routes/spa_stubs.py        |  +32  (sudo timestamp probe)
+  + 4 modified test files
+```
+
+### Operator immediate-relief (already applied live on Mac.r12.home)
+
+- Brave reinstalled to arm64; running PID 28643
+- `~/.npmrc` cleaned (was: `prefix=...`, now: empty)
+- v0.4.5 InventoryDB cache previously cleared
+
+---
+
 ## Sesja 43 (2026-05-08) — Reports + history + apply-guard + UX polish + v0.5.0
 
 User audit ask: "check all last runs, fix any errors, tell me if
