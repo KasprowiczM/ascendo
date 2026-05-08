@@ -6,6 +6,148 @@
 
 ---
 
+## Sesja 37 (2026-05-08) — M5.7 web auto-discovery + tiered probes + v0.4.0
+
+Closes the breadth + depth gaps in v0.3.0 web manager. Operator-reported
+state on Mac.r12.home before this session: only 4 of 24 registered apps
+reported real candidate versions (sparkle/github_dmg working; keystone +
+squirrel deliberately empty by M5.6 design); ~10 installed orphans
+(Antigravity, Notion, Obsidian, Proton apps, etc.) weren't in the registry
+at all. After M5.7: 51 items in `web --phase check` output, every
+installed web-orphan app surfaced.
+
+### Architecture changes
+
+Three-layer pipeline replaces the M5.6 static curated 24-app TOML:
+
+1. **Discovery layer** (`adapters/macos/lib/web_discovery.sh`) walks
+   `/Applications/*.app`, reads each bundle's `Info.plist`, fingerprints
+   via `SUFeedURL` (sparkle), `KSProductID` (keystone),
+   `Squirrel.framework` (squirrel), or falls to builtin. Computes
+   ownership exclusions against brew (auto-populated from `brew info
+   --cask --json=v2`), mas, softwareupdate (apple-bundled +
+   `com.apple.*` prefix).
+2. **Override registry v2** (`web_apps.toml` schema bumped v1 → v2,
+   keyed by `bundle_id`, auto-coerces v1 with one-time
+   `DeprecationWarning`). Replaces the registry-as-source-of-truth model
+   with override-as-source-of-customisation.
+3. **Handler tiers**:
+   - **Tier-A** (real candidate probe): sparkle, github_dmg,
+     `release_feed` (NEW), msupdate, docker.
+   - **Tier-B** (trigger-only with honest async semantics): keystone,
+     squirrel, builtin.
+   - New `ItemStatus.TRIGGERED` enum value for Tier-B apply outcomes
+     (distinct from `success` synchronous-verified install). New
+     `Summary.triggered` bucket so total == sum(buckets) holds for
+     Tier-B-only phases. New status pill `.st-triggered` in SPA.
+
+### New `release_feed` handler (generic JSON probe)
+
+Tier-A handler at `adapters/macos/lib/handlers/release_feed.sh`. Fetches
+HTTPS URL, parses response as JSON, walks dotted `version_path` (with
+`[N]` array indices), echoes the candidate version. Optional
+`download_path` enables Tier-A apply (DMG install). Optional
+`arch_path`/`expected_arch` for sanity. 256 KiB body cap (T3 mitigation).
+
+This means future per-vendor probes (Warp / Claude / ChatGPT / Cursor /
+Antigravity etc.) become TOML config additions, not new bash code:
+
+```toml
+[[apps]]
+slug = "warp"
+bundle_id = "dev.warp.Warp-Stable"
+display_name = "Warp"
+handler = "release_feed"
+
+[apps.release_feed]
+url = "https://desktop.warp.dev/version.json"
+version_path = "latest.darwin.arm64.version"
+download_path = "latest.darwin.arm64.url"
+http_timeout_s = 5
+```
+
+### Shipped this session — 14 task commits
+
+| Commit | Task | What |
+|--------|------|------|
+| `3ff044c` | T1 | feat(core): ItemStatus.TRIGGERED enum |
+| `f7289aa` | T1.1 | feat(core): Summary.triggered bucket + ItemStatus docstring (review follow-up) |
+| `9ec32bf` | T2 | feat(macos/web): WebRegistry v2 schema + ReleaseFeedConfig + bundle_id-keyed merge |
+| `be71765` | T2.1+T6 | feat(macos/web): v1 deprecation warning + bump shipped registry to v2 |
+| `93c6da2` | T3 | feat(macos/web): CLI shim --list-bundle-ids + --get-app-by-bundle-id |
+| `c06a244` | T4 | test(macos/web): discovery fixtures (4 fake .app bundles) |
+| `ad100cd` | T5 | feat(macos/web): web_discovery.sh — Info.plist fingerprint walker |
+| `1e33265` | T7 | feat(macos/web): release_feed.sh — generic JSON-feed probe handler |
+| `82070cb` | T8 | feat(macos/web): wire release_feed into check/plan/apply dispatch |
+| `108058c` | T9 | feat(macos/web): Tier-B apply emits 'triggered' status |
+| `1316d93` | T10 | feat(macos/web): Tier-B verify with pending/confirmed messages |
+| `20d6e4b` | T11 | feat(macos/web): discovery-driven check + plan iteration |
+| `39b3996` | T12 | feat(spa): render 'triggered' status pill neutrally |
+| `8b5c261` | T13 | test(macos/web): validate-macos Stage 13.8/13.9/13.10 |
+| (this) | T14 | release(macos): v0.4.0 — M5.7 web auto-discovery + tiered probes |
+
+### Coverage outcome (real-Mac evidence)
+
+| Metric | M5.6 / v0.3.0 | M5.7 / v0.4.0 |
+|--------|---------------|---------------|
+| `web --phase check` items emitted | 13 | **51** |
+| Tier-A apps with real candidate | 4 | 5 (depends on running apps + GH rate limit) |
+| Apps with `triggered`/`vendor_opaque` honest skip | 9 | 46 |
+| Failed (probe broken, kills phase) | 0 | 0 (all empty probes now skipped) |
+| Tests | 358 macOS + 215 contract | 364 macOS + 217 contract |
+| validate-macos | 41/41 (M5.6 Stage 13.1-13.7) | 41/41 (Stage 13.1-13.10 — 3 new sub-steps) |
+
+### Code-review catches worth remembering
+
+The dual-review pattern caught two real architectural gaps in T1:
+
+1. **`Summary` had no `triggered` field**, so the per-phase invariant
+   `total == sum(buckets)` would have broken for any Tier-B-only apply
+   phase. Reviewer recommended landing the fix while T1's context was
+   fresh; folded into T1.1 commit. Without this catch, T9 onwards would
+   have silently dropped triggered counts and the orchestrator's
+   status heuristic would have flagged Tier-B-only phases as zero-bucket
+   anomalies.
+2. **Spec §5.1 required a one-time `DeprecationWarning`** when v1 schema
+   is auto-coerced to v2. Implementer omitted it. Reviewer flagged as
+   Important. Fixed in T2.1 commit (which also folded T6's shipped
+   registry bump forward — necessary because pytest's `filterwarnings =
+   ["error"]` config promoted the new warning to a test failure).
+
+### Operational lesson: subagent autocompact thrash
+
+T11 implementer (sonnet) thrashed on autocompact due to the size of the
+iteration block being rewritten. The writes landed before the crash but
+the test fix-ups were left to the controller. Pattern matches Sesja 27's
+M5.5.6 thrash. Heuristic: tasks that involve >100 LOC rewrite of a
+single bash file + multi-test fixture coordination should be split into
+"rewrite the script" + "fix tests" sub-tasks, OR run inline by the
+controller. The plan template's "show full code blocks" approach
+multiplied agent context too aggressively.
+
+### Pending follow-ups (M5.7.1+)
+
+Per-vendor `release_feed` configs are pure TOML additions (no code
+change). Targets:
+
+- Warp — `https://desktop.warp.dev/version.json` (verified URL shape)
+- Claude — Anthropic's release endpoint (TBD; observe network on app launch)
+- ChatGPT — OpenAI's release endpoint (TBD)
+- Antigravity — vendor's release endpoint (TBD)
+- Comet, Perplexity — likely GitHub releases or vendor JSON
+- Cursor — `https://download.cursor.sh/api/update/darwin-arm64/cursor/latest`
+
+Each migrates a Squirrel-classified app from Tier-B (`triggered`) to
+Tier-A (real candidate version compared against installed). Tracked in
+PLAN.md M5.7.1 entry.
+
+### Spec + plan
+
+- Spec: `docs/superpowers/specs/2026-05-08-macos-web-discovery-design.md`
+- Plan: `docs/superpowers/plans/2026-05-08-macos-web-discovery.md`
+
+---
+
 ## Sesja 36 (2026-05-06) — sudo prompt collapse on macOS (3 → 1 tap)
 
 Operator on Mac.r12.home reported "Full update still asks for password

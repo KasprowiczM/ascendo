@@ -77,7 +77,7 @@ The Categories tab shows one row per source:
 | **mas** | `mas outdated` | Mac App Store apps with pending upgrades |
 | **npm** | `npm outdated -g` + node/bun version probes | Global npm CLIs (claude-code, codex-cli, etc.) + Node + Bun |
 | **pip** | `pip list --outdated` for tracked Python CLIs | Global Python tools (ruff, black, pipx, uv, etc.) |
-| **web** *(M5.6)* | `_apps.toml` registry × 7 handlers | ~24 curated apps installed outside brew/mas — Sparkle (Brave/Opera/ChatGPT-Atlas), GitHub Releases (Firefox-DevEd/KeePassXC/Trezor/Ledger), Keystone (Chrome/Drive), Squirrel.Mac (Slack/Claude/ChatGPT/Warp/Gemini/etc.), MS AutoUpdate, Docker Desktop |
+| **web** *(M5.7)* | `lib/web_discovery.sh` walks `/Applications` Info.plists × `_apps.toml` v2 overrides × 8 handlers | **Every** installed `.app` not owned by brew/mas/softwareupdate (~50 on a typical Mac) — Tier-A real-candidate handlers: Sparkle (`SUFeedURL`), GitHub Releases (overrides), `release_feed` (NEW — generic JSON probe), MS AutoUpdate, Docker Desktop. Tier-B trigger-only: Keystone (Chrome/Drive — `KSProductID`), Squirrel.Mac (Claude/Codex/VSCode/Notion etc. — `Squirrel.framework`), builtin (everything else). Tier-B apply emits status `triggered` with informational `triggered_pending`/`triggered_confirmed` from verify (vendor agent reconciles asynchronously). |
 | **softwareupdate** | `softwareupdate -l` | macOS OS / security / Safari updates |
 | **inventory** (Categories sub-rows: SYSTEM / MAS / BREW / WEB) | `system_profiler -json SPApplicationsDataType` | All installed `.app` bundles, classified by signature/origin |
 
