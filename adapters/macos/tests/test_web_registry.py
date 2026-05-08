@@ -22,10 +22,11 @@ def test_schema_version_required(tmp_path: Path) -> None:
     assert "schema" in str(exc.value).lower()
 
 
-def test_schema_version_must_be_v1(tmp_path: Path) -> None:
+def test_schema_version_unknown_rejected(tmp_path: Path) -> None:
+    # v1 and v2 are valid; anything else (e.g. v3) must raise ValidationError.
     shipped = _write_toml(
         tmp_path, "shipped.toml",
-        'schema = "ascendo-web-apps/v2"\n[[app]]\nslug = "x"\nbundle_id = "x"\n'
+        'schema = "ascendo-web-apps/v3"\n[[app]]\nslug = "x"\nbundle_id = "com.example.x"\n'
         'display_name = "X"\nhandler = "squirrel"\n',
     )
     with pytest.raises(ValidationError):
@@ -151,9 +152,16 @@ def test_user_override_replaces_by_slug(tmp_path: Path) -> None:
     assert reg.apps[0].display_name == "Chrome (custom)"
 
 
-def test_user_override_appends_new_slug(tmp_path: Path) -> None:
-    shipped = _write_toml(tmp_path, "s.toml", VALID_HEADER + _entry(slug="a"))
-    user = _write_toml(tmp_path, "u.toml", VALID_HEADER + _entry(slug="b"))
+def test_user_override_appends_new_bundle_id(tmp_path: Path) -> None:
+    # v2 merges by bundle_id; distinct bundle_ids must both appear.
+    shipped = _write_toml(
+        tmp_path, "s.toml",
+        VALID_HEADER + _entry(slug="a", bundle_id="com.example.a"),
+    )
+    user = _write_toml(
+        tmp_path, "u.toml",
+        VALID_HEADER + _entry(slug="b", bundle_id="com.example.b"),
+    )
     reg = WebRegistry.load(shipped, user)
     assert {a.slug for a in reg.apps} == {"a", "b"}
 
