@@ -11,7 +11,7 @@
 # be re-verified during validate-macos.sh Stage 13 on a host with the
 # app installed.
 
-schema = "ascendo-web-apps/v1"
+schema = "ascendo-web-apps/v2"
 
 # ───────────────────────── Browsers ─────────────────────────
 

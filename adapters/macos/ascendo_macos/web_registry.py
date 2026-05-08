@@ -13,6 +13,7 @@ its config sits under [apps.release_feed] sub-table.
 from __future__ import annotations
 
 import tomllib
+import warnings
 from pathlib import Path
 from typing import Annotated, Literal, Optional
 
@@ -148,8 +149,17 @@ class WebRegistry(BaseModel):
         shipped_data = cls._read_toml(shipped)
         registry = cls.model_validate(shipped_data)
 
-        # Auto-coerce v1 → v2 (no field shape changed; just bump the literal)
+        # Auto-coerce v1 → v2 (no field shape changed; just bump the literal).
+        # Spec §5.1 requires emitting a deprecation message exactly once
+        # per load so operators on M5.6 setups know to bump their override.
         if registry.schema_version == "ascendo-web-apps/v1":
+            warnings.warn(
+                f"web_apps registry at {shipped} declares schema "
+                "'ascendo-web-apps/v1'; auto-coerced to 'ascendo-web-apps/v2'. "
+                "Bump the 'schema' field on next edit.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             registry = WebRegistry(
                 schema="ascendo-web-apps/v2",
                 app=registry.apps,
@@ -159,6 +169,13 @@ class WebRegistry(BaseModel):
             user_data = cls._read_toml(user_override)
             user_reg = cls.model_validate(user_data)
             if user_reg.schema_version == "ascendo-web-apps/v1":
+                warnings.warn(
+                    f"user override at {user_override} declares schema "
+                    "'ascendo-web-apps/v1'; auto-coerced to 'ascendo-web-apps/v2'. "
+                    "Bump the 'schema' field on next edit.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
                 user_reg = WebRegistry(
                     schema="ascendo-web-apps/v2",
                     app=user_reg.apps,

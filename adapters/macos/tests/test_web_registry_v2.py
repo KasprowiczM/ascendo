@@ -30,6 +30,7 @@ appcast_url = "https://updates.bravesoftware.com/sparkle/Browser/stable/appcast.
     assert reg.apps[0].bundle_id == "com.brave.Browser"
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_v1_schema_auto_coerces_to_v2(tmp_path: Path) -> None:
     p = _write(tmp_path, """
 schema = "ascendo-web-apps/v1"
@@ -84,6 +85,27 @@ version_path = "version"
 """)
     with pytest.raises(Exception):
         WebRegistry.load(p, None)
+
+
+def test_v1_schema_emits_deprecation_warning(tmp_path: Path) -> None:
+    """Spec §5.1: a single deprecation message per load when v1 is seen."""
+    import warnings as _warnings
+    p = _write(tmp_path, """
+schema = "ascendo-web-apps/v1"
+
+[[apps]]
+slug = "brave"
+bundle_id = "com.brave.Browser"
+display_name = "Brave Browser"
+handler = "sparkle"
+appcast_url = "https://updates.bravesoftware.com/sparkle/Browser/stable/appcast.xml"
+""")
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter("always")
+        WebRegistry.load(p, None)
+    deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+    assert len(deprecations) == 1
+    assert "ascendo-web-apps/v1" in str(deprecations[0].message)
 
 
 def test_find_by_bundle_id(tmp_path: Path) -> None:

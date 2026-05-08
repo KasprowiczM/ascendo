@@ -33,7 +33,7 @@ def test_schema_version_unknown_rejected(tmp_path: Path) -> None:
         WebRegistry.load(shipped, None)
 
 
-VALID_HEADER = 'schema = "ascendo-web-apps/v1"\n'
+VALID_HEADER = 'schema = "ascendo-web-apps/v2"\n'
 
 
 def _entry(**kwargs) -> str:
