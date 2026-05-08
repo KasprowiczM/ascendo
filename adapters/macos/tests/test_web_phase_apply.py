@@ -68,7 +68,10 @@ def test_apply_squirrel_invokes_open(tmp_path: Path) -> None:
     sc = _read_sidecar(out, run_id)
     assert len(sc["items"]) == 1
     item = sc["items"][0]
-    assert item["status"] == "success"
+    # M5.7 T9: Tier-B handlers (squirrel/keystone/builtin) emit 'triggered'
+    # instead of 'success' because the actual update is async (Squirrel
+    # self-updates on next quit/relaunch).
+    assert item["status"] == "triggered"
     assert log.exists()
     assert str(fake_app) in log.read_text()
 

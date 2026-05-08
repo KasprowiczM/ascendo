@@ -131,14 +131,25 @@ while IFS= read -r SLUG; do
     rc=$?
 
     if [ $rc -eq 0 ]; then
-        if [ "$HANDLER" = "builtin" ]; then
-            json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
-            json_add_message "info" "${SLUG}: manual_required (app opened for user)"
-            COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
-        else
-            json_add_item "web:${SLUG}" "$INSTALLED" "" "success" "web" "$HANDLER"
-            COUNT_SUCCESS=$((COUNT_SUCCESS + 1))
-        fi
+        case "$HANDLER" in
+            keystone|squirrel|builtin)
+                # Tier-B: vendor's update agent triggered; outcome is async.
+                # Status 'triggered' (not 'success') so the operator + verify
+                # phase know to expect post-apply reconciliation.
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "triggered" "web" "$HANDLER"
+                case "$HANDLER" in
+                    keystone) json_add_message "info" "${SLUG}: ksadmin update queued; daemon will reconcile" ;;
+                    squirrel) json_add_message "info" "${SLUG}: app relaunched; Squirrel will self-update on next quit/relaunch" ;;
+                    builtin)  json_add_message "info" "${SLUG}: app opened for user (manual update path)" ;;
+                esac
+                COUNT_SUCCESS=$((COUNT_SUCCESS + 1))
+                ;;
+            *)
+                # Tier-A: synchronous swap completed
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "success" "web" "$HANDLER"
+                COUNT_SUCCESS=$((COUNT_SUCCESS + 1))
+                ;;
+        esac
     else
         # Capture last 12 non-empty stderr lines, max 1500 chars
         tail_msg=""
