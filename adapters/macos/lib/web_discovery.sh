@@ -110,6 +110,10 @@ _owned_by() {
         com.google.Chrome.app.*)        printf 'ineligible'; return ;;
         com.microsoft.wdav.shim)        printf 'ineligible'; return ;;
         com.microsoft.wdav.*.shim)      printf 'ineligible'; return ;;
+        # Ascendo updates via `git pull` against KasprowiczM/ascendo, not
+        # via the web app updater. Filter the bundle out so it never
+        # surfaces in the web inventory.
+        dev.ascendo.*)                  printf 'ineligible'; return ;;
     esac
     if [ -n "${ASCENDO_WEB_INELIGIBLE_PATTERNS:-}" ]; then
         local IFS=','

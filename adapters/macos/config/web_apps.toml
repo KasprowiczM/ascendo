@@ -568,12 +568,10 @@ version_replace = "\\1"
 http_timeout_s = 8
 
 # ─── Ascendo (this very app) ───────────────────────────────────────────────
-[[app]]
-slug = "ascendo"
-bundle_id = "dev.ascendo.desktop"
-display_name = "Ascendo"
-handler = "github_dmg"
-github_repo = "KasprowiczM/ascendo"
-asset_pattern = "Ascendo-.+-arm64\\.dmg$"
-enabled = false
-notes = "INVESTIGATED M5.7.5 Phase B: Self-update flow target is github.com/KasprowiczM/ascendo (the canonical repo per origin remote) once the project ships its first GitHub Release with a macOS arm64 .dmg asset. As of 2026-05-08 the repo is private/inaccessible (HTTP 404 from api.github.com/repos/KasprowiczM/ascendo/releases — confirmed via curl) and no public releases exist yet. Entry is shipped disabled so it appears in the registry as a known target without polluting the Run Center with a perpetual probe-broken row. Re-enable via user override or by flipping enabled=true once KasprowiczM/ascendo goes public AND publishes its first tag. Asset pattern is the planned naming convention from packaging/pkg/."
+# REMOVED in M5.7.5 follow-up: Ascendo updates via `git pull` against the
+# canonical KasprowiczM/ascendo repo (the operator's installed-from-source
+# workflow), not via the web-app updater. Discovery filters
+# `dev.ascendo.*` as ineligible so the bundle never appears in the web
+# inventory. If a future packaged Ascendo.dmg ships via GitHub Releases,
+# either remove the discovery filter and re-add a [[app]] entry here,
+# or rely on a user override at ~/.config/ascendo/web_apps.toml.
