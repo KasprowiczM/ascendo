@@ -60,6 +60,18 @@ while IFS='|' read -r DISPLAY PKG METHOD DESC; do
         *) continue ;;
     esac
 
+    # Brew-managed pip/setuptools/wheel cannot be self-upgraded by pip
+    # (no RECORD file). check.sh reclassifies those to up_to_date and
+    # pins LATEST=INSTALLED; verify.sh has to apply the same rule, else
+    # `pip 26.1 -> 26.1.1` looks like a verify failure on a green run.
+    if [ -n "$INSTALLED" ] && [ -n "$LATEST" ] && [ "$INSTALLED" != "$LATEST" ]; then
+        case "$(_ascendo_pip_flavour "$PIP_BIN"):$PKG" in
+            brew:pip|brew:setuptools|brew:wheel)
+                LATEST="$INSTALLED"
+                ;;
+        esac
+    fi
+
     # Verify is success when installed!="" AND (latest=="" OR installed==latest).
     # Anything else is failure.
     STATUS="failed"

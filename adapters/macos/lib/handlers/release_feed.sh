@@ -279,22 +279,25 @@ release_feed_apply() {
 
     # Electron-builder yml gives relative URLs (e.g. "Notion-7.16.0.dmg").
     # Resolve against the feed URL's parent directory.
+    # Some vendors (Notion Calendar, Cursor via ToDesktop) ship filenames
+    # with literal spaces — URL-encode the path component so curl accepts it.
+    dmg_url=$(BASE="$url" REL="$dmg_url" python3 -c '
+import os, sys
+from urllib.parse import urlparse, urlunparse, urljoin, quote
+base = os.environ["BASE"]
+rel = os.environ["REL"]
+# urljoin handles both absolute (returns rel as-is) and relative inputs.
+joined = urljoin(base, rel)
+u = urlparse(joined)
+# Re-encode the path so spaces / non-ASCII become %-encoded. Preserve
+# already-encoded sequences via safe="/%" so we do not double-encode.
+safe_path = quote(u.path, safe="/%")
+print(urlunparse((u.scheme, u.netloc, safe_path, u.params, u.query, u.fragment)))
+') || return 32
     case "$dmg_url" in
         https://*) ;;
         http://*) return 32 ;;
-        *)
-            # Relative — prepend the feed URL's directory.
-            local base_dir
-            base_dir=$(BASE="$url" python3 -c '
-import os, sys
-from urllib.parse import urlparse, urlunparse
-u = urlparse(os.environ["BASE"])
-parent = u.path.rsplit("/", 1)[0] + "/" if "/" in u.path else "/"
-print(urlunparse((u.scheme, u.netloc, parent, "", "", "")))
-')
-            dmg_url="${base_dir}${dmg_url}"
-            case "$dmg_url" in https://*) ;; *) return 32 ;; esac
-            ;;
+        *) return 32 ;;
     esac
 
     # Delegate to the shared DMG installer helper (from ascendo_web.sh,

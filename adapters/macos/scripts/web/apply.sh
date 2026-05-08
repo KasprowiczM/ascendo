@@ -81,6 +81,7 @@ COUNT_TRIGGERED=0
 COUNT_FAILED=0
 COUNT_SKIPPED=0
 COUNT_PLANNED=0
+COUNT_UPTODATE=0
 
 while IFS= read -r SLUG; do
     [ -z "$SLUG" ] && continue
@@ -113,6 +114,31 @@ while IFS= read -r SLUG; do
         COUNT_PLANNED=$((COUNT_PLANNED + 1))
         continue
     fi
+
+    # Tier-A handlers (sparkle/github_dmg/release_feed/docker/msupdate) probe
+    # candidate version BEFORE invoking apply, so we skip up-to-date apps
+    # instead of redundantly redownloading + reinstalling. Tier-B handlers
+    # (keystone/squirrel/builtin) have no synchronous candidate — daemon
+    # reconciles, so we always invoke them when filter matches.
+    case "$HANDLER" in
+        sparkle|github_dmg|release_feed|docker|msupdate)
+            CAND=""
+            case "$HANDLER" in
+                sparkle)      CAND=$(sparkle_check      "$SLUG" "$CFG" 2>/dev/null) ;;
+                github_dmg)   CAND=$(github_dmg_check   "$SLUG" "$CFG" 2>/dev/null) ;;
+                release_feed) CAND=$(release_feed_check "$SLUG" "$CFG" 2>/dev/null) ;;
+                docker)       CAND=$(docker_check       "$SLUG" "$CFG" 2>/dev/null) ;;
+                msupdate)     CAND=$(msupdate_check     "$SLUG" "$CFG" 2>/dev/null) ;;
+            esac
+            if [ -n "$CAND" ] && [ "$CAND" = "$INSTALLED" ]; then
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "up_to_date" "web" "$HANDLER"
+                COUNT_UPTODATE=$((COUNT_UPTODATE + 1))
+                continue
+            fi
+            # If CAND empty (probe failed), still attempt apply — handler will
+            # surface the real failure reason in stderr capture below.
+            ;;
+    esac
 
     # Dispatch handler apply, capturing stderr
     err_log="$OUTPUT_DIR/$RUN_ID/${SLUG}.apply.err"
@@ -163,5 +189,9 @@ while IFS= read -r SLUG; do
     fi
 done < <(python3 "$REG_SHIM" "${_reg_args[@]}" --list-slugs 2>/dev/null)
 
-json_add_message "info" "web apply: ${COUNT_SUCCESS} success, ${COUNT_TRIGGERED} triggered, ${COUNT_FAILED} failed, ${COUNT_SKIPPED} skipped, ${COUNT_PLANNED} planned (dry-run)"
+if [ "$DRY_RUN" = "true" ]; then
+    json_add_message "info" "web apply (dry-run): ${COUNT_PLANNED} planned, ${COUNT_SKIPPED} skipped"
+else
+    json_add_message "info" "web apply: ${COUNT_SUCCESS} success, ${COUNT_TRIGGERED} triggered, ${COUNT_UPTODATE} up_to_date, ${COUNT_FAILED} failed, ${COUNT_SKIPPED} skipped"
+fi
 exit 0
