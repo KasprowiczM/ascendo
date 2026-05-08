@@ -108,6 +108,75 @@ appcast_url = "https://updates.bravesoftware.com/sparkle/Browser/stable/appcast.
     assert "ascendo-web-apps/v1" in str(deprecations[0].message)
 
 
+def test_release_feed_version_regex_pair_loads(tmp_path: Path) -> None:
+    """M5.7.4: version_regex + version_replace round-trip when supplied together."""
+    p = _write(tmp_path, """
+schema = "ascendo-web-apps/v2"
+
+[[apps]]
+slug = "warp"
+bundle_id = "dev.warp.Warp-Stable"
+display_name = "Warp"
+handler = "release_feed"
+
+[apps.release_feed]
+url = "https://releases.warp.dev/channel_versions.json"
+version_path = "stable.version"
+version_regex = "^v(.+)\\\\.stable_(.+)$"
+version_replace = "\\\\1.\\\\2"
+http_timeout_s = 8
+""")
+    reg = WebRegistry.load(p, None)
+    app = reg.apps[0]
+    assert app.handler == "release_feed"
+    assert app.release_feed is not None
+    assert app.release_feed.version_regex == r"^v(.+)\.stable_(.+)$"
+    assert app.release_feed.version_replace == r"\1.\2"
+
+
+def test_release_feed_version_regex_xor_rejected(tmp_path: Path) -> None:
+    """M5.7.4: regex without replace (or vice versa) is a config typo."""
+    p = _write(tmp_path, """
+schema = "ascendo-web-apps/v2"
+
+[[apps]]
+slug = "warp"
+bundle_id = "dev.warp.Warp-Stable"
+display_name = "Warp"
+handler = "release_feed"
+
+[apps.release_feed]
+url = "https://releases.warp.dev/channel_versions.json"
+version_path = "stable.version"
+version_regex = "^v(.+)$"
+""")
+    with pytest.raises(Exception) as exc:
+        WebRegistry.load(p, None)
+    assert "version_regex" in str(exc.value) or "version_replace" in str(exc.value)
+
+
+def test_release_feed_version_regex_invalid_pattern_rejected(tmp_path: Path) -> None:
+    """M5.7.4: a malformed regex must fail at registry load time."""
+    p = _write(tmp_path, """
+schema = "ascendo-web-apps/v2"
+
+[[apps]]
+slug = "warp"
+bundle_id = "dev.warp.Warp-Stable"
+display_name = "Warp"
+handler = "release_feed"
+
+[apps.release_feed]
+url = "https://releases.warp.dev/channel_versions.json"
+version_path = "stable.version"
+version_regex = "[unclosed"
+version_replace = "x"
+""")
+    with pytest.raises(Exception) as exc:
+        WebRegistry.load(p, None)
+    assert "regex" in str(exc.value).lower()
+
+
 def test_find_by_bundle_id(tmp_path: Path) -> None:
     p = _write(tmp_path, """
 schema = "ascendo-web-apps/v2"

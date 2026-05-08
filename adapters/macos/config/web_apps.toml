@@ -22,9 +22,13 @@ schema = "ascendo-web-apps/v2"
 slug = "chrome"
 bundle_id = "com.google.Chrome"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Google Chrome"
-handler = "keystone"
-ksadmin_product_id = "com.google.Chrome"
-notes = "Keystone ticket reports productID=com.google.chrome (lowercase) on Mac.r12.home; ksadmin product IDs are case-insensitive on lookup but the canonical ticket form is mixed-case per Google's docs."
+handler = "release_feed"
+notes = "Promoted from keystone (Tier-B trigger-only) to release_feed Tier-A in M5.7.4 Phase B. Google publishes the public Chrome Version History API at versionhistory.googleapis.com — JSON with `versions[0].version` matching CFBundleShortVersionString exactly. Apply remains trigger-only (no download_path) so the existing GoogleUpdater/Keystone daemon still drives the install on next launch. Live probe verified 2026-05-08: versions[0].version=148.0.7778.97 (= installed). Endpoint per https://developer.chrome.com/docs/web-platform/versionhistory/guide."
+
+[app.release_feed]
+url = "https://versionhistory.googleapis.com/v1/chrome/platforms/mac_arm64/channels/stable/versions"
+version_path = "versions[0].version"
+http_timeout_s = 8
 
 [[app]]
 slug = "gdrive"
@@ -32,15 +36,21 @@ bundle_id = "com.google.drivefs"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Google Drive"
 handler = "keystone"
 ksadmin_product_id = "com.google.drivefs"
-notes = "drivefs is migrating from legacy Keystone to GoogleUpdater; keystone handler still resolves the version through ksadmin --print. Confirm during validate-macos.sh Stage 13."
+notes = "drivefs is migrating from legacy Keystone to GoogleUpdater; keystone handler still resolves the version through ksadmin --print. M5.7.4 Phase B re-investigation 2026-05-08: confirmed NO public version proxy. Probed: dl.google.com/drive-file-stream/{release_notes.json,version,latest,current,macos,arm64,mac.json,mac,latest.json,info.json} all 404; HEAD on GoogleDrive.dmg returns 200 + last-modified but no version metadata; versionhistory.googleapis.com only supports Chrome (drivefs/gdrive/drive endpoints all 400 INVALID_ARGUMENT); workspace.google.com/products/drive/release-notes and workspaceupdates blog are HTML/atom-feed posts with version numbers in prose, not in structured fields. Update flow is Omaha protocol over update.googleapis.com (POST + protobuf) which we can't probe statically. Stays Tier-B."
 
 [[app]]
 slug = "brave"
 bundle_id = "com.brave.Browser"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Brave Browser"
-handler = "keystone"
-ksadmin_product_id = "com.brave.Browser"
-notes = "Brave registers a Keystone product (own Omaha-based updater binary) AND publishes a Sparkle appcast. The Sparkle appcast uses Brave-internal versions (1.90.121.0) which don't match CFBundleShortVersionString (148.1.90.121) — comparing them gives nonsense. Keystone is the canonical update channel; ksadmin handles install. Tier-B (trigger-only) probe; apply fires the daemon. (Was: sparkle handler — switched in M5.7.1 after real-Mac smoke at v0.3.0 showed --check-for-update CLI flag returned non-zero.)"
+handler = "release_feed"
+notes = "Promoted from keystone (Tier-B trigger-only) to release_feed Tier-A in M5.7.4 Phase B. CFBundleShortVersionString is `<chromium_milestone>.<brave_internal>` (e.g. 148.1.90.121 = Chromium 148 + Brave 1.90.121). Neither the GitHub tag (v1.90.121) nor the Sparkle appcast (1.90.121.0) match directly, but the GitHub release `name` field carries both pieces — `Release v1.90.121 (Chromium 148.0.7778.96)`. The version_regex rewrites this into the canonical CFBundleShortVersionString shape. If Brave changes the release-name format the regex won't match and the handler falls back to the raw `name` value (degraded but visible) per M5.7.4 spec. Apply remains trigger-only (no download_path) so the existing Keystone/Sparkle daemon still drives the install. Live probe verified 2026-05-08: name='Release v1.90.121 (Chromium 148.0.7778.96)' -> 148.1.90.121."
+
+[app.release_feed]
+url = "https://api.github.com/repos/brave/brave-browser/releases/latest"
+version_path = "name"
+version_regex = ".*v([0-9.]+) \\(Chromium ([0-9]+)\\.[^)]*\\).*"
+version_replace = "\\2.\\1"
+http_timeout_s = 8
 
 [[app]]
 slug = "opera"
@@ -94,7 +104,29 @@ appcast_url = "https://persistent.oaistatic.com/atlas/public/sparkle_public_appc
 slug = "warp"
 bundle_id = "dev.warp.Warp-Stable"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Warp"
-handler = "squirrel"
+handler = "release_feed"
+notes = "Promoted from squirrel to release_feed in M5.7.4 once version_regex landed. Vendor publishes releases.warp.dev/channel_versions.json with `stable.version = \"v0.2026.05.06.15.42.stable_02\"`; CFBundleShortVersionString is `0.2026.05.06.15.42.02`. The leading `v` and `.stable_` infix are stripped by version_regex/version_replace. Live probe verified 2026-05-08 returned v0.2026.05.06.15.42.stable_02 -> 0.2026.05.06.15.42.02."
+
+[app.release_feed]
+url = "https://releases.warp.dev/channel_versions.json"
+version_path = "stable.version"
+version_regex = "^v(.+)\\.stable_(.+)$"
+version_replace = "\\1.\\2"
+http_timeout_s = 8
+
+[[app]]
+slug = "megasync"
+bundle_id = "mega.mac"  # TODO: verify bundle_id (not installed on Mac.r12.home)
+display_name = "MEGAsync"
+handler = "release_feed"
+notes = "Promoted to Tier-A in M5.7.4 via version_regex. github.com/meganz/MEGAsync publishes per-platform tags `v6.3.0.1_OSX` / `_Linux` / `_Win`; the version (6.3.0.1) is shared across all three. The `releases/latest` endpoint may return any platform's tag depending on release order, but the regex strips the platform suffix uniformly. No DMG assets are attached to GitHub releases (vendor distributes via mega.nz/MEGAsyncSetupArm64.dmg without version metadata) so apply remains Tier-B (open the app, let the proprietary Qt updater take over). Live probe verified 2026-05-08 returned v6.3.0.1_Linux -> 6.3.0.1."
+
+[app.release_feed]
+url = "https://api.github.com/repos/meganz/MEGAsync/releases/latest"
+version_path = "tag_name"
+version_regex = "^v(.+)_(?:Linux|OSX|Win)$"
+version_replace = "\\1"
+http_timeout_s = 8
 
 [[app]]
 slug = "gemini"
@@ -102,7 +134,7 @@ bundle_id = "com.google.GeminiMacOS"  # verified on Mac.r12.home (2026-05-06; wa
 display_name = "Gemini"
 handler = "keystone"
 ksadmin_product_id = "com.google.GeminiMacOS"
-notes = "Keystone ticket on Mac.r12.home registered as productID=com.google.geminimacos with KSChannelID=m1-prod; the Squirrel template guess was wrong — Google Gemini uses Keystone."
+notes = "Keystone ticket on Mac.r12.home registered as productID=com.google.geminimacos with KSChannelID=m1-prod; the Squirrel template guess was wrong — Google Gemini uses Keystone. M5.7.4 Phase B re-investigation 2026-05-08: NO public version proxy. Info.plist has neither SUFeedURL nor KSUpdateURL (Keystone uses the default tools.google.com/service/update2 Omaha endpoint, not JSON-probeable). Binary strings on the Gemini executable reveal three URLs: feedback-pa.googleapis.com (telemetry), update.googleapis.com/service/update2/json (Omaha protobuf), and gemini.google.com/updates (HTML SPA, not API). versionhistory.googleapis.com supports Chrome only — gemini/geminimacos paths return 400 INVALID_ARGUMENT. gemini.google.com/api/version is 404. Stays Tier-B."
 
 [[app]]
 slug = "lm-studio"
@@ -148,10 +180,17 @@ enabled = false  # CodeEditApp/CodeEdit GH releases don't expose arm64.dmg asset
 
 [[app]]
 slug = "rdm"
-bundle_id = "com.devolutions.remotedesktopmanager"  # verified on Mac.r12.home (2026-05-06; was *.mac in template)
+bundle_id = "com.devolutions.remotedesktopmanager"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Remote Desktop Manager"
-handler = "builtin"
-notes = "RDM publishes a Sparkle appcast at cdn.devolutions.net but stopped updating it (frozen at 2023.1.12.0). Modern releases (2024+) flow through their in-app updater that we can't probe externally. handler=builtin honestly skips the probe with manual-update instruction; without this override, discovery auto-classifies as sparkle and reports nonsense cand versions."
+handler = "release_feed"
+notes = "Promoted from builtin to Tier-A in M5.7.4 via the new format=text release_feed mode. Devolutions publishes a public productinfo.htm at devolutions.net that's plain key=value lines; the RDMMacbin.Version line gives the latest macOS RDM release directly. No JSON walking needed — version_regex matches the key=value line in the raw body. The Sparkle appcast at cdn.devolutions.net remains frozen at 2023.1.12.0; productinfo.htm is the canonical public version source. Live probe verified 2026-05-08: RDMMacbin.Version=2026.1.11.4 (= installed)."
+
+[app.release_feed]
+url = "https://devolutions.net/productinfo.htm"
+format = "text"
+version_regex = "(?s).*RDMMacbin\\.Version=([0-9][0-9.]*).*"
+version_replace = "\\1"
+http_timeout_s = 8
 
 # ───────────────────────── Productivity / Multimedia ─────────────────────────
 
@@ -408,24 +447,22 @@ http_timeout_s = 8
 #    'updates/sparkle/sidekick'. The full appcast URL is at
 #    persistent.oaistatic.com/sidekick/public/sparkle_public_appcast.xml.
 #    Now Tier-A.
-# Warp (dev.warp.Warp-Stable) — INVESTIGATED M5.7.3: public endpoint at
-#    https://releases.warp.dev/channel_versions.json returns
-#    `{"stable": {"version": "v0.2026.05.06.15.42.stable_02", ...}}`. Format
-#    mismatches CFBundleShortVersionString '0.2026.05.06.15.42.02' (extra
-#    'v' prefix, '.stable_' insertion). release_feed lacks regex/transform,
-#    so probe would always report outdated false-positive. Stays Tier-B
-#    until handler grows version_regex/version_transform support.
+# Warp (dev.warp.Warp-Stable) — RESOLVED M5.7.4: version_regex/
+#    version_replace landed in release_feed handler; warp now uses
+#    https://releases.warp.dev/channel_versions.json with
+#    stable.version regex'd from 'v0.2026.05.06.15.42.stable_02' to
+#    '0.2026.05.06.15.42.02'. Now Tier-A.
 # OpenCode (ai.opencode.desktop) — RESOLVED M5.7.3: confirmed
 #    `anomalyco/opencode` via app-update.yml; arm64 DMG asset
 #    `opencode-desktop-mac-arm64.dmg` present on every release. Now Tier-A.
 # Proton Mail (ch.protonmail.desktop) — RESOLVED M5.7.3: probe via
 #    proton.me/download/mail/macos/version.json. Now Tier-A.
-# MEGAsync (mega.mac) — INVESTIGATED M5.7.3: official update channel is the
-#    proprietary Qt-based updater (no public URL in binary). GitHub releases
-#    at github.com/meganz/MEGAsync use tags 'v6.3.0.1_OSX' (no DMG asset
-#    attached, _OSX suffix). release_feed lacks regex extraction so the
-#    suffix can't be stripped. Stays Tier-B until handler supports
-#    version_regex.
+# MEGAsync (mega.mac) — RESOLVED M5.7.4: version_regex landed; megasync
+#    now uses api.github.com/repos/meganz/MEGAsync/releases/latest with
+#    tag_name regex'd from 'v6.3.0.1_Linux' / '_OSX' / '_Win' to
+#    '6.3.0.1' (the version is platform-shared). Probe is Tier-A; apply
+#    remains Tier-B (no DMG assets on GitHub; mega.nz/MEGAsyncSetup*.dmg
+#    has no version metadata).
 # LM Studio (ai.elementlabs.lmstudio) — INVESTIGATED M5.7.3: app-update.yml
 #    points at private Cloudflare R2 bucket
 #    (174ee2ac3cc9a25a8bde971ff408f952.r2.cloudflarestorage.com/

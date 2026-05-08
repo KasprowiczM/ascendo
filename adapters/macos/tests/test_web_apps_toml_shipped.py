@@ -35,11 +35,37 @@ def test_shipped_registry_no_duplicate_slugs() -> None:
         f"duplicate slugs: {[s for s in slugs if slugs.count(s) > 1]}"
 
 
-def test_shipped_registry_chrome_is_keystone() -> None:
+def test_shipped_registry_chrome_uses_release_feed() -> None:
+    """M5.7.4 Phase B: Chrome promoted from keystone (Tier-B trigger-only)
+    to release_feed (Tier-A) once we discovered the public Chrome Version
+    History API at versionhistory.googleapis.com — JSON with
+    `versions[0].version` matching CFBundleShortVersionString exactly.
+    Apply remains trigger-only (no download_path) so the existing
+    GoogleUpdater/Keystone daemon still drives the install."""
     reg = WebRegistry.load(SHIPPED, None)
     chrome = reg.find("chrome")
     assert chrome is not None
-    assert chrome.handler == "keystone"
+    assert chrome.handler == "release_feed"
+    assert chrome.release_feed is not None
+    assert "versionhistory.googleapis.com" in str(chrome.release_feed.url)
+    assert chrome.release_feed.version_path == "versions[0].version"
+
+
+def test_shipped_registry_brave_uses_release_feed_with_regex() -> None:
+    """M5.7.4 Phase B: Brave promoted from keystone to release_feed.
+    CFBundleShortVersionString is `<chromium_milestone>.<brave_internal>`
+    (e.g. 148.1.90.121 = Chromium 148 + Brave 1.90.121). The GitHub
+    release `name` field carries both pieces; version_regex rewrites
+    "Release v1.90.121 (Chromium 148.0.7778.96)" -> "148.1.90.121"."""
+    reg = WebRegistry.load(SHIPPED, None)
+    brave = reg.find("brave")
+    assert brave is not None
+    assert brave.handler == "release_feed"
+    assert brave.release_feed is not None
+    assert "api.github.com/repos/brave/brave-browser" in str(brave.release_feed.url)
+    assert brave.release_feed.version_path == "name"
+    assert brave.release_feed.version_regex is not None
+    assert brave.release_feed.version_replace is not None
 
 
 def test_shipped_registry_docker_uses_sparkle_handler() -> None:

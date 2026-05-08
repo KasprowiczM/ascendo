@@ -6,6 +6,114 @@
 
 ---
 
+## Sesja 41 (2026-05-08) — M5.7.4 release_feed extensions + v0.4.4
+
+User: "implement the rest of the missing, use subagents to deliver it
+faster". Two parallel subagents + inline integration unblock the
+M5.7.3 backlog. Real Mac.r12.home: 94% → 96% (5 more web apps Tier-A).
+
+### What landed (3 schema/handler extensions + 5 promotions)
+
+**A. `version_regex` + `version_replace` fields on ReleaseFeedConfig**
+(subagent A — `version-regex-warp-megasync`):
+
+Both fields supplied together (XOR validator); regex compile-time
+validated via `re.compile`; helper `_rf_apply_regex` runs `re.sub`
+once. Falls back to raw on no-match (so a vendor format change degrades
+gracefully). Schema rejects regex-without-replace and vice versa.
+
+**B. `format = "text"` mode** (inline):
+
+ReleaseFeedConfig gained `format: Literal["json", "text"]` defaulting
+to `"json"`. When `text`, the body isn't JSON-parsed — version_regex
+matches against the raw HTTP body directly. Required when `format=text`;
+ignored otherwise. `version_path` becomes Optional (required only for
+JSON). Unblocks vendors who publish key=value text feeds (Devolutions
+RDM is the first user).
+
+**C. 2 MiB body cap** (inline bug fix surfaced during warp testing):
+
+`release_feed_check` was capping responses at 256 KiB to mitigate T3.
+Warp's `releases.warp.dev/channel_versions.json` is 860 KiB (carries
+five channels' historical metadata). The 256 KiB cap truncated mid-
+string and broke JSON parsing — handler returned rc=27 silently. Bumped
+to 2 MiB, which still rejects malicious giant responses while
+accommodating real-world feeds.
+
+**D. 5 new Tier-A promotions** (verified live on Mac.r12.home):
+
+| Slug | From | To | Probe URL | Live result |
+|------|------|----|-----------|-------------|
+| warp | squirrel | release_feed | `releases.warp.dev/channel_versions.json` `stable.version` + regex `^v(.+)\.stable_(.+)$` → `\1.\2` | `0.2026.05.06.15.42.02` (= installed) |
+| megasync | builtin | release_feed | `api.github.com/repos/meganz/MEGAsync/releases/latest` `tag_name` + regex `^v(.+)_(?:Linux\|OSX\|Win)$` → `\1` | `6.3.0.1` (installed = 6.2.2 → outdated detected) |
+| chrome | keystone | release_feed | `versionhistory.googleapis.com/v1/chrome/platforms/mac_arm64/channels/stable/versions` `versions[0].version` | `148.0.7778.97` (= installed) |
+| brave | keystone | release_feed | `api.github.com/repos/brave/brave-browser/releases/latest` `name` + regex `.*v([0-9.]+) \(Chromium ([0-9]+)\.[^)]*\).*` → `\2.\1` (Chromium milestone + Brave internal version composed) | `148.1.90.121` (= installed) |
+| rdm | builtin | release_feed (format=text) | `devolutions.net/productinfo.htm` + regex `(?s).*RDMMacbin\.Version=([0-9][0-9.]*).*` | `2026.1.11.4` (= installed) |
+
+### Apps still trigger-only (Tier-B) — explicitly investigated this round
+
+| Slug | Why no Tier-A |
+|------|---------------|
+| **gdrive** | Probed `dl.google.com/drive-file-stream/{release_notes.json,version,latest,...}` — all 404. DMG HEAD has no version. `versionhistory.googleapis.com/v1/drivefs/...` returns 400 (Chrome-only). Workspace blog is HTML prose. Update flow is Omaha protobuf. Re-check annually. |
+| **gemini** | Info.plist has neither `SUFeedURL` nor `KSUpdateURL`. Binary strings yielded only telemetry/SPA URLs. `versionhistory.googleapis.com/v1/gemini/...` returns 400. `gemini.google.com/api/version` is 404. Omaha-only. |
+| **antigravity** | Vendor's API `productVersion` field is stale — returns 1.107.0 while installed = 1.23.2. Internally inconsistent; nothing we can fix from our side. |
+| **lm-studio** | `app-update.yml` points at private R2 bucket needing AWS S3 auth. Vendor download page fully Next.js JS-rendered. |
+| **comet** | Chromium fork using Omaha protocol over `update.googleapis.com` (POST + XML protobuf). Not JSON-probeable. |
+| **inkscape** / **spotify** / **ascendo** | No public version proxy found this round; left builtin (manual update path). |
+
+### Coverage outcome (Mac.r12.home)
+
+| Metric | v0.4.3 (Sesja 40) | v0.4.4 (Sesja 41) |
+|--------|-------------------|-------------------|
+| Total apps tracked | 224 | 224 |
+| With real candidate | 211 (94%) | **216 (96%)** |
+| Web Tier-A (real probe) | 26 | **31** (+5: warp, megasync, chrome, brave, rdm) |
+| Web Tier-B (trigger-only) | 13 | **8** (-5) |
+| Outdated detected | 6 | **7** (added megasync 6.2.2 → 6.3.0.1) |
+
+### Tests
+
+- 369/369 macOS adapter tests pass (was 365):
+  - +2 bash tests for version_regex (`test_version_regex_transforms_raw_version`,
+    `test_version_regex_no_match_falls_back_to_raw`)
+  - +3 Pydantic tests (regex pair, XOR rejection, invalid pattern rejection)
+- Live probe end-to-end on every promoted app
+
+### Files changed
+
+```
+ adapters/macos/ascendo_macos/web_registry.py           |  56 ++ (regex/replace + format + validators)
+ adapters/macos/lib/handlers/release_feed.sh            |  73 ++ (apply_regex helper + format=text branch + 2MiB cap)
+ adapters/macos/config/web_apps.toml                    | ~50 ++ (5 promotions: warp, megasync, chrome, brave, rdm)
+ adapters/macos/tests/test_release_feed_handler.sh      |  60 ++ (regex transform tests)
+ adapters/macos/tests/test_web_registry_v2.py           |  63 ++ (schema validator tests)
+ adapters/macos/tests/test_web_apps_toml_shipped.py     |   8 ~ (chrome/brave assertions updated)
+ adapters/macos/tests/fixtures/release_feed/warp.json   |  10 + (offline fixture)
+```
+
+### M5.7.5+ backlog (what's left after this round)
+
+- **gdrive + gemini** — re-check annually for public Google version proxies
+- **comet + lm-studio + antigravity** — runtime mitmproxy capture (operator-side)
+- **Multi-endpoint composer** for `release_feed` — chained fetches if Google
+  ever ships per-product version proxies that need merging
+- **squirrel handler apply path** — currently Tier-B; could probe via the
+  Squirrel update endpoint format if we standardize how to authenticate it
+
+### Operator command to verify
+
+```bash
+cd ~/Dev_Env/Ascendo
+git pull
+PYTHONPATH=core:adapters/macos python3 -m ascendo run \
+    -c brew,mas,npm,pip,web,softwareupdate -p check \
+    --runs-dir /tmp/ascendo-coverage-574
+```
+
+Expected: 224 items across 6 sidecars, 216 with real candidate detection.
+
+---
+
 ## Sesja 40 (2026-05-08) — M5.7.3 web coverage push + v0.4.3
 
 User: "implement all missing updates, use subagents, go". Continuation

@@ -141,12 +141,70 @@ print(json.dumps(d))
     assert_eq "test_arch_match_succeeds" "0.2026.05.08.00.00.01" "$v"
 }
 
+# M5.7.4: version_regex/version_replace transform raw version string.
+# Fixture warp.json publishes 'v0.2026.05.06.15.42.stable_02'; the regex
+# strips 'v' prefix and '.stable_' infix to give '0.2026.05.06.15.42.02'.
+test_version_regex_transforms_raw_version() {
+    local cfg
+    cfg=$(python3 -c "
+import json
+d = {
+  'slug': 'warp',
+  'bundle_id': 'dev.warp.Warp-Stable',
+  'display_name': 'Warp',
+  'handler': 'release_feed',
+  'release_feed': {
+    'url': 'http://127.0.0.1:$PORT/warp.json',
+    'version_path': 'stable.version',
+    'version_regex': r'^v(.+)\\.stable_(.+)\$',
+    'version_replace': r'\\1.\\2',
+    'http_timeout_s': 5,
+  },
+}
+print(json.dumps(d))
+")
+    local v
+    v=$(release_feed_check "warp" "$cfg")
+    assert_eq "test_version_regex_transforms_raw_version" \
+        "0.2026.05.06.15.42.02" "$v"
+}
+
+# M5.7.4: when the regex doesn't match, fall back to the raw value
+# rather than failing the probe — vendor format change degrades to
+# raw detection rather than silently breaking.
+test_version_regex_no_match_falls_back_to_raw() {
+    local cfg
+    cfg=$(python3 -c "
+import json
+d = {
+  'slug': 'warp',
+  'bundle_id': 'dev.warp.Warp-Stable',
+  'display_name': 'Warp',
+  'handler': 'release_feed',
+  'release_feed': {
+    'url': 'http://127.0.0.1:$PORT/warp.json',
+    'version_path': 'stable.version',
+    'version_regex': r'^X(.+)Y\$',
+    'version_replace': r'\\1',
+    'http_timeout_s': 5,
+  },
+}
+print(json.dumps(d))
+")
+    local v
+    v=$(release_feed_check "warp" "$cfg")
+    assert_eq "test_version_regex_no_match_falls_back_to_raw" \
+        "v0.2026.05.06.15.42.stable_02" "$v"
+}
+
 test_happy_path_emits_version
 test_404_is_skipped
 test_malformed_json_is_skipped
 test_missing_path_is_skipped
 test_arch_mismatch_is_skipped
 test_arch_match_succeeds
+test_version_regex_transforms_raw_version
+test_version_regex_no_match_falls_back_to_raw
 
 echo
 echo "$PASS passed, $FAIL failed"

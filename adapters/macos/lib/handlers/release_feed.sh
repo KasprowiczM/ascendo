@@ -193,18 +193,66 @@ print(cur)
 PY
 }
 
+# _rf_apply_regex <raw_version> <regex> <replace>
+#
+# Runs ``re.sub(regex, replace, raw_version)`` once. Echoes the result.
+# If the regex does NOT match the raw input (re.sub returns the input
+# unchanged), echoes the raw value — so a vendor format change degrades
+# to raw detection instead of silently breaking the probe (M5.7.4 spec).
+# Uses an env-var-driven heredoc to sidestep bash quoting interactions
+# with arbitrary regex/replace strings (same pattern as _rf_get).
+_rf_apply_regex() {
+    local raw="$1" pattern="$2" replace="$3"
+    ASCENDO_RF_RAW="$raw" \
+    ASCENDO_RF_PATTERN="$pattern" \
+    ASCENDO_RF_REPLACE="$replace" \
+    /usr/bin/python3 <<'PY_EOF'
+import os, re, sys
+raw = os.environ.get("ASCENDO_RF_RAW", "")
+pattern = os.environ.get("ASCENDO_RF_PATTERN", "")
+replace = os.environ.get("ASCENDO_RF_REPLACE", "")
+if not pattern:
+    print(raw)
+    sys.exit(0)
+try:
+    out = re.sub(pattern, replace, raw)
+except re.error:
+    # Bad regex — fall back to raw rather than failing the probe.
+    print(raw)
+    sys.exit(0)
+# If re.sub returned the string unchanged (no match), the regex didn't
+# fire. Per M5.7.4 spec: degrade to raw value rather than fail loudly.
+print(out if out != raw else raw)
+PY_EOF
+}
+
 release_feed_check() {
     local slug="$1" cfg="$2"
 
-    local url version_path arch_path expected_arch timeout
+    local url version_path arch_path expected_arch timeout version_regex version_replace format
     url=$(printf '%s' "$cfg" | _rf_get "release_feed.url")
     version_path=$(printf '%s' "$cfg" | _rf_get "release_feed.version_path")
     arch_path=$(printf '%s' "$cfg" | _rf_get "release_feed.arch_path")
     expected_arch=$(printf '%s' "$cfg" | _rf_get "release_feed.expected_arch")
     timeout=$(printf '%s' "$cfg" | _rf_get "release_feed.http_timeout_s")
+    version_regex=$(printf '%s' "$cfg" | _rf_get "release_feed.version_regex")
+    version_replace=$(printf '%s' "$cfg" | _rf_get "release_feed.version_replace")
+    format=$(printf '%s' "$cfg" | _rf_get "release_feed.format")
     [ -z "$timeout" ] && timeout=8
+    [ -z "$format" ] && format="json"
 
-    if [ -z "$url" ] || [ -z "$version_path" ]; then
+    if [ -z "$url" ]; then
+        echo ""
+        return 22
+    fi
+    # version_path required for json format; for text format it's unused.
+    if [ "$format" = "json" ] && [ -z "$version_path" ]; then
+        echo ""
+        return 22
+    fi
+    # text format requires version_regex (the regex extracts directly
+    # from the raw body since there's no path to walk).
+    if [ "$format" = "text" ] && [ -z "$version_regex" ]; then
         echo ""
         return 22
     fi
@@ -217,8 +265,29 @@ release_feed_check() {
         return 25
     fi
 
-    # Cap response at 256 KiB (T3 mitigation)
-    body=$(printf '%s' "$body" | /usr/bin/head -c 262144)
+    # Cap response at 2 MiB (T3 mitigation against MITM serving an
+    # oversized payload). 256 KiB was too tight — Warp's
+    # channel_versions.json is ~860 KiB because it carries five
+    # channels' historical metadata, and the original cap truncated
+    # the body mid-string, breaking JSON parsing (M5.7.4 fix).
+    body=$(printf '%s' "$body" | /usr/bin/head -c 2097152)
+
+    # text format: skip JSON walking, run regex directly on body.
+    # _rf_apply_regex falls back to raw body if regex doesn't match —
+    # for text feeds we MUST require a match (raw body is huge),
+    # so we re-check post-transform and bail if unchanged.
+    if [ "$format" = "text" ]; then
+        local extracted
+        extracted=$(_rf_apply_regex "$body" "$version_regex" "$version_replace")
+        if [ -z "$extracted" ] || [ "$extracted" = "$body" ]; then
+            echo ""
+            return 28
+        fi
+        # Strip surrounding whitespace from the regex result.
+        extracted=$(printf '%s' "$extracted" | /usr/bin/awk 'NR==1{$1=$1; print}')
+        echo "$extracted"
+        return 0
+    fi
 
     # Optional arch sanity check
     if [ -n "$arch_path" ] && [ -n "$expected_arch" ]; then
@@ -245,6 +314,15 @@ release_feed_check() {
     if [ -z "$version" ]; then
         echo ""
         return 28
+    fi
+
+    # Optional version_regex / version_replace transform (M5.7.4).
+    # The Pydantic schema enforces both-or-neither at load time, so the
+    # registry layer guarantees they appear as a pair. Trigger on regex
+    # presence so an intentionally-empty replacement (strip-only, e.g.
+    # ``version_replace = ""``) still fires.
+    if [ -n "$version_regex" ]; then
+        version=$(_rf_apply_regex "$version" "$version_regex" "$version_replace")
     fi
 
     echo "$version"

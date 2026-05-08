@@ -51,19 +51,70 @@ class ReleaseFeedConfig(BaseModel):
     If `download_path` is set, the handler is Tier-A on apply too: it
     downloads the URL at that path and installs the DMG. Without it,
     apply falls back to `open -a` (Tier-B trigger semantics).
+
+    `version_regex` + `version_replace` (M5.7.4) optionally transform the
+    raw extracted version string with a single ``re.sub`` pass before it
+    is reported as the candidate. Both fields must be supplied together;
+    when present, the regex is matched against the raw extracted value
+    and ``version_replace`` substitutions are applied. If the regex does
+    not match the raw value, the handler falls back to the raw value
+    rather than failing — so a vendor format change degrades to "raw"
+    detection rather than silently breaking the probe. Use this for
+    vendors who publish version strings in non-canonical shapes
+    (e.g. Warp's ``v0.2026.05.06.15.42.stable_02`` vs
+    CFBundleShortVersionString ``0.2026.05.06.15.42.02``).
     """
 
     model_config = ConfigDict(extra="forbid")
 
     url: HttpsUrl
-    version_path: Annotated[str, Field(min_length=1, max_length=256,
-                                       pattern=r"^[A-Za-z0-9_.\-\[\]]+$")]
+    # version_path is required for json / yaml formats. When format="text"
+    # the path is ignored — version_regex matches directly against the
+    # raw body. We allow None at the schema level and validate the
+    # combination below.
+    version_path: Optional[Annotated[str, Field(min_length=1, max_length=256,
+                                                pattern=r"^[A-Za-z0-9_.\-\[\]]+$")]] = None
     download_path: Optional[Annotated[str, Field(min_length=1, max_length=256,
                                                   pattern=r"^[A-Za-z0-9_.\-\[\]]+$")]] = None
     arch_path: Optional[Annotated[str, Field(min_length=1, max_length=256,
                                               pattern=r"^[A-Za-z0-9_.\-\[\]]+$")]] = None
     expected_arch: Optional[Literal["arm64", "x86_64", "universal"]] = None
     http_timeout_s: Annotated[int, Field(ge=1, le=60)] = 8
+    version_regex: Optional[Annotated[str, Field(min_length=1, max_length=256)]] = None
+    version_replace: Optional[Annotated[str, Field(min_length=0, max_length=256)]] = None
+    # Body parser. "json" tries JSON first then falls back to minimal YAML
+    # (Electron-builder latest-mac.yml shape). "text" treats the body as
+    # plain text — version_regex matches the entire body directly,
+    # version_path is ignored. Useful for vendors who publish key=value
+    # text feeds (e.g. Devolutions' productinfo.htm).
+    format: Literal["json", "text"] = "json"
+
+    @model_validator(mode="after")
+    def _validate_version_transform(self) -> "ReleaseFeedConfig":
+        # version_path is required for json format, irrelevant for text.
+        if self.format == "json" and self.version_path is None:
+            raise ValueError(
+                "release_feed handler with format=json requires version_path")
+        if self.format == "text" and self.version_regex is None:
+            raise ValueError(
+                "release_feed handler with format=text requires version_regex "
+                "(the regex extracts the version from the raw body)")
+        # Both fields must be supplied together — regex without replace
+        # (or vice versa) is ambiguous and almost certainly a typo.
+        if (self.version_regex is None) != (self.version_replace is None):
+            raise ValueError(
+                "version_regex and version_replace must be supplied together "
+                "(both set, or both absent)")
+        # Compile-time validate the regex so a typo can't slip through to
+        # runtime as a swallowed re.error.
+        if self.version_regex is not None:
+            import re as _re
+            try:
+                _re.compile(self.version_regex)
+            except _re.error as exc:
+                raise ValueError(
+                    f"version_regex is not a valid Python regex: {exc}")
+        return self
 
 
 class WebApp(BaseModel):
