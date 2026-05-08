@@ -282,6 +282,102 @@ def test_check_script_emits_missing_when_not_installed(tmp_path):
     assert item.target_version == "24.10.0"
 
 
+def _make_fake_brew_pip(tmp_path: Path, list_json: str) -> Path:
+    """Fake pip whose `--version` advertises a Homebrew install path.
+
+    ``_ascendo_pip_flavour`` matches either the absolute path of the
+    pip binary OR the ``pip --version`` output against ``*homebrew*``
+    /``*Homebrew*``/``*Cellar*``/``*Caskroom*``. Since pytest's
+    ``tmp_path`` does NOT contain "homebrew", we steer detection via
+    the version string instead.
+    """
+    p = tmp_path / "fake_pip"
+    body = f"""#!/usr/bin/env bash
+case "$1" in
+  --version)
+    # The substring "homebrew" forces _ascendo_pip_flavour -> brew.
+    echo 'pip 26.1 from /opt/homebrew/lib/python3.13/site-packages/pip (python 3.13)'
+    ;;
+  list)
+    cat <<'EOF_LIST'
+{list_json}
+EOF_LIST
+    ;;
+  install) echo 'fake install: $@' ;;
+  cache) echo 'fake cache: $@' ;;
+  *) ;;
+esac
+exit 0
+"""
+    return _write_exec(p, body)
+
+
+def test_check_script_brew_pip_self_skip_pins_candidate_to_installed(tmp_path):
+    """Brew-managed pip self-upgrade is reclassified to up_to_date AND
+    candidate is pinned to installed.
+
+    Regression test for the Sesja-34 pip version-mismatch bug: the dashboard's
+    ``_classify`` overlay re-runs ``_version_gt(candidate, installed)`` on
+    the fly, so unless ``check.sh`` pins ``LATEST=INSTALLED`` in the
+    brew-self-skip case, the row flips back to ``outdated`` even though
+    the sidecar marked it ``up_to_date``.
+
+    The contract this test guards:
+        - status == up_to_date
+        - current_version == target_version (both 26.1)
+        - sidecar carries an explanatory message
+    """
+    manifest = _make_manifest(
+        tmp_path,
+        [
+            "display_name|package_name|method|description",
+            "pip|pip|pip|Python package installer",
+        ],
+    )
+    # Brew-managed pip is at 26.1; PyPI advertises 26.1.1.
+    fake_pip = _make_fake_brew_pip(
+        tmp_path,
+        '[{"name":"pip","version":"26.1"}]',
+    )
+    fake_curl = _make_fake_curl(
+        tmp_path,
+        {"pip": '{"info":{"version":"26.1.1"}}'},
+    )
+    out = tmp_path / "out"
+    rid = str(uuid.uuid4())
+
+    res = _run_check(
+        tmp_path,
+        fake_pip=fake_pip,
+        fake_curl=fake_curl,
+        manifest=manifest,
+        output_dir=out,
+        run_id=rid,
+    )
+    assert res.returncode == 0, f"stderr: {res.stderr}\nstdout: {res.stdout}"
+    sc = _parse_sidecar(out / rid / "check__pip.json")
+    assert len(sc.items) == 1
+    item = sc.items[0]
+    assert item.id == "pip"
+    # The brew self-skip: status flipped to up_to_date.
+    assert item.status.value == "up_to_date", (
+        f"expected up_to_date, got {item.status.value}"
+    )
+    # Critical regression guard: candidate (target_version) must equal
+    # installed (current_version), NOT the PyPI value 26.1.1. Otherwise
+    # the dashboard's _classify overlay flips it back to outdated.
+    assert item.current_version == "26.1"
+    assert item.target_version == "26.1", (
+        f"target_version must be pinned to installed; got {item.target_version!r}"
+    )
+    # The skip should be visible in sidecar messages so the operator
+    # knows to use `brew upgrade python` instead.
+    msg_texts = " ".join(getattr(m, "text", "") for m in (sc.messages or []))
+    assert "brew" in msg_texts.lower(), (
+        f"expected a brew-skip message in sidecar; got: {msg_texts!r}"
+    )
+
+
 def test_check_script_filter_restricts_to_named_rows(tmp_path):
     """--filter csv restricts emitted items to listed display_names."""
     manifest = _make_manifest(

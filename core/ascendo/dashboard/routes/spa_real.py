@@ -507,6 +507,32 @@ def _flatten_buckets_for_db(
     return rows
 
 
+def _replace_buckets_in_db(
+    db,  # type: ignore[no-untyped-def]
+    buckets: dict[str, list[dict[str, Any]]],
+    rows: list[dict[str, Any]],
+) -> int:
+    """Atomically replace each scanned category's rows in the DB.
+
+    The fresh ``buckets`` came from an authoritative live-scan, so any
+    rows already in the DB for the same categories are stale and must
+    go. Without this step, a manager whose tracked-set shrunk (e.g.
+    pip dropped a package since the last scan) would leave orphan rows
+    behind — causing the Apps tab to report ``pip 12`` while Run Center
+    reports ``11``. See ``PLAN.md`` "Hygiene follow-ups" (Sesja 34).
+
+    We only clear categories the live scan actually returned — never
+    blow away buckets we have no authoritative data for. Returns the
+    number of rows ``bulk_upsert`` wrote.
+    """
+    for cat in buckets.keys():
+        try:
+            db.clear_category(cat)
+        except Exception:  # noqa: BLE001
+            _log.exception("inventory_db: clear_category(%s) failed", cat)
+    return db.bulk_upsert(rows) if rows else 0
+
+
 def _buckets_from_db(db) -> dict[str, list[dict[str, Any]]]:  # type: ignore[no-untyped-def]
     """Read every row from the DB and re-shape into ``{cat: [item, ...]}``."""
     out: dict[str, list[dict[str, Any]]] = {}
@@ -559,7 +585,7 @@ def _resolve_buckets(
         try:
             rows = _flatten_buckets_for_db(buckets)
             if rows:
-                db.bulk_upsert(rows)
+                _replace_buckets_in_db(db, buckets, rows)
                 db.set_meta(adapter_key, item_count=len(rows))
         except Exception:  # noqa: BLE001
             _log.exception("inventory_db: populate failed (non-fatal)")
@@ -698,7 +724,7 @@ async def inventory_refresh_real(request: Request) -> dict[str, Any]:
         try:
             buckets = _build_buckets_live(adapter, cache, runs_dir)
             rows = _flatten_buckets_for_db(buckets)
-            item_count = db.bulk_upsert(rows) if rows else 0
+            item_count = _replace_buckets_in_db(db, buckets, rows)
             db.set_meta(_adapter_id(adapter), item_count=item_count)
             if not refreshed:
                 refreshed = sorted(buckets.keys())
@@ -729,7 +755,7 @@ async def inventory_db_refresh(request: Request) -> dict[str, Any]:
     item_count = 0
     if db is not None:
         try:
-            item_count = db.bulk_upsert(rows) if rows else 0
+            item_count = _replace_buckets_in_db(db, buckets, rows)
             db.set_meta(_adapter_id(adapter), item_count=item_count)
         except Exception:  # noqa: BLE001
             _log.exception("inventory_db: /inventory/db/refresh failed")

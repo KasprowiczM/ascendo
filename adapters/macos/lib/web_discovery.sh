@@ -87,13 +87,37 @@ if [ -z "${ASCENDO_WEB_APPLE_BUNDLES+x}" ]; then
 fi
 
 # _owned_by <bundle_id>
-# Echoes "brew", "mas", "softwareupdate", or "" (unowned).
+# Echoes "brew", "mas", "softwareupdate", "ineligible", or "" (unowned).
+#
+# "ineligible" covers things that look like .app bundles but aren't real
+# user-updatable apps:
+#   - Chrome / Google Drive web shortcuts (com.google.drivefs.shortcuts.*,
+#     com.google.Chrome.app.*) — they just open a URL in the browser
+#   - MDM-managed shims (com.microsoft.wdav.shim) — IT pushes updates
+#   - Setapp wrappers, Wine prefixes, Crossover bottle apps, etc.
+# These never have a real candidate version to probe.
 _owned_by() {
     local bid="$1" app_dir="${2:-}"
     case ",${ASCENDO_WEB_BREW_CASKS:-}," in (*",$bid,"*) printf 'brew'; return ;; esac
     case ",${ASCENDO_WEB_MAS_BUNDLE_IDS:-}," in (*",$bid,"*) printf 'mas'; return ;; esac
     case ",${ASCENDO_WEB_APPLE_BUNDLES:-}," in (*",$bid,"*) printf 'softwareupdate'; return ;; esac
     case "$bid" in com.apple.*) printf 'softwareupdate'; return ;; esac
+    # Ineligible-bundle pattern check. Each pattern is a glob against the
+    # full bundle id. Add new patterns to ASCENDO_WEB_INELIGIBLE_PATTERNS
+    # (comma-separated) to extend without code change.
+    case "$bid" in
+        com.google.drivefs.shortcuts.*) printf 'ineligible'; return ;;
+        com.google.Chrome.app.*)        printf 'ineligible'; return ;;
+        com.microsoft.wdav.shim)        printf 'ineligible'; return ;;
+        com.microsoft.wdav.*.shim)      printf 'ineligible'; return ;;
+    esac
+    if [ -n "${ASCENDO_WEB_INELIGIBLE_PATTERNS:-}" ]; then
+        local IFS=','
+        for pat in $ASCENDO_WEB_INELIGIBLE_PATTERNS; do
+            case "$bid" in $pat) printf 'ineligible'; return ;; esac
+        done
+        unset IFS
+    fi
     # _MASReceipt is the definitive marker for App Store-installed apps.
     # `mas list` returns numeric track IDs not bundle IDs, so checking
     # the receipt directly closes the gap.

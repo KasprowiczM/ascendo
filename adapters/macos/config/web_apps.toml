@@ -79,7 +79,9 @@ http_timeout_s = 8
 slug = "chatgpt"
 bundle_id = "com.openai.chat"  # verified on Mac.r12.home (2026-05-06)
 display_name = "ChatGPT"
-handler = "squirrel"
+handler = "sparkle"
+appcast_url = "https://persistent.oaistatic.com/sidekick/public/sparkle_public_appcast.xml"
+notes = "Discovered via binary mining (M5.7.3): ChatGPT.framework references the path fragment 'updates/sparkle/sidekick' which combines with the persistent.oaistatic.com host to give the public appcast at /sidekick/public/sparkle_public_appcast.xml. Probe verified live 2026-05-08; latest sparkle:shortVersionString=1.2026.118 (matches installed CFBundleShortVersionString)."
 
 [[app]]
 slug = "chatgpt-atlas"
@@ -108,11 +110,10 @@ bundle_id = "ai.elementlabs.lmstudio"  # verified on Mac.r12.home (2026-05-06; w
 display_name = "LM Studio"
 handler = "squirrel"
 
-[[app]]
-slug = "perplexity"
-bundle_id = "ai.perplexity.mac"  # verified on Mac.r12.home (2026-05-06; was ai.perplexity.app in template)
-display_name = "Perplexity"
-handler = "squirrel"
+# perplexity removed in M5.7.3: Perplexity Mac is a Mac App Store app
+# (Contents/_MASReceipt present); discovery filters MAS apps via the
+# receipt directory, so this web entry was dead. Updates flow through
+# the `mas` adapter, not web.
 
 [[app]]
 slug = "comet"
@@ -165,13 +166,72 @@ enabled = false  # JordiBros/MacWhisper-releases is a GUESS — real distributio
 notes = "vendor's distribution repo (placeholder; not confirmed)"
 
 # ───────────────────────── Microsoft 365 + Docker ─────────────────────────
+# MAU per-app targeting (M5.7.4): each Office app gets its own [[app]]
+# entry with its MAU Application ID under [app.msupdate]. check reads the
+# installed version directly from `msupdate --config`; apply runs
+# `msupdate --install --apps <ID>` so only the targeted product updates.
+# Application IDs verified live against MAU 4.83 on Mac.r12.home (2026-05-08).
 
 [[app]]
 slug = "ms365"
-bundle_id = "com.microsoft.autoupdate2"  # TODO: confirm bundle_id (Microsoft AutoUpdate not installed on Mac.r12.home)
-display_name = "Microsoft 365 Suite"
+bundle_id = "com.microsoft.autoupdate2"
+display_name = "Microsoft AutoUpdate"
 handler = "msupdate"
-notes = "covers Word/Excel/PowerPoint/Outlook/OneNote/Teams in one msupdate call"
+notes = "Microsoft AutoUpdate self-update entry. Without [app.msupdate.app_id] this entry triggers a global `msupdate --install` covering anything pending — useful as a catch-all (e.g. Office License OLIC02). Per-product entries below give Word/Excel/etc. their own real-candidate row."
+
+[[app]]
+slug = "ms-word"
+bundle_id = "com.microsoft.Word"
+display_name = "Microsoft Word"
+handler = "msupdate"
+notes = "MAU app id MSWD2019. msupdate --config returns the installed version directly; apply runs `msupdate --install --apps MSWD2019`."
+[app.msupdate]
+app_id = "MSWD2019"
+
+[[app]]
+slug = "ms-excel"
+bundle_id = "com.microsoft.Excel"
+display_name = "Microsoft Excel"
+handler = "msupdate"
+notes = "MAU app id XCEL2019."
+[app.msupdate]
+app_id = "XCEL2019"
+
+[[app]]
+slug = "ms-powerpoint"
+bundle_id = "com.microsoft.Powerpoint"
+display_name = "Microsoft PowerPoint"
+handler = "msupdate"
+notes = "MAU app id PPT32019."
+[app.msupdate]
+app_id = "PPT32019"
+
+[[app]]
+slug = "ms-outlook"
+bundle_id = "com.microsoft.Outlook"
+display_name = "Microsoft Outlook"
+handler = "msupdate"
+notes = "MAU app id OPIM2019."
+[app.msupdate]
+app_id = "OPIM2019"
+
+[[app]]
+slug = "ms-onenote"
+bundle_id = "com.microsoft.onenote.mac"
+display_name = "Microsoft OneNote"
+handler = "msupdate"
+notes = "MAU app id ONMC2019."
+[app.msupdate]
+app_id = "ONMC2019"
+
+[[app]]
+slug = "ms-teams"
+bundle_id = "com.microsoft.teams2"
+display_name = "Microsoft Teams"
+handler = "msupdate"
+notes = "MAU app id TEAMS21. Teams2 (post-March 2024 unified client) bundle id = com.microsoft.teams2; classic Teams used com.microsoft.teams. Both ship through MAU."
+[app.msupdate]
+app_id = "TEAMS21"
 
 [[app]]
 slug = "docker"
@@ -281,10 +341,9 @@ slug = "opencode"
 bundle_id = "ai.opencode.desktop"
 display_name = "OpenCode"
 handler = "github_dmg"
-github_repo = "sst/opencode"
-asset_pattern = "opencode-.+-arm64\\.dmg$"
-enabled = false  # repo + asset pattern unverified; sst/opencode and anomalyco/opencode both publish under "opencode" name. Re-enable after verifying the canonical macOS DMG repo on user's machine.
-notes = "Two candidate repos exist (sst/opencode, anomalyco/opencode); confirm which is the canonical macOS distribution before enabling."
+github_repo = "anomalyco/opencode"
+asset_pattern = "opencode-desktop-mac-arm64\\.dmg$"
+notes = "Confirmed via app-update.yml inside /Applications/OpenCode.app/Contents/Resources/app-update.yml (M5.7.3): owner=anomalyco repo=opencode provider=github. Latest release tagged v1.14.41 has 'opencode-desktop-mac-arm64.dmg' asset (also -x64.dmg, -arm64.zip, etc). Live probe 2026-05-08: tag_name=v1.14.41 vs installed 1.14.40 → outdated."
 
 # ─── Trezor Suite ──────────────────────────────────────────────────────────
 # (Already shipped in M5.6 as github_dmg; no override needed.)
@@ -326,15 +385,71 @@ url = "https://download.todesktop.com/230313mzl4w4u92/latest-mac.yml"
 version_path = "version"
 http_timeout_s = 8
 
+# ═════════════════════════════ M5.7.3 Vendor Probes ═════════════════════════
+# Added 2026-05-08 via continued binary-mining + app.asar inspection.
+# ────────────────────────────────────────────────────────────────────────────
+
+# ─── Proton Mail ────────────────────────────────────────────────────────────
+[[app]]
+slug = "proton-mail"
+bundle_id = "ch.protonmail.desktop"
+display_name = "Proton Mail"
+handler = "release_feed"
+notes = "Discovered via app.asar inspection (M5.7.3): inbox-desktop's update mechanism queries https://proton.me/download/mail/macos/version.json. Response is JSON with a Releases[] array, newest-first (mixed channels EarlyAccess + Stable). Releases[0].Version is the current latest (any channel). Live probe 2026-05-08: Releases[0].Version=1.13.0 (EarlyAccess) matches installed; Stable channel currently at 1.12.1. Caveat: array index 0 may shift between Stable and EarlyAccess depending on which is most recent — entry tracks 'latest available regardless of channel'. Vendor's own Squirrel updater handles the actual install on app launch."
+
+[app.release_feed]
+url = "https://proton.me/download/mail/macos/version.json"
+version_path = "Releases[0].Version"
+http_timeout_s = 8
+
 # ─── Apps that still need mitmproxy on launch ──────────────────────────────
-# ChatGPT (com.openai.chat) — Sparkle but SUFeedURL injected at runtime; not
-#    in the app.asar. Capture appcast URL via mitmproxy.
-# Warp (dev.warp.Warp-Stable) — custom Rust updater hitting GCS bucket;
-#    binary strings showed releases.warp.dev as the host but no path scheme.
-# MEGAsync (mega.mac) — proprietary Qt updater; no URL patterns found.
-# LM Studio (ai.elementlabs.lmstudio) — private Cloudflare R2 bucket.
-# Antigravity (com.google.antigravity) — endpoint requires per-build commit
-#    hash; not probeable without exact value.
-# Comet (ai.perplexity.comet) — Omaha4/Keystone protobuf; not JSON-probeable.
-# All retain Tier-B trigger-only semantics until the operator captures their
-# URL via mitmproxy on app launch and adds an override.
+# ChatGPT (com.openai.chat) — RESOLVED M5.7.3: Sparkle SUFeedURL is set
+#    programmatically but the binary contains the path fragment
+#    'updates/sparkle/sidekick'. The full appcast URL is at
+#    persistent.oaistatic.com/sidekick/public/sparkle_public_appcast.xml.
+#    Now Tier-A.
+# Warp (dev.warp.Warp-Stable) — INVESTIGATED M5.7.3: public endpoint at
+#    https://releases.warp.dev/channel_versions.json returns
+#    `{"stable": {"version": "v0.2026.05.06.15.42.stable_02", ...}}`. Format
+#    mismatches CFBundleShortVersionString '0.2026.05.06.15.42.02' (extra
+#    'v' prefix, '.stable_' insertion). release_feed lacks regex/transform,
+#    so probe would always report outdated false-positive. Stays Tier-B
+#    until handler grows version_regex/version_transform support.
+# OpenCode (ai.opencode.desktop) — RESOLVED M5.7.3: confirmed
+#    `anomalyco/opencode` via app-update.yml; arm64 DMG asset
+#    `opencode-desktop-mac-arm64.dmg` present on every release. Now Tier-A.
+# Proton Mail (ch.protonmail.desktop) — RESOLVED M5.7.3: probe via
+#    proton.me/download/mail/macos/version.json. Now Tier-A.
+# MEGAsync (mega.mac) — INVESTIGATED M5.7.3: official update channel is the
+#    proprietary Qt-based updater (no public URL in binary). GitHub releases
+#    at github.com/meganz/MEGAsync use tags 'v6.3.0.1_OSX' (no DMG asset
+#    attached, _OSX suffix). release_feed lacks regex extraction so the
+#    suffix can't be stripped. Stays Tier-B until handler supports
+#    version_regex.
+# LM Studio (ai.elementlabs.lmstudio) — INVESTIGATED M5.7.3: app-update.yml
+#    points at private Cloudflare R2 bucket
+#    (174ee2ac3cc9a25a8bde971ff408f952.r2.cloudflarestorage.com/
+#    lmstudio-updaters/) requiring AWS S3 auth. lmstudio.ai/download
+#    is fully JS-rendered. No public version endpoint exists. Stays Tier-B.
+# Antigravity (com.google.antigravity) — INVESTIGATED M5.7.3: API at
+#    antigravity-auto-updater-974169037036.us-central1.run.app/api/update/
+#    darwin-arm64/stable/<commit>/<host_hash> returns JSON with
+#    productVersion field, but the field is stale (says '1.107.0' while
+#    installed and homepage both say '1.23.2'). API is unreliable for
+#    real-candidate probing. Stays Tier-B.
+# Comet (ai.perplexity.comet) — INVESTIGATED M5.7.3: Chromium-fork using
+#    Google's Omaha protocol over update.googleapis.com/service/update2/json
+#    (POST + XML response). Not JSON-probeable without protocol support.
+#    Stays Tier-B.
+# Perplexity (ai.perplexity.mac) — INVESTIGATED M5.7.3: Mac App Store app
+#    (verified _MASReceipt directory present). Discovery layer filters MAS
+#    apps from web inventory; entry is dead but kept for historical record.
+#    Updates are handled by App Store / mas adapter, not web.
+# Brave (com.brave.Browser) — INVESTIGATED M5.7.3: triple version mismatch.
+#    CFBundleShortVersionString=148.1.90.121 (Chromium-derived); GitHub tag
+#    v1.90.121 (Brave's own scheme); Sparkle appcast 1.90.121.0 (internal).
+#    None align directly. Stays as Keystone (existing entry; no improvement).
+# Google Drive (com.google.drivefs) — INVESTIGATED M5.7.3: dl.google.com
+#    serves the DMG without version metadata in headers. Google's update
+#    mechanism is Omaha-based (same as Brave/Comet/Chrome). Stays as
+#    Keystone (existing entry; no JSON-probeable alternative).

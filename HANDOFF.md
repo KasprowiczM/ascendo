@@ -6,6 +6,151 @@
 
 ---
 
+## Sesja 40 (2026-05-08) — M5.7.3 web coverage push + v0.4.3
+
+User: "implement all missing updates, use subagents, go". Continuation
+of Sesja 39's coverage work — closing the gaps identified in the
+post-v0.4.2 audit. Two subagents in parallel + inline integration.
+
+### What landed (3 fix areas + new vendor probes)
+
+**A. 3 bugs from post-v0.4.2 sidecar audit (commit `283d706`):**
+
+- `release_feed_apply` URL malformation: spaces in download filenames
+  (Notion Calendar's `Notion Calendar-1.133.0-arm64.dmg`, Cursor's
+  ToDesktop assets) crashed curl with "URL rejected: Malformed input".
+  Fixed via `urllib.parse.urljoin + quote(safe="/%")`.
+- `web/apply.sh` ran on up_to_date Tier-A apps: apply iterated all
+  registered slugs and unconditionally invoked sparkle/release_feed/
+  github_dmg handlers, redownloading + reinstalling vscode/notion/
+  obsidian/trezor-suite even when installed == latest. Fixed by
+  pre-dispatch `<handler>_check` call; emits `up_to_date` if equal.
+  Also removed misleading "(dry-run)" suffix from non-dry-run summary.
+- `pip/verify.sh` mirrored the brew-pip self-skip rule from check.sh
+  so `pip 26.1 -> 26.1.1` no longer surfaces as a verify failure on
+  brew-managed pip.
+
+**B. URL-hunt subagent — 3 new Tier-A promotions (verified live):**
+
+| Slug | From | To | Endpoint | Live probe |
+|------|------|----|----|------------|
+| chatgpt | squirrel | sparkle | `persistent.oaistatic.com/sidekick/public/sparkle_public_appcast.xml` | 1.2026.118 |
+| opencode | squirrel | github_dmg (anomalyco/opencode) | `opencode-desktop-mac-arm64.dmg` | 1.14.41 (outdated; installed 1.14.40) |
+| proton-mail | squirrel | release_feed | `proton.me/download/mail/macos/version.json` `Releases[0].Version` | 1.13.0 |
+
+Discovery: chatgpt's path fragment was in `ChatGPT.framework`; opencode
+was in `app-update.yml` (the `sst/opencode` guess from M5.6 was wrong —
+canonical repo is `anomalyco/opencode`); proton-mail came from app.asar
+string mining.
+
+**C. 7 Microsoft 365 entries + msupdate per-app targeting:**
+
+New `MsupdateConfig` Pydantic schema; msupdate handler enhanced to
+support `[app.msupdate.app_id]` so apply runs `msupdate --install
+--apps <ID>` instead of the global trigger. check reads installed
+version directly from app's `CFBundleShortVersionString` when no
+update is pending — now ms-word/excel/outlook/onenote/powerpoint/
+teams all classify as up_to_date with `cur=cand=16.108.2` (or
+25306.805.4102.7211 for Teams). Application IDs verified against MAU
+4.83's live `--config` output: WORD=MSWD2019, EXCEL=XCEL2019,
+PPT=PPT32019, OUTLOOK=OPIM2019, ONENOTE=ONMC2019, TEAMS=TEAMS21.
+
+**D. Discovery filters Google Workspace + Defender shims:**
+
+`web_discovery.sh::_owned_by` now returns `"ineligible"` for:
+- `com.google.drivefs.shortcuts.*` (Google Docs/Sheets/Slides — these
+  are just URL launchers installed by Google Drive)
+- `com.google.Chrome.app.*` (Chrome WebApp bundles)
+- `com.microsoft.wdav.*shim*` (MDM-managed Defender shim)
+- `ASCENDO_WEB_INELIGIBLE_PATTERNS` env var for user extension
+
+These never had a real candidate version; they were polluting the web
+inventory with `cur=124.0` rows that the operator couldn't act on.
+
+**E. Hygiene follow-ups from PLAN.md (subagent #2):**
+
+- `InventoryDB.bulk_upsert` now paired with `db.clear_category(cat)`
+  in 3 authoritative live-scan paths (`_resolve_buckets`,
+  `POST /inventory/refresh`, `POST /inventory/db/refresh`). Closes the
+  Sesja 34 stale-row bug ("Apps shows pip 12 while Run Center shows
+  11"). +2 contract tests.
+- pip brew-skip regression test added: fakes a brew-managed pip,
+  asserts check.sh emits `status=up_to_date AND target=installed` so
+  a future refactor can't reintroduce the dashboard-overlay flap. +1
+  test.
+
+**F. Removed dead `perplexity` registry entry:**
+
+Perplexity Mac is a Mac App Store app (`Contents/_MASReceipt`
+present); discovery filters MAS apps via the receipt directory, so
+the web entry was unreachable. Updates flow through the `mas`
+adapter. The dead entry only existed because it was added in M5.6
+before the receipt-detection fix in M5.7.1.
+
+### Apps explicitly ruled out (M5.7.4 backlog)
+
+The URL-hunt subagent investigated 11 candidates and ruled out 7 with
+explicit evidence. Documented for M5.7.4:
+
+| Slug | Why no Tier-A today |
+|------|---------------------|
+| warp | URL exists (`releases.warp.dev/channel_versions.json`) but version format `v0.2026.05.06.15.42.stable_02` doesn't match CFBundle `0.2026.05.06.15.42.02`. release_feed lacks `version_regex` to strip suffix. |
+| megasync | GitHub tags `v6.3.0.1_OSX` need regex extraction; no DMG assets attached. Same blocker. |
+| lm-studio | private Cloudflare R2 bucket needs AWS S3 auth; vendor site fully JS-rendered. |
+| antigravity | endpoint exists but `productVersion` field is stale (returns 1.107.0 while installed is 1.23.2). API internally inconsistent. |
+| comet | Chromium fork using Omaha protocol over update.googleapis.com (POST + XML protobuf). Not JSON-probeable. |
+| brave | Three incompatible version schemes (Chromium 148.x.y.z vs Brave 1.y.z vs Sparkle 1.y.z.0). None align. Keystone trigger stays. |
+| gdrive / chrome / gemini | Google Update is Omaha-based; no public version proxy. Keystone trigger stays. |
+
+**Unblocking 2 of these (warp + megasync) requires a `version_regex`
+field in `release_feed` handler — flagged as M5.7.4 work.**
+
+### Real-Mac coverage outcome
+
+| Metric | Pre-session | Post-session |
+|--------|-------------|--------------|
+| Total apps tracked | 228 | 224 (4 ineligibles excluded) |
+| With real candidate | 196 (86%) | **211 (94%)** |
+| Web Tier-A (real probe) | 17 | **26** (+9: 6 MS365 + chatgpt + opencode + proton-mail) |
+| Web Tier-B (trigger-only) | 26 | 13 (-13) |
+| MS365 apps with real candidate | 0 | 6 (Word/Excel/PowerPoint/Outlook/OneNote/Teams) |
+| Outdated detected | 6 | 6 (codex, docker, firefox-dev, opencode, protonvpn, zoom) |
+
+### Tests
+
+- 365/365 macOS adapter (was 364, +1 from MsupdateConfig schema +
+  msupdate test changes from agents)
+- +3 new contract tests (inventory_db × 2 + pip brew-skip × 1)
+
+### Files changed
+
+```
+ adapters/macos/ascendo_macos/web_registry.py  |  26 ++ (MsupdateConfig schema)
+ adapters/macos/config/web_apps.toml           | 163 ++ (10 new entries, 3 promoted, perplexity removed)
+ adapters/macos/lib/handlers/msupdate.sh       | 146 ++ (per-app targeting + version probe)
+ adapters/macos/lib/handlers/release_feed.sh   |  29 +- (URL encode fix)
+ adapters/macos/lib/web_discovery.sh           |  26 + (ineligible patterns)
+ adapters/macos/scripts/web/apply.sh           |  32 + (pre-dispatch check)
+ adapters/macos/scripts/pip/verify.sh          |  12 + (brew-skip mirror)
+ adapters/macos/tests/test_pip_check_script.py |  96 + (regression test)
+ core/ascendo/dashboard/routes/spa_real.py     |  32 + (clear_category before bulk_upsert)
+ tests/contract/test_inventory_db.py           |  74 + (2 new tests)
+```
+
+### Operator command to verify
+
+```bash
+cd ~/Dev_Env/Ascendo
+git pull
+PYTHONPATH=core:adapters/macos python3 -m ascendo run \
+    -c brew,mas,npm,pip,web,softwareupdate -p check \
+    --runs-dir /tmp/ascendo-coverage-check
+```
+
+Expected: 224 items across 6 sidecars, 211 with real candidate detection.
+
+---
+
 ## Sesja 39 (2026-05-08) — M5.7.2 app.asar binary mining + v0.4.2
 
 Continuation of Sesja 38's coverage push. After v0.4.1 shipped 14 apps

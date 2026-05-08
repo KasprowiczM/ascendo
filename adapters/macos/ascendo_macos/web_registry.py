@@ -24,6 +24,23 @@ from pydantic.networks import UrlConstraints
 HttpsUrl = Annotated[AnyUrl, UrlConstraints(allowed_schemes=["https"])]
 
 
+class MsupdateConfig(BaseModel):
+    """Per-app Microsoft AutoUpdate targeting.
+
+    Set `app_id` to the MAU Application ID (e.g. ``XCEL2019``,
+    ``MSWD2019``). check phase reads the installed version from
+    ``msupdate --config``; apply phase runs ``msupdate --install --apps
+    <app_id>`` so only this product updates. Leaving the entire subtable
+    out keeps legacy global behaviour (one entry triggers all pending
+    Microsoft updates).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    app_id: Annotated[str, Field(min_length=2, max_length=32,
+                                 pattern=r"^[A-Z0-9]+$")]
+
+
 class ReleaseFeedConfig(BaseModel):
     """Config for the generic release_feed handler.
 
@@ -82,6 +99,12 @@ class WebApp(BaseModel):
     # Release feed (new v2 handler)
     release_feed: Optional[ReleaseFeedConfig] = None
 
+    # Microsoft AutoUpdate per-app targeting (M5.7.4)
+    # When set, msupdate handler runs `--install --apps <app_id>` and reads
+    # the per-app installed version from `msupdate --config` so the apply
+    # phase can correctly classify up_to_date apps.
+    msupdate: Optional["MsupdateConfig"] = None
+
     # Behaviour overrides (apply to any handler)
     defer_if_running: Optional[bool] = None
     kill_safe: Optional[bool] = None
@@ -131,6 +154,9 @@ class WebApp(BaseModel):
         if h != "release_feed" and self.release_feed is not None:
             raise ValueError(
                 f"release_feed sub-table only valid for release_feed handler; got handler={h!r}")
+        if h != "msupdate" and self.msupdate is not None:
+            raise ValueError(
+                f"msupdate sub-table only valid for msupdate handler; got handler={h!r}")
         return self
 
 

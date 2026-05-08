@@ -140,6 +140,41 @@ def test_db_upsert_replaces_row(tmp_path: Path) -> None:
     assert rows[0]["status"] == "ok"
 
 
+def test_bulk_upsert_after_clear_category_removes_stale_rows(
+    tmp_path: Path,
+) -> None:
+    """After live-scan repopulates a category with fewer items, stale rows from
+    the previous scan must NOT survive in the DB.
+
+    Regression test for the Sesja-34 hygiene bug: ``InventoryDB.bulk_upsert``
+    is upsert-only, so when a manager's tracked-set shrinks (e.g. pip drops a
+    package), the SQLite inventory keeps the orphan entry. The fix is to
+    ``clear_category(cat)`` before ``bulk_upsert`` for each category that
+    we have authoritative fresh data for.
+    """
+    db = InventoryDB(tmp_path / "inv.db")
+    # Initial scan: pip has 2 items.
+    db.bulk_upsert(
+        [
+            {"category": "pip", "name": "ruff", "installed": "0.1.0"},
+            {"category": "pip", "name": "obsolete-tool", "installed": "9.9"},
+        ],
+    )
+    assert db.count(category="pip") == 2
+
+    # Live-rescan emits only 1 item (obsolete-tool was uninstalled). The
+    # caller must clear-then-bulk-upsert so the orphan row is gone.
+    db.clear_category("pip")
+    db.bulk_upsert([{"category": "pip", "name": "ruff", "installed": "0.2.0"}])
+
+    rows = db.query(category="pip")
+    assert len(rows) == 1
+    assert rows[0]["name"] == "ruff"
+    assert rows[0]["installed"] == "0.2.0"
+    # Other categories are untouched.
+    assert db.count(category="brew") == 0
+
+
 def test_db_bulk_upsert_skips_malformed_rows(tmp_path: Path) -> None:
     """Rows missing category or name are silently skipped."""
     db = InventoryDB(tmp_path / "inv.db")
@@ -347,4 +382,43 @@ def test_apps_and_categories_see_same_data(
     apps_brew = {a["name"] for a in apps if a["category"] == "brew"}
     assert cat_brew == apps_brew, (
         f"Apps/Categories disagree: cats={sorted(cat_brew)} apps={sorted(apps_brew)}"
+    )
+
+
+def test_inventory_db_refresh_drops_stale_rows_for_shrunk_manifest(
+    db_client: tuple[TestClient, _FakeAdapter, Path],
+) -> None:
+    """When the live-scan manifest shrinks, ``/inventory/db/refresh`` must
+    not leave orphan rows in the DB.
+
+    Regression test for the Sesja-34 hygiene bug: ``InventoryDB.bulk_upsert``
+    is upsert-only; without an explicit ``clear_category`` step, removed
+    items linger forever. This test:
+
+    1. Populates the DB with 3 brew rows.
+    2. Mutates the fake inventory to drop one item.
+    3. Forces a DB refresh.
+    4. Asserts the dropped item is gone from the DB.
+    """
+    client, adapter, db_path = db_client
+
+    # Initial scan: 3 items.
+    client.get("/inventory")
+    db = InventoryDB(db_path)
+    assert db.count(category="brew") == 3
+
+    # Mutate the fake adapter so the next live scan returns only 2 items.
+    adapter._inv._packages = [_pkg("wget"), _pkg("curl")]  # noqa: SLF001
+
+    # Force a DB refresh so the live-scan path fires.
+    r = client.post("/inventory/db/refresh")
+    assert r.status_code == 200
+    assert r.json()["item_count"] == 2
+
+    # The orphan ``jq`` row must be gone — not lingering as upsert exhaust.
+    db = InventoryDB(db_path)
+    rows = db.query(category="brew")
+    names = {r["name"] for r in rows}
+    assert names == {"wget", "curl"}, (
+        f"Stale row leaked through DB refresh: {sorted(names)}"
     )
