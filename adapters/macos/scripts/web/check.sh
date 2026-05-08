@@ -18,7 +18,7 @@ ADAPTER_CONFIG="$SCRIPT_DIR/../../config"
 . "$ADAPTER_LIB/ascendo_json.sh"
 # shellcheck source=../../lib/ascendo_web.sh
 . "$ADAPTER_LIB/ascendo_web.sh"
-for _h in sparkle github_dmg keystone squirrel builtin msupdate docker; do
+for _h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed; do
     # shellcheck source=../../lib/handlers/sparkle.sh
     . "$ADAPTER_LIB/handlers/${_h}.sh"
 done
@@ -102,11 +102,12 @@ while IFS= read -r SLUG; do
 
     LATEST=""
     case "$HANDLER" in
-        sparkle)     LATEST=$(sparkle_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        github_dmg)  LATEST=$(github_dmg_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        keystone)    LATEST=$(keystone_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        msupdate)    LATEST=$(msupdate_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        docker)      LATEST=$(docker_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
+        sparkle)      LATEST=$(sparkle_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
+        github_dmg)   LATEST=$(github_dmg_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
+        keystone)     LATEST=$(keystone_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
+        msupdate)     LATEST=$(msupdate_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
+        docker)       LATEST=$(docker_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
+        release_feed) LATEST=$(release_feed_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
         squirrel|builtin) LATEST="" ;;
     esac
     LATEST=$(printf '%s' "$LATEST" | tr -d '[:space:]')

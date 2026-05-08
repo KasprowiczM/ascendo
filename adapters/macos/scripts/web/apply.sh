@@ -17,7 +17,7 @@ ADAPTER_CONFIG="$SCRIPT_DIR/../../config"
 
 . "$ADAPTER_LIB/ascendo_json.sh"
 . "$ADAPTER_LIB/ascendo_web.sh"
-for _h in sparkle github_dmg keystone squirrel builtin msupdate docker; do
+for _h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed; do
     . "$ADAPTER_LIB/handlers/${_h}.sh"
 done
 
@@ -97,7 +97,7 @@ while IFS= read -r SLUG; do
 
     # Defer-eligible handlers: skip if running
     case "$HANDLER" in
-        sparkle|github_dmg|squirrel)
+        sparkle|github_dmg|squirrel|release_feed)
             if _web_is_running "$BUNDLE_ID"; then
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
                 json_add_message "info" "${SLUG}: deferred_app_in_use"
@@ -118,14 +118,15 @@ while IFS= read -r SLUG; do
     mkdir -p "$(dirname "$err_log")"
 
     case "$HANDLER" in
-        sparkle)     sparkle_apply "$SLUG" "$CFG" 2> "$err_log" ;;
-        github_dmg)  github_dmg_apply "$SLUG" "$CFG" 2> "$err_log" ;;
-        keystone)    keystone_apply "$SLUG" "$CFG" 2> "$err_log" ;;
-        squirrel)    squirrel_apply "$SLUG" "$CFG" 2> "$err_log" ;;
-        builtin)     builtin_apply "$SLUG" "$CFG" 2> "$err_log" ;;
-        msupdate)    msupdate_apply "$SLUG" "$CFG" 2> "$err_log" ;;
-        docker)      docker_apply "$SLUG" "$CFG" 2> "$err_log" ;;
-        *)           false ;;
+        sparkle)      sparkle_apply "$SLUG" "$CFG" 2> "$err_log" ;;
+        github_dmg)   github_dmg_apply "$SLUG" "$CFG" 2> "$err_log" ;;
+        keystone)     keystone_apply "$SLUG" "$CFG" 2> "$err_log" ;;
+        squirrel)     squirrel_apply "$SLUG" "$CFG" 2> "$err_log" ;;
+        builtin)      builtin_apply "$SLUG" "$CFG" 2> "$err_log" ;;
+        msupdate)     msupdate_apply "$SLUG" "$CFG" 2> "$err_log" ;;
+        docker)       docker_apply "$SLUG" "$CFG" 2> "$err_log" ;;
+        release_feed) release_feed_apply "$SLUG" "$CFG" 2> "$err_log" ;;
+        *)            false ;;
     esac
     rc=$?
 
