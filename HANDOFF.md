@@ -6,6 +6,145 @@
 
 ---
 
+## Sesja 38 (2026-05-08) — M5.7.1 web vendor probes + bug fixes + v0.4.1
+
+User-driven coverage push after testing v0.4.0 dashboard. Their bar:
+"i need to have the most of all my apps (ideally all 100% updated via
+this Ascendo app)". Three real bugs surfaced + 8 new vendor probes shipped.
+
+### Diagnostic finding
+
+Real Mac.r12.home `/Applications`: 60 apps. Pre-M5.7.1 web check
+emitted 51 items (after T11 discovery), but only **4** reported a real
+candidate version. ~30 apps silently `skipped: probe broken`. Three
+root-cause classes:
+
+1. **Discovery dropped extracted metadata.** Auto-classified Sparkle
+   apps (AppCleaner, Proton Drive, ProtonVPN, ChatGPT, etc.) had
+   valid `SUFeedURL` in their plist, but the discovery JSON didn't
+   carry it. Synthetic CFG fed to handlers had no `appcast_url` →
+   handler returned empty → silent skip.
+2. **MAS apps polluted web inventory.** Discovery only filtered MAS
+   apps when `mas list` populated `ASCENDO_WEB_MAS_BUNDLE_IDS` — but
+   `mas list` returns numeric track IDs not bundle IDs, so the env
+   var was always empty. Comet, Perplexity, Amphetamine, etc.
+   appeared in both `mas` and `web` categories.
+3. **Squirrel apps with public update endpoints not probed.** VSCode,
+   Notion, Ledger Live, etc. all publish well-documented JSON/YAML
+   update feeds, but Ascendo treated them as `vendor_opaque`.
+
+Plus a real handler bug: `_web_extract_sparkle_latest_version` picked
+the FIRST `<sparkle:shortVersionString>` in the appcast XML, not the
+HIGHEST. AppCleaner's appcast lists 3.4 first → we reported `cand=3.4`
+on a 3.6.8 install.
+
+### Architecture fixes (Phase A)
+
+**A1. Discovery extracts SUFeedURL + KSProductID.** `web_discovery.sh`
+`_classify` echoes a third TAB-delimited field with the actual URL/ID;
+walker emits as `appcast_url` (sparkle) / `ksadmin_product_id`
+(keystone). `check.sh` + `plan.sh` synthetic CFG picks them up via
+`ASCENDO_DISC_LINE` env var.
+
+**A2. MAS receipt detection.** `_MASReceipt` directory inside
+`Contents/` is the definitive App Store marker. `_owned_by` checks for
+it directly; no `mas list` lookup needed. 8 MAS apps now correctly
+filtered (Amphetamine, KeePassium, NordVPN, Telegram, Notion Web
+Clipper, Perplexity, WhatsApp, OneDrive).
+
+**A3. Brew batched query.** Replaced N×`brew info --cask --json=v2`
+serial loop (~10s on 30 casks) with single batched call passing all
+tokens at once.
+
+### Phase B: release_feed YAML support
+
+Extended `release_feed.sh` to handle YAML responses (Electron-builder
+`latest-mac.yml` shape used by Notion / Ledger / Trezor / Obsidian).
+Minimal in-tree YAML parser handles the canonical schema:
+```
+version: 7.16.0
+files:
+  - url: Notion-7.16.0.dmg
+path: Notion-7.16.0.zip
+```
+JSON tried first; YAML fallback on JSONDecodeError. Apply also
+resolves relative download URLs against feed URL's parent dir
+(Electron-builder gives `Notion-7.16.0.dmg` not full URL).
+
+Verified live against Notion, Ledger Live, VSCode (JSON path still
+works).
+
+### Phase C: 8 new vendor probes
+
+| Slug | Handler | Endpoint | Verified |
+|------|---------|----------|----------|
+| vscode | release_feed (JSON) | `update.code.visualstudio.com/api/update/darwin-arm64/stable/latest` | productVersion=1.119.0 ✓ |
+| zoom | release_feed (JSON) | `zoom.us/rest/download?os=mac` | result.downloadVO.zoomArm64.version ✓ |
+| firefox-dev | release_feed (JSON) | `product-details.mozilla.org/1.0/firefox_versions.json` | FIREFOX_DEVEDITION ✓ |
+| notion | release_feed (YAML) | `desktop-release.notion-static.com/latest-mac.yml` | version=7.16.0 ✓ |
+| ledger-live | release_feed (YAML) | `download.live.ledger.com/latest-mac.yml` | version=4.0.0 ✓ |
+| keepassxc | github_dmg | `keepassxreboot/keepassxc` | KeePassXC-VER-arm64.dmg ✓ |
+| obsidian | github_dmg | `obsidianmd/obsidian-releases` | Obsidian-VER-arm64.dmg |
+| opencode | github_dmg | `sst/opencode` (disabled — repo TBD) | unverified |
+
+### Bonus polish
+
+- **Sparkle picks highest version**, not first. AppCleaner now
+  correctly reports cand=3.6.8 (was 3.4). New version-key sorter
+  splits on `.-_` separators, integer-prefix per component.
+- **Brave reclassified keystone** (was sparkle). Brave registers a
+  Keystone product AND publishes a Sparkle appcast, but the appcast
+  uses internal versions (`1.90.121.0`) that don't align with
+  CFBundleShortVersionString (`148.1.90.121` / Chromium-style).
+  Comparing them gave nonsense. Keystone is the canonical channel.
+- **validate-macos.sh Stage 13.10 PYTHONPATH** now points at the
+  worktree's adapter explicitly. Without this the bare `python3 -m
+  ascendo` resolves to system pip-installed Ascendo, which loaded the
+  M5.6 era adapter and reported only 13 items.
+
+### Coverage outcome (real Mac.r12.home)
+
+| Metric | M5.7 / v0.4.0 | M5.7.1 / v0.4.1 |
+|--------|---------------|------------------|
+| Total items in `web --phase check` | 51 | 43 (8 MAS apps filtered) |
+| Apps with real candidate version | 4 | **15** |
+| Real outdated apps caught | 0 | 3 (ProtonVPN 6.5.0→6.5.1, Zoom 7.0.0→.77593, Firefox-Dev 151.0→151.0b7) |
+| Tests passing | 364 macOS + 16 contract | 364 + 16 (no regressions) |
+| validate-macos | 41/41 | 41/41 |
+
+### Operator notes
+
+The user's complaint "i have just tested dashboard, still see a lot of
+apps not updating" was BOTH a coverage gap (most of this milestone)
+AND an installation issue:
+
+> **The dashboard runs the system pip-installed Ascendo, not the
+> worktree.** `python3 -c "import ascendo_macos; print(ascendo_macos.__file__)"`
+> shows where the adapter is loaded from. After `git pull` on the
+> canonical clone (`~/Dev_Env/Ascendo`), the editable install picks
+> up new code on next CLI invocation. Ascendo.app needs a fresh
+> launch to see the new code (existing dashboard process must be
+> restarted).
+
+Documented in `MACOS_QUICKSTART.md` after Section 1.
+
+### Pending follow-ups (M5.7.2)
+
+Apps still requiring a vendor probe but where the URL isn't publicly
+documented (verified during research subagent's investigation):
+
+- **Warp / Cursor / Claude / ChatGPT** — Squirrel.framework apps with
+  vendor JSON endpoints, but URLs require mitmproxy on app launch to
+  discover. Operator can capture them and add to `~/.config/ascendo/
+  web_apps.toml`.
+- **Notion Calendar, MEGAsync, Spotify** — multiple endpoint candidates
+  tried; all returned empty. Vendors gate behind authenticated client
+  tokens. Stay Tier-B trigger-only.
+- **OpenCode repo verification** — `sst/opencode` vs `anomalyco/opencode`;
+  operator must confirm canonical macOS DMG repo before enabling.
+
+---
+
 ## Sesja 37 (2026-05-08) — M5.7 web auto-discovery + tiered probes + v0.4.0
 
 Closes the breadth + depth gaps in v0.3.0 web manager. Operator-reported

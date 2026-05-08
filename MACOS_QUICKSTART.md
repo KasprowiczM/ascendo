@@ -27,6 +27,26 @@ Re-running `install-dev-macos.sh` after a `git pull` is safe — it's
 idempotent and re-installs the editable Python packages so the CLI always
 runs the latest code.
 
+> **Why your dashboard might be showing stale results.** The desktop
+> app, the CLI (`python3 -m ascendo`), and the dashboard all import
+> the macOS adapter as an editable Python install. The install
+> location is wherever you ran `pip install -e adapters/macos` from
+> — typically `~/Dev_Env/Ascendo`, not a worktree. After you `git
+> pull` on `~/Dev_Env/Ascendo`, the **CLI and dashboard see the new
+> code immediately** (Python re-reads on next invocation), but
+> Ascendo.app needs a fresh launch (quit + reopen). If you keep the
+> dashboard running across upgrades, restart it to pick up bash
+> handler changes.
+
+Verify which adapter is active:
+```bash
+python3 -c "import ascendo_macos; print(ascendo_macos.__file__)"
+# /Users/<you>/Dev_Env/Ascendo/adapters/macos/ascendo_macos/__init__.py
+```
+If that path looks wrong (points at a stale clone, a virtualenv, or
+nothing at all), re-run `bash bin/install-dev-macos.sh` from the
+correct repo directory.
+
 The script:
 1. Checks for `python3`, `bash`, `brew`, installs `jq` if missing.
 2. `pip install -e ./core` (with `--break-system-packages` per Homebrew

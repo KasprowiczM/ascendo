@@ -1,6 +1,18 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-08 (sesja 37) — **M5.7 web auto-discovery + tiered
+> Last updated: 2026-05-08 (sesja 38) — **M5.7.1 web vendor probes +
+> bug fixes shipped as v0.4.1**. Operator-driven coverage push after
+> testing v0.4.0 surfaced 3 real bugs + missing vendor URLs. Wins:
+> discovery now extracts `SUFeedURL`+`KSProductID` into emitted JSON
+> (was: silently dropped, ~6 Sparkle apps broken); MAS apps filtered
+> via `_MASReceipt` (was: 8 MAS apps polluted web inventory); 8 new
+> vendor probes (VSCode/Zoom/Firefox-Dev/Notion/Ledger/KeePassXC/
+> Obsidian + release_feed YAML support for Electron-builder
+> latest-mac.yml). Sparkle picks highest version not first.
+> Real Mac.r12.home: web check 4 → **15 apps** with real candidate.
+> 364/364 tests + 41/41 validate-macos.
+>
+> Previous milestone (sesja 37): **M5.7 web auto-discovery + tiered
 > probes shipped as v0.4.0**. Discovery walks `/Applications` Info.plists,
 > auto-classifies each bundle, excludes brew/mas/softwareupdate ownership.
 > Override registry v2 keyed by `bundle_id`. New `release_feed` Tier-A
