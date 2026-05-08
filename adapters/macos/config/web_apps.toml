@@ -38,9 +38,9 @@ notes = "drivefs is migrating from legacy Keystone to GoogleUpdater; keystone ha
 slug = "brave"
 bundle_id = "com.brave.Browser"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Brave Browser"
-handler = "sparkle"
-appcast_url = "https://updates.bravesoftware.com/sparkle/Brave-Browser/stable/appcast.xml"
-notes = "Real-Mac smoke at v0.3.0: --check-for-update CLI flag returned non-zero (Brave doesn't accept it as documented). Removed apply_cli_argv so apply falls back to the appcast enclosure DMG download path, which is the universal sparkle default."
+handler = "keystone"
+ksadmin_product_id = "com.brave.Browser"
+notes = "Brave registers a Keystone product (own Omaha-based updater binary) AND publishes a Sparkle appcast. The Sparkle appcast uses Brave-internal versions (1.90.121.0) which don't match CFBundleShortVersionString (148.1.90.121) — comparing them gives nonsense. Keystone is the canonical update channel; ksadmin handles install. Tier-B (trigger-only) probe; apply fires the daemon. (Was: sparkle handler — switched in M5.7.1 after real-Mac smoke at v0.3.0 showed --check-for-update CLI flag returned non-zero.)"
 
 [[app]]
 slug = "opera"

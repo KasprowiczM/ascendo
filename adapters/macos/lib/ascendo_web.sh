@@ -128,19 +128,36 @@ import sys
 
 xml = os.environ.get("ASCENDO_WEB_XML", "")
 
-# Form 2: child element. Match the FIRST <sparkle:shortVersionString>X</...>
-m = re.search(r'<sparkle:shortVersionString>([^<]+)</sparkle:shortVersionString>', xml)
-if m:
-    print(m.group(1).strip())
+# Sparkle convention: <item> entries can appear in any order; the
+# CONSUMER must select the highest version. AppCleaner publishes
+# 3.4 first, 3.6 second, 3.6.8 last — naive "first match" gives 3.4.
+# Brave goes newest-first. We can't rely on order; sort + pick highest.
+
+versions = re.findall(
+    r'<sparkle:shortVersionString>([^<]+)</sparkle:shortVersionString>', xml)
+if not versions:
+    versions = re.findall(r'sparkle:shortVersionString="([^"]+)"', xml)
+
+if not versions:
     sys.exit(0)
 
-# Form 1: attribute on enclosure / item.
-m = re.search(r'sparkle:shortVersionString="([^"]+)"', xml)
-if m:
-    print(m.group(1).strip())
-    sys.exit(0)
 
-# Neither form → empty (caller treats as "probe failed").
+def _ver_key(s: str):
+    """Convert '3.6.8' -> [(3,''),(6,''),(8,'')]. Trailing alpha
+    components compare low so '3.6.8b' < '3.6.8' as expected."""
+    parts = re.split(r'[.\-_]', s.strip())
+    out = []
+    for p in parts:
+        m = re.match(r'^(\d+)', p)
+        if m:
+            out.append((int(m.group(1)), p[m.end():] or ''))
+        else:
+            out.append((-1, p))
+    return out
+
+
+versions.sort(key=_ver_key)
+print(versions[-1].strip())
 PY
 }
 

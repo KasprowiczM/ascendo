@@ -785,7 +785,13 @@ fi
 # 13.10 web check phase emits >= 20 items + no failed phase status
 step "13.10 web --phase check produces discovery-driven inventory"
 WEB_DIR2=$(mktemp -d)
-python3 -m ascendo run --category web --phase check --runs-dir "$WEB_DIR2" >/dev/null 2>&1
+# Use the worktree adapter explicitly via PYTHONPATH; without this the
+# bare `python3 -m ascendo` would resolve to the system pip-installed
+# Ascendo (M5.6 era, 13-item static registry), not the worktree's M5.7+
+# discovery-driven adapter.
+PYTHONPATH="$REPO_ROOT/core:$REPO_ROOT/adapters/macos" \
+    python3 -m ascendo run --category web --phase check \
+        --runs-dir "$WEB_DIR2" >/dev/null 2>&1
 SIDECAR=$(find "$WEB_DIR2" -name 'check__web.json' | head -1)
 if [ -z "$SIDECAR" ]; then
     result "13.10 web check emits >=20 items" 0 "no sidecar produced"
