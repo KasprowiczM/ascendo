@@ -142,10 +142,8 @@ enabled = false  # CodeEditApp/CodeEdit GH releases don't expose arm64.dmg asset
 slug = "rdm"
 bundle_id = "com.devolutions.remotedesktopmanager"  # verified on Mac.r12.home (2026-05-06; was *.mac in template)
 display_name = "Remote Desktop Manager"
-handler = "github_dmg"
-github_repo = "Devolutions/RemoteDesktopManagerMac"
-asset_pattern = "RemoteDesktopManager.+arm64\\.dmg$"
-enabled = false  # Devolutions distributes RDM via devolutions.net direct downloads, not GitHub. Real-Mac smoke at v0.3.0 confirmed the GH repo doesn't expose mac releases. Re-enable via user override once a sparkle/direct-URL handler exists.
+handler = "builtin"
+notes = "RDM publishes a Sparkle appcast at cdn.devolutions.net but stopped updating it (frozen at 2023.1.12.0). Modern releases (2024+) flow through their in-app updater that we can't probe externally. handler=builtin honestly skips the probe with manual-update instruction; without this override, discovery auto-classifies as sparkle and reports nonsense cand versions."
 
 # ───────────────────────── Productivity / Multimedia ─────────────────────────
 
@@ -172,7 +170,9 @@ notes = "covers Word/Excel/PowerPoint/Outlook/OneNote/Teams in one msupdate call
 slug = "docker"
 bundle_id = "com.docker.docker"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Docker Desktop"
-handler = "docker"
+handler = "sparkle"
+appcast_url = "https://desktop.docker.com/mac/main/arm64/appcast.xml"
+notes = "Docker Desktop has a Sparkle appcast at desktop.docker.com that's the canonical update channel. The legacy 'docker' handler called 'docker desktop version' which returns the CLI plugin version (0.3.0), NOT the Docker.app version (4.71.0+). Switched to sparkle for accurate probing."
 
 # ═════════════════════════════ M5.7.1 Vendor Probes ═════════════════════════
 # Added 2026-05-08 after user-driven coverage push. Each entry has a
@@ -264,8 +264,9 @@ bundle_id = "md.obsidian"
 display_name = "Obsidian"
 handler = "github_dmg"
 github_repo = "obsidianmd/obsidian-releases"
-asset_pattern = "Obsidian-.+-arm64\\.dmg$"
-notes = "Obsidian publishes Electron-builder yml on a private CDN; their canonical public release channel is the GitHub releases mirror at obsidianmd/obsidian-releases."
+asset_pattern = "Obsidian-[0-9.]+\\.dmg$"
+arch = "universal"
+notes = "Obsidian publishes a universal-binary DMG (no arm64-specific build) on GH releases. Asset pattern matches Obsidian-1.12.7.dmg shape."
 
 # ─── OpenCode ──────────────────────────────────────────────────────────────
 [[app]]
