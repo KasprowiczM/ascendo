@@ -170,3 +170,8 @@ $RECYCLE.BIN/
 # ── Cowork session leftovers ─────────────────────────────────────────────────
 .write-test
 .cowork-test
+
+# ── Browser-automation captures (Playwright MCP debug output) ────────────────
+.playwright-mcp/
+dashboard-overview-*.png
+dashboard-*.png

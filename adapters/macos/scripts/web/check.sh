@@ -18,7 +18,7 @@ ADAPTER_CONFIG="$SCRIPT_DIR/../../config"
 . "$ADAPTER_LIB/ascendo_json.sh"
 # shellcheck source=../../lib/ascendo_web.sh
 . "$ADAPTER_LIB/ascendo_web.sh"
-for _h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed; do
+for _h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed omaha; do
     # shellcheck source=../../lib/handlers/sparkle.sh
     . "$ADAPTER_LIB/handlers/${_h}.sh"
 done
@@ -155,6 +155,7 @@ print(json.dumps(out))
         msupdate)     LATEST=$(msupdate_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
         docker)       LATEST=$(docker_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
         release_feed) LATEST=$(release_feed_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
+        omaha)        LATEST=$(omaha_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
         squirrel|builtin) LATEST="" ;;
     esac
     LATEST=$(printf '%s' "$LATEST" | tr -d '[:space:]')

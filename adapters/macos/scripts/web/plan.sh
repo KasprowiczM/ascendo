@@ -16,7 +16,7 @@ ADAPTER_CONFIG="$SCRIPT_DIR/../../config"
 
 . "$ADAPTER_LIB/ascendo_json.sh"
 . "$ADAPTER_LIB/ascendo_web.sh"
-for _h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed; do
+for _h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed omaha; do
     . "$ADAPTER_LIB/handlers/${_h}.sh"
 done
 
@@ -139,6 +139,7 @@ print(json.dumps(out))
         msupdate)     LATEST=$(msupdate_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
         docker)       LATEST=$(docker_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
         release_feed) LATEST=$(release_feed_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
+        omaha)        LATEST=$(omaha_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
         squirrel|builtin) LATEST="" ;;
     esac
     LATEST=$(printf '%s' "$LATEST" | tr -d '[:space:]')
@@ -155,13 +156,15 @@ print(json.dumps(out))
     _web_is_running "$BUNDLE_ID" && IS_RUNNING=1
 
     case "$HANDLER" in
-        builtin|squirrel|keystone)
+        builtin|squirrel|keystone|omaha)
             # Tier-B handlers: vendor-opaque update mechanism
             if [ "$HANDLER" = "squirrel" ] && [ $IS_RUNNING -eq 0 ]; then
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "planned" "web" "$HANDLER"
                 COUNT_PLANNED=$((COUNT_PLANNED + 1))
-            elif [ "$HANDLER" = "keystone" ]; then
-                # Keystone introspection is opaque — always plan when app present.
+            elif [ "$HANDLER" = "keystone" ] || [ "$HANDLER" = "omaha" ]; then
+                # Keystone/Omaha apply triggers vendor daemon (async).
+                # Omaha gives us a real candidate from the check probe;
+                # if it equals INSTALLED we drop the row from the plan.
                 if [ -n "$LATEST" ] && ! _version_gt "$LATEST" "$INSTALLED"; then
                     continue
                 fi

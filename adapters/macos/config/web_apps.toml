@@ -34,9 +34,14 @@ http_timeout_s = 8
 slug = "gdrive"
 bundle_id = "com.google.drivefs"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Google Drive"
-handler = "keystone"
+handler = "omaha"
 ksadmin_product_id = "com.google.drivefs"
-notes = "drivefs is migrating from legacy Keystone to GoogleUpdater; keystone handler still resolves the version through ksadmin --print. M5.7.4 Phase B re-investigation 2026-05-08: confirmed NO public version proxy. Probed: dl.google.com/drive-file-stream/{release_notes.json,version,latest,current,macos,arm64,mac.json,mac,latest.json,info.json} all 404; HEAD on GoogleDrive.dmg returns 200 + last-modified but no version metadata; versionhistory.googleapis.com only supports Chrome (drivefs/gdrive/drive endpoints all 400 INVALID_ARGUMENT); workspace.google.com/products/drive/release-notes and workspaceupdates blog are HTML/atom-feed posts with version numbers in prose, not in structured fields. Update flow is Omaha protocol over update.googleapis.com (POST + protobuf) which we can't probe statically. Stays Tier-B."
+notes = "Promoted from keystone (Tier-B trigger-only) to omaha (real-candidate probe) in M5.7.5 Phase A. Google's Omaha service at update.googleapis.com/service/update2 accepts POST + XML and returns the latest manifest version directly — version='0.0.0.0' in the request triggers a fresh-install-style response with manifest/@version=124.0.3.0 (live probe 2026-05-08). The M5.7.4 ruling (Stays Tier-B) was correct re: 'no public JSON proxy' but missed that Omaha XML IS publicly probeable for first-party Google products without authentication. Apply still delegates to keystone_apply via ksadmin_product_id (kept for Tier-B trigger semantics); Keystone daemon owns the actual install."
+
+[app.omaha]
+endpoint = "https://update.googleapis.com/service/update2"
+appid = "com.google.drivefs"
+http_timeout_s = 8
 
 [[app]]
 slug = "brave"
@@ -132,15 +137,29 @@ http_timeout_s = 8
 slug = "gemini"
 bundle_id = "com.google.GeminiMacOS"  # verified on Mac.r12.home (2026-05-06; was com.google.Gemini in template)
 display_name = "Gemini"
-handler = "keystone"
-ksadmin_product_id = "com.google.GeminiMacOS"
-notes = "Keystone ticket on Mac.r12.home registered as productID=com.google.geminimacos with KSChannelID=m1-prod; the Squirrel template guess was wrong — Google Gemini uses Keystone. M5.7.4 Phase B re-investigation 2026-05-08: NO public version proxy. Info.plist has neither SUFeedURL nor KSUpdateURL (Keystone uses the default tools.google.com/service/update2 Omaha endpoint, not JSON-probeable). Binary strings on the Gemini executable reveal three URLs: feedback-pa.googleapis.com (telemetry), update.googleapis.com/service/update2/json (Omaha protobuf), and gemini.google.com/updates (HTML SPA, not API). versionhistory.googleapis.com supports Chrome only — gemini/geminimacos paths return 400 INVALID_ARGUMENT. gemini.google.com/api/version is 404. Stays Tier-B."
+handler = "omaha"
+ksadmin_product_id = "com.google.geminimacos"
+notes = "Promoted from keystone (Tier-B trigger-only) to omaha (real-candidate probe) in M5.7.5 Phase A. Google's Omaha service answers for com.google.geminimacos but ONLY when the request carries the channel tag from the Keystone ticket (`m1-prod` per ksadmin --print on Mac.r12.home; without it the response is 'noupdate' even for fresh installs because Gemini's distribution is gated by channel/cohort). Live probe 2026-05-08 with tag=m1-prod returned manifest/@version=1.53.0.262 (matches installed). Apply delegates to keystone_apply via ksadmin_product_id (lowercase per the actual ticket — was com.google.GeminiMacOS in the M5.7.3 template). The M5.7.4 'gemini.google.com/api/version is 404' line was correct; we just used the wrong endpoint."
+
+[app.omaha]
+endpoint = "https://update.googleapis.com/service/update2"
+appid = "com.google.geminimacos"
+tag = "m1-prod"
+http_timeout_s = 8
 
 [[app]]
 slug = "lm-studio"
 bundle_id = "ai.elementlabs.lmstudio"  # verified on Mac.r12.home (2026-05-06; was com.lmstudio.app in template)
 display_name = "LM Studio"
-handler = "squirrel"
+handler = "release_feed"
+notes = "Promoted from squirrel (Tier-B trigger-only) to release_feed Tier-A in M5.7.5 Phase B. Vendor's own app-update.yml points at a private Cloudflare R2 bucket (174ee2ac3cc9a25a8bde971ff408f952.r2.cloudflarestorage.com/lmstudio-updaters/) requiring AWS S3 auth, and lmstudio.ai is fully JS-rendered with no public version endpoint. However, Homebrew's autobump-tracked cask API at formulae.brew.sh/api/cask/lm-studio.json exposes the canonical version + installer URL. Brew's version field uses comma-suffix `0.4.12,1` while CFBundleShortVersionString uses `0.4.12+1`; version_regex normalizes the comma to a plus. Apply remains trigger-only (LM Studio's in-app updater handles the install on launch). Live probe verified 2026-05-08: version=0.4.12,1 -> 0.4.12+1 (= installed)."
+
+[app.release_feed]
+url = "https://formulae.brew.sh/api/cask/lm-studio.json"
+version_path = "version"
+version_regex = "^([0-9]+\\.[0-9]+\\.[0-9]+),([0-9]+)$"
+version_replace = "\\1+\\2"
+http_timeout_s = 8
 
 # perplexity removed in M5.7.3: Perplexity Mac is a Mac App Store app
 # (Contents/_MASReceipt present); discovery filters MAS apps via the
@@ -151,7 +170,14 @@ handler = "squirrel"
 slug = "comet"
 bundle_id = "ai.perplexity.comet"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Comet"
-handler = "squirrel"
+handler = "omaha"
+notes = "Promoted from squirrel (Tier-B trigger-only) to omaha (real-candidate probe) in M5.7.5 Phase A. Perplexity hosts their own Omaha-compatible service at perplexity.ai/rest/browser/update2 — but it speaks Omaha 4.0 (JSON, snake_case, returns updatecheck.nextversion instead of manifest.version), not 3.0. Discovered via strings on the bundled CometUpdater helper at Frameworks/Comet Framework.framework/.../Helpers/CometUpdater.app/Contents/MacOS/CometUpdater (literal 'https://www.perplexity.ai/rest/browser/update2'). Live probe 2026-05-08 returned updatecheck.nextversion=147.0.7727.1858 (matches installed). The M5.7.2 'protocol cannot be probed statically' note was wrong — the URL was discoverable from the binary; the missing piece was Omaha 4.0 protocol support (this milestone). Apply opens the app; CometUpdater (auto-launched via LaunchAgent ai.perplexity.CometUpdater.update) handles the install."
+
+[app.omaha]
+endpoint = "https://www.perplexity.ai/rest/browser/update2"
+appid = "ai.perplexity.comet"
+protocol = "4.0"
+http_timeout_s = 8
 
 [[app]]
 slug = "codex"
@@ -490,3 +516,64 @@ http_timeout_s = 8
 #    serves the DMG without version metadata in headers. Google's update
 #    mechanism is Omaha-based (same as Brave/Comet/Chrome). Stays as
 #    Keystone (existing entry; no JSON-probeable alternative).
+
+# ═════════════════════════════ M5.7.5 Phase B — last-mile static research ═══
+# Added 2026-05-08. Closes out Tier-B apps that prior research rounds left
+# as trigger-only, bringing each to either Tier-A (real candidate probe) or
+# explicitly enabled=false with full evidence trail so future rounds don't
+# re-investigate dead ends.
+# ────────────────────────────────────────────────────────────────────────────
+
+# ─── Inkscape ──────────────────────────────────────────────────────────────
+[[app]]
+slug = "inkscape"
+bundle_id = "org.inkscape.Inkscape"
+display_name = "Inkscape"
+handler = "release_feed"
+notes = "Promoted from builtin (Tier-B trigger-only) to release_feed Tier-A in M5.7.5 Phase B. Inkscape has no Sparkle / Keystone / Squirrel framework and no native auto-update path. Vendor's GitLab releases endpoint (gitlab.com/api/v4/projects/inkscape%2Finkscape/releases) returns INKSCAPE_X_Y_Z tag-name format requiring regex normalisation, but the simpler approach is to scrape the canonical download page at inkscape.org/release/ — its <title> tag reads 'Download Inkscape <version> | Inkscape' which the vendor updates atomically per release. Apply remains trigger-only — operator follows the inkscape.org link manually since no DMG-direct URL is published with the version in a stable shape (inkscape.org redirects vary by mirror). Live probe verified 2026-05-08: title regex extracted '1.4.4' (= installed CFBundleShortVersionString)."
+
+[app.release_feed]
+url = "https://inkscape.org/release/"
+format = "text"
+version_regex = "(?s).*<title>Download Inkscape ([0-9]+\\.[0-9]+(?:\\.[0-9]+)?) \\| Inkscape</title>.*"
+version_replace = "\\1"
+http_timeout_s = 8
+
+# ─── Spotify ───────────────────────────────────────────────────────────────
+[[app]]
+slug = "spotify"
+bundle_id = "com.spotify.client"
+display_name = "Spotify"
+handler = "release_feed"
+notes = "Promoted from builtin (Tier-B trigger-only) to release_feed Tier-A in M5.7.5 Phase B. Spotify's own update endpoint at spclient.wg.spotify.com/desktop-update/v2/update requires a Bearer token (HTTP 401 without). Other guesses rejected: download.scdn.co/upgrade/client/osx/version (404), upgrade.scdn.co/upgrade/client/osx-arm64/Spotify-arm64.tbz (403), www.spotify.com/api/desktop/version/macos (302->404 SPA), download.scdn.co/SpotifyInstaller.pkg (404). Binary string mining only revealed the auth-gated spclient endpoint. However, Homebrew's autobump-tracked cask API at formulae.brew.sh/api/cask/spotify.json exposes the canonical version + DMG URL — same format as CFBundleShortVersionString (1.2.88.483 vs installed 1.2.87.415). Apply remains trigger-only (Spotify's in-app updater handles the install). Live probe verified 2026-05-08: version=1.2.88.483 (installed=1.2.87.415 -> outdated)."
+
+[app.release_feed]
+url = "https://formulae.brew.sh/api/cask/spotify.json"
+version_path = "version"
+http_timeout_s = 8
+
+# ─── Antigravity (Google's VSCode-fork) ────────────────────────────────────
+[[app]]
+slug = "antigravity"
+bundle_id = "com.google.antigravity"
+display_name = "Antigravity"
+handler = "release_feed"
+notes = "Promoted from squirrel (Tier-B trigger-only) to release_feed Tier-A in M5.7.5 Phase B. Prior round (M5.7.3) tested the JSON endpoint at antigravity-auto-updater-974169037036.us-central1.run.app/api/update/darwin-arm64/stable/<commit>/<host_hash> which returns productVersion=1.107.0 (the stale upstream VSCode version baked into product.json) — that's why prior was deferred. **New finding 2026-05-08**: the SAME service's root path returns plain text `Auto updater is running. Stable Version: 1.23.2. Rolled out to 100%` — the real Antigravity version (= installed CFBundleShortVersionString). Use format=text + regex on the root endpoint, not the deeper JSON path. Apply remains trigger-only — Antigravity's bundled Squirrel updater handles the install on next launch. Live probe verified 2026-05-08: 'Stable Version: 1.23.2' (= installed)."
+
+[app.release_feed]
+url = "https://antigravity-auto-updater-974169037036.us-central1.run.app/"
+format = "text"
+version_regex = "(?s).*Stable Version:\\s*([0-9]+\\.[0-9]+\\.[0-9]+).*"
+version_replace = "\\1"
+http_timeout_s = 8
+
+# ─── Ascendo (this very app) ───────────────────────────────────────────────
+[[app]]
+slug = "ascendo"
+bundle_id = "dev.ascendo.desktop"
+display_name = "Ascendo"
+handler = "github_dmg"
+github_repo = "KasprowiczM/ascendo"
+asset_pattern = "Ascendo-.+-arm64\\.dmg$"
+enabled = false
+notes = "INVESTIGATED M5.7.5 Phase B: Self-update flow target is github.com/KasprowiczM/ascendo (the canonical repo per origin remote) once the project ships its first GitHub Release with a macOS arm64 .dmg asset. As of 2026-05-08 the repo is private/inaccessible (HTTP 404 from api.github.com/repos/KasprowiczM/ascendo/releases — confirmed via curl) and no public releases exist yet. Entry is shipped disabled so it appears in the registry as a known target without polluting the Run Center with a perpetual probe-broken row. Re-enable via user override or by flipping enabled=true once KasprowiczM/ascendo goes public AND publishes its first tag. Asset pattern is the planned naming convention from packaging/pkg/."

@@ -24,6 +24,58 @@ from pydantic.networks import UrlConstraints
 HttpsUrl = Annotated[AnyUrl, UrlConstraints(allowed_schemes=["https"])]
 
 
+class OmahaConfig(BaseModel):
+    """Per-app Google Omaha update protocol probe.
+
+    The Omaha protocol (POST + XML or JSON body) is used by
+    Google's tools.google.com / update.googleapis.com endpoint to
+    drive Keystone / GoogleUpdater clients, and by some Chromium
+    forks (e.g. Comet/Perplexity) hosting their own Omaha-compatible
+    services.
+
+    `endpoint` is the vendor's Omaha service URL. For Google products
+    use ``https://update.googleapis.com/service/update2``. For Comet
+    use ``https://www.perplexity.ai/rest/browser/update2``.
+
+    `appid` is the vendor-assigned application id. The format is
+    vendor-defined: Google uses lowercase reverse-DNS strings
+    (``com.google.drivefs``, ``com.google.geminimacos``) for first-party
+    products and 8-4-4-4-12 UUIDs in braces (``{8A69D345-...}``) for
+    Chrome. Comet uses the bundle id (``ai.perplexity.comet``).
+
+    `protocol`:
+      - "3.0" (default) — XML body, used by Google's Omaha service.
+      - "4.0" — JSON body, used by Comet's Perplexity-hosted service.
+        Returns updatecheck.nextversion instead of manifest.version.
+
+    `tag` is the Omaha "channel" (e.g. ``m1-prod`` for Gemini,
+    ``stable`` for Chrome). Without the right tag, Google's service
+    returns ``noupdate`` even for fresh installs.
+
+    `brand` is a 4-character brand code (e.g. ``GGLG`` for Google).
+    Optional; defaults to empty.
+
+    Apply remains Tier-B (trigger-only) — Keystone / CometUpdater
+    own the actual install; we surface candidate version only.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    endpoint: HttpsUrl
+    # appid accepts both UUID-in-braces ({8A69D345-...}) and
+    # reverse-DNS string formats. The pattern allows letters, digits,
+    # dots, dashes, underscores, and braces — sufficient for every
+    # known Omaha appid shape.
+    appid: Annotated[str, Field(min_length=1, max_length=128,
+                                pattern=r"^[A-Za-z0-9._\-{}]+$")]
+    protocol: Literal["3.0", "4.0"] = "3.0"
+    tag: Optional[Annotated[str, Field(min_length=1, max_length=64,
+                                       pattern=r"^[A-Za-z0-9._\-]+$")]] = None
+    brand: Optional[Annotated[str, Field(min_length=4, max_length=4,
+                                         pattern=r"^[A-Z]+$")]] = None
+    http_timeout_s: Annotated[int, Field(ge=1, le=60)] = 8
+
+
 class MsupdateConfig(BaseModel):
     """Per-app Microsoft AutoUpdate targeting.
 
@@ -126,7 +178,8 @@ class WebApp(BaseModel):
                                     min_length=1, max_length=256)]
     display_name: Annotated[str, Field(min_length=1, max_length=128)]
     handler: Literal["sparkle", "github_dmg", "keystone", "squirrel",
-                     "builtin", "msupdate", "docker", "release_feed"]
+                     "builtin", "msupdate", "docker", "release_feed",
+                     "omaha"]
     app_path: Optional[Path] = None
     enabled: bool = True
     notes: Optional[str] = None
@@ -156,6 +209,13 @@ class WebApp(BaseModel):
     # phase can correctly classify up_to_date apps.
     msupdate: Optional["MsupdateConfig"] = None
 
+    # Google Omaha protocol probe (M5.7.5 Phase A)
+    # When handler="omaha", this sub-table carries the endpoint + appid
+    # (and optional channel tag, brand, protocol-version override).
+    # Apply still routes through keystone_apply when ksadmin_product_id
+    # is also set; otherwise apply is `open -a` (Tier-B trigger).
+    omaha: Optional["OmahaConfig"] = None
+
     # Behaviour overrides (apply to any handler)
     defer_if_running: Optional[bool] = None
     kill_safe: Optional[bool] = None
@@ -183,6 +243,8 @@ class WebApp(BaseModel):
             raise ValueError("keystone handler requires ksadmin_product_id")
         if h == "release_feed" and self.release_feed is None:
             raise ValueError("release_feed handler requires [apps.release_feed] table")
+        if h == "omaha" and self.omaha is None:
+            raise ValueError("omaha handler requires [apps.omaha] table")
 
         # Cross-handler fields rejected (catches typos)
         if h != "sparkle" and (self.appcast_url is not None
@@ -196,9 +258,12 @@ class WebApp(BaseModel):
             if self.arch is not None or self.prerelease is not None:
                 raise ValueError(
                     f"arch / prerelease only valid for github_dmg; got handler={h!r}")
-        if h != "keystone" and self.ksadmin_product_id is not None:
+        # ksadmin_product_id is permitted on keystone (canonical) and
+        # on omaha (where it lets apply delegate to keystone_apply
+        # instead of falling back to `open -a`).
+        if h not in ("keystone", "omaha") and self.ksadmin_product_id is not None:
             raise ValueError(
-                f"ksadmin_product_id only valid for keystone; got handler={h!r}")
+                f"ksadmin_product_id only valid for keystone or omaha; got handler={h!r}")
         if h != "builtin" and self.update_url is not None:
             raise ValueError(
                 f"update_url only valid for builtin; got handler={h!r}")
@@ -208,6 +273,9 @@ class WebApp(BaseModel):
         if h != "msupdate" and self.msupdate is not None:
             raise ValueError(
                 f"msupdate sub-table only valid for msupdate handler; got handler={h!r}")
+        if h != "omaha" and self.omaha is not None:
+            raise ValueError(
+                f"omaha sub-table only valid for omaha handler; got handler={h!r}")
         return self
 
 

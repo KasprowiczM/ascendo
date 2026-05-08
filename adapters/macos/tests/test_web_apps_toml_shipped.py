@@ -17,14 +17,19 @@ def test_shipped_registry_parses() -> None:
 
 
 def test_shipped_registry_has_core_handlers() -> None:
-    """Core handlers must be represented. M5.7.1: Docker switched from
-    'docker' (CLI plugin version probe was wrong) to 'sparkle' (real
-    appcast at desktop.docker.com). 'release_feed' added for vendor
-    JSON/YAML probes (VSCode/Notion/Ledger/Firefox-Dev/Zoom)."""
+    """Core handlers must be represented. M5.7.5 (v0.4.5): the keystone
+    and squirrel handlers are no longer present in the shipped registry
+    because every entry that previously used them has been promoted to
+    Tier-A (real-candidate detection) — chrome/brave to release_feed,
+    gdrive/gemini/comet to omaha, chatgpt/warp/proton-mail/comet to
+    sparkle/release_feed/omaha, etc. They remain valid handler choices
+    in the schema for user-override registries and future regressions
+    (Brave once flipped sparkle->keystone->release_feed); we just
+    don't ship any defaults using them. This assertion tracks the
+    *Tier-A* handlers that MUST stay represented."""
     reg = WebRegistry.load(SHIPPED, None)
     handlers = {a.handler for a in reg.apps}
-    expected = {"sparkle", "github_dmg", "keystone", "squirrel",
-                "msupdate", "release_feed"}
+    expected = {"sparkle", "github_dmg", "msupdate", "release_feed", "omaha"}
     assert expected.issubset(handlers)
 
 

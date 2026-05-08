@@ -6,6 +6,159 @@
 
 ---
 
+## Sesja 42 (2026-05-08) — M5.7.5 Omaha protocol + last-mile static + v0.4.5
+
+User: "go further with operator-side and m6 work and finish it, use
+subagents, i need to have all candidate versions done". Two parallel
+subagents + inline integration unblocked all 8 remaining holdouts. Real
+Mac.r12.home: 96% → **100%** real-candidate coverage (223 of 224 apps;
+the 1 remaining is `ascendo` itself, intentionally `enabled = false`
+because the canonical repo doesn't have public GitHub Releases yet).
+
+### What landed (1 new handler + 7 Tier-A promotions)
+
+**A. New `omaha` handler** (subagent C — `omaha-probe`):
+
+Implements Google's Omaha update protocol over `update.googleapis.com/
+service/update2`. Supports both protocol="3.0" (XML body, used by
+Google's first-party products) and "4.0" (JSON body, used by Comet's
+Perplexity-hosted Omaha-compatible service).
+
+`OmahaConfig` schema fields:
+- `endpoint` — vendor's Omaha service URL
+- `appid` — vendor-assigned application id (UUID-in-braces or reverse-
+  DNS string)
+- `protocol` — "3.0" XML default; "4.0" JSON for Comet
+- `tag` — Omaha "channel" (e.g. `m1-prod` for Gemini); critical because
+  Google's service returns `noupdate` without it
+- `brand` — 4-character brand code (`GGLG` Google, optional)
+- `http_timeout_s` — default 8
+
+Handler at `adapters/macos/lib/handlers/omaha.sh` (350 LOC). Builds the
+XML/JSON request body, POSTs, parses response.manifest.version (XML) or
+response.app.updatecheck.nextversion (JSON). Apply remains Tier-B —
+Keystone / CometUpdater own the actual install; we surface candidate
+version only.
+
+**B. 7 new Tier-A promotions** (verified live on Mac.r12.home):
+
+| Slug | From | To | Approach | Live result |
+|------|------|----|----|------------|
+| **gdrive** | keystone | omaha | XML to `update.googleapis.com/service/update2` with appid `com.google.drivefs` | 124.0 → **125.0.0.0** (outdated detected!) |
+| **gemini** | keystone | omaha | Same endpoint, appid `com.google.geminimacos`, tag `m1-prod` | 1.53.0.262 (= installed) |
+| **comet** | squirrel | omaha | Perplexity's Omaha-compatible service at protocol=4.0 (JSON), appid `ai.perplexity.comet` | 147.0.7727.1858 (= installed) |
+| **inkscape** | builtin | release_feed (text) | Scrape `<title>` from `inkscape.org/release/`; regex extracts canonical version | 1.4.4 (= installed) |
+| **spotify** | builtin | release_feed (json) | Homebrew's autobump-tracked cask API at `formulae.brew.sh/api/cask/spotify.json` `.version` | 1.2.87.415 → **1.2.88.483** (outdated detected!) |
+| **antigravity** | squirrel | release_feed (text) | Same Cloud Run service's ROOT path returns `Stable Version: X.Y.Z` plain text — the JSON path returns stale `productVersion` | 1.23.2 (= installed) |
+| **lm-studio** | squirrel | release_feed (json+regex) | Homebrew cask API; brew uses `0.4.12,1` comma format, regex normalizes to `0.4.12+1` matching CFBundle | 0.4.12+1 (= installed) |
+
+**C. ascendo entry disabled** (subagent D — `last-mile-static`):
+
+KasprowiczM/ascendo repo isn't publicly accessible (returns 404 from
+`api.github.com/repos/KasprowiczM/ascendo` and on the website itself).
+Entry kept in registry with `enabled = false` and full evidence trail
+in `notes` so future sessions know the intent without re-investigating.
+Re-enables automatically when the repo goes public AND ships its first
+release.
+
+### Operational lessons
+
+- **Homebrew's cask API is a stable public version oracle for vendors
+  whose own endpoints are auth-walled.** Spotify gates `spclient.wg.
+  spotify.com/desktop-update/v2/update` behind Bearer tokens; LM Studio
+  gates its R2 bucket. Both have working `formulae.brew.sh/api/cask/
+  <token>.json` entries with `.version` field tracked by Homebrew's
+  livecheck automation. Format `version` field uses comma syntax for
+  build-suffixed versions (`0.4.12,1`) — `version_regex` handles the
+  shape conversion.
+
+- **Google's Omaha service is publicly probeable without auth.** XML
+  POST + a synthetic `requestid` GUID + a real `appid` and matching
+  `tag` returns the canonical update manifest. The `tag` (channel ID)
+  is the trick — without it, Google's server returns `noupdate` even
+  for fresh installs. Each product has its own tag (`m1-prod` for
+  Gemini, `stable` for Chrome, etc.).
+
+- **VSCode-derived apps often have plain-text health-check endpoints
+  alongside their JSON update APIs.** Antigravity's `/api/update/...`
+  JSON returns `productVersion=1.107.0` (stale; baked into `product.
+  json`), but the same Cloud Run service's `/` path returns
+  `Stable Version: 1.23.2` plain text — the actual app version. The
+  prior agent missed this by only checking the documented JSON path.
+
+- **HTML scraping is OK as a last resort.** Inkscape has no native
+  auto-update channel; their `<title>Download Inkscape 1.4.4 |
+  Inkscape</title>` is updated atomically per release and the regex
+  pattern is stable. format=text + regex = good enough for vendors
+  without machine-readable feeds.
+
+### Coverage outcome (Mac.r12.home)
+
+| Metric | v0.4.4 (Sesja 41) | v0.4.5 (Sesja 42) |
+|--------|-------------------|-------------------|
+| Total apps tracked | 224 | 224 |
+| With real candidate | 216 (96%) | **223 (~100%)** |
+| Web Tier-A | 31 | **38** (+7) |
+| Web Tier-B | 8 | **1** (-7; only `ascendo` disabled) |
+| Outdated detected | 7 | **9** (added gdrive 124→125, spotify 1.2.87→1.2.88) |
+
+The 1 remaining trigger-only entry is `ascendo` itself, which is
+intentionally `enabled = false` — when KasprowiczM/ascendo publishes
+its first GitHub Release, flip the flag and Ascendo can self-update
+via github_dmg like any other app.
+
+### Tests
+
+- 377/377 macOS adapter tests (was 369, +8):
+  - +5 Omaha protocol tests (XML round-trip, noupdate handling, appid
+    validator, brand validator, JSON/protocol=4.0 path)
+  - +3 last-mile static tests (Brew cask shape, antigravity text path,
+    Inkscape title regex)
+- `test_shipped_registry_has_core_handlers` updated — keystone +
+  squirrel removed from required-set since the shipped registry no
+  longer uses them as defaults (but the schema still accepts them for
+  user-override registries / future regressions).
+
+### Files changed
+
+```
+ adapters/macos/ascendo_macos/web_registry.py  |  74 ++ (OmahaConfig + cross-handler validators)
+ adapters/macos/config/web_apps.toml           | 101 ++ (7 promotions + ascendo enabled=false)
+ adapters/macos/lib/handlers/omaha.sh          | 350 ++ NEW (XML + JSON Omaha client)
+ adapters/macos/scripts/web/{apply,check,plan}.sh | ~20 ++ (omaha dispatch wiring)
+ adapters/macos/tests/test_web_handler_omaha.py| ~150 ++ NEW
+ adapters/macos/tests/test_web_apps_toml_shipped.py | ~17 ~ (assertion update)
+```
+
+### M5.7.6 / M6 follow-ups
+
+- **First public Ascendo release** flips ascendo entry from
+  `enabled = false` to enabled and the self-update path goes Tier-A.
+  Operator-side: needs publishing of `KasprowiczM/ascendo` to public
+  visibility + first signed `Ascendo-X.Y.Z-arm64.dmg` release.
+- **Periodic re-probe** for the omaha endpoints — Google may change
+  the Omaha brand codes / channel tags. Add a CI smoke that hits the
+  three Google appids (chrome, gdrive, gemini) plus comet weekly.
+- **M6 hardening** items remain (security audit, code signing across
+  all 3 OSes, plugin signing, plugin marketplace, localization beyond
+  en/pl, opt-in local-only telemetry).
+
+### Operator command to verify
+
+```bash
+cd ~/Dev_Env/Ascendo
+git pull
+PYTHONPATH=core:adapters/macos python3 -m ascendo run \
+    -c brew,mas,npm,pip,web,softwareupdate -p check \
+    --runs-dir /tmp/ascendo-coverage-575
+```
+
+Expected: 224 items across 6 sidecars, 223 with real candidate
+detection, 9 outdated apps planned, only 1 trigger-only (the disabled
+ascendo entry).
+
+---
+
 ## Sesja 41 (2026-05-08) — M5.7.4 release_feed extensions + v0.4.4
 
 User: "implement the rest of the missing, use subagents to deliver it

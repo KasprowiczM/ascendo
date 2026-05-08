@@ -17,7 +17,7 @@ ADAPTER_CONFIG="$SCRIPT_DIR/../../config"
 
 . "$ADAPTER_LIB/ascendo_json.sh"
 . "$ADAPTER_LIB/ascendo_web.sh"
-for _h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed; do
+for _h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed omaha; do
     . "$ADAPTER_LIB/handlers/${_h}.sh"
 done
 
@@ -153,13 +153,14 @@ while IFS= read -r SLUG; do
         msupdate)     msupdate_apply "$SLUG" "$CFG" 2> "$err_log" ;;
         docker)       docker_apply "$SLUG" "$CFG" 2> "$err_log" ;;
         release_feed) release_feed_apply "$SLUG" "$CFG" 2> "$err_log" ;;
+        omaha)        omaha_apply "$SLUG" "$CFG" 2> "$err_log" ;;
         *)            false ;;
     esac
     rc=$?
 
     if [ $rc -eq 0 ]; then
         case "$HANDLER" in
-            keystone|squirrel|builtin)
+            keystone|squirrel|builtin|omaha)
                 # Tier-B: vendor's update agent triggered; outcome is async.
                 # Status 'triggered' (not 'success') so the operator + verify
                 # phase know to expect post-apply reconciliation.
@@ -168,6 +169,7 @@ while IFS= read -r SLUG; do
                     keystone) json_add_message "info" "${SLUG}: ksadmin update queued; daemon will reconcile" ;;
                     squirrel) json_add_message "info" "${SLUG}: app relaunched; Squirrel will self-update on next quit/relaunch" ;;
                     builtin)  json_add_message "info" "${SLUG}: app opened for user (manual update path)" ;;
+                    omaha)    json_add_message "info" "${SLUG}: Omaha update triggered; vendor daemon (Keystone/CometUpdater) will reconcile" ;;
                 esac
                 COUNT_TRIGGERED=$((COUNT_TRIGGERED + 1))
                 ;;
