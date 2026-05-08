@@ -731,6 +731,79 @@ else
     result "13.7 web --phase cleanup" 0 "CLI exit $WEB_RC"
 fi
 
+# ── Stage 13 (M5.7): discovery + tier rework + release_feed ───────────────────
+
+# 13.8 discovery enumerates web-orphan apps
+step "13.8 web_discovery.sh enumerates web-orphan apps"
+DISC_COUNT=$(ASCENDO_WEB_BREW_CASKS="" ASCENDO_WEB_MAS_BUNDLE_IDS="" \
+    ASCENDO_WEB_APPLE_BUNDLES="" \
+    bash "$REPO_ROOT/adapters/macos/lib/web_discovery.sh" --emit-json 2>/dev/null \
+    | wc -l | tr -d ' ')
+if [ "$DISC_COUNT" -ge 20 ]; then
+    result "13.8 discovery enumerates >=20 apps" 1 "$DISC_COUNT app(s) emitted"
+else
+    result "13.8 discovery enumerates >=20 apps" 0 "got $DISC_COUNT, expected >=20"
+fi
+
+# 13.9 release_feed handler against fixture feed
+step "13.9 release_feed handler resolves a candidate version"
+RF_PORT=8783
+python3 -m http.server "$RF_PORT" --bind 127.0.0.1 \
+    --directory "$REPO_ROOT/adapters/macos/tests/fixtures/release_feed" \
+    >/tmp/ascendo-validate-rf.log 2>&1 &
+RF_PID=$!
+trap 'kill "$RF_PID" 2>/dev/null || true' EXIT
+sleep 0.7
+# Build the config JSON in a separate step (avoids nested-heredoc quoting hell).
+RF_CFG=$(RF_PORT="$RF_PORT" python3 <<'PY'
+import json, os
+print(json.dumps({
+    "slug": "warp",
+    "bundle_id": "dev.warp.Warp-Stable",
+    "display_name": "Warp",
+    "handler": "release_feed",
+    "release_feed": {
+        "url": f"http://127.0.0.1:{os.environ['RF_PORT']}/feed.json",
+        "version_path": "latest.darwin.arm64.version",
+        "http_timeout_s": 5,
+    },
+}))
+PY
+)
+# Source the handler in a subshell and call release_feed_check with the cfg.
+RF_VERSION=$(
+    . "$REPO_ROOT/adapters/macos/lib/handlers/release_feed.sh"
+    release_feed_check warp "$RF_CFG"
+)
+kill "$RF_PID" 2>/dev/null || true
+if [ "$RF_VERSION" = "0.2026.05.08.00.00.01" ]; then
+    result "13.9 release_feed_check returns expected version" 1 "$RF_VERSION"
+else
+    result "13.9 release_feed_check returns expected version" 0 "got '$RF_VERSION'"
+fi
+
+# 13.10 web check phase emits >= 20 items + no failed phase status
+step "13.10 web --phase check produces discovery-driven inventory"
+WEB_DIR2=$(mktemp -d)
+python3 -m ascendo run --category web --phase check --runs-dir "$WEB_DIR2" >/dev/null 2>&1
+SIDECAR=$(find "$WEB_DIR2" -name 'check__web.json' | head -1)
+if [ -z "$SIDECAR" ]; then
+    result "13.10 web check emits >=20 items" 0 "no sidecar produced"
+else
+    ITEM_COUNT=$(python3 -c "
+import json
+with open('$SIDECAR') as fh:
+    d = json.load(fh)
+print(len(d.get('items', [])))
+")
+    if [ "$ITEM_COUNT" -ge 20 ]; then
+        result "13.10 web check emits >=20 items" 1 "$ITEM_COUNT item(s)"
+    else
+        result "13.10 web check emits >=20 items" 0 "got $ITEM_COUNT, expected >=20"
+    fi
+fi
+rm -rf "$WEB_DIR2"
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 printf "\n"
 if [ "$FAIL_COUNT" -eq 0 ]; then
