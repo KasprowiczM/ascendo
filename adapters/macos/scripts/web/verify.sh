@@ -90,18 +90,20 @@ while IFS=$'\t' read -r ITEM_ID HANDLER APP_PATH PRE_VERSION; do
 
     case "$HANDLER" in
         squirrel|keystone)
-            # Async — success on any version bump or no-change-but-current
+            # Tier-B async — emit 'triggered' regardless; refine via message.
+            # The apply phase already counts these as success/triggered.
+            # Verify just confirms whether the vendor agent caught up yet.
             if [ -n "$POST" ] && [ "$POST" != "$PRE_VERSION" ]; then
-                json_add_item "$ITEM_ID" "$POST" "" "success" "web" "$HANDLER"
-                json_add_message "info" "${SLUG}: ${PRE_VERSION} -> ${POST}"
+                json_add_item "$ITEM_ID" "$POST" "" "triggered" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: triggered_confirmed (${PRE_VERSION} -> ${POST})"
             else
-                json_add_item "$ITEM_ID" "$POST" "" "success" "web" "$HANDLER"
-                json_add_message "info" "${SLUG}: relaunch completed; no version change observed (likely already current)"
+                json_add_item "$ITEM_ID" "${POST:-$PRE_VERSION}" "" "triggered" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: triggered_pending (no version change observed; vendor agent will apply on next idle/relaunch)"
             fi
             COUNT_OK=$((COUNT_OK + 1))
             ;;
         *)
-            # Synchronous handlers — success iff bytes were swapped
+            # Tier-A handlers — success iff bytes were swapped
             if [ -n "$POST" ]; then
                 json_add_item "$ITEM_ID" "$POST" "" "success" "web" "$HANDLER"
                 COUNT_OK=$((COUNT_OK + 1))
@@ -117,7 +119,8 @@ import json, sys
 with open(sys.argv[1]) as fh:
     apply = json.load(fh)
 for item in apply.get("items", []):
-    if item.get("status") != "success":
+    # Re-verify both 'success' (Tier-A) and 'triggered' (Tier-B) items.
+    if item.get("status") not in ("success", "triggered"):
         continue
     src = item.get("source") or {}
     handler = src.get("feed") or ""
