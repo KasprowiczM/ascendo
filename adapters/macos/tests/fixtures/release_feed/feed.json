@@ -1,0 +1,11 @@
+{
+  "latest": {
+    "darwin": {
+      "arm64": {
+        "version": "0.2026.05.08.00.00.01",
+        "url": "https://example.test/warp-arm64.dmg",
+        "arch": "arm64"
+      }
+    }
+  }
+}
