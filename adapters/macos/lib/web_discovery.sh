@@ -46,25 +46,33 @@ esac
 
 if [ -z "${ASCENDO_WEB_BREW_CASKS+x}" ]; then
     if command -v brew >/dev/null 2>&1; then
-        _brew_bids=$(brew list --cask 2>/dev/null | while IFS= read -r token; do
-            [ -z "$token" ] && continue
-            brew info --cask --json=v2 "$token" 2>/dev/null | python3 -c '
+        # Single batched `brew info --cask --json=v2 <all installed casks>`
+        # call (was: one call per cask — ~10s on a typical Mac with 30
+        # casks). Bash 3.2 compatible.
+        _brew_tokens=$(brew list --cask 2>/dev/null | tr '\n' ' ')
+        if [ -n "$_brew_tokens" ]; then
+            # shellcheck disable=SC2086 — intentional word-split on tokens
+            _brew_bids=$(brew info --cask --json=v2 $_brew_tokens 2>/dev/null | python3 -c '
 import json, sys
 try:
     data = json.load(sys.stdin)
 except Exception:
     sys.exit(0)
+out = set()
 for cask in data.get("casks", []):
     for art in cask.get("artifacts", []):
         if isinstance(art, dict) and "uninstall" in art:
             for u in art["uninstall"]:
                 for bid in (u.get("quit") or []):
-                    print(bid)
+                    out.add(bid)
                 for bid in (u.get("pkgutil") or []):
-                    print(bid)
-'
-        done | sort -u | tr '\n' ',')
-        ASCENDO_WEB_BREW_CASKS="${_brew_bids%,}"
+                    out.add(bid)
+print(",".join(sorted(out)))
+')
+            ASCENDO_WEB_BREW_CASKS="$_brew_bids"
+        else
+            ASCENDO_WEB_BREW_CASKS=""
+        fi
     else
         ASCENDO_WEB_BREW_CASKS=""
     fi
@@ -81,11 +89,17 @@ fi
 # _owned_by <bundle_id>
 # Echoes "brew", "mas", "softwareupdate", or "" (unowned).
 _owned_by() {
-    local bid="$1"
+    local bid="$1" app_dir="${2:-}"
     case ",${ASCENDO_WEB_BREW_CASKS:-}," in (*",$bid,"*) printf 'brew'; return ;; esac
     case ",${ASCENDO_WEB_MAS_BUNDLE_IDS:-}," in (*",$bid,"*) printf 'mas'; return ;; esac
     case ",${ASCENDO_WEB_APPLE_BUNDLES:-}," in (*",$bid,"*) printf 'softwareupdate'; return ;; esac
     case "$bid" in com.apple.*) printf 'softwareupdate'; return ;; esac
+    # _MASReceipt is the definitive marker for App Store-installed apps.
+    # `mas list` returns numeric track IDs not bundle IDs, so checking
+    # the receipt directly closes the gap.
+    if [ -n "$app_dir" ] && [ -d "$app_dir/Contents/_MASReceipt" ]; then
+        printf 'mas'; return
+    fi
     printf ''
 }
 
@@ -101,23 +115,26 @@ _classify() {
     sufeed=$(/usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$plist" 2>/dev/null || true)
     kspid=$(/usr/libexec/PlistBuddy -c "Print :KSProductID" "$plist" 2>/dev/null || true)
 
+    # Output format: <handler>\t<source>\t<extracted_url_or_id>
+    # The third field carries the actual SUFeedURL / KSProductID so the
+    # downstream synthesized config has the data the handler needs.
     if [ -n "$sufeed" ]; then
-        printf 'sparkle\tSUFeedURL\n'
+        printf 'sparkle\tSUFeedURL\t%s\n' "$sufeed"
         return 0
     fi
     if [ -n "$kspid" ]; then
-        printf 'keystone\tKSProductID\n'
+        printf 'keystone\tKSProductID\t%s\n' "$kspid"
         return 0
     fi
     if [ -d "$app/Contents/Frameworks/Squirrel.framework" ]; then
-        printf 'squirrel\tSquirrel.framework\n'
+        printf 'squirrel\tSquirrel.framework\t\n'
         return 0
     fi
     if find "$app/Contents/Frameworks" -maxdepth 4 -name "ShipIt" 2>/dev/null | grep -q .; then
-        printf 'squirrel\tShipIt\n'
+        printf 'squirrel\tShipIt\t\n'
         return 0
     fi
-    printf 'builtin\tnone\n'
+    printf 'builtin\tnone\t\n'
 }
 
 # -- Walk --------------------------------------------------------------------
@@ -135,20 +152,22 @@ for app_dir in *.app; do
     name=$(/usr/libexec/PlistBuddy -c "Print :CFBundleName" "$plist" 2>/dev/null || true)
     [ -z "$name" ] && name="${app_dir%.app}"
 
-    owned=$(_owned_by "$bid")
+    abs_path="$APPS_ROOT/$app_dir"
+    owned=$(_owned_by "$bid" "$abs_path")
     if [ -n "$owned" ] && [ "$INCLUDE_OWNED" != "1" ]; then
         continue
     fi
 
-    abs_path="$APPS_ROOT/$app_dir"
     cls=$(_classify "$abs_path")
-    handler="${cls%%	*}"
-    source_field="${cls##*	}"
+    # Parse three TAB-separated fields: <handler>\t<source>\t<extracted>
+    handler=$(printf '%s' "$cls" | awk -F'\t' '{print $1}')
+    source_field=$(printf '%s' "$cls" | awk -F'\t' '{print $2}')
+    extracted=$(printf '%s' "$cls" | awk -F'\t' '{print $3}')
 
-    python3 - "$bid" "$abs_path" "$ver" "$name" "$handler" "$source_field" "$owned" <<'PY'
+    python3 - "$bid" "$abs_path" "$ver" "$name" "$handler" "$source_field" "$owned" "$extracted" <<'PY'
 import json, sys, signal
 signal.signal(signal.SIGPIPE, signal.SIG_DFL)
-bid, path, ver, name, handler, src, owned = sys.argv[1:8]
+bid, path, ver, name, handler, src, owned, extracted = sys.argv[1:9]
 out = {
     "bundle_id": bid,
     "app_path": path,
@@ -158,6 +177,12 @@ out = {
     "fingerprint_source": src,
     "owned_by": owned or None,
 }
+# Carry the extracted URL/ID through so check.sh's synthetic config has
+# what the handler needs (SUFeedURL for sparkle, KSProductID for keystone).
+if handler == "sparkle" and extracted:
+    out["appcast_url"] = extracted
+elif handler == "keystone" and extracted:
+    out["ksadmin_product_id"] = extracted
 try:
     print(json.dumps(out, separators=(",", ":")))
 except BrokenPipeError:

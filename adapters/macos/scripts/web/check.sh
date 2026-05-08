@@ -121,17 +121,27 @@ print(d.get("fingerprint_handler", "builtin"))')
         SLUG=$(printf '%s' "$DISPLAY_NAME" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-')
         [ -z "$SLUG" ] && SLUG="bundle-$(printf '%s' "$BUNDLE_ID" | tr '.' '-')"
         HANDLER="$DISC_HANDLER"
-        CFG=$(SLUG="$SLUG" BUNDLE_ID="$BUNDLE_ID" DISPLAY_NAME="$DISPLAY_NAME" \
-              HANDLER="$HANDLER" APP_PATH="$APP_PATH" \
+        # Synthesize a CFG that carries discovery's extracted URL/ID
+        # (appcast_url for sparkle, ksadmin_product_id for keystone) so
+        # the handler has what it needs to actually probe.
+        CFG=$(SLUG="$SLUG" HANDLER="$HANDLER" APP_PATH="$APP_PATH" \
+              ASCENDO_DISC_LINE="$DISC_LINE" \
               python3 -c '
 import json, os
-print(json.dumps({
+disc = json.loads(os.environ["ASCENDO_DISC_LINE"])
+out = {
     "slug":         os.environ["SLUG"],
-    "bundle_id":    os.environ["BUNDLE_ID"],
-    "display_name": os.environ["DISPLAY_NAME"],
+    "bundle_id":    disc.get("bundle_id", ""),
+    "display_name": disc.get("display_name", ""),
     "handler":      os.environ["HANDLER"],
     "app_path":     os.environ["APP_PATH"],
-}))
+}
+# Carry handler-specific fields extracted by discovery.
+if disc.get("appcast_url"):
+    out["appcast_url"] = disc["appcast_url"]
+if disc.get("ksadmin_product_id"):
+    out["ksadmin_product_id"] = disc["ksadmin_product_id"]
+print(json.dumps(out))
 ')
     fi
 
