@@ -49,24 +49,9 @@ display_name = "Opera"
 handler = "sparkle"
 appcast_url = "https://autoupdate.geo.opera.com/pub/opera/desktop/appcast.xml"
 
-[[app]]
-slug = "firefox-dev"
-bundle_id = "org.mozilla.firefoxdeveloperedition"  # verified on Mac.r12.home (2026-05-06)
-display_name = "Firefox Developer Edition"
-handler = "github_dmg"
-github_repo = "mozilla-firefox/firefox"
-asset_pattern = "Firefox.+arm64\\.dmg$"
-enabled = false  # Firefox is NOT distributed via GitHub releases — Mozilla uses CDN with versioned URL pattern. Disabled until a direct-URL handler ships. Real-Mac smoke at v0.3.0 confirmed the GH probe can't reach Mozilla's release feed. Re-enable via user override once you implement a custom path.
-
-# ───────────────────────── Security / Crypto ─────────────────────────
-
-[[app]]
-slug = "keepassxc"
-bundle_id = "org.keepassxc.keepassxc"  # verified on Mac.r12.home (2026-05-06)
-display_name = "KeePassXC"
-handler = "github_dmg"
-github_repo = "keepassxreboot/keepassxc"
-asset_pattern = "KeePassXC-.+-arm64\\.dmg$"
+# firefox-dev / keepassxc / ledger-live moved to the M5.7.1 vendor-probe
+# section below (release_feed for Mozilla product-details + Ledger CDN;
+# github_dmg already-correct for keepassxc kept once at the new location).
 
 [[app]]
 slug = "trezor-suite"
@@ -75,14 +60,6 @@ display_name = "Trezor Suite"
 handler = "github_dmg"
 github_repo = "trezor/trezor-suite"
 asset_pattern = "Trezor-Suite-.+-mac-arm64\\.dmg$"
-
-[[app]]
-slug = "ledger-live"
-bundle_id = "com.ledger.live"  # TODO: confirm bundle_id (not installed on Mac.r12.home)
-display_name = "Ledger Live"
-handler = "github_dmg"
-github_repo = "LedgerHQ/ledger-live-desktop"
-asset_pattern = "ledger-live-desktop-.+-mac-arm64\\.dmg$"
 
 # ───────────────────────── AI desktop apps (Squirrel/auto-relaunch) ─────────────────────────
 
@@ -144,23 +121,13 @@ bundle_id = "com.openai.codex"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Codex Desktop"
 handler = "squirrel"
 
-[[app]]
-slug = "opencode"
-bundle_id = "ai.opencode.desktop"  # verified on Mac.r12.home (2026-05-06; was io.opencode.app in template)
-display_name = "OpenCode Desktop"
-handler = "squirrel"
+# opencode moved to M5.7.1 vendor-probe section as github_dmg (disabled
+# pending repo verification — sst/opencode vs anomalyco/opencode).
 
 # ───────────────────────── Dev tools ─────────────────────────
 
-[[app]]
-slug = "vscode"
-bundle_id = "com.microsoft.VSCode"  # verified on Mac.r12.home (2026-05-06)
-display_name = "Visual Studio Code"
-handler = "github_dmg"
-github_repo = "microsoft/vscode"
-asset_pattern = "VSCode-darwin-arm64\\.zip$"
-enabled = false  # microsoft/vscode GH releases don't include arm64 zip assets at the documented URL pattern; VS Code uses its own update server and most users get it via brew cask 'visual-studio-code'. Real-Mac smoke at v0.3.0 confirmed the asset_pattern doesn't match. Re-enable + correct pattern via user override if needed.
-notes = "Disabled: brew cask 'visual-studio-code' is the recommended path."
+# vscode moved to M5.7.1 vendor-probe section using release_feed against
+# Microsoft's documented update API at update.code.visualstudio.com.
 
 [[app]]
 slug = "codeedit"
