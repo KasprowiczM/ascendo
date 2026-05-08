@@ -175,3 +175,9 @@ def test_source_type_has_snapshot_value() -> None:
     """TimeMachineSnapshot sidecar uses SourceType.SNAPSHOT. Required by M5.4."""
     from ascendo.models.package import SourceType
     assert SourceType.SNAPSHOT.value == "snapshot"
+
+
+def test_item_status_includes_triggered() -> None:
+    """Tier-B handlers (keystone/squirrel/builtin) report 'triggered' after apply for asynchronous update outcomes. Required by M5.7 T1."""
+    from ascendo.models.result import ItemStatus
+    assert ItemStatus.TRIGGERED.value == "triggered"

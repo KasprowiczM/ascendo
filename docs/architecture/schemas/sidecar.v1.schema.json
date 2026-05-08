@@ -431,7 +431,8 @@
         "skipped",
         "planned",
         "partial",
-        "missing"
+        "missing",
+        "triggered"
       ],
       "title": "ItemStatus",
       "type": "string"

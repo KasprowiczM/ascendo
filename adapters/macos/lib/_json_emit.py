@@ -41,7 +41,7 @@ from pathlib import Path
 
 SCHEMA_ID = "ascendo/v1"
 VALID_PHASES = {"check", "plan", "apply", "verify", "cleanup"}
-VALID_STATUSES = {"success", "skipped", "failed", "planned", "up_to_date", "partial", "missing"}
+VALID_STATUSES = {"success", "skipped", "failed", "planned", "up_to_date", "partial", "missing", "triggered"}
 VALID_LEVELS = {"debug", "info", "warn", "error"}
 COUNTER_BUCKETS = {"success", "skipped", "failed"}
 

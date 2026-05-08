@@ -38,6 +38,7 @@ class ItemStatus(str, Enum):
     PLANNED = "planned"   # dry-run mode: would have done X
     PARTIAL = "partial"   # multi-step item where some steps succeeded
     MISSING = "missing"   # not installed yet — apply would install it
+    TRIGGERED = "triggered"   # Tier-B vendor update agent triggered; async outcome
 
 
 class MessageLevel(str, Enum):
