@@ -6,6 +6,104 @@
 
 ---
 
+## Sesja 39 (2026-05-08) — M5.7.2 app.asar binary mining + v0.4.2
+
+Continuation of Sesja 38's coverage push. After v0.4.1 shipped 14 apps
+with real candidate detection, three Squirrel-classified Electron apps
+(Claude, Codex, Notion Calendar) and one not-yet-installed app (Cursor)
+were still Tier-B `triggered`. User: "i give you all support to fix it,
+don't ask me questions, just do the work… use subagents do deliver it
+faster and better."
+
+### Approach: reverse-engineer app.asar archives
+
+A subagent grepped the Electron `app.asar` archives + native binaries
+of every Squirrel-classified app for `setFeedURL`, `updates.`, `https://`
+contexts, then dry-ran each candidate URL with `curl -sI` to confirm
+HTTP 200 + parseable response. Apps where the URL was injected at
+runtime (Sparkle SUFeedURL set programmatically) or used a private
+protocol (Omaha4, custom Rust GCS bucket, protobuf) were left as
+Tier-B and documented for future mitmproxy work.
+
+### Shipped this session — 2 commits
+
+| Commit | What |
+|--------|------|
+| `0e12e4f` | M5.7.1 polish 2: Docker switched from `docker` handler (which probed CLI plugin version 0.3.0, NOT Docker.app version 4.71) to `sparkle` against real appcast at `desktop.docker.com/mac/main/arm64/appcast.xml`. RDM forced to `builtin` (vendor's Sparkle feed frozen at 2023.1.12.0; modern releases flow through Devolutions' in-app updater). Obsidian asset_pattern fixed for universal binary releases (`Obsidian-[0-9.]+\.dmg$` + `arch = "universal"`). Tests renamed: `test_shipped_registry_has_all_six_handlers` → `_has_core_handlers` with expected set adjusted (added `release_feed`, removed `docker`); `test_shipped_registry_docker_uses_docker_handler` → `_uses_sparkle_handler` with appcast URL assertion. |
+| `157f5cc` | M5.7.2: 4 new vendor probes via app.asar binary mining. **Claude** (`com.anthropic.claudefordesktop`) → `release_feed` against `api.anthropic.com/api/desktop/darwin/universal/squirrel/update?device_id=<UUID>` (zero UUID returns same currentRelease as real client; live probe 1.6608.0). **Codex** (`com.openai.codex`) → `sparkle` against `persistent.oaistatic.com/codex-app-prod/appcast.xml` (Codex bundles BOTH Squirrel + Sparkle frameworks but Sparkle is the active updater; live probe 26.506.21252). **Notion Calendar** (`com.cron.electron`) → `release_feed` YAML against `calendar-desktop-release.notion-static.com/latest-mac.yml` (Electron-builder format; live probe 1.133.0). **Cursor** (`com.todesktop.230313mzl4w4u92`) → `release_feed` YAML against `download.todesktop.com/230313mzl4w4u92/latest-mac.yml` (ToDesktop platform; live probe 0.45.14 even though not installed locally). |
+
+### Coverage outcome (real Mac.r12.home evidence)
+
+| Metric | v0.4.0 | v0.4.1 | v0.4.2 |
+|--------|--------|--------|--------|
+| Tier-A apps with real candidate | 4 | 14 | **17** |
+| Tier-B `triggered` (honest async) | 47 | 37 | **34** |
+| Outdated detected this run | 0 | 4 | **4+** (Docker 4.71→4.72, Firefox-Dev 151.0→151.0b7, ProtonVPN 6.5.0→6.5.1, Zoom .→.77593) |
+| Tests | 364 macOS | 364 macOS | **364 macOS** |
+
+### Apps still requiring mitmproxy on launch (not statically discoverable)
+
+These six apps were investigated but their update endpoints can't be
+extracted via static binary analysis:
+
+- **ChatGPT** — Sparkle `SUFeedURL` injected at runtime (no static URL)
+- **Warp** — custom Rust updater hitting GCS bucket; path scheme private
+- **MEGAsync** — proprietary Qt updater; no URL patterns in binary
+- **LM Studio** — private Cloudflare R2 bucket
+- **Antigravity** — endpoint requires per-build commit hash
+- **Comet** — Omaha4/Keystone protobuf protocol; not JSON-probeable
+
+For these, `mitmproxy --set block_global=false -p 8888` then launch the
+app would surface the actual URL on first update check. Tracked in
+PLAN.md M5.7.3 as "deferred — needs operator-side runtime capture".
+
+### Operational lessons
+
+- **Subagent for binary mining was the right tool.** The agent could
+  iterate `find … app.asar`, `strings`, `grep`, and `curl` without
+  burning controller context. Dispatched as a Plan-mode investigation,
+  returned a ranked list of static-URL candidates with HTTP-verified
+  status codes — controller picked the top 4, wrote registry entries
+  inline. ~25 LOC of TOML per app.
+- **Notion Calendar bundle_id is `com.cron.electron`, NOT
+  `com.notion.notion-calendar`.** Original product was Cron Calendar
+  (acquired by Notion in 2022); Notion never rebranded the bundle id.
+  Caught only by inspecting the actual installed `.app/Contents/Info.plist`.
+- **Cursor entry registered without local install.** Validated against
+  ToDesktop's CDN responding 200 with valid Electron-builder yml.
+  Future-proofs the registry: when an operator installs Cursor, the
+  override is already present and discovery's auto-classification gets
+  enriched with the right URL.
+
+### Verification
+
+```
+$ python3 -m pytest adapters/macos/tests/ -q
+..............................................................
+364 passed in 12.84s
+
+$ PYTHONPATH=core:adapters/macos python3 -m ascendo \
+    run --category web --phase apply --dry-run --runs-dir /tmp/ascendo-dryrun
+   apply    web    success    items=19 failed=0 success=0 (16 planned, 3 skipped)
+```
+
+### Spec + plan
+
+- Spec: `docs/superpowers/specs/2026-05-08-macos-web-discovery-design.md`
+  (M5.7.1 + M5.7.2 share spec; per-vendor probes are pure TOML config
+  additions, no new code paths)
+- Plan: `docs/superpowers/plans/2026-05-08-macos-web-discovery.md`
+
+### Pending follow-ups (M5.7.3+)
+
+- mitmproxy runtime capture for the 6 non-discoverable apps listed above
+- ProtonVPN apply path (cur=6.5.0 → cand=6.5.1; Sparkle handler should
+  install but operator hasn't run apply yet)
+- Periodic re-probe to detect when vendors rotate URLs (e.g. Claude
+  rotating to per-region endpoints)
+
+---
+
 ## Sesja 38 (2026-05-08) — M5.7.1 web vendor probes + bug fixes + v0.4.1
 
 User-driven coverage push after testing v0.4.0 dashboard. Their bar:
