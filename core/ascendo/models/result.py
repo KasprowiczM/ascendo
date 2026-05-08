@@ -28,7 +28,11 @@ class ItemStatus(str, Enum):
 
     `up_to_date` is distinct from `success`: success means we did
     something successfully; up_to_date means there was nothing to do.
-    The dashboard renders these differently.
+    `triggered` is distinct from both: we kicked off the vendor's
+    asynchronous update agent (e.g. Google Keystone, Squirrel.Mac)
+    and the actual install will land on a later schedule the vendor
+    controls. Used by Tier-B web handlers. The dashboard renders all
+    three differently.
     """
 
     SUCCESS = "success"
@@ -161,6 +165,7 @@ class Summary(BaseModel):
     skipped: NonNegativeInt = 0
     planned: NonNegativeInt = 0
     partial: NonNegativeInt = 0
+    triggered: NonNegativeInt = 0
     duration_ms: NonNegativeInt | None = Field(
         default=None,
         description="Total wall-clock duration for this phase, in milliseconds.",

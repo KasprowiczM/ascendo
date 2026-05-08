@@ -181,3 +181,13 @@ def test_item_status_includes_triggered() -> None:
     """Tier-B handlers (keystone/squirrel/builtin) report 'triggered' after apply for asynchronous update outcomes. Required by M5.7 T1."""
     from ascendo.models.result import ItemStatus
     assert ItemStatus.TRIGGERED.value == "triggered"
+
+
+def test_summary_has_triggered_bucket() -> None:
+    """Summary aggregates `triggered` items into a dedicated bucket so total == sum(buckets) holds for Tier-B web phases. Required by M5.7 T1.1."""
+    from ascendo.models.result import Summary
+    s = Summary(total=3, triggered=3)
+    assert s.triggered == 3
+    # Default 0 for back-compat with existing callers
+    s2 = Summary(total=0)
+    assert s2.triggered == 0

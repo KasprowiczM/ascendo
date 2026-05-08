@@ -423,7 +423,7 @@
       "type": "object"
     },
     "ItemStatus": {
-      "description": "Outcome of a single item operation.\n\n`up_to_date` is distinct from `success`: success means we did\nsomething successfully; up_to_date means there was nothing to do.\nThe dashboard renders these differently.",
+      "description": "Outcome of a single item operation.\n\n`up_to_date` is distinct from `success`: success means we did\nsomething successfully; up_to_date means there was nothing to do.\n`triggered` is distinct from both: we kicked off the vendor's\nasynchronous update agent (e.g. Google Keystone, Squirrel.Mac)\nand the actual install will land on a later schedule the vendor\ncontrols. Used by Tier-B web handlers. The dashboard renders all\nthree differently.",
       "enum": [
         "success",
         "up_to_date",
@@ -674,6 +674,12 @@
           "default": 0,
           "minimum": 0,
           "title": "Partial",
+          "type": "integer"
+        },
+        "triggered": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Triggered",
           "type": "integer"
         },
         "duration_ms": {

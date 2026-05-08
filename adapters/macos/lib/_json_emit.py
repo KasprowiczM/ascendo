@@ -241,6 +241,7 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     up_to_date = sum(1 for it in items if it.get("status") == "up_to_date")
     planned = sum(1 for it in items if it.get("status") == "planned")
     partial = sum(1 for it in items if it.get("status") == "partial")
+    triggered = sum(1 for it in items if it.get("status") == "triggered")
 
     # Status heuristic — refined Sesja 34:
     #   any failed AND any success → "partial"  (most common: 10 ok, 1 broken)
@@ -277,6 +278,7 @@ def cmd_finalize(args: argparse.Namespace) -> int:
             "skipped": skipped,
             "planned": planned,
             "partial": partial,
+            "triggered": triggered,
             "exit_code": args.exit_code,
         },
         "items": items,
