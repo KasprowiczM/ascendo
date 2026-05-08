@@ -92,10 +92,87 @@ import json, re, sys
 body = sys.argv[1]
 path = sys.argv[2]
 
+
+def _parse_minimal_yaml(text: str):
+    """Minimal Electron-builder latest-mac.yml parser.
+
+    Handles the shape vendors actually publish:
+        version: 7.16.0
+        files:
+          - url: Notion-7.16.0.dmg
+            sha512: ...
+            size: 124190392
+          - url: Notion-7.16.0.zip
+            sha512: ...
+        path: Notion-7.16.0.zip
+        releaseDate: '2026-05-05T21:02:49.644Z'
+
+    Two-space indentation only. List items start with "  - ". Values are
+    scalars (no nested mappings inside list items beyond one level — the
+    canonical Electron-builder schema doesn't use them). Quoted strings
+    are unquoted. NOT a full YAML parser; bails on anything unexpected.
+    """
+    data: dict = {}
+    cur_list = None
+    cur_list_item = None
+    pending_key = None
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        if not line or line.lstrip().startswith("#"):
+            continue
+        # Top-level key: value
+        if not raw_line.startswith(" ") and ":" in line:
+            k, _, v = line.partition(":")
+            k = k.strip()
+            v = v.strip()
+            if v == "":
+                # Could be the start of a list or nested map.
+                pending_key = k
+                cur_list = []
+                cur_list_item = None
+                data[k] = cur_list
+                continue
+            data[k] = _coerce_scalar(v)
+            pending_key = None
+            cur_list = None
+            cur_list_item = None
+            continue
+        # 2-space indented list item start: "  - key: value"
+        if raw_line.startswith("  - ") and pending_key is not None:
+            cur_list_item = {}
+            cur_list.append(cur_list_item)
+            inner = raw_line[4:]
+            if ":" in inner:
+                k, _, v = inner.partition(":")
+                cur_list_item[k.strip()] = _coerce_scalar(v.strip())
+            continue
+        # 4-space indented continuation key inside list item: "    key: value"
+        if raw_line.startswith("    ") and cur_list_item is not None and ":" in line:
+            inner = line.strip()
+            k, _, v = inner.partition(":")
+            cur_list_item[k.strip()] = _coerce_scalar(v.strip())
+            continue
+        # Anything else — give up, return what we have.
+    return data
+
+
+def _coerce_scalar(s: str):
+    s = s.strip()
+    if (s.startswith("'") and s.endswith("'")) or (s.startswith('"') and s.endswith('"')):
+        return s[1:-1]
+    return s
+
+
+# Try JSON first; fall back to minimal YAML (Electron-builder shape).
 try:
     data = json.loads(body)
 except Exception:
-    sys.exit(27)
+    try:
+        data = _parse_minimal_yaml(body)
+        if not data:
+            sys.exit(27)
+    except Exception:
+        sys.exit(27)
 
 parts = re.findall(r'[A-Za-z0-9_-]+|\[\d+\]', path)
 cur = data
@@ -200,12 +277,24 @@ release_feed_apply() {
     dmg_url=$(_rf_walk_json "$body" "$download_path") || return 28
     [ -z "$dmg_url" ] && return 28
 
-    # T3 mitigation: enforce https on the response-body URL too. The feed
-    # URL is Pydantic-validated https-only, but a hostile or compromised
-    # vendor feed could embed an http:// DMG link.
+    # Electron-builder yml gives relative URLs (e.g. "Notion-7.16.0.dmg").
+    # Resolve against the feed URL's parent directory.
     case "$dmg_url" in
         https://*) ;;
-        *) return 32 ;;
+        http://*) return 32 ;;
+        *)
+            # Relative — prepend the feed URL's directory.
+            local base_dir
+            base_dir=$(BASE="$url" python3 -c '
+import os, sys
+from urllib.parse import urlparse, urlunparse
+u = urlparse(os.environ["BASE"])
+parent = u.path.rsplit("/", 1)[0] + "/" if "/" in u.path else "/"
+print(urlunparse((u.scheme, u.netloc, parent, "", "", "")))
+')
+            dmg_url="${base_dir}${dmg_url}"
+            case "$dmg_url" in https://*) ;; *) return 32 ;; esac
+            ;;
     esac
 
     # Delegate to the shared DMG installer helper (from ascendo_web.sh,

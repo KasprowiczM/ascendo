@@ -206,3 +206,115 @@ slug = "docker"
 bundle_id = "com.docker.docker"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Docker Desktop"
 handler = "docker"
+
+# ═════════════════════════════ M5.7.1 Vendor Probes ═════════════════════════
+# Added 2026-05-08 after user-driven coverage push. Each entry has a
+# verified URL + response-shape pair. Discovery's auto-classification
+# would put these under squirrel/builtin (Tier-B trigger-only) — these
+# overrides promote them to Tier-A (real candidate-version probe).
+# ────────────────────────────────────────────────────────────────────────────
+
+# ─── Microsoft VS Code ──────────────────────────────────────────────────────
+[[app]]
+slug = "vscode"
+bundle_id = "com.microsoft.VSCode"
+display_name = "Visual Studio Code"
+handler = "release_feed"
+notes = "Microsoft's documented update API. Returns JSON. download_path points to a ZIP not DMG; install path needs ZIP support OR fall back to user manual download. For now Tier-A probe only; apply triggers built-in updater via open -a."
+
+[app.release_feed]
+url = "https://update.code.visualstudio.com/api/update/darwin-arm64/stable/latest"
+version_path = "productVersion"
+http_timeout_s = 8
+
+# ─── Zoom ──────────────────────────────────────────────────────────────────
+[[app]]
+slug = "zoom"
+bundle_id = "us.zoom.xos"
+display_name = "Zoom"
+handler = "release_feed"
+notes = "Zoom's public download API. Probe-only; Zoom's own auto-updater handles install on launch."
+
+[app.release_feed]
+url = "https://zoom.us/rest/download?os=mac"
+version_path = "result.downloadVO.zoomArm64.version"
+http_timeout_s = 8
+
+# ─── Firefox Developer Edition ─────────────────────────────────────────────
+[[app]]
+slug = "firefox-dev"
+bundle_id = "org.mozilla.firefoxdeveloperedition"
+display_name = "Firefox Developer Edition"
+handler = "release_feed"
+notes = "Mozilla product-details. Probe-only (no DMG URL in this endpoint); apply opens app, Mozilla's own updater handles install on next launch. Overrides discovery's would-be 'builtin' classification (Firefox uses org.mozilla.updater, not Sparkle/Squirrel/Keystone)."
+
+[app.release_feed]
+url = "https://product-details.mozilla.org/1.0/firefox_versions.json"
+version_path = "FIREFOX_DEVEDITION"
+http_timeout_s = 8
+
+# ─── Notion ────────────────────────────────────────────────────────────────
+[[app]]
+slug = "notion"
+bundle_id = "notion.id"
+display_name = "Notion"
+handler = "release_feed"
+notes = "Electron-builder latest-mac.yml. files[1] is the .dmg (files[0] is the .zip). download_path is relative; release_feed_apply resolves against the feed URL's parent dir."
+
+[app.release_feed]
+url = "https://desktop-release.notion-static.com/latest-mac.yml"
+version_path = "version"
+download_path = "files[1].url"
+http_timeout_s = 8
+
+# ─── Ledger Live ───────────────────────────────────────────────────────────
+[[app]]
+slug = "ledger-live"
+bundle_id = "com.ledger.live"
+display_name = "Ledger Live"
+handler = "release_feed"
+notes = "Electron-builder latest-mac.yml on Ledger's CDN. files[0] is .zip; the published mac DMG is at files[N] where N is implementation-dependent. Probe-only on apply (no download_path) since the DMG URL isn't always present in the YAML response — Ledger's own updater handles the swap on app relaunch."
+
+[app.release_feed]
+url = "https://download.live.ledger.com/latest-mac.yml"
+version_path = "version"
+http_timeout_s = 8
+
+# ─── KeePassXC ─────────────────────────────────────────────────────────────
+[[app]]
+slug = "keepassxc"
+bundle_id = "org.keepassxc.keepassxc"
+display_name = "KeePassXC"
+handler = "github_dmg"
+github_repo = "keepassxreboot/keepassxc"
+asset_pattern = "KeePassXC-.+-arm64\\.dmg$"
+notes = "KeePassXC has no auto-update framework (in-app check just opens the GitHub page). github_dmg installs the .dmg directly."
+
+# ─── Obsidian ──────────────────────────────────────────────────────────────
+[[app]]
+slug = "obsidian"
+bundle_id = "md.obsidian"
+display_name = "Obsidian"
+handler = "github_dmg"
+github_repo = "obsidianmd/obsidian-releases"
+asset_pattern = "Obsidian-.+-arm64\\.dmg$"
+notes = "Obsidian publishes Electron-builder yml on a private CDN; their canonical public release channel is the GitHub releases mirror at obsidianmd/obsidian-releases."
+
+# ─── OpenCode ──────────────────────────────────────────────────────────────
+[[app]]
+slug = "opencode"
+bundle_id = "ai.opencode.desktop"
+display_name = "OpenCode"
+handler = "github_dmg"
+github_repo = "sst/opencode"
+asset_pattern = "opencode-.+-arm64\\.dmg$"
+enabled = false  # repo + asset pattern unverified; sst/opencode and anomalyco/opencode both publish under "opencode" name. Re-enable after verifying the canonical macOS DMG repo on user's machine.
+notes = "Two candidate repos exist (sst/opencode, anomalyco/opencode); confirm which is the canonical macOS distribution before enabling."
+
+# ─── Trezor Suite ──────────────────────────────────────────────────────────
+# (Already shipped in M5.6 as github_dmg; no override needed.)
+
+# ─── Warp / Cursor / Claude / ChatGPT / Notion Calendar / MEGAsync / Spotify
+# These remain Tier-B (squirrel) for now — their update endpoints are not
+# publicly documented at the time of writing. mitmproxy on app launch
+# would discover them; M5.7.2 follow-up.
