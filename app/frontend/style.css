@@ -1280,6 +1280,11 @@ td.duration, td.eta { font-family: var(--font-mono); font-size: var(--fs-xs); co
 .st-skip::before  { background: var(--fg-faint); }
 .st-info  { background: var(--info-bg); color: var(--info); }
 .st-info::before  { background: var(--info); }
+/* M5.7: Tier-B handler kicked off vendor's async update agent. Distinct
+   from success (synchronous install verified) and skipped (we did
+   nothing): we triggered, vendor will reconcile asynchronously. */
+.st-triggered  { background: var(--info-bg); color: var(--info); border: 1px solid var(--info); }
+.st-triggered::before { background: var(--info); }
 
 
 /* Run Center: collapsible raw event log under the structured detail panel.

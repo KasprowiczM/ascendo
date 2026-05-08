@@ -3933,14 +3933,16 @@ window.ui = ui;
     if (status === "partial" || status === "warn" || status === "warning") return "partial";
     if (status === "skipped") return "skipped";
     if (status === "running" || status === "planned") return "running";
+    if (status === "triggered") return "triggered";
     return "skipped";
   }
   function pillClassFor(status) {
     const c = statusToCls(status);
-    if (c === "success") return "st-pill st-ok";
-    if (c === "failed")  return "st-pill st-err";
-    if (c === "partial") return "st-pill st-warn";
-    if (c === "running") return "st-pill st-info";
+    if (c === "success")   return "st-pill st-ok";
+    if (c === "failed")    return "st-pill st-err";
+    if (c === "partial")   return "st-pill st-warn";
+    if (c === "running")   return "st-pill st-info";
+    if (c === "triggered") return "st-pill st-triggered";
     return "st-pill st-skip";
   }
   function statusLabel(status) {
