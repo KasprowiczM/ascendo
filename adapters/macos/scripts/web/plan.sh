@@ -70,22 +70,60 @@ in_filter() {
     esac
 }
 
+# -- iterate apps via discovery layer ------------------------------------------
 COUNT_PLANNED=0
 COUNT_SKIPPED=0
 
-while IFS= read -r SLUG; do
-    [ -z "$SLUG" ] && continue
-    in_filter "$SLUG" || continue
+while IFS= read -r DISC_LINE; do
+    [ -z "$DISC_LINE" ] && continue
 
-    CFG=$(python3 "$REG_SHIM" "${_reg_args[@]}" --get-app "$SLUG" 2>/dev/null) || continue
-    BUNDLE_ID=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("bundle_id",""))')
-    HANDLER=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("handler",""))')
-    DISPLAY_NAME=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("display_name",""))')
-    APP_PATH=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("app_path") or "")')
-    [ -z "$APP_PATH" ] && APP_PATH="/Applications/${DISPLAY_NAME}.app"
+    BUNDLE_ID=$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
+import json, os
+d = json.loads(os.environ["ASCENDO_WEB_LINE"])
+print(d.get("bundle_id", ""))')
+    [ -z "$BUNDLE_ID" ] && continue
+    APP_PATH=$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
+import json, os
+d = json.loads(os.environ["ASCENDO_WEB_LINE"])
+print(d.get("app_path", ""))')
+    INSTALLED=$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
+import json, os
+d = json.loads(os.environ["ASCENDO_WEB_LINE"])
+print(d.get("version", ""))')
+    DISPLAY_NAME=$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
+import json, os
+d = json.loads(os.environ["ASCENDO_WEB_LINE"])
+print(d.get("display_name", ""))')
+    DISC_HANDLER=$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
+import json, os
+d = json.loads(os.environ["ASCENDO_WEB_LINE"])
+print(d.get("fingerprint_handler", "builtin"))')
 
-    INSTALLED=$(_web_installed_version "$APP_PATH")
     [ -z "$INSTALLED" ] && continue
+
+    CFG=$(python3 "$REG_SHIM" "${_reg_args[@]}" --get-app-by-bundle-id "$BUNDLE_ID" 2>/dev/null || true)
+    if [ -n "$CFG" ]; then
+        SLUG=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("slug",""))')
+        HANDLER=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("handler",""))')
+    else
+        SLUG=$(printf '%s' "$DISPLAY_NAME" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-')
+        [ -z "$SLUG" ] && SLUG="bundle-$(printf '%s' "$BUNDLE_ID" | tr '.' '-')"
+        HANDLER="$DISC_HANDLER"
+        CFG=$(SLUG="$SLUG" BUNDLE_ID="$BUNDLE_ID" DISPLAY_NAME="$DISPLAY_NAME" \
+              HANDLER="$HANDLER" APP_PATH="$APP_PATH" \
+              python3 -c '
+import json, os
+print(json.dumps({
+    "slug":         os.environ["SLUG"],
+    "bundle_id":    os.environ["BUNDLE_ID"],
+    "display_name": os.environ["DISPLAY_NAME"],
+    "handler":      os.environ["HANDLER"],
+    "app_path":     os.environ["APP_PATH"],
+}))
+')
+    fi
+
+    in_filter "$SLUG" || continue
 
     LATEST=""
     case "$HANDLER" in
@@ -111,19 +149,22 @@ while IFS= read -r SLUG; do
     _web_is_running "$BUNDLE_ID" && IS_RUNNING=1
 
     case "$HANDLER" in
-        builtin)
-            json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
-            json_add_message "info" "${SLUG}: manual_required"
-            COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
-            ;;
-        squirrel)
-            if [ $IS_RUNNING -eq 1 ]; then
-                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
-                json_add_message "info" "${SLUG}: deferred_app_in_use"
-                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
-            else
+        builtin|squirrel|keystone)
+            # Tier-B handlers: vendor-opaque update mechanism
+            if [ "$HANDLER" = "squirrel" ] && [ $IS_RUNNING -eq 0 ]; then
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "planned" "web" "$HANDLER"
                 COUNT_PLANNED=$((COUNT_PLANNED + 1))
+            elif [ "$HANDLER" = "keystone" ]; then
+                # Keystone introspection is opaque — always plan when app present.
+                if [ -n "$LATEST" ] && ! _version_gt "$LATEST" "$INSTALLED"; then
+                    continue
+                fi
+                json_add_item "web:${SLUG}" "$INSTALLED" "${LATEST:-}" "planned" "web" "$HANDLER"
+                COUNT_PLANNED=$((COUNT_PLANNED + 1))
+            else
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: vendor_opaque (Tier-B handler — apply will trigger vendor agent)"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
             fi
             ;;
         sparkle|github_dmg|release_feed)
@@ -141,16 +182,6 @@ while IFS= read -r SLUG; do
                 json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "planned" "web" "$HANDLER"
                 COUNT_PLANNED=$((COUNT_PLANNED + 1))
             fi
-            ;;
-        keystone)
-            # Keystone introspection is opaque — always plan. ksadmin
-            # is part of GoogleSoftwareUpdate; if Chrome/Drive are
-            # installed, ksadmin is too. Apply triggers the daemon.
-            if [ -n "$LATEST" ] && ! _version_gt "$LATEST" "$INSTALLED"; then
-                continue
-            fi
-            json_add_item "web:${SLUG}" "$INSTALLED" "${LATEST:-}" "planned" "web" "$HANDLER"
-            COUNT_PLANNED=$((COUNT_PLANNED + 1))
             ;;
         msupdate)
             # msupdate binary missing -> manager not available; skip
@@ -178,7 +209,7 @@ while IFS= read -r SLUG; do
             fi
             ;;
     esac
-done < <(python3 "$REG_SHIM" "${_reg_args[@]}" --list-slugs 2>/dev/null)
+done < <(bash "$ADAPTER_LIB/web_discovery.sh" --emit-json 2>/dev/null)
 
 json_add_message "info" "web plan: ${COUNT_PLANNED} planned, ${COUNT_SKIPPED} skipped"
 exit 0

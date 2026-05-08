@@ -19,13 +19,25 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO_ROOT / "adapters" / "macos" / "scripts" / "web"
 
 
-def _make_fake_app(tmp_path: Path, name: str, version: str) -> Path:
+def _make_fake_app(tmp_path: Path, name: str, version: str,
+                   bundle_id: str | None = None) -> Path:
+    """Build a fake .app bundle under tmp_path/Applications/.
+
+    M5.7: discovery layer walks /Applications and reads CFBundleIdentifier
+    from each Info.plist. Tests must pass bundle_id matching the registry
+    fixture so discovery emits the expected bundle.
+    """
+    if bundle_id is None:
+        bundle_id = f"com.fixture.{name.lower().replace(' ', '_')}"
     app = tmp_path / "Applications" / f"{name}.app"
     (app / "Contents").mkdir(parents=True, exist_ok=True)
     (app / "Contents" / "Info.plist").write_text(
         '<?xml version="1.0"?><plist version="1.0"><dict>'
+        f'<key>CFBundleIdentifier</key><string>{bundle_id}</string>'
         '<key>CFBundleShortVersionString</key>'
-        f'<string>{version}</string></dict></plist>'
+        f'<string>{version}</string>'
+        f'<key>CFBundleName</key><string>{name}</string>'
+        '</dict></plist>'
     )
     return app
 
@@ -72,11 +84,25 @@ def _make_curl_shim(tmp_path: Path, fixtures: dict[str, str]) -> Path:
 
 def _run_phase(phase: str, registry_toml: Path, output_dir: Path,
                env_extra: dict | None = None,
-               curl_shim_dir: Path | None = None):
+               curl_shim_dir: Path | None = None,
+               extra_args: list | None = None):
     run_id = str(uuid.uuid4())
+    # Point discovery at the test's Applications fixture dir. If the dir
+    # doesn't exist, set it to a guaranteed-empty path (NOT /Applications
+    # which would leak real-machine apps into hermetic tests). Discovery
+    # exits cleanly when the root doesn't exist.
+    apps_root = registry_toml.parent / "Applications"
+    if not apps_root.is_dir():
+        apps_root.mkdir(parents=True, exist_ok=True)
     env = {**os.environ,
            "ASCENDO_WEB_REGISTRY_PATH": str(registry_toml),
            "ASCENDO_WEB_USER_REGISTRY_PATH": "",
+           "ASCENDO_WEB_APPS_ROOT": str(apps_root),
+           # Tests don't have brew/mas installed; skip the auto-populate
+           # ownership probes by setting empty values explicitly.
+           "ASCENDO_WEB_BREW_CASKS": "",
+           "ASCENDO_WEB_MAS_BUNDLE_IDS": "",
+           "ASCENDO_WEB_APPLE_BUNDLES": "",
            "PYTHONPATH": f"{REPO_ROOT}/core:{REPO_ROOT}/adapters/macos"}
     if curl_shim_dir is not None:
         # Prepend the shim dir so our fake curl is found before /usr/bin/curl.
@@ -93,6 +119,8 @@ def _run_phase(phase: str, registry_toml: Path, output_dir: Path,
     cmd = ["bash", str(SCRIPTS / f"{phase}.sh"),
            "--run-id", run_id, "--trigger", "cli", "--profile", "full",
            "--output-dir", str(output_dir)]
+    if extra_args:
+        cmd.extend(extra_args)
     return subprocess.run(cmd, capture_output=True, text=True, env=env), run_id
 
 
@@ -107,7 +135,8 @@ def _read_sidecar(output_dir: Path, run_id: str, phase: str) -> dict:
 # ----------------------------------------------------------------------
 
 def test_check_emits_sidecar_for_squirrel_app(tmp_path: Path) -> None:
-    fake_app = _make_fake_app(tmp_path, "Slack", "4.40.0")
+    fake_app = _make_fake_app(tmp_path, "Slack", "4.40.0",
+                              bundle_id="com.tinyspeck.slackmacgap")
     registry = tmp_path / "registry.toml"
     registry.write_text(
         'schema = "ascendo-web-apps/v1"\n'
@@ -144,7 +173,8 @@ def test_check_skips_uninstalled_apps(tmp_path: Path) -> None:
 
 def test_plan_skips_squirrel_when_not_running(tmp_path: Path) -> None:
     """squirrel + not running -> planned (apply opens the app for self-update)."""
-    fake_app = _make_fake_app(tmp_path, "Slack", "4.40.0")
+    fake_app = _make_fake_app(tmp_path, "Slack", "4.40.0",
+                              bundle_id="com.this-bundle-is-not-running.test")
     registry = tmp_path / "registry.toml"
     registry.write_text(
         'schema = "ascendo-web-apps/v1"\n'
@@ -165,7 +195,8 @@ def test_plan_skips_squirrel_when_not_running(tmp_path: Path) -> None:
 # ----------------------------------------------------------------------
 
 def test_check_builtin_emits_skipped(tmp_path: Path) -> None:
-    fake_app = _make_fake_app(tmp_path, "Zoom", "5.17.0")
+    fake_app = _make_fake_app(tmp_path, "Zoom", "5.17.0",
+                              bundle_id="us.zoom.xos")
     registry = tmp_path / "registry.toml"
     registry.write_text(
         'schema = "ascendo-web-apps/v1"\n'
@@ -186,7 +217,8 @@ def test_check_builtin_emits_skipped(tmp_path: Path) -> None:
 
 
 def test_plan_builtin_keeps_skipped_with_manual_required(tmp_path: Path) -> None:
-    fake_app = _make_fake_app(tmp_path, "Zoom", "5.17.0")
+    fake_app = _make_fake_app(tmp_path, "Zoom", "5.17.0",
+                              bundle_id="us.zoom.xos")
     registry = tmp_path / "registry.toml"
     registry.write_text(
         'schema = "ascendo-web-apps/v1"\n'
@@ -210,9 +242,16 @@ def test_plan_builtin_keeps_skipped_with_manual_required(tmp_path: Path) -> None
 # yields the `failed` status path (probe broken) which we test below.
 # ----------------------------------------------------------------------
 
-def test_check_sparkle_unreachable_marks_failed(tmp_path: Path) -> None:
-    """When sparkle can't reach the appcast, check.sh reports failed."""
-    fake_app = _make_fake_app(tmp_path, "TestApp", "1.0.0")
+def test_check_sparkle_unreachable_marks_skipped(tmp_path: Path) -> None:
+    """When sparkle can't reach the appcast, check.sh reports skipped (M5.7).
+
+    Pre-M5.7 this was 'failed' but that caused a single broken probe to
+    mark the entire phase failed (orchestrator's all-managers-failed
+    abort fired). New semantics: empty Tier-A probe is 'skipped' with
+    a warn message — operator sees the row, the run continues.
+    """
+    fake_app = _make_fake_app(tmp_path, "TestApp", "1.0.0",
+                              bundle_id="com.example.testapp")
     registry = tmp_path / "registry.toml"
     registry.write_text(
         'schema = "ascendo-web-apps/v1"\n'
@@ -227,5 +266,5 @@ def test_check_sparkle_unreachable_marks_failed(tmp_path: Path) -> None:
     sc = _read_sidecar(out, run_id, "check")
     assert len(sc["items"]) == 1
     item = sc["items"][0]
-    assert item["status"] == "failed"
+    assert item["status"] == "skipped"
     assert item["current_version"] == "1.0.0"

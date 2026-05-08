@@ -80,25 +80,62 @@ in_filter() {
     esac
 }
 
-# -- iterate active slugs ------------------------------------------------------
+# -- iterate apps via discovery layer ------------------------------------------
 COUNT_PLANNED=0
 COUNT_UTD=0
 COUNT_SKIPPED=0
 COUNT_FAILED=0
 
-while IFS= read -r SLUG; do
-    [ -z "$SLUG" ] && continue
+while IFS= read -r DISC_LINE; do
+    [ -z "$DISC_LINE" ] && continue
+
+    BUNDLE_ID=$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
+import json, os
+d = json.loads(os.environ["ASCENDO_WEB_LINE"])
+print(d.get("bundle_id", ""))')
+    [ -z "$BUNDLE_ID" ] && continue
+    APP_PATH=$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
+import json, os
+d = json.loads(os.environ["ASCENDO_WEB_LINE"])
+print(d.get("app_path", ""))')
+    INSTALLED=$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
+import json, os
+d = json.loads(os.environ["ASCENDO_WEB_LINE"])
+print(d.get("version", ""))')
+    DISPLAY_NAME=$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
+import json, os
+d = json.loads(os.environ["ASCENDO_WEB_LINE"])
+print(d.get("display_name", ""))')
+    DISC_HANDLER=$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
+import json, os
+d = json.loads(os.environ["ASCENDO_WEB_LINE"])
+print(d.get("fingerprint_handler", "builtin"))')
+
+    [ -z "$INSTALLED" ] && continue
+
+    CFG=$(python3 "$REG_SHIM" "${_reg_args[@]}" --get-app-by-bundle-id "$BUNDLE_ID" 2>/dev/null || true)
+    if [ -n "$CFG" ]; then
+        SLUG=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("slug",""))')
+        HANDLER=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("handler",""))')
+    else
+        SLUG=$(printf '%s' "$DISPLAY_NAME" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-')
+        [ -z "$SLUG" ] && SLUG="bundle-$(printf '%s' "$BUNDLE_ID" | tr '.' '-')"
+        HANDLER="$DISC_HANDLER"
+        CFG=$(SLUG="$SLUG" BUNDLE_ID="$BUNDLE_ID" DISPLAY_NAME="$DISPLAY_NAME" \
+              HANDLER="$HANDLER" APP_PATH="$APP_PATH" \
+              python3 -c '
+import json, os
+print(json.dumps({
+    "slug":         os.environ["SLUG"],
+    "bundle_id":    os.environ["BUNDLE_ID"],
+    "display_name": os.environ["DISPLAY_NAME"],
+    "handler":      os.environ["HANDLER"],
+    "app_path":     os.environ["APP_PATH"],
+}))
+')
+    fi
+
     in_filter "$SLUG" || continue
-
-    CFG=$(python3 "$REG_SHIM" "${_reg_args[@]}" --get-app "$SLUG" 2>/dev/null) || continue
-    BUNDLE_ID=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("bundle_id",""))')
-    HANDLER=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("handler",""))')
-    DISPLAY_NAME=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("display_name",""))')
-    APP_PATH=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("app_path") or "")')
-    [ -z "$APP_PATH" ] && APP_PATH="/Applications/${DISPLAY_NAME}.app"
-
-    INSTALLED=$(_web_installed_version "$APP_PATH")
-    [ -z "$INSTALLED" ] && continue   # not installed; do not emit item
 
     LATEST=""
     case "$HANDLER" in
@@ -116,16 +153,16 @@ while IFS= read -r SLUG; do
     # (transient, will resolve when GH window resets or GITHUB_TOKEN set).
     if [ "$LATEST" = "__GH_RATE_LIMITED__" ]; then
         json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
-        json_add_message "warn" "${SLUG}: GitHub API rate-limited (60/hr unauthenticated). Set GITHUB_TOKEN or wait ~1h. https://github.com/settings/tokens"
+        json_add_message "warn" "${SLUG}: GitHub API rate-limited (60/hr unauthenticated). Set GITHUB_TOKEN or wait ~1h."
         COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
         continue
     fi
 
     if [ -z "$LATEST" ]; then
         case "$HANDLER" in
-            squirrel)
+            squirrel|keystone)
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
-                json_add_message "info" "${SLUG}: auto_on_relaunch — apply will relaunch app"
+                json_add_message "info" "${SLUG}: vendor_opaque (Tier-B handler — apply will trigger vendor agent)"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 ;;
             builtin)
@@ -133,25 +170,15 @@ while IFS= read -r SLUG; do
                 json_add_message "info" "${SLUG}: manual_required — open app and use Help → Check for Updates"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 ;;
-            keystone)
-                # Keystone introspection is opaque by design — ksadmin
-                # doesn't expose "what's the latest version?". Apply
-                # triggers the daemon and the daemon reconciles.
-                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
-                json_add_message "info" "${SLUG}: auto_on_apply — Keystone daemon reconciles when apply triggers it"
-                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
-                ;;
             msupdate|docker)
-                # Manager binary missing → can't probe and can't apply.
-                # Skipped (manager not installed), not failed.
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
                 json_add_message "info" "${SLUG}: ${HANDLER} not available on this host"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 ;;
             *)
-                json_add_item "web:${SLUG}" "$INSTALLED" "" "failed" "web" "$HANDLER"
-                json_add_message "error" "${SLUG}: ${HANDLER} probe returned empty (network or vendor change?)"
-                COUNT_FAILED=$((COUNT_FAILED + 1))
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "warn" "${SLUG}: ${HANDLER} probe returned empty (network or vendor change?)"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 ;;
         esac
         continue
@@ -164,7 +191,7 @@ while IFS= read -r SLUG; do
         json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "planned" "web" "$HANDLER"
         COUNT_PLANNED=$((COUNT_PLANNED + 1))
     fi
-done < <(python3 "$REG_SHIM" "${_reg_args[@]}" --list-slugs 2>/dev/null)
+done < <(bash "$ADAPTER_LIB/web_discovery.sh" --emit-json 2>/dev/null)
 
 json_add_message "info" "web: ${COUNT_PLANNED} outdated, ${COUNT_UTD} up-to-date, ${COUNT_SKIPPED} skipped, ${COUNT_FAILED} failed"
 exit 0
