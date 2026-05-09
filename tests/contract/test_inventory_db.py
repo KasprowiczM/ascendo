@@ -500,3 +500,55 @@ def test_post_run_flush_drops_stale_rows(tmp_path: Path) -> None:
     assert names == {"wget", "curl"}, (
         f"Stale row leaked through post-run flush: {sorted(names)}"
     )
+
+
+
+def test_inventory_db_does_not_leak_file_descriptors(tmp_path: Path) -> None:
+    """Regression: every InventoryDB call must close its sqlite3 connection.
+
+    Background: Pythons builtin ``with conn:`` only commits/rollbacks the
+    transaction; it does NOT close the connection. The original
+    ``_connect()`` returned a raw connection and every caller did
+    ``with self._connect() as conn:`` — leaking one fd per call. Under
+    the dashboards SSE polling load + inventory queries, the user hit
+    ``[Errno 24] Too many open files`` within 7 minutes (~256 fd limit
+    on macOS).
+
+    This test does 200 mixed get_meta / set_meta / query / count calls
+    and confirms the SQLite file is openable afterwards (i.e. we have
+    not run out of file descriptors and have not held a writer lock).
+    """
+    import resource
+    import sqlite3
+
+    db_path = tmp_path / "inv.db"
+    db = InventoryDB(db_path)
+
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    # Force a tighter limit so a real leak surfaces fast even on hosts
+    # whose ulimit is huge (Linux defaults can be 1M+).
+    target_soft = min(128, soft)
+    try:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (target_soft, hard))
+    except (ValueError, OSError):
+        pytest.skip("cannot lower RLIMIT_NOFILE in this environment")
+    try:
+        for i in range(200):
+            db.set_meta("test", last_scan_at="2026-05-09T00:00:00Z", item_count=i)
+            db.get_meta("test")
+            db.count(category="brew")
+            db.bulk_upsert([
+                {"category": "brew", "name": f"pkg{i}", "installed": "1.0"},
+            ])
+            db.query(category="brew")
+        # If fds were leaking, opening a fresh connection here would
+        # throw OperationalError("unable to open database file").
+        cn = sqlite3.connect(db_path)
+        cn.execute("SELECT 1").fetchone()
+        cn.close()
+    finally:
+        try:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
+        except (ValueError, OSError):
+            pass
+

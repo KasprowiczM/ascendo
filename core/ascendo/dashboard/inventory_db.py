@@ -24,7 +24,8 @@ import json as _json
 import logging
 import sqlite3
 import threading
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -134,7 +135,20 @@ class InventoryDB:
 
     # ── connection helpers ──────────────────────────────────────────────
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> "Iterator[sqlite3.Connection]":
+        """Open a SQLite connection and ALWAYS close it on context exit.
+
+        Critical: Python's built-in ``with conn:`` only commits/rolls back
+        the transaction — it does NOT close the connection. Every call
+        that did ``with self._connect() as conn:`` was leaking one file
+        descriptor per invocation. With the dashboard's SSE polling +
+        per-request inventory queries, that's tens of leaked fds per
+        second; the user's box hit ``[Errno 24] Too many open files``
+        within ~7 minutes. This context-manager wrapper guarantees
+        ``conn.close()`` runs on EVERY exit path (commit, rollback, or
+        exception). Sesja 49 fix.
+        """
         # ``check_same_thread=False`` is safe because each method opens
         # and closes its own connection — we never share a connection
         # across threads.
@@ -154,7 +168,27 @@ class InventoryDB:
             conn.execute("PRAGMA synchronous=NORMAL")
         except sqlite3.DatabaseError:  # pragma: no cover — exotic FS
             pass
-        return conn
+        try:
+            yield conn
+            # Caller used `with self._connect() as conn:` so any pending
+            # transaction was committed by the inner sqlite3 ctxmgr. We
+            # also commit explicitly here in case the caller did not use
+            # the inner ctxmgr (defensive).
+            try:
+                conn.commit()
+            except sqlite3.DatabaseError:
+                pass
+        except BaseException:
+            try:
+                conn.rollback()
+            except sqlite3.DatabaseError:
+                pass
+            raise
+        finally:
+            try:
+                conn.close()
+            except sqlite3.DatabaseError:  # pragma: no cover
+                pass
 
     def _migrate(self) -> None:
         with self._init_lock:
