@@ -101,7 +101,34 @@ NPM_GLOBAL_PREFIX="$(ascendo_npm_global_prefix)"
 mkdir -p "$NPM_GLOBAL_PREFIX/bin" 2>/dev/null || true
 ascendo_npm_scrub_npmrc || true
 export NPM_CONFIG_PREFIX="$NPM_GLOBAL_PREFIX"
-export PATH="$NPM_GLOBAL_PREFIX/bin:$PATH"
+
+# Sesja 53 fix: extend PATH so npm postinstall subshells can find node + bun.
+# When the dashboard runs as a Tauri-launched GUI process, it inherits
+# launchctl PATH (typically /usr/bin:/bin:/usr/sbin:/sbin) — node and bun
+# are NOT in there even though they exist under their canonical install
+# dirs. The npm package opencode-ai (and many others) runs a postinstall
+# script that does:
+#     sh -c "bun ./postinstall.mjs || node ./postinstall.mjs"
+# which fails with "command not found" for both unless PATH includes the
+# bin dirs of both runtimes. We resolve the canonical locations + brew + ~
+# /.local/bin and prepend them. Order: ascendo's npm-global first
+# (existing behaviour), then ascendo's node toolchain, then bun, then
+# brew (where homebrew node lives if user has it), then ~/.local/bin.
+_npm_node_bin="$(ascendo_npm_node_bin 2>/dev/null || true)"
+_npm_node_dir=""
+[ -n "$_npm_node_bin" ] && _npm_node_dir="$(dirname "$_npm_node_bin")"
+_npm_bun_bin="$(ascendo_npm_bun_bin 2>/dev/null || true)"
+_npm_bun_dir=""
+[ -n "$_npm_bun_bin" ] && _npm_bun_dir="$(dirname "$_npm_bun_bin")"
+
+_extended_path="$NPM_GLOBAL_PREFIX/bin"
+[ -n "$_npm_node_dir" ] && _extended_path="$_extended_path:$_npm_node_dir"
+[ -n "$_npm_bun_dir"  ] && _extended_path="$_extended_path:$_npm_bun_dir"
+# Fallbacks for postinstall scripts that hard-code expected locations.
+for _p in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" "$HOME/.bun/bin"; do
+    [ -d "$_p" ] && _extended_path="$_extended_path:$_p"
+done
+export PATH="$_extended_path:$PATH"
 
 # -- per-method handlers ------------------------------------------------------
 apply_native_node() {

@@ -30,10 +30,20 @@
 # Resolution order (highest precedence first):
 #   1. $ASCENDO_PYTHON_PIP_OVERRIDE  — test fixtures + power users
 #   2. ~/.local/share/mac-update/python-tools/bin/pip — toolchain-local
-#   3. pipx (only when present, for rare manifest entries that ship as pipx)
-#   4. pip3 on PATH
-#   5. pip on PATH
-#   6. ""  (caller treats as "pip unavailable")
+#   3. /opt/homebrew/bin/pip3        — Apple Silicon Homebrew (Sesja 53)
+#   4. /usr/local/bin/pip3           — Intel Homebrew + system installs
+#   5. pip3 on PATH                  — fallback (rejects Xcode shim explicitly)
+#   6. pip on PATH                   — last-ditch
+#   7. ""  (caller treats as "pip unavailable")
+#
+# Sesja 53 fix: Tauri-launched dashboard inherits launchctl PATH which on
+# macOS is just /usr/bin:/bin:/usr/sbin:/sbin. `command -v pip3` then
+# resolves to /usr/bin/pip3 — the Xcode-shipped Python 3.9 pip stub.
+# Operator saw all their pip-managed CLIs (poetry, ruff, mypy, etc.)
+# silently install into ~/Library/Python/3.9/bin/ instead of the brew
+# Python 3.14 site-packages where `ascendo` itself runs. Probing the
+# canonical brew paths first AND rejecting the Xcode shim avoids the
+# drift entirely.
 #
 # Returns path on stdout (or empty when nothing resolves).
 ascendo_pip_pip_bin() {
@@ -47,25 +57,54 @@ ascendo_pip_pip_bin() {
         printf '%s' "$_toolchain_pip"
         return 0
     fi
+    # Apple Silicon brew first, Intel brew second. These exist only on
+    # machines where brew installed Python; on others we fall through.
+    if [ -x "/opt/homebrew/bin/pip3" ]; then
+        printf '%s' "/opt/homebrew/bin/pip3"; return 0
+    fi
+    if [ -x "/usr/local/bin/pip3" ]; then
+        printf '%s' "/usr/local/bin/pip3"; return 0
+    fi
     local _bin
     _bin="$(command -v pip3 2>/dev/null || true)"
+    # Reject the Xcode shim. /usr/bin/pip3 always targets Apple's framework
+    # Python 3.9, which is unmanaged by ascendo. Pip-installs into it leak
+    # into ~/Library/Python/3.9/bin and never surface back to the operator.
+    case "$_bin" in
+        /usr/bin/pip3) _bin="" ;;
+    esac
     if [ -n "$_bin" ]; then printf '%s' "$_bin"; return 0; fi
     _bin="$(command -v pip 2>/dev/null || true)"
+    case "$_bin" in
+        /usr/bin/pip) _bin="" ;;
+    esac
     if [ -n "$_bin" ]; then printf '%s' "$_bin"; return 0; fi
     printf ''
 }
 
 # Companion to ascendo_pip_pip_bin: locate the matching python interpreter.
-# Tries python3 first, then python.
+# Same Sesja 53 fix — prefer brew Python over Xcode's /usr/bin/python3 shim.
 ascendo_pip_python_bin() {
     if [ -n "${ASCENDO_PYTHON_BIN_OVERRIDE:-}" ]; then
         printf '%s' "$ASCENDO_PYTHON_BIN_OVERRIDE"
         return 0
     fi
+    if [ -x "/opt/homebrew/bin/python3" ]; then
+        printf '%s' "/opt/homebrew/bin/python3"; return 0
+    fi
+    if [ -x "/usr/local/bin/python3" ]; then
+        printf '%s' "/usr/local/bin/python3"; return 0
+    fi
     local _bin
     _bin="$(command -v python3 2>/dev/null || true)"
+    case "$_bin" in
+        /usr/bin/python3) _bin="" ;;   # Xcode shim — reject
+    esac
     if [ -n "$_bin" ]; then printf '%s' "$_bin"; return 0; fi
     _bin="$(command -v python 2>/dev/null || true)"
+    case "$_bin" in
+        /usr/bin/python) _bin="" ;;
+    esac
     if [ -n "$_bin" ]; then printf '%s' "$_bin"; return 0; fi
     printf ''
 }

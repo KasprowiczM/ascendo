@@ -60,6 +60,47 @@ def _default_inventory_db_path() -> Path:
     return Path(override) if override else Path.home() / ".ascendo" / "inventory.db"
 
 
+def _augment_path_for_macos_gui() -> None:
+    """Prepend known-good binary dirs to PATH on macOS.
+
+    Sesja 53 fix: when the dashboard is launched by the Tauri shell (or any
+    macOS GUI process — Launchpad, Finder double-click, ``open -a``), it
+    inherits ``launchctl``'s PATH which by default is just
+    ``/usr/bin:/bin:/usr/sbin:/sbin``. Homebrew (``/opt/homebrew/bin``),
+    nvm/asdf node installs (``~/.local/share/mac-update/node/bin``), Rust
+    cargo (``~/.cargo/bin``), and bun (``~/.bun/bin``) are all missing,
+    so subprocesses spawned by apply.sh fall back to the Xcode-shipped
+    Python 3.9 (causing pip-installed packages to leak into
+    ``~/Library/Python/3.9/bin/``) or fail outright (npm postinstall
+    subshells calling ``bun`` / ``node``).
+
+    We augment PATH idempotently — if an entry is already present (e.g.
+    user launched the dashboard from Terminal with a full shell PATH),
+    we don't double-prepend.
+    """
+    import sys
+    if sys.platform != "darwin":
+        return
+    home = os.path.expanduser("~")
+    # Order: brew first (so brew Python wins over Xcode shim), then
+    # ascendo toolchain (node + bun), then ~/.local/bin (install.sh shims),
+    # then cargo (Rust dev). Each line is a single dir.
+    candidates = [
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",
+        f"{home}/.local/bin",
+        f"{home}/.local/share/mac-update/node/bin",
+        f"{home}/.local/share/mac-update/npm-global/bin",
+        f"{home}/.bun/bin",
+        f"{home}/.cargo/bin",
+    ]
+    existing = os.environ.get("PATH", "").split(":")
+    new_entries = [p for p in candidates if os.path.isdir(p) and p not in existing]
+    if new_entries:
+        os.environ["PATH"] = ":".join(new_entries + existing)
+
+
 def _resolve_edition() -> str:
     """Priority: ASCENDO_EDITION env > $ASCENDO_HOME/.ascendo-edition > basic.
 
@@ -162,6 +203,12 @@ def create_app(
         app.state.adapter = adapter
     app.state.runs_dir = runs_dir or _default_runs_dir()
     app.state.runs_dir.mkdir(parents=True, exist_ok=True)
+
+    # Sesja 53: augment PATH on macOS GUI launches so apply.sh subprocesses
+    # find brew Python, node, bun, and the ascendo toolchain instead of
+    # falling back to Xcode's framework Python 3.9. No-op on Linux/Windows
+    # and on macOS shells where PATH is already complete.
+    _augment_path_for_macos_gui()
 
     # Edition flag (basic | dev). Resolved here so app.state.edition is set
     # before any request reaches a route or middleware. Default = basic;
