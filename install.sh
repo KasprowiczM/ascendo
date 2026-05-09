@@ -1,34 +1,87 @@
 #!/usr/bin/env bash
 # Ascendo — one-liner installer for macOS / Linux.
 #
-# Usage:
+# Canonical usage:
 #   curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh | bash
 #
-# What it does:
-#   1. Detects the OS (Darwin / Ubuntu+Debian / Fedora / Arch).
-#   2. Asks for language (en | pl) and persists to
-#      ~/.config/ascendo/locale.txt.
-#   3. Installs missing system deps via the OS package manager.
-#   4. Asks for an install profile (1 = CLI, 2 = CLI + Web,
-#      3 = CLI + Web + Desktop).
-#   5. Clones (or pulls) the GitHub repo to ~/.local/share/ascendo.
-#   6. Sets up a venv, pip-installs core/ + adapters/<os>/ editable.
-#   7. Symlinks `ascendo` shim to ~/.local/bin/ascendo.
-#   8. Prints profile-tailored usage instructions.
+# Flags:
+#   --update / -u            Update an existing installation and exit (no clone)
+#   --reinstall / --force    Wipe ~/.local/share/ascendo and rebuild from scratch
+#   --verbose / -v           Trace every command
+#   --non-interactive        Refuse to prompt; use defaults / env-var overrides
+#   --help / -h              Show this banner and exit
 #
-# Idempotent: re-running pulls instead of re-cloning.
-# Bash 3.2 compatible (macOS default).
+# Env-var overrides (useful for unattended / CI installs):
+#   ASCENDO_LANG=en|pl              Language (default: en)
+#   ASCENDO_PROFILE=cli|web|desktop Install profile (default: web)
+#   ASCENDO_HOME=<path>             Install directory (default: ~/.local/share/ascendo)
+#   ASCENDO_NONINTERACTIVE=1        Same as --non-interactive
+#   ASCENDO_VERBOSE=1               Same as --verbose
+#   ASCENDO_REPO_URL=<url>          Override clone URL (useful for forks)
+#   ASCENDO_BRANCH=main             Branch to clone (default: main)
+#   HTTPS_PROXY / http_proxy        Honoured by curl + git (no special handling needed)
+#
+# What it does (install path):
+#   1. Detects OS (Darwin / Ubuntu+Debian / Fedora / Arch).
+#   2. Asks for language (or reads $ASCENDO_LANG).
+#   3. Verifies prerequisites (Python ≥3.11, git, curl, network, disk).
+#   4. Installs missing system deps via the OS package manager.
+#   5. Asks for an install profile (or reads $ASCENDO_PROFILE).
+#   6. Clones (or pulls) the repo to $ASCENDO_HOME.
+#   7. Sets up venv, pip-installs core/ + adapters/<os>/ editable.
+#   8. Symlinks `ascendo` shim to ~/.local/bin/.
+#   9. Self-tests via `ascendo doctor` and bails on failure.
+#
+# Idempotent: re-running upgrades in-place. Bash 3.2 compatible.
 
 set -euo pipefail
 
+# ── Defaults from env ─────────────────────────────────────────────────────
+TR_LANG="${ASCENDO_LANG:-en}"
+PROFILE="${ASCENDO_PROFILE:-}"
+INSTALL_DIR="${ASCENDO_HOME:-$HOME/.local/share/ascendo}"
+REPO_URL="${ASCENDO_REPO_URL:-https://github.com/KasprowiczM/ascendo.git}"
+REPO_BRANCH="${ASCENDO_BRANCH:-main}"
+NONINTERACTIVE="${ASCENDO_NONINTERACTIVE:-0}"
+VERBOSE="${ASCENDO_VERBOSE:-0}"
+MODE="install"          # install | update
+FORCE_REINSTALL=0
+MIN_DISK_MB=1024        # 1 GB
+
+# ── Arg parser ────────────────────────────────────────────────────────────
+show_help() {
+    sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
+    exit 0
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --update|-u)            MODE="update" ;;
+        --reinstall|--force)    FORCE_REINSTALL=1 ;;
+        --verbose|-v)           VERBOSE=1 ;;
+        --non-interactive)      NONINTERACTIVE=1 ;;
+        --help|-h)              show_help ;;
+        --lang=*)               TR_LANG="${1#*=}" ;;
+        --profile=*)            PROFILE="${1#*=}" ;;
+        --home=*)               INSTALL_DIR="${1#*=}" ;;
+        *)
+            printf "Unknown flag: %s. Try --help.\n" "$1" >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
+[ "$VERBOSE" = "1" ] && set -x
+
 # ── Colours ────────────────────────────────────────────────────────────────
 if [ -t 1 ] && command -v tput >/dev/null 2>&1; then
-    C_BLUE="$(tput setaf 4 || true)"
-    C_GREEN="$(tput setaf 2 || true)"
-    C_YELLOW="$(tput setaf 3 || true)"
-    C_RED="$(tput setaf 1 || true)"
-    C_BOLD="$(tput bold || true)"
-    C_RESET="$(tput sgr0 || true)"
+    C_BLUE="$(tput setaf 4 2>/dev/null || true)"
+    C_GREEN="$(tput setaf 2 2>/dev/null || true)"
+    C_YELLOW="$(tput setaf 3 2>/dev/null || true)"
+    C_RED="$(tput setaf 1 2>/dev/null || true)"
+    C_BOLD="$(tput bold 2>/dev/null || true)"
+    C_RESET="$(tput sgr0 2>/dev/null || true)"
 else
     C_BLUE=""; C_GREEN=""; C_YELLOW=""; C_RED=""; C_BOLD=""; C_RESET=""
 fi
@@ -40,9 +93,6 @@ fail()  { printf "%s[fail]%s  %s\n"  "$C_RED"    "$C_RESET" "$1" >&2; exit 1; }
 step()  { printf "\n%s==>%s %s%s%s\n" "$C_BLUE" "$C_RESET" "$C_BOLD" "$1" "$C_RESET"; }
 
 # ── i18n: hard-coded EN/PL strings (bash 3.2 — no associative arrays) ─────
-# Keys are upper-snake. Lookup via `tr_lookup KEY`.
-TR_LANG="en"
-
 tr_lookup() {
     local key="$1"
     case "$TR_LANG-$key" in
@@ -76,8 +126,8 @@ tr_lookup() {
         pl-CLONING)         echo "Klonowanie repozytorium Ascendo…" ;;
         en-PULLING)         echo "Existing checkout found — pulling latest…" ;;
         pl-PULLING)         echo "Istniejący checkout — pobieranie najnowszej wersji…" ;;
-        en-VENV_CREATE)     echo "Creating Python venv at \$INSTALL_DIR/.venv…" ;;
-        pl-VENV_CREATE)     echo "Tworzenie Python venv w \$INSTALL_DIR/.venv…" ;;
+        en-VENV_CREATE)     echo "Creating Python venv…" ;;
+        pl-VENV_CREATE)     echo "Tworzenie Python venv…" ;;
         en-PIP_INSTALL)     echo "Installing Ascendo Python packages (editable)…" ;;
         pl-PIP_INSTALL)     echo "Instalowanie pakietów Python Ascendo (editable)…" ;;
         en-DASHBOARD_DEPS)  echo "Installing dashboard dependencies (FastAPI + uvicorn)…" ;;
@@ -92,11 +142,34 @@ tr_lookup() {
         pl-USAGE_HEADER)    echo "Następne kroki:" ;;
         en-USAGE_PATH)      echo "Make sure ~/.local/bin is on your PATH (most modern shells already do this)." ;;
         pl-USAGE_PATH)      echo "Upewnij się że ~/.local/bin jest w PATH (większość powłok już ma)." ;;
+        en-NO_NETWORK)      echo "No network reachable (https://github.com unreachable). Check connection / proxy and retry." ;;
+        pl-NO_NETWORK)      echo "Brak sieci (https://github.com nieosiągalne). Sprawdź połączenie / proxy i spróbuj ponownie." ;;
+        en-DISK_LOW)        echo "Less than 1 GB free in install dir. Free up space and retry." ;;
+        pl-DISK_LOW)        echo "Mniej niż 1 GB wolnego miejsca. Zwolnij miejsce i spróbuj ponownie." ;;
+        en-PYTHON_OLD)      echo "Python 3.11+ required." ;;
+        pl-PYTHON_OLD)      echo "Wymagany Python 3.11+." ;;
+        en-LOCKED_PM)       echo "Package manager appears locked (another install in progress?). Wait and retry." ;;
+        pl-LOCKED_PM)       echo "Menedżer pakietów zablokowany (inna instalacja?). Poczekaj i spróbuj ponownie." ;;
+        en-DOCTOR_OK)       echo "Self-test passed — ascendo doctor reports green." ;;
+        pl-DOCTOR_OK)       echo "Test pomyślny — ascendo doctor zgłasza zielone." ;;
+        en-DOCTOR_FAIL)     echo "Self-test FAILED — ascendo doctor returned non-zero. Run with --verbose to debug." ;;
+        pl-DOCTOR_FAIL)     echo "Test NIEUDANY — ascendo doctor zwrócił błąd. Uruchom z --verbose." ;;
+        en-UPDATE_NOTFOUND) echo "No installation found at \$ASCENDO_HOME. Run install.sh (without --update) to install." ;;
+        pl-UPDATE_NOTFOUND) echo "Nie znaleziono instalacji w \$ASCENDO_HOME. Uruchom install.sh (bez --update)." ;;
         *)                  echo "$key" ;;
     esac
 }
-
 t() { tr_lookup "$1"; }
+
+# ── HOME safety net ───────────────────────────────────────────────────────
+if [ -z "${HOME:-}" ]; then
+    if HOME="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6)" && [ -n "$HOME" ]; then
+        export HOME
+        warn "\$HOME was unset — derived $HOME from passwd."
+    else
+        fail "\$HOME is not set and could not be derived. Set HOME and retry."
+    fi
+fi
 
 # ── OS detection ──────────────────────────────────────────────────────────
 detect_os() {
@@ -118,29 +191,120 @@ detect_os() {
     return 0
 }
 
-# ── Prompt helpers (bash 3.2 safe) ────────────────────────────────────────
+# ── Prompt helpers ────────────────────────────────────────────────────────
 prompt_default() {
-    # $1 = prompt, $2 = default, sets REPLY var
-    local prompt="$1"
-    local default="$2"
-    if [ ! -t 0 ]; then
-        # Non-interactive (curl|bash piped); accept default silently.
+    local prompt="$1" default="$2"
+    if [ "$NONINTERACTIVE" = "1" ] || [ ! -t 0 ]; then
         REPLY="$default"
         return 0
     fi
     printf "%s " "$prompt"
-    if ! read -r REPLY; then
-        REPLY="$default"
+    if ! read -r REPLY; then REPLY="$default"; fi
+    [ -z "$REPLY" ] && REPLY="$default"
+}
+
+need_cmd() { command -v "$1" >/dev/null 2>&1; }
+
+# ── Network + disk preflight ──────────────────────────────────────────────
+check_network() {
+    if ! curl -fsSL --max-time 8 -o /dev/null -I https://github.com; then
+        fail "$(t NO_NETWORK)"
     fi
-    if [ -z "$REPLY" ]; then
-        REPLY="$default"
+    ok "Network: github.com reachable"
+}
+
+check_disk() {
+    local dir="$1" avail_kb avail_mb
+    mkdir -p "$dir" 2>/dev/null || true
+    if avail_kb="$(df -Pk "$dir" 2>/dev/null | awk 'NR==2 {print $4}')" && [ -n "$avail_kb" ]; then
+        avail_mb=$((avail_kb / 1024))
+        if [ "$avail_mb" -lt "$MIN_DISK_MB" ]; then
+            fail "$(t DISK_LOW) (have ${avail_mb} MB, need ${MIN_DISK_MB} MB)"
+        fi
+        ok "Disk: ${avail_mb} MB free in $dir"
+    else
+        warn "Could not determine free disk space in $dir; continuing anyway."
     fi
 }
 
-# ── Step 1: language ──────────────────────────────────────────────────────
-step "$(t WELCOME)"
+check_pm_unlocked() {
+    case "$OS" in
+        ubuntu)
+            for f in /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock; do
+                if [ -e "$f" ] && command -v fuser >/dev/null 2>&1 && \
+                   sudo -n fuser "$f" >/dev/null 2>&1; then
+                    fail "$(t LOCKED_PM) (lock: $f)"
+                fi
+            done
+            ;;
+    esac
+}
 
-prompt_default "$(t PICK_LANG)" "en"
+# ── Banner ────────────────────────────────────────────────────────────────
+step "$(t WELCOME)"
+info "Mode: $MODE   Verbose: $VERBOSE   Non-interactive: $NONINTERACTIVE"
+
+# ── Update path: short-circuit ────────────────────────────────────────────
+if [ "$MODE" = "update" ]; then
+    if [ ! -d "$INSTALL_DIR/.git" ]; then
+        fail "$(t UPDATE_NOTFOUND) (looked at: $INSTALL_DIR)"
+    fi
+    step "Updating $INSTALL_DIR"
+    OS="$(detect_os)"
+    [ "$OS" = "unknown" ] && fail "$(t OS_UNSUPPORTED)"
+    check_network
+
+    OLD_VERSION="$( "$INSTALL_DIR/.venv/bin/python" -c 'from ascendo import __version__; print(__version__)' 2>/dev/null || echo unknown )"
+    info "Current version: $OLD_VERSION"
+
+    info "git pull --ff-only origin $REPO_BRANCH"
+    git -C "$INSTALL_DIR" fetch --quiet origin "$REPO_BRANCH" || fail "git fetch failed; try git -C $INSTALL_DIR pull manually"
+    git -C "$INSTALL_DIR" pull --ff-only origin "$REPO_BRANCH" || \
+        fail "Local changes prevent fast-forward. Stash or commit them, then re-run."
+
+    VENV_DIR="$INSTALL_DIR/.venv"
+    if [ ! -x "$VENV_DIR/bin/python" ]; then
+        warn "venv missing — recreating."
+        python3 -m venv "$VENV_DIR"
+    fi
+
+    info "Upgrading editable installs…"
+    "$VENV_DIR/bin/pip" install --upgrade -e "$INSTALL_DIR/core" --quiet
+    case "$OS" in
+        macos)               ADAPTER_DIR="$INSTALL_DIR/adapters/macos" ;;
+        ubuntu|fedora|arch)  ADAPTER_DIR="$INSTALL_DIR/adapters/ubuntu" ;;
+    esac
+    if [ -n "${ADAPTER_DIR:-}" ] && [ -d "$ADAPTER_DIR" ]; then
+        "$VENV_DIR/bin/pip" install --upgrade -e "$ADAPTER_DIR" --no-deps --quiet || true
+    fi
+    if "$VENV_DIR/bin/pip" show fastapi >/dev/null 2>&1; then
+        "$VENV_DIR/bin/pip" install --upgrade fastapi 'uvicorn[standard]' httpx --quiet
+    fi
+
+    NEW_VERSION="$( "$VENV_DIR/bin/python" -c 'from ascendo import __version__; print(__version__)' 2>/dev/null || echo unknown )"
+    info "New version:     $NEW_VERSION"
+
+    # Restart any running dashboard so users see the new code.
+    if pgrep -f "ascendo dashboard" >/dev/null 2>&1; then
+        info "Restarting running dashboard process(es)…"
+        pkill -f "ascendo dashboard" || true
+        sleep 1
+        nohup "$HOME/.local/bin/ascendo" dashboard --background >/dev/null 2>&1 &
+        ok "Dashboard restarted in background."
+    fi
+
+    # Self-test.
+    if "$VENV_DIR/bin/python" -m ascendo doctor >/dev/null 2>&1; then
+        ok "$(t DOCTOR_OK)"
+    else
+        warn "$(t DOCTOR_FAIL)"
+    fi
+    ok "Update complete: $OLD_VERSION → $NEW_VERSION"
+    exit 0
+fi
+
+# ── Install path ──────────────────────────────────────────────────────────
+prompt_default "$(t PICK_LANG)" "${TR_LANG:-en}"
 case "$REPLY" in
     pl|PL|pl_*) TR_LANG="pl" ;;
     *)          TR_LANG="en" ;;
@@ -149,7 +313,6 @@ mkdir -p "$HOME/.config/ascendo"
 printf "%s\n" "$TR_LANG" > "$HOME/.config/ascendo/locale.txt"
 ok "$(t LANG_SAVED)"
 
-# ── Step 2: detect OS ─────────────────────────────────────────────────────
 step "$(t DETECT_OS)"
 OS="$(detect_os)"
 case "$OS" in
@@ -160,10 +323,19 @@ case "$OS" in
     unknown) fail "$(t OS_UNSUPPORTED)" ;;
 esac
 
-# ── Step 3: install dependencies ──────────────────────────────────────────
-step "$(t DEPS_CHECK)"
+step "Preflight checks"
+check_network
+check_disk "$(dirname "$INSTALL_DIR")"
+check_pm_unlocked
 
-need_cmd() { command -v "$1" >/dev/null 2>&1; }
+# ── Reinstall: nuke prior install ─────────────────────────────────────────
+if [ "$FORCE_REINSTALL" = "1" ] && [ -e "$INSTALL_DIR" ]; then
+    warn "--reinstall: removing $INSTALL_DIR"
+    rm -rf "$INSTALL_DIR"
+fi
+
+# ── System deps ───────────────────────────────────────────────────────────
+step "$(t DEPS_CHECK)"
 
 deps_install_macos() {
     if ! need_cmd brew; then
@@ -237,63 +409,63 @@ case "$OS" in
     arch)    deps_install_arch ;;
 esac
 
-# Verify Python is >=3.11
 PY_BIN="python3"
 if ! "$PY_BIN" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
-    fail "Ascendo requires Python 3.11+. Current: $($PY_BIN --version 2>&1 || echo missing)"
+    fail "$(t PYTHON_OLD) Current: $($PY_BIN --version 2>&1 || echo missing)"
 fi
 ok "Python: $($PY_BIN --version)"
+need_cmd git || fail "git not on PATH after dep install — please install git manually."
 
-# ── Step 4: install profile ───────────────────────────────────────────────
-step "$(t PICK_PROFILE)"
-printf "%s\n" "$(t PROFILE_1)"
-printf "%s\n" "$(t PROFILE_2)"
-printf "%s\n" "$(t PROFILE_3)"
-
-PROFILE=""
-while [ -z "$PROFILE" ]; do
-    prompt_default "$(t PROFILE_PROMPT)" "2"
-    case "$REPLY" in
-        1) PROFILE="cli" ;;
-        2) PROFILE="web" ;;
-        3) PROFILE="desktop" ;;
-        *) warn "$(t PROFILE_INVALID)" ;;
-    esac
-done
+# ── Profile ───────────────────────────────────────────────────────────────
+if [ -z "$PROFILE" ]; then
+    step "$(t PICK_PROFILE)"
+    printf "%s\n" "$(t PROFILE_1)"
+    printf "%s\n" "$(t PROFILE_2)"
+    printf "%s\n" "$(t PROFILE_3)"
+    while [ -z "$PROFILE" ]; do
+        prompt_default "$(t PROFILE_PROMPT)" "2"
+        case "$REPLY" in
+            1|cli)     PROFILE="cli" ;;
+            2|web)     PROFILE="web" ;;
+            3|desktop) PROFILE="desktop" ;;
+            *)         warn "$(t PROFILE_INVALID)" ;;
+        esac
+    done
+fi
+case "$PROFILE" in
+    cli|web|desktop) ;;
+    *) fail "Invalid \$ASCENDO_PROFILE: '$PROFILE'. Use cli|web|desktop." ;;
+esac
 ok "profile: $PROFILE"
 
-# ── Step 5: clone or pull ─────────────────────────────────────────────────
-INSTALL_DIR="$HOME/.local/share/ascendo"
-REPO_URL="https://github.com/KasprowiczM/ascendo.git"
-
+# ── Clone or pull ─────────────────────────────────────────────────────────
 step "Repo @ $INSTALL_DIR"
 if [ -d "$INSTALL_DIR/.git" ]; then
     info "$(t PULLING)"
-    git -C "$INSTALL_DIR" pull --ff-only
+    git -C "$INSTALL_DIR" fetch --quiet origin "$REPO_BRANCH" || true
+    git -C "$INSTALL_DIR" pull --ff-only origin "$REPO_BRANCH" || \
+        fail "Existing checkout has local changes — stash or rerun with --reinstall."
 else
     info "$(t CLONING)"
     mkdir -p "$(dirname "$INSTALL_DIR")"
     if [ "$PROFILE" = "cli" ]; then
-        # Sparse-checkout to skip the heavy ui/desktop-tauri tree.
-        git clone --filter=blob:none --no-checkout "$REPO_URL" "$INSTALL_DIR"
+        git clone --filter=blob:none --no-checkout -b "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR"
         git -C "$INSTALL_DIR" sparse-checkout init --cone
         git -C "$INSTALL_DIR" sparse-checkout set core adapters bin schemas docs plugins lib scripts share i18n
-        git -C "$INSTALL_DIR" checkout main
+        git -C "$INSTALL_DIR" checkout "$REPO_BRANCH"
     else
-        git clone "$REPO_URL" "$INSTALL_DIR"
+        git clone -b "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR"
     fi
 fi
 ok "Repo ready"
 
-# ── Step 6: venv + pip install ────────────────────────────────────────────
+# ── venv + pip ────────────────────────────────────────────────────────────
 step "Python venv"
 VENV_DIR="$INSTALL_DIR/.venv"
 if [ ! -x "$VENV_DIR/bin/python" ]; then
     info "$(t VENV_CREATE)"
     "$PY_BIN" -m venv "$VENV_DIR"
 fi
-# shellcheck disable=SC1091
-. "$VENV_DIR/bin/activate"
 "$VENV_DIR/bin/python" -m pip install --upgrade pip --quiet
 
 info "$(t PIP_INSTALL)"
@@ -317,8 +489,6 @@ fi
 if [ "$PROFILE" = "desktop" ]; then
     step "Desktop toolchain"
     info "$(t DESKTOP_DEPS)"
-
-    # Rust via rustup (the official, portable path).
     if ! need_cmd cargo; then
         info "Installing Rust via rustup (no sudo)…"
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
@@ -326,38 +496,32 @@ if [ "$PROFILE" = "desktop" ]; then
         . "$HOME/.cargo/env"
     fi
     ok "cargo: $(cargo --version)"
-
-    # Node 18+: macOS via brew, Linux via the OS package manager (with fnm fallback).
     if ! need_cmd node || ! node -e 'process.exit(parseInt(process.versions.node) >= 18 ? 0 : 1)' 2>/dev/null; then
         case "$OS" in
             macos)
                 brew install node ;;
             ubuntu)
-                info "Installing Node 20 via NodeSource (recommended for Ubuntu)…"
+                info "Installing Node 20 via NodeSource…"
                 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
                 sudo apt-get install -y nodejs ;;
-            fedora)
-                sudo dnf install -y nodejs npm ;;
-            arch)
-                sudo pacman -S --needed --noconfirm nodejs npm ;;
+            fedora) sudo dnf install -y nodejs npm ;;
+            arch)   sudo pacman -S --needed --noconfirm nodejs npm ;;
         esac
     fi
     ok "node: $(node --version)"
-
     if [ -d "$INSTALL_DIR/ui/desktop-tauri" ]; then
         info "Running npm install in ui/desktop-tauri/ …"
         ( cd "$INSTALL_DIR/ui/desktop-tauri" && npm install --silent ) || \
             warn "npm install reported a non-fatal error; you can re-run it manually."
     else
-        warn "ui/desktop-tauri/ not present — sparse-checkout may have skipped it. Run a full clone for desktop builds."
+        warn "ui/desktop-tauri/ not present — sparse-checkout may have skipped it."
     fi
 fi
 
-# ── Step 7: shim ──────────────────────────────────────────────────────────
+# ── Shim ──────────────────────────────────────────────────────────────────
 step "CLI shim"
 mkdir -p "$HOME/.local/bin"
 SHIM="$HOME/.local/bin/ascendo"
-
 cat > "$SHIM" <<EOF
 #!/usr/bin/env bash
 # Ascendo CLI shim — generated by install.sh.
@@ -366,9 +530,32 @@ EOF
 chmod +x "$SHIM"
 ok "$(t SHIM_INSTALL)"
 
-# ── Step 8: usage instructions ────────────────────────────────────────────
-step "$(t DONE)"
+# PATH check
+case ":$PATH:" in
+    *:"$HOME/.local/bin":*) ok "~/.local/bin already on PATH" ;;
+    *)
+        warn "~/.local/bin is NOT on PATH. Add this line to your shell rc:"
+        case "${SHELL:-}" in
+            */zsh)   info "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc && source ~/.zshrc" ;;
+            */fish)  info "  fish_add_path \$HOME/.local/bin" ;;
+            *)       info "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc && source ~/.bashrc" ;;
+        esac
+        ;;
+esac
 
+# ── Self-test ─────────────────────────────────────────────────────────────
+step "Self-test"
+if "$VENV_DIR/bin/python" -m ascendo doctor >/dev/null 2>&1; then
+    ok "$(t DOCTOR_OK)"
+else
+    warn "$(t DOCTOR_FAIL)"
+    if [ "$VERBOSE" = "1" ]; then
+        "$VENV_DIR/bin/python" -m ascendo doctor || true
+    fi
+fi
+
+# ── Usage ─────────────────────────────────────────────────────────────────
+step "$(t DONE)"
 printf "\n%s%s%s\n" "$C_BOLD" "$(t USAGE_HEADER)" "$C_RESET"
 printf "  %s\n" "$(t USAGE_PATH)"
 printf "\n"
@@ -378,23 +565,12 @@ printf "  %sascendo run --phase apply%s            # apply updates (gated)\n" "$
 
 if [ "$PROFILE" = "web" ] || [ "$PROFILE" = "desktop" ]; then
     printf "\n  %sascendo dashboard --port 8765%s        # open http://127.0.0.1:8765/\n" "$C_GREEN" "$C_RESET"
-    printf "  %sascendo dashboard --background%s        # detached mode (returns immediately)\n" "$C_GREEN" "$C_RESET"
-fi
-
-if [ "$PROFILE" = "desktop" ]; then
-    case "$OS" in
-        macos)
-            printf "\n  %sbash %s/bin/launch-desktop-macos.sh --build%s\n" "$C_GREEN" "$INSTALL_DIR" "$C_RESET"
-            printf "                                          # produces .app + .dmg under target/release/bundle/\n" ;;
-        ubuntu|fedora|arch)
-            printf "\n  %sbash %s/bin/launch-desktop-linux.sh --build%s\n" "$C_GREEN" "$INSTALL_DIR" "$C_RESET"
-            printf "                                          # produces .AppImage under target/release/bundle/\n" ;;
-    esac
+    printf "  %sascendo dashboard --background%s        # detached mode\n" "$C_GREEN" "$C_RESET"
 fi
 
 printf "\n  Repo:    %s\n" "$INSTALL_DIR"
 printf "  venv:    %s\n" "$VENV_DIR"
 printf "  config:  %s\n" "$HOME/.config/ascendo/locale.txt"
-printf "  Docs:    https://github.com/KasprowiczM/ascendo\n"
+printf "  Update:  curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.sh | bash\n"
 printf "\n"
 ok "$(t DONE)"
