@@ -71,32 +71,68 @@ Target releases:
   all three OSes, plugin signing + verification.
 - **v1.0.0** — stable API + signed binaries + plugin marketplace.
 
-## Quick install (one-liner — macOS / Linux)
+## Quick install — one-liner per OS
+
+**macOS / Linux** (any of Ubuntu+Debian, Fedora, Arch):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh | bash
 ```
 
-The installer:
+**Windows** (PowerShell 5.1+ or 7.x — both are supported):
 
-1. Detects your OS (macOS / Ubuntu+Debian / Fedora / Arch).
-2. Asks for language (`en` / `pl`) and persists it to
-   `~/.config/ascendo/locale.txt`.
-3. Installs missing system dependencies via your OS package manager
-   (`brew` / `apt` / `dnf` / `pacman`) — printing every `sudo` call
-   before invoking it.
-4. Asks for an install profile:
-   1. **CLI only** — fastest, sparse-checkout, ~30 MB.
-   2. **CLI + Web dashboard** — adds FastAPI + uvicorn.
-   3. **CLI + Web + Desktop** — adds Rust toolchain + Node 18+ + Tauri 2.x.
-5. Clones (or pulls) the repo to `~/.local/share/ascendo`, sets up a venv
-   under `.venv/`, pip-installs `core/` + `adapters/<os>/` editable, and
-   symlinks an `ascendo` shim into `~/.local/bin/`.
-6. Prints profile-tailored next steps.
+```powershell
+iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 | iex
+```
 
-Re-running the script is safe: it pulls instead of re-cloning. Windows
-users: see the **Windows** section below; the curl|bash one-liner is
-not available on PowerShell yet.
+That's it. Each installer auto-detects the OS, installs missing
+system deps (Python ≥3.11, git, curl/winget), asks once for language
+and install profile (CLI / CLI+Web / CLI+Web+Desktop), clones the repo
+to a per-user dir, sets up a venv, pip-installs `core/` + the matching
+`adapters/<os>/` editable, drops an `ascendo` shim on PATH, and runs
+`ascendo doctor` as a self-test before declaring success.
+
+## Quick update — one-liner per OS
+
+**macOS / Linux:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.sh | bash
+```
+
+**Windows:**
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.ps1 | iex
+```
+
+The updater fast-forwards your local checkout against `origin/main`,
+re-runs the editable pip installs, refreshes dashboard deps if you have
+the web profile, restarts any running `ascendo dashboard` (or the
+`AscendoDashboard` Windows service), and prints a before → after
+version delta.
+
+### Unattended / CI installs
+
+All four scripts respect the same env vars:
+
+```bash
+ASCENDO_LANG=en \
+ASCENDO_PROFILE=web \
+ASCENDO_NONINTERACTIVE=1 \
+  curl -fsSL .../install.sh | bash
+```
+
+```powershell
+$env:ASCENDO_LANG = 'en'; $env:ASCENDO_PROFILE = 'web'; $env:ASCENDO_NONINTERACTIVE = '1'
+iwr -useb .../install.ps1 | iex
+```
+
+Add `--reinstall` (POSIX) or `-Reinstall` (PowerShell) to wipe and
+rebuild from scratch. `--verbose` / `-Verbose` traces every command.
+Re-running an installer on an already-installed system upgrades it
+(safe + idempotent); re-running an updater on a machine without an
+existing install politely redirects you to the installer.
 
 ## Install (when v0.1.0 ships)
 
