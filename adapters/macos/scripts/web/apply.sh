@@ -97,32 +97,21 @@ while IFS= read -r SLUG; do
     INSTALLED=$(_web_installed_version "$APP_PATH")
     [ -z "$INSTALLED" ] && continue
 
-    # Defer-eligible handlers: skip if running
-    case "$HANDLER" in
-        sparkle|github_dmg|squirrel|release_feed)
-            if _web_is_running "$BUNDLE_ID"; then
-                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
-                json_add_message "info" "${SLUG}: deferred_app_in_use"
-                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
-                continue
-            fi
-            ;;
-    esac
-
     if [ "$DRY_RUN" = "true" ]; then
         json_add_item "web:${SLUG}" "$INSTALLED" "" "planned" "web" "$HANDLER"
         COUNT_PLANNED=$((COUNT_PLANNED + 1))
         continue
     fi
 
-    # Tier-A handlers (sparkle/github_dmg/release_feed/docker/msupdate) probe
-    # candidate version BEFORE invoking apply, so we skip up-to-date apps
-    # instead of redundantly redownloading + reinstalling. Tier-B handlers
-    # (keystone/squirrel/builtin) have no synchronous candidate — daemon
-    # reconciles, so we always invoke them when filter matches.
+    # ── Step 1: probe candidate version (Tier-A handlers only) ──────────
+    # Order matters: candidate probe BEFORE the defer-if-running check,
+    # so apps that are already up-to-date don't get misleadingly marked
+    # "deferred_app_in_use" just because the user has them open.
+    # Tier-B handlers (keystone/squirrel/builtin) have no synchronous
+    # candidate — daemon reconciles, so we always invoke them.
+    CAND=""
     case "$HANDLER" in
         sparkle|github_dmg|release_feed|docker|msupdate|omaha)
-            CAND=""
             case "$HANDLER" in
                 sparkle)      CAND=$(sparkle_check      "$SLUG" "$CFG" 2>/dev/null) ;;
                 github_dmg)   CAND=$(github_dmg_check   "$SLUG" "$CFG" 2>/dev/null) ;;
@@ -131,23 +120,54 @@ while IFS= read -r SLUG; do
                 msupdate)     CAND=$(msupdate_check     "$SLUG" "$CFG" 2>/dev/null) ;;
                 omaha)        CAND=$(omaha_check        "$SLUG" "$CFG" 2>/dev/null) ;;
             esac
-            if [ -n "$CAND" ] && [ "$CAND" = "$INSTALLED" ]; then
+            # Skip apply when installed >= candidate OR candidate is a
+            # pre-release the user didn't ask for. Common cases:
+            #   * Spotify 1.2.89.539 installed; brew API still on 1.2.88.483
+            #     (vendor auto-updater is ahead of livecheck) → don't
+            #     downgrade.
+            #   * Firefox Developer Edition 151.0 stable installed; Mozilla
+            #     product-details still on 151.0b8 beta → don't replace
+            #     stable with beta.
+            # Without this guard we'd attempt the DOWNGRADE, destroy user
+            # data, and silently report "success".
+            if _should_skip_upgrade "$INSTALLED" "$CAND"; then
                 json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "up_to_date" "web" "$HANDLER"
                 COUNT_UPTODATE=$((COUNT_UPTODATE + 1))
                 continue
             fi
-            # If the pre-dispatch probe returned EMPTY (rate-limit, network
-            # blip, transient vendor 502, etc.), do NOT fall through to apply
-            # — the apply call will hit the same upstream and almost
-            # certainly produce the same failure, surfacing as a misleading
-            # "handler exit 26" failed item. Skip with a clear reason so
-            # the operator sees the actual cause and the run can be retried.
-            # Tier-A handlers (github_dmg/release_feed/sparkle) all rely on
-            # external HTTPS — when the probe fails, "skip & retry" is the
-            # correct semantic, not "blindly mutate".
-            if [ -z "$CAND" ]; then
+            # Empty probe (rate-limit / network blip / vendor 502) →
+            # skip with explicit "probe_unavailable" reason, not failed.
+            # Tier-A handlers all rely on external HTTPS; when the probe
+            # fails the apply call would hit the same upstream and produce
+            # the same misleading "handler exit 26" failure.
+            #
+            # github_dmg specifically emits the sentinel "__GH_RATE_LIMITED__"
+            # when the GitHub API returns a 403 with rate-limit headers
+            # (anonymous quota = 60 requests/hour). Treat that the same as
+            # an empty probe — surface as skipped probe_unavailable.
+            if [ -z "$CAND" ] || [ "$CAND" = "__GH_RATE_LIMITED__" ]; then
+                _reason="vendor endpoint unreachable / rate limited; retry later"
+                if [ "$CAND" = "__GH_RATE_LIMITED__" ]; then
+                    _reason="GitHub API anonymous rate limit (60/hr) hit; retry in ~1 hour or set GITHUB_TOKEN env var"
+                fi
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
-                json_add_message "info" "${SLUG}: probe_unavailable (vendor endpoint unreachable / rate limited; retry later)"
+                json_add_message "info" "${SLUG}: probe_unavailable (${_reason})"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                continue
+            fi
+            ;;
+    esac
+
+    # ── Step 2: defer-if-running ────────────────────────────────────────
+    # An update IS available. If the user has the app open, we can't
+    # safely replace its bundle. Sparkle/Squirrel/release_feed/github_dmg
+    # all do bundle-swap copies; running app would either crash or roll
+    # back the swap on next launch. Defer with a clear actionable reason.
+    case "$HANDLER" in
+        sparkle|github_dmg|squirrel|release_feed)
+            if _web_is_running "$BUNDLE_ID"; then
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: deferred_app_in_use (quit ${DISPLAY_NAME:-$SLUG} and re-run apply to upgrade ${INSTALLED} → ${CAND:-latest})"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 continue
             fi
@@ -178,7 +198,7 @@ while IFS= read -r SLUG; do
                 # Tier-B: vendor's update agent triggered; outcome is async.
                 # Status 'triggered' (not 'success') so the operator + verify
                 # phase know to expect post-apply reconciliation.
-                json_add_item "web:${SLUG}" "$INSTALLED" "" "triggered" "web" "$HANDLER"
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "triggered" "web" "$HANDLER"
                 case "$HANDLER" in
                     keystone) json_add_message "info" "${SLUG}: ksadmin update queued; daemon will reconcile" ;;
                     squirrel) json_add_message "info" "${SLUG}: app relaunched; Squirrel will self-update on next quit/relaunch" ;;
@@ -188,9 +208,21 @@ while IFS= read -r SLUG; do
                 COUNT_TRIGGERED=$((COUNT_TRIGGERED + 1))
                 ;;
             *)
-                # Tier-A: synchronous swap completed
-                json_add_item "web:${SLUG}" "$INSTALLED" "" "success" "web" "$HANDLER"
-                COUNT_SUCCESS=$((COUNT_SUCCESS + 1))
+                # Tier-A: synchronous swap completed. Re-read CFBundle to
+                # confirm the swap actually took (some apps refuse to be
+                # replaced — the apply may have exited 0 but the bundle
+                # is unchanged on disk).
+                _post_installed=$(_web_installed_version "$APP_PATH")
+                if [ -n "$_post_installed" ] && [ "$_post_installed" = "$INSTALLED" ] \
+                       && [ -n "$CAND" ] && [ "$CAND" != "$INSTALLED" ]; then
+                    # Bundle unchanged — apply was a no-op. Don't lie.
+                    json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "failed" "web" "$HANDLER"
+                    json_add_message "error" "${SLUG}: apply reported success but on-disk version unchanged (${INSTALLED}) — likely a silent install refusal; try quitting the app first"
+                    COUNT_FAILED=$((COUNT_FAILED + 1))
+                else
+                    json_add_item "web:${SLUG}" "${_post_installed:-$INSTALLED}" "$CAND" "success" "web" "$HANDLER"
+                    COUNT_SUCCESS=$((COUNT_SUCCESS + 1))
+                fi
                 ;;
         esac
     else
@@ -199,7 +231,7 @@ while IFS= read -r SLUG; do
         if [ -s "$err_log" ]; then
             tail_msg=$(/usr/bin/tail -n 12 "$err_log" | /usr/bin/awk 'NF{print}' | /usr/bin/head -c 1500)
         fi
-        json_add_item "web:${SLUG}" "$INSTALLED" "" "failed" "web" "$HANDLER"
+        json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "failed" "web" "$HANDLER"
         json_add_message "error" "${SLUG}: handler exit ${rc}: ${tail_msg}"
         COUNT_FAILED=$((COUNT_FAILED + 1))
     fi

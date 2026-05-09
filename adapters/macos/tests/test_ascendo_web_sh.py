@@ -60,6 +60,71 @@ def test_version_gt_basic_semver() -> None:
             assert "n" in r.stdout, f"{a} > {b} expected 1; got {r.stdout!r}"
 
 
+def test_is_prerelease_detects_common_markers() -> None:
+    """_is_prerelease detects beta/rc/alpha/dev/nightly/pre suffixes."""
+    prerelease_examples = [
+        "151.0b8",       # Mozilla Firefox beta
+        "151.0a1",       # Firefox alpha (Nightly)
+        "1.0.0-rc1",
+        "1.0.0-rc.2",
+        "2.0-beta",
+        "2.0-Beta",
+        "3.0-alpha.1",
+        "1.0.0-dev",
+        "1.0-pre",
+        "1.0-nightly",
+    ]
+    for v in prerelease_examples:
+        r = _run_bash(f'_is_prerelease "{v}" && echo y || echo n')
+        assert "y" in r.stdout, f"{v} should be detected as pre-release; got {r.stdout!r}"
+
+    stable_examples = [
+        "151.0",
+        "1.2.3",
+        "1.2.89.539",
+        "26.4.2",
+        "0",
+        "10.0.0",
+    ]
+    for v in stable_examples:
+        r = _run_bash(f'_is_prerelease "{v}" && echo y || echo n')
+        assert "n" in r.stdout, f"{v} should NOT be detected as pre-release; got {r.stdout!r}"
+
+
+def test_should_skip_upgrade_blocks_downgrade_and_prerelease_regression() -> None:
+    """Sesja 46 regression: apply.sh must skip when installed >= candidate
+    OR candidate is a pre-release the user didn't ask for.
+
+    Without this guard:
+      * Spotify 1.2.89.539 → 1.2.88.483 (brew livecheck lags vendor's
+        own auto-updater) was attempted as a "success" downgrade.
+      * Firefox Developer Edition 151.0 stable → 151.0b8 beta (Mozilla
+        product-details API still publishing the beta channel) was
+        attempted as a "success" replacement of stable with beta.
+    """
+    # cases: (installed, candidate, expected) — expected="skip" or "apply"
+    cases = [
+        ("1.2.89.539", "1.2.88.483", "skip"),    # Spotify downgrade
+        ("151.0", "151.0b8", "skip"),            # Firefox stable → beta
+        ("151.0b8", "151.0b9", "apply"),         # beta channel upgrade
+        ("151.0", "152.0", "apply"),             # real major upgrade
+        ("151.0", "151.0", "skip"),              # equal
+        ("", "151.0", "apply"),                  # missing installed
+        ("151.0", "", "apply"),                  # missing candidate
+        ("1.0", "1.0-rc1", "skip"),              # stable → rc regression
+        ("1.0-rc1", "1.0-rc2", "apply"),         # rc upgrade
+        ("26.4.1", "26.4.2", "apply"),           # patch upgrade
+        ("26.4.2", "26.4.1", "skip"),            # patch downgrade
+    ]
+    for installed, cand, expected in cases:
+        r = _run_bash(f'_should_skip_upgrade "{installed}" "{cand}" && echo skip || echo apply')
+        out = r.stdout.strip()
+        assert out == expected, (
+            f"_should_skip_upgrade installed={installed!r} cand={cand!r}: "
+            f"got {out!r}, expected {expected!r}"
+        )
+
+
 def test_is_running_returns_1_for_random_bundle_id() -> None:
     # zzz-prefix to avoid colliding with anything actually running
     r = _run_bash('_web_is_running "zzz.nonexistent.app.bundle.id" && echo y || echo n')

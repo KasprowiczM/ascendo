@@ -70,6 +70,43 @@ _version_gt() {
     [ "$higher" = "$a" ]
 }
 
+# _is_prerelease <version>
+# Exit 0 iff the version contains a pre-release marker (alpha, beta,
+# rc, dev, nightly, pre, or a "b<digit>" / "a<digit>" / "rc<digit>"
+# suffix). Used to detect when our slow-path candidate is a beta build
+# that shouldn't replace an installed stable release.
+_is_prerelease() {
+    local v="$1"
+    case "$v" in
+        *[Aa]lpha*|*[Bb]eta*|*[Pp]re*|*[Nn]ightly*|*[Dd]ev[!a-zA-Z]*|*[Dd]ev) return 0 ;;
+        *[Rr][Cc][0-9]*|*-rc[0-9]*|*-rc.[0-9]*) return 0 ;;
+        *[0-9][Bb][0-9]*|*[0-9][Aa][0-9]*) return 0 ;;
+    esac
+    return 1
+}
+
+# _should_skip_upgrade <installed> <candidate>
+# Returns 0 (true: skip the apply) when:
+#   1. installed == candidate (already up-to-date)
+#   2. installed > candidate by version sort (downgrade)
+#   3. candidate is a pre-release marker and installed is NOT
+#      (don't replace a stable build with a beta — common when our
+#      brew livecheck feed lags or is tracking the wrong channel)
+# Returns 1 (false: proceed with apply) otherwise.
+_should_skip_upgrade() {
+    local installed="$1" cand="$2"
+    [ -z "$installed" ] && return 1     # no install info → let apply decide
+    [ -z "$cand" ] && return 1          # no candidate → caller handles probe_unavailable
+    [ "$installed" = "$cand" ] && return 0
+    if _version_gt "$installed" "$cand"; then
+        return 0
+    fi
+    if _is_prerelease "$cand" && ! _is_prerelease "$installed"; then
+        return 0
+    fi
+    return 1
+}
+
 # ============================================================
 # Process probes
 # ============================================================
