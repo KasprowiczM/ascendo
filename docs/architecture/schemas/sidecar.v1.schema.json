@@ -619,6 +619,8 @@
         "npm",
         "pip",
         "pipx",
+        "drivers",
+        "firmware",
         "web",
         "system",
         "inventory",
