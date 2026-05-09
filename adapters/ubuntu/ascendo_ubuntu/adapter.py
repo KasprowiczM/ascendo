@@ -1,0 +1,384 @@
+"""UbuntuAdapter - implements IAdapter for Ubuntu / Debian.
+
+Bridges core to the legacy bash phase scripts at top-level
+``scripts/<cat>/<phase>.sh`` (in the repo root, NOT under
+``adapters/ubuntu/scripts/``). Those scripts emit the legacy
+``ubuntu-aktualizacje/v1`` sidecar schema; ``parse_sidecar()`` in
+``ascendo.models.sidecar`` automatically translates to ``ascendo/v1``.
+
+This adapter is intentionally a thin scaffold. Scheduler / Snapshot /
+Elevation / Source are deferred to a later session.
+"""
+from __future__ import annotations
+
+import getpass
+import locale
+import logging
+import os
+import platform
+import shutil
+import socket
+import subprocess
+from pathlib import Path
+from typing import ClassVar
+
+from ascendo.interfaces import (
+    AdapterCapability,
+    IAdapter,
+    IElevation,
+    IInventory,
+    IPackageManager,
+    IScheduler,
+    ISnapshot,
+    ISource,
+)
+from ascendo.models.host import ElevationMethod, HostInfo, OperatingSystem
+
+from .inventory import UbuntuInventory
+from .managers.apt import AptManager
+from .managers.brew import BrewManager
+from .managers.drivers import DriversManager
+from .managers.flatpak import FlatpakManager
+from .managers.npm import NpmManager
+from .managers.pip import PipManager
+from .managers.snap import SnapManager
+
+_log = logging.getLogger(__name__)
+
+
+def _resolve_repo_root(env_var: str = "ASCENDO_UBUNTU_REPO_ROOT") -> Path:
+    """Resolve the repo root that hosts the legacy ``scripts/`` and ``lib/``.
+
+    Priority:
+      1. ``$ASCENDO_UBUNTU_REPO_ROOT`` if set (explicit override).
+      2. The repo root inferred from the module path:
+         ``<repo>/adapters/ubuntu/ascendo_ubuntu/adapter.py``
+         → walk up 3 levels to ``<repo>``.
+    """
+    override = os.environ.get(env_var)
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent.parent.parent.parent
+
+
+class UbuntuAdapter(IAdapter):
+    """Tier 1 adapter for Ubuntu / Debian (and via fallback all linux_* flavours).
+
+    Capabilities:
+        PACKAGE_MANAGEMENT — 7 managers in canonical order:
+            apt → snap → brew → npm → pip → flatpak → drivers
+        INVENTORY          — UbuntuInventory placeholder
+
+    Sub-interface accessors snapshot / scheduler / elevation / source all
+    return ``None`` in this scaffold.
+
+    The adapter resolves the legacy bash scripts to the repo root's top-level
+    ``scripts/`` directory (NOT ``adapters/ubuntu/scripts/``); same for
+    ``lib/``. Override via ``$ASCENDO_UBUNTU_REPO_ROOT`` for tests / custom
+    install layouts.
+    """
+
+    REPO_ROOT: ClassVar[Path] = _resolve_repo_root()
+    SCRIPTS_DIR: ClassVar[Path] = REPO_ROOT / "scripts"
+    LIB_DIR: ClassVar[Path] = REPO_ROOT / "lib"
+
+    def __init__(self) -> None:
+        self._cached_host: HostInfo | None = None
+        self._cached_inventory: UbuntuInventory | None = None
+
+    # ── Identity ──────────────────────────────────────────────────────────
+
+    @property
+    def name(self) -> str:
+        return "ubuntu"
+
+    @property
+    def display_name(self) -> str:
+        return "Ubuntu / Debian"
+
+    @property
+    def tier(self) -> int:
+        return 1
+
+    @property
+    def capabilities(self) -> AdapterCapability:
+        return (
+            AdapterCapability.PACKAGE_MANAGEMENT
+            | AdapterCapability.INVENTORY
+        )
+
+    # ── Sub-interface accessors ───────────────────────────────────────────
+
+    def package_managers(self, host: HostInfo) -> list[IPackageManager]:
+        """Return the 7 package managers in canonical order.
+
+        Order matches legacy ``update-all.sh`` and ``lib/orchestrator.sh``:
+        apt → snap → brew → npm → pip → flatpak → drivers. Drivers runs
+        last because the NVIDIA / fwupd flow may require a reboot.
+        """
+        return [
+            AptManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, repo_root=self.REPO_ROOT),
+            SnapManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, repo_root=self.REPO_ROOT),
+            BrewManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, repo_root=self.REPO_ROOT),
+            NpmManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, repo_root=self.REPO_ROOT),
+            PipManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, repo_root=self.REPO_ROOT),
+            FlatpakManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, repo_root=self.REPO_ROOT),
+            DriversManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, repo_root=self.REPO_ROOT),
+        ]
+
+    def inventory(self) -> IInventory | None:  # type: ignore[override]
+        """Returns a cached UbuntuInventory singleton (placeholder).
+
+        Currently returns an empty inventory snapshot — populated by a
+        future session that wires the legacy ``scripts/inventory/`` flow.
+        """
+        if self._cached_inventory is None:
+            self._cached_inventory = UbuntuInventory(
+                scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR
+            )
+        return self._cached_inventory
+
+    def snapshot(self) -> ISnapshot | None:
+        """Not implemented in this scaffold (deferred). Returns None."""
+        return None
+
+    def scheduler(self) -> IScheduler | None:
+        """Not implemented in this scaffold (deferred). Returns None."""
+        return None
+
+    def source(self) -> ISource | None:
+        """Not implemented; reserved for M6 (cross-cutting source verification)."""
+        return None
+
+    def elevation(self) -> IElevation | None:
+        """Not implemented in this scaffold (deferred). Returns None."""
+        return None
+
+    # ── Lifecycle ─────────────────────────────────────────────────────────
+
+    def detect_host(self) -> HostInfo:
+        """Build a HostInfo snapshot of the current Linux host.
+
+        Cached — repeated calls within a process return the same instance.
+        """
+        if self._cached_host is not None:
+            return self._cached_host
+
+        os_family = self._detect_os()
+        os_version = self._detect_os_version()
+        arch = self._detect_arch()
+        hostname = self._detect_hostname()
+        user = self._detect_user()
+        is_elevated = self._detect_is_elevated()
+        elevation_method = (
+            ElevationMethod.SUDO if is_elevated else ElevationMethod.NONE
+        )
+        bcp47 = self._detect_locale()
+
+        self._cached_host = HostInfo(
+            hostname=hostname,
+            os=os_family,
+            os_version=os_version,
+            arch=arch,
+            user=user,
+            is_elevated=is_elevated,
+            elevation_method=elevation_method,
+            locale=bcp47,
+        )
+        return self._cached_host
+
+    def health_check(self) -> dict[str, str]:
+        """Adapter self-test for ``ascendo doctor``.
+
+        Components checked (10 total):
+            apt, snap, brew, npm, pip, flatpak, fwupd, bash,
+            ascendo_lib, ascendo_scripts
+        """
+        out: dict[str, str] = {}
+        out["apt"] = self._tool_status("apt", "apt-get", flag="--version")
+        out["snap"] = self._tool_status("snap", flag="version")
+        out["brew"] = self._tool_status("brew", flag="--version")
+        out["npm"] = self._tool_status("npm", flag="--version")
+        out["pip"] = self._pip_status()
+        out["flatpak"] = self._tool_status("flatpak", flag="--version")
+        out["fwupd"] = self._tool_status("fwupdmgr", flag="--version")
+        out["bash"] = self._bash_status()
+        out["ascendo_lib"] = self._lib_status()
+        out["ascendo_scripts"] = self._scripts_status()
+        return out
+
+    # ── Private: OS detection ─────────────────────────────────────────────
+
+    def _detect_os(self) -> OperatingSystem:
+        if platform.system() != "Linux":
+            sys_name = platform.system()
+            if sys_name == "Windows":
+                return OperatingSystem.WINDOWS
+            if sys_name == "Darwin":
+                return OperatingSystem.MACOS
+            return OperatingSystem.UNKNOWN
+        # Read /etc/os-release for ID
+        release = self._read_os_release()
+        ident = (release.get("ID") or "").strip().lower()
+        if ident == "ubuntu":
+            return OperatingSystem.LINUX_UBUNTU
+        if ident == "debian":
+            return OperatingSystem.LINUX_DEBIAN
+        # ID_LIKE ancestor matching
+        id_like = (release.get("ID_LIKE") or "").strip().lower()
+        for token in id_like.split():
+            if token == "ubuntu":
+                return OperatingSystem.LINUX_UBUNTU
+            if token == "debian":
+                return OperatingSystem.LINUX_DEBIAN
+        return OperatingSystem.LINUX_OTHER
+
+    def _read_os_release(self) -> dict[str, str]:
+        path = Path("/etc/os-release")
+        if not path.is_file():
+            return {}
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError:
+            return {}
+        out: dict[str, str] = {}
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            out[k.strip()] = v.strip().strip("\"'")
+        return out
+
+    def _detect_os_version(self) -> str:
+        release = self._read_os_release()
+        v = (release.get("VERSION_ID") or "").strip()
+        if v:
+            return v
+        # Fallback to platform.platform()
+        plat = platform.platform()
+        return plat if plat else "unknown"
+
+    def _detect_arch(self) -> str:
+        return (platform.machine() or "unknown").lower()
+
+    def _detect_hostname(self) -> str:
+        try:
+            return socket.gethostname() or "unknown"
+        except OSError:
+            return "unknown"
+
+    def _detect_user(self) -> str:
+        try:
+            return getpass.getuser()
+        except (OSError, KeyError):
+            return os.environ.get("USER") or os.environ.get("USERNAME") or "unknown"
+
+    def _detect_is_elevated(self) -> bool:
+        try:
+            return os.geteuid() == 0  # type: ignore[attr-defined]
+        except AttributeError:
+            return False
+
+    def _detect_locale(self) -> str | None:
+        try:
+            tag, _enc = locale.getlocale()
+        except (ValueError, locale.Error):
+            tag = None
+        if not tag:
+            return None
+        return tag.replace("_", "-")
+
+    # ── Private: health check helpers ────────────────────────────────────
+
+    def _tool_status(
+        self,
+        name: str,
+        *fallbacks: str,
+        flag: str = "--version",
+    ) -> str:
+        """Resolve a CLI on PATH and probe its version flag.
+
+        Args:
+            name: Primary binary name (e.g. ``"apt"``).
+            *fallbacks: Alternate binary names to try if the primary is
+                missing (e.g. ``"apt-get"`` for ``apt``).
+            flag: The flag that prints version. Default ``"--version"``;
+                some tools (``snap``) prefer a subcommand like ``"version"``.
+        """
+        candidates = (name, *fallbacks)
+        path: str | None = None
+        chosen: str | None = None
+        for cand in candidates:
+            p = shutil.which(cand)
+            if p is not None:
+                path = p
+                chosen = cand
+                break
+        if path is None:
+            tried = "/".join(candidates)
+            return f"unavailable: {tried} not on PATH"
+        # Build version probe argv. ``snap version`` is a subcommand;
+        # ``apt-get --version`` is a flag.
+        argv = [path] + (flag.split() if flag else [])
+        try:
+            res = subprocess.run(
+                argv, capture_output=True, text=True, timeout=10, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"error: {exc}"
+        if res.returncode != 0 and not (res.stdout or res.stderr):
+            return f"error: {chosen} {flag} exited {res.returncode}"
+        first = ((res.stdout or res.stderr) or "").strip().splitlines()
+        v = first[0] if first else ""
+        return f"ok: {v}" if v else "ok"
+
+    def _pip_status(self) -> str:
+        path = shutil.which("pip3") or shutil.which("pip")
+        if path is None:
+            return "unavailable: pip not on PATH (install: apt install python3-pip)"
+        try:
+            res = subprocess.run(
+                [path, "--version"],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"error: {exc}"
+        if res.returncode != 0:
+            return f"error: pip --version exited {res.returncode}"
+        line = (res.stdout or "").strip().splitlines()
+        v = line[0] if line else ""
+        return f"ok: {v}" if v else "ok"
+
+    def _bash_status(self) -> str:
+        path = shutil.which("bash") or "/bin/bash"
+        if not Path(path).exists():
+            return "unavailable: no bash binary found on PATH or at /bin/bash"
+        try:
+            res = subprocess.run(
+                [path, "--version"],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"error: {exc}"
+        if res.returncode != 0:
+            return f"error: bash --version exited {res.returncode}"
+        lines = (res.stdout or "").splitlines()
+        v = lines[0] if lines else ""
+        return f"ok: {v}" if v else "ok"
+
+    def _lib_status(self) -> str:
+        if not self.LIB_DIR.is_dir():
+            return f"unavailable: {self.LIB_DIR} does not exist"
+        modules = list(self.LIB_DIR.glob("*.sh")) + list(self.LIB_DIR.glob("*.py"))
+        if not modules:
+            return f"degraded: {self.LIB_DIR} exists but contains no .sh/.py modules"
+        return f"ok: {len(modules)} module(s)"
+
+    def _scripts_status(self) -> str:
+        if not self.SCRIPTS_DIR.is_dir():
+            return f"unavailable: {self.SCRIPTS_DIR} does not exist"
+        apt_dir = self.SCRIPTS_DIR / "apt"
+        if not apt_dir.is_dir():
+            return f"degraded: {apt_dir} missing (apt scripts not installed)"
+        return "ok"
