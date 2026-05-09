@@ -14,6 +14,127 @@ OSes, plugin signing + verification, plugin marketplace UX in dashboard.
 
 ---
 
+## [0.6.0-rc1] — 2026-05-09 — Edition split + GUI-PATH fixes
+
+Sesja 51 + 52 + 53. Splits Ascendo into `basic` and `dev` editions from
+one repo, fixes a class of macOS GUI-PATH bugs that were poisoning
+package installs, ships a clickable .dmg installer with edition baked
+into the artefact name.
+
+### Added
+
+- **`ASCENDO_EDITION` flag** (`basic` | `dev`, default `basic`) plumbed
+  through dashboard, frontend, helpers, and installers. Basic edition
+  hides Sync/Hosts/Logs nav, merges History+Logs inline, removes
+  raw-events box. Dev edition keeps the full 12-tab UI.
+- **8-cell install matrix** in README — `{basic, dev}` × `{cli, web,
+  desktop, full}`. Both editions buildable from one source tree.
+- **Smart installers** — `bin/build-dmg.sh` (macOS, baking edition into
+  the artefact: `Ascendo-Basic-0.0.7-arm64.dmg` vs
+  `Ascendo-Dev-0.0.7-arm64.dmg`), modernized `packaging/build-deb.sh`
+  with version sync + `--dry-run` + `--no-symlinks` flags,
+  `packaging/homebrew-tap/ascendo.rb` formula stub, NSIS hooks +
+  bin-staging mirror in `bin/build-installer.ps1`.
+- **`bin/first-run-bootstrap-{macos,linux}.sh` + `.ps1`** — auto-install
+  Python ≥ 3.11, git, curl, jq via the platform package manager on
+  first launch.
+- **`bin/user-scripts/`** — 21 helper shims: `ascendo_update`,
+  `ascendo_start_web`, `ascendo_stop_web`, `ascendo_restart_web`,
+  `ascendo_start_desktop`, `ascendo_stop_desktop`, `ascendo_doctor`,
+  `ascendo_maintenance` (full / quick / dry-run / category=X /
+  rebuild-inventory / check-errors), plus dev-only `ascendo_sync` +
+  `ascendo_push`.
+- **`LINUX_QUICKSTART.md`** mirroring the macOS / Windows quickstart
+  structure (12 sections).
+- **`docs/PLATFORM_STATUS.md`** — honest cross-platform feature matrix
+  across 13 sub-tables, known gaps per platform, scoped roadmap.
+- **`DEV_GUIDE.md`** — 507-line contributor guide.
+- **`USER_GUIDE.md`** rewritten as basic-edition end-user guide
+  (444 lines, all dev surfaces stripped).
+- **Two onboarding wizards** — basic = 6 steps; dev = 9 steps with
+  GitHub repo config + dev-sync setup + dev-resources panes.
+- **Public-repo audit** — `docs/PUBLIC_AUDIT.md` + corrected `.gitignore`
+  keep AI instructions, internal handoffs, and per-user dev-sync config
+  private; dev-sync TOOLING (Python lib + 15 wrapper scripts) stays
+  public so dev-edition users can bootstrap their own overlay against
+  any rclone-supported provider.
+- **`bin/dev-sync-overlay-migrate.sh`** + `dev-sync-overlay/` skeleton —
+  copy-only migration tool for staging private files into the
+  Proton-synced overlay before public-repo flip.
+- **Cross-platform parity quick wins** — Linux apply.sh scripts
+  (apt/snap/brew/npm/pip/flatpak) capture stderr-tail into sidecar
+  diagnostics + emit SSE live-stream events; Windows
+  msstore/arp/windows_update apply.ps1 also stream live.
+- **`EditionGateMiddleware`** in `core/ascendo/dashboard/middleware/` —
+  404s `/sync/*`, `/hosts*`, `/git/push*`, `/dev-sync*`,
+  `/profiles/import*` when edition=basic.
+- **`/sync/config-status` + `/sync/setup` endpoints** — dev-only,
+  feed the wizard's dev-sync setup step.
+
+### Fixed
+
+- **Tauri shell crashed on launch (`Ascendo quit unexpectedly`).** Root
+  cause: macOS GUI-launched apps inherit only the launchctl PATH
+  (`/usr/bin:/bin:/usr/sbin:/sbin`), so `Command::new("ascendo")`
+  failed with ENOENT and `.expect()` panicked during
+  `applicationDidFinishLaunching:`. Fix: `locate_sidecar()` probes
+  6+ absolute paths first; spawn failures return `Option<Child>`
+  instead of panicking; WebView opens an embedded recovery page with
+  the exact `sudo ln -sf` one-liner.
+- **opencode-cli npm postinstall failed: `bun: command not found`.**
+  The Tauri-launched dashboard's `sh -c` postinstall subshell didn't
+  see `~/.local/share/mac-update/node/bin/node` or `~/.bun/bin/bun`.
+  Fix: npm/apply.sh extends PATH with the toolchain node + bun bin
+  dirs + brew + `~/.local/bin` before invoking npm.
+- **Pip installed packages into Xcode Python 3.9.** The dashboard
+  resolved `pip3` via launchctl PATH → `/usr/bin/pip3` → Apple's
+  framework Python. Every CLI (poetry, ruff, mypy, etc.) silently
+  installed into `~/Library/Python/3.9/bin/`. Fix:
+  `ascendo_pip_pip_bin` and `ascendo_pip_python_bin` probe
+  `/opt/homebrew/bin/pip3` first AND explicitly REJECT
+  `/usr/bin/pip3` / `/usr/bin/python3` (Xcode shims). Plus
+  `_augment_path_for_macos_gui()` prepends 8 known-good dirs at
+  dashboard startup so all spawned subprocesses inherit the right env.
+- **Apps view kept showing "outdated" after successful apply.** The
+  `/inventory/db/refresh` endpoint walked only **check** sidecars when
+  rebuilding inventory — post-apply truth from verify sidecars was
+  overwritten with stale pre-apply data. Fix: `_latest_check_overlay`
+  walks check / apply / verify newest-first with phase-priority
+  tie-break (`verify > apply > check`). Operator's opencode-cli now
+  correctly reflects 1.14.44 in the SPA after upgrading from 1.14.43.
+- **`bin/build-dmg.sh` failed at cargo build** with
+  `glob pattern bin-staging/**/* path not found`. Sesja 52 added the
+  `bundle.resources` glob but only `bin/build-installer.ps1` populated
+  it. Fix: `bin/build-dmg.sh` mirrors the step before Tauri.
+- **npm/pip apply re-installed everything every run** even when
+  packages were already at latest. Fix: up_to_date guard in apply_npm
+  / apply_pip / apply_native_node / apply_native_bun reads installed
+  + latest before invoking install, skips if equal. Cache-bust after
+  successful install so the post-install version lookup reflects the
+  fresh state instead of the pre-install snapshot.
+- **SSE stream emitted every line twice.** Server-side: `_stream.log`
+  matched the `*.log` glob, so the per-run log_files list contained
+  the same path twice (explicit append + glob). Fix: dedupe by Path
+  identity. Frontend: `ui.attachStream()` created a fresh EventSource
+  without closing prior ones, accumulating N stale ESes that all
+  appended to the same DOM. Fix: track all spawned ESes on
+  `window._ascendoActiveStreams` and close them at the start of every
+  attachStream call.
+
+### Tests
+
+- 683 green: 290 contract + 393 macOS adapter (9 pre-existing
+  Windows-only test_service_endpoints failures unchanged).
+
+### Pending real-hardware validation (next session)
+
+- Real-Ubuntu mk-uP5520 — verify new Linux apply paths
+- Tauri MSI/NSIS build on Windows DP5520WMK
+- Real-public-flip: bin/dev-sync-overlay-migrate.sh + git rm + tag
+  v0.6.0 + GitHub make-public
+
+---
+
 ## [0.5.2] — 2026-05-09 — Cross-platform parity + one-line install/update
 
 Sesja 45. Brings Windows + Ubuntu adapters up to functional parity with

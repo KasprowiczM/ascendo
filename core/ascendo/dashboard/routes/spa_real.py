@@ -347,7 +347,16 @@ def _seed_buckets_from_sidecars(
 
 def _latest_check_overlay(runs_dir: Path, category: str) -> dict[str, dict[str, Any]]:
     """Return ``{name|id: {installed, candidate, status}}`` from the latest
-    successful check sidecar for ``category``, or ``{}`` if none exists.
+    sidecar for ``category``, or ``{}`` if none exists.
+
+    Sesja 53 fix: this function used to read **only** check sidecars. After
+    an apply succeeded the verify sidecar held the post-apply truth (e.g.
+    opencode-cli upgraded 1.14.43 → 1.14.44, verify says installed=1.14.44),
+    but the SPA still showed "outdated" because /inventory/db/refresh fed
+    the DB the stale check sidecar's data. Now we walk runs newest-first and
+    pick the FRESHEST sidecar regardless of phase, with a tie-break that
+    prefers verify > apply > check (in case multiple sidecars in the same
+    run have identical mtimes within filesystem resolution).
 
     Bounded scan (latest 50 runs) so a long-lived install with hundreds
     of historical runs doesn't pay an O(N) glob on every request.
@@ -355,14 +364,19 @@ def _latest_check_overlay(runs_dir: Path, category: str) -> dict[str, dict[str, 
     Sidecar layout (the orchestrator writes flat by default; some legacy
     paths write nested per-source dirs — we accept both):
 
-      flat:   <runs_dir>/<run-id>/check__<category>.json
-      nested: <runs_dir>/<run-id>/<category>/check__<category>.json
+      flat:   <runs_dir>/<run-id>/<phase>__<category>.json
+      nested: <runs_dir>/<run-id>/<category>/<phase>__<category>.json
+
+    Where <phase> is one of: verify, apply, check.
     """
     if not isinstance(runs_dir, Path):
         runs_dir = Path(runs_dir)
     if not runs_dir.is_dir():
         return {}
-    candidates: list[tuple[float, Path]] = []
+    candidates: list[tuple[float, int, Path]] = []
+    # Phase priority: verify (post-apply truth) > apply (mid-run truth) >
+    # check (pre-apply snapshot). Higher priority wins on mtime ties.
+    phase_priority = {"verify": 3, "apply": 2, "check": 1}
     try:
         run_dirs = sorted(
             (p for p in runs_dir.iterdir() if p.is_dir()),
@@ -372,21 +386,25 @@ def _latest_check_overlay(runs_dir: Path, category: str) -> dict[str, dict[str, 
     except OSError:
         return {}
     for run_dir in run_dirs:
-        # Check both layouts; flat wins if both exist (it's the canonical
-        # orchestrator output).
-        for sidecar in (
-            run_dir / f"check__{category}.json",
-            run_dir / category / f"check__{category}.json",
-        ):
-            if sidecar.is_file():
-                try:
-                    candidates.append((sidecar.stat().st_mtime, sidecar))
-                except OSError:
-                    continue
+        # Walk all 3 phases per run, both layouts. The candidates list
+        # is sorted at the end by (mtime DESC, priority DESC) so the
+        # post-apply verify sidecar wins over the same-run check.
+        for phase in ("verify", "apply", "check"):
+            for sidecar in (
+                run_dir / f"{phase}__{category}.json",
+                run_dir / category / f"{phase}__{category}.json",
+            ):
+                if sidecar.is_file():
+                    try:
+                        candidates.append(
+                            (sidecar.stat().st_mtime, phase_priority[phase], sidecar)
+                        )
+                    except OSError:
+                        continue
     if not candidates:
         return {}
-    candidates.sort(reverse=True)
-    latest = candidates[0][1]
+    candidates.sort(reverse=True)  # mtime DESC, then priority DESC
+    latest = candidates[0][2]
     try:
         data = _json.loads(latest.read_text(encoding="utf-8"))
     except (OSError, _json.JSONDecodeError):

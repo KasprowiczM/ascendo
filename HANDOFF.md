@@ -6,6 +6,176 @@
 
 ---
 
+## Sesja 51-53 (2026-05-09) — Edition split + GUI-PATH fixes + v0.6.0-rc1
+
+Three sessions back-to-back-to-back, all shipped in one push to main.
+Operator asked for: separate `basic` (everyday user) vs `dev`
+(maintainer) editions, simpler installer story per platform, smart
+clickable installer, public-repo prep, real macOS app that doesn't
+crash. Five+ parallel subagents per session, one inline fix per
+operator-reported regression.
+
+### Sesja 51 — basic/dev split foundation
+Commit `602ed23`. 42 files, 1356 insertions, 90 deletions.
+
+- `ASCENDO_EDITION` env var (priority: env > marker file at
+  `$ASCENDO_HOME/.ascendo-edition` > default `basic`) wired through
+  dashboard `app.state.edition`, `/version` endpoint, and frontend
+  `<html data-edition>` attribute set on boot.
+- `EditionGateMiddleware` 404s `/sync/*`, `/hosts*`, `/git/push*`,
+  `/dev-sync*`, `/profiles/import*` when basic.
+- Frontend gates: CSS hides Sync/Hosts/Logs nav, `#live-log-wrap` raw
+  events, Settings dev-only sections in basic edition. JS redirects
+  basic-hidden views to History (where logs now expand inline per
+  Step 4). 6 new edition-flag tests; 290 contract green.
+- 21 helper scripts in `bin/user-scripts/` (`ascendo_update`,
+  `ascendo_doctor`, `ascendo_maintenance`, etc.). install.sh /
+  install.ps1 symlink them on PATH; dev/ subdir gated on edition=dev.
+- 8-cell install matrix in README.
+- `bin/dev-sync-overlay-migrate.sh` + `dev-sync-overlay/` skeleton +
+  `docs/PUBLIC_AUDIT.md`.
+
+### Sesja 52 — Linux quickstart + smart installers + cross-platform parity
+Commit `aa71637`. 38 files, 4535 insertions, 839 deletions.
+
+- Two onboarding wizards: basic = 6 steps, dev = 9 steps (extra:
+  GitHub repo config, dev-sync setup, dev-resources). 58 new i18n
+  strings (en + pl parity).
+- `LINUX_QUICKSTART.md` (12 sections, mirror of Mac/Windows).
+- `docs/PLATFORM_STATUS.md` — feature matrix across 13 sub-tables,
+  known gaps per platform, scoped roadmap with effort estimates.
+- README rewritten (158 lines, was 331). `USER_GUIDE.md` reframed as
+  basic-edition end-user guide (444 lines). New `DEV_GUIDE.md`
+  (507 lines, contributor walkthroughs). `CONTRIBUTING.md`
+  cross-platform contribution promise.
+- Smart installers: `bin/build-dmg.sh` (macOS DMG, two-path packaging),
+  modernized `packaging/build-deb.sh` (--dry-run + --no-symlinks +
+  version sync), `packaging/homebrew-tap/ascendo.rb` formula stub,
+  NSIS hooks via `bin/build-installer.ps1`. Each ships a
+  `first-run-bootstrap-{macos,linux,windows}` that auto-installs
+  Python ≥ 3.11 / git / curl / jq.
+- Cross-platform parity quick-wins: Linux apply.sh scripts
+  (apt/snap/brew/npm/pip/flatpak) capture stderr-tail into sidecar
+  diagnostics + emit SSE live-stream events. Windows
+  msstore/arp/windows_update apply.ps1 also stream live.
+- `.gitignore` corrected: dev-sync TOOLING stays public, only
+  per-user CONFIG (.dev_sync_config.json, dev-sync-overlay/) is
+  private. Anyone can clone the public repo and point dev-sync at
+  their own provider.
+- Phase 1-3 of public-repo flip: `bin/dev-sync-overlay-migrate.sh`
+  staged 31 MB of private files; `dev-sync-export.sh` pushed 2068
+  files to Proton; `dev-sync-verify-full.sh` returned PASS.
+
+### Sesja 52 follow-ups (commits 1bffd97, 173202a, 6a14f39, 47e8ed4)
+
+- `bin/build-dmg.sh` failed at cargo build with
+  `glob pattern bin-staging/**/*` because Sesja 52 added
+  `bundle.resources` glob but only build-installer.ps1 populated it.
+  Fixed: build-dmg.sh now mirrors the equivalent step.
+- `--edition` + `--profile` flags on build-dmg.sh. Each invocation
+  produces a labeled artefact: `Ascendo-Basic-0.0.7-arm64.dmg`,
+  `Ascendo-Dev-0.0.7-arm64.dmg`. The chosen edition + profile are
+  written to `bin-staging/.ascendo-edition` markers shipped inside the
+  .app's Resources/, and read by `first-run-bootstrap-macos.sh` on
+  first launch (priority: env var > baked marker > default basic).
+- Tauri shell crashed on launch with SIGABRT (operator-visible
+  "Ascendo quit unexpectedly" dialog). Root cause: macOS GUI-launched
+  apps inherit only launchctl PATH (`/usr/bin:/bin:/usr/sbin:/sbin`)
+  so `Command::new("ascendo")` failed with ENOENT and `.expect()`
+  panicked during `applicationDidFinishLaunching:`. Fix:
+  `locate_sidecar()` probes 6+ absolute paths first
+  (`~/.local/bin`, `~/.local/share/ascendo/venv/bin`,
+  `/opt/homebrew/bin`, `/usr/local/bin`, etc.); `spawn_backend()`
+  returns `Option<Child>` instead of panicking; on still-not-found,
+  WebView opens an embedded recovery page with the exact `sudo ln -sf`
+  one-liner.
+
+### Sesja 53 — GUI-PATH leak (the same class, but for child processes)
+Commits `47e8ed4` + the verify-overlay fix.
+
+Operator ran a Full update from the desktop app; got two distinct
+errors that both root-caused to GUI-launched processes inheriting
+launchctl PATH:
+
+1. **opencode-cli npm postinstall failed** (`sh: bun: command not
+   found`, `sh: node: command not found`). The npm package's
+   postinstall hook spawns `sh -c "bun ./postinstall.mjs || node
+   ./postinstall.mjs"`. That subshell only saw launchctl PATH, no
+   `node` (`~/.local/share/mac-update/node/bin/`), no `bun`
+   (`~/.bun/bin/`).
+2. **Pip installed every CLI into Xcode Python 3.9.** poetry, ruff,
+   mypy, black, pytest, httpx, isort, pipx, uv, virtualenv all silently
+   installed into `~/Library/Python/3.9/bin/` instead of brew Python
+   3.14 site-packages. Root cause: `command -v pip3` resolved to
+   `/usr/bin/pip3` — Apple's Xcode shim. ascendo (brew Python 3.14)
+   never sees those installs.
+
+Three changes:
+
+- `core/ascendo/dashboard/app.py::_augment_path_for_macos_gui()` —
+  prepends 8 known-good dirs to PATH on macOS at dashboard startup
+  (only when missing — idempotent on shell launches). Order: brew
+  first (so brew Python wins), then ascendo's node + npm-global, then
+  `~/.local/bin`, bun, cargo. All subprocesses spawned from this
+  point inherit the augmented PATH.
+- `adapters/macos/lib/ascendo_pip.sh` — `ascendo_pip_pip_bin` and
+  `ascendo_pip_python_bin` now probe `/opt/homebrew/bin/pip3` /
+  `/usr/local/bin/pip3` first AND explicitly REJECT `/usr/bin/pip3`
+  / `/usr/bin/python3` (Xcode shims).
+- `adapters/macos/scripts/npm/apply.sh` — extends PATH with the node
+  bin dir + bun bin dir + brew bins + `~/.local/bin` + `~/.bun/bin`
+  before exporting. Belt-and-suspenders: even if the dashboard didn't
+  get fix A, npm child processes have node/bun on PATH.
+
+After applying these, the operator ran another Full update; opencode-cli
+DID upgrade from 1.14.43 → 1.14.44 successfully (verified on disk).
+But the SPA's Apps view still showed it as "outdated 1.14.43". Root
+cause:
+
+- `/inventory/db/refresh` calls `_seed_buckets_from_sidecars` which
+  walks ONLY check sidecars. After apply succeeded, the apply +
+  verify sidecars held the post-apply truth (1.14.44), but the
+  refresh endpoint overwrote those rows in inventory_db with stale
+  pre-apply check data (1.14.43 outdated).
+
+Fix: `_latest_check_overlay` (legacy name kept; now reads any phase)
+walks check / apply / verify sidecars newest-first with
+phase-priority tie-break (`verify > apply > check`). Operator's
+opencode-cli now correctly reflects 1.14.44 after refresh.
+
+### What's stable now
+
+- Two editions buildable from one source tree.
+- Clickable macOS DMG works end-to-end (build → drag → launch →
+  bootstrap → install → verified).
+- Tauri shell doesn't crash on missing sidecar (recovery page
+  instead).
+- npm + pip installs target the right runtime on macOS GUI launches.
+- Apps view reflects post-apply truth.
+
+### Pending
+
+- Real-Ubuntu validation (mk-uP5520) of Linux apply paths
+- Tauri MSI/NSIS build on Windows DP5520WMK
+- Linux IScheduler / ISnapshot / IElevation Python wiring (~3-4h)
+- Real-public-flip: bin/dev-sync-overlay-migrate.sh has run +
+  verified; remaining: `git rm --cached` private originals + tag
+  v0.6.0 + push + GitHub make-public
+
+### Operator: cleanup misinstalled Python 3.9 packages
+
+```bash
+# Safe; nothing in here is reachable from ascendo (brew Python 3.14)
+rm -rf ~/Library/Python/3.9
+```
+
+### Test status
+
+683 green: 290 contract + 393 macOS adapter. 9 pre-existing
+Windows-only `test_service_endpoints` failures unchanged.
+
+---
+
 ## Sesja 45 (2026-05-09) — Cross-platform parity + one-line install/update + v0.5.2
 
 Operator audit on Mac.r12.home revealed 1 real bug (InventoryDB stale

@@ -1,5 +1,71 @@
 # Ascendo — Release Notes
 
+## v0.6.0-rc1 — 2026-05-09 (Edition split + GUI-PATH fixes)
+
+Sesja 51-53. Three sessions of work shipped together: a `basic` /
+`dev` edition split, a clickable .dmg installer per edition, and a
+class of fixes for macOS GUI-launched processes that were poisoning
+package installs.
+
+### Highlights
+
+- **Two editions, one repo.** `ASCENDO_EDITION=basic` (default) or
+  `ASCENDO_EDITION=dev`. Basic hides Sync/Hosts/Logs nav, merges
+  History+Logs inline, removes the raw-events box. Dev keeps the
+  full 12-tab UI. Same code, same tests, same release.
+- **8-cell install matrix** (`{basic, dev}` × `{cli, web, desktop,
+  full}`) shipped as one-liners in README.
+- **Clickable macOS DMG with edition baked in.** `bin/build-dmg.sh
+  --edition=basic` produces `dist/Ascendo-Basic-0.0.7-arm64.dmg`,
+  `--edition=dev` produces `dist/Ascendo-Dev-0.0.7-arm64.dmg`. End
+  user drags to /Applications, double-clicks; first-run bootstrap
+  auto-installs Python ≥ 3.11 / git / curl / jq via Homebrew.
+- **`bin/user-scripts/` helpers** drop on PATH at install time:
+  `ascendo_update`, `ascendo_start_web`, `ascendo_doctor`,
+  `ascendo_maintenance`. Plus dev-only `ascendo_sync` + `ascendo_push`.
+- **`docs/PLATFORM_STATUS.md`** — honest cross-platform feature matrix.
+- **`LINUX_QUICKSTART.md`** + rewritten `USER_GUIDE.md` (basic) +
+  new `DEV_GUIDE.md` (dev edition).
+- **Public-repo audit + dev-sync overlay** — copy-only migration
+  script stages private files (AI instructions, internal handoffs)
+  into Proton-synced overlay before public flip. Dev-sync TOOLING
+  stays PUBLIC — anyone can use it with their own provider.
+
+### Critical fixes
+
+- **macOS Tauri shell no longer crashes on launch** (was: SIGABRT in
+  `applicationDidFinishLaunching:`). `locate_sidecar()` probes 6+
+  absolute paths; spawn failures show a WebView recovery page instead
+  of panicking.
+- **opencode-cli + similar npm packages with bun/node postinstall hooks
+  install correctly** (was: `sh: bun: command not found`).
+  npm/apply.sh extends PATH with canonical node + bun bin dirs.
+- **pip targets the right Python** (was: silently installing into
+  Xcode's Python 3.9 framework, leaking to `~/Library/Python/3.9/bin`).
+  `ascendo_pip_pip_bin` probes brew first, rejects Xcode shim.
+- **Apps view reflects post-apply truth** (was: stuck on "outdated"
+  after a successful upgrade). `_latest_check_overlay` walks
+  check / apply / verify newest-first; verify wins on tie.
+
+### Cleanup of misinstalled Xcode-Python packages
+
+If you ran a Full update before this fix, the Python 3.9 packages
+that ended up in `~/Library/Python/3.9/bin/` (poetry, ruff, mypy,
+black, pytest, httpx, isort, pipx, uv, virtualenv) are unreachable
+from `ascendo` (which runs under brew Python 3.14). Safe to remove:
+
+```bash
+rm -rf ~/Library/Python/3.9
+```
+
+### Tests
+
+683 green: 290 contract + 393 macOS adapter (9 pre-existing
+Windows-only test_service_endpoints failures unchanged). Real-Ubuntu
+mk-uP5520 + Windows DP5520WMK validation pending operator.
+
+---
+
 ## v0.5.2 — 2026-05-09 (Cross-platform parity + one-line install/update)
 
 ### Highlights
