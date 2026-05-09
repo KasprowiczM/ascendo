@@ -64,9 +64,14 @@ fn pick_port() -> u16 {
 ///    This is the layout `bin/build-installer.ps1` populates before
 ///    running `tauri build`, so `cargo run`/`tauri dev` works the same
 ///    way as a packaged install.
-/// 3. Fallback to `ascendo` on PATH (developer machine with the dev
-///    install — `pip install -e core/ -e adapters/windows/` plus the
-///    PATH-installed entry-point script).
+/// 3. Well-known absolute install paths. macOS GUI apps inherit only
+///    launchctl's PATH (typically just `/usr/bin:/bin:/usr/sbin:/sbin`),
+///    so a bare `Command::new("ascendo")` cannot find brew's
+///    `/opt/homebrew/bin/ascendo` or the venv-installed
+///    `~/.local/bin/ascendo` even though the user can run them from
+///    Terminal. Probe every known location explicitly.
+/// 4. Last resort: trust PATH (works in dev shells / Linux / Windows
+///    where the GUI inherits the full env).
 fn locate_sidecar(app_handle: &tauri::AppHandle) -> PathBuf {
     // 1. Packaged: Tauri resource_dir().
     if let Ok(resource_dir) = app_handle.path().resource_dir() {
@@ -98,9 +103,55 @@ fn locate_sidecar(app_handle: &tauri::AppHandle) -> PathBuf {
             }
         }
     }
-    // 3. Last resort: trust PATH (developer with editable install). On a
-    // packaged box this will fail — but at that point the install is
-    // broken regardless and we want a clear error.
+    // 3. Well-known absolute install paths. Listed in priority order:
+    //    user-local installs first (where install.sh drops the shim),
+    //    then system-wide installs.
+    let absolute_candidates: Vec<PathBuf> = {
+        let mut v = Vec::new();
+        // ~/.local/bin/ascendo — install.sh symlinks here on POSIX.
+        if let Some(home) = std::env::var_os("HOME") {
+            let mut p = PathBuf::from(home);
+            p.push(".local");
+            p.push("bin");
+            p.push(SIDECAR_BIN);
+            v.push(p);
+        }
+        // ~/.local/share/ascendo/venv/bin/ascendo — direct venv shim.
+        if let Some(home) = std::env::var_os("HOME") {
+            let mut p = PathBuf::from(home);
+            p.push(".local");
+            p.push("share");
+            p.push("ascendo");
+            p.push("venv");
+            p.push("bin");
+            p.push(SIDECAR_BIN);
+            v.push(p);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            // Apple Silicon Homebrew default.
+            v.push(PathBuf::from("/opt/homebrew/bin").join(SIDECAR_BIN));
+            // Intel Homebrew default.
+            v.push(PathBuf::from("/usr/local/bin").join(SIDECAR_BIN));
+            // System-wide install dir.
+            v.push(PathBuf::from("/usr/local/bin").join(SIDECAR_BIN));
+        }
+        #[cfg(target_os = "linux")]
+        {
+            v.push(PathBuf::from("/usr/local/bin").join(SIDECAR_BIN));
+            v.push(PathBuf::from("/opt/ascendo/venv/bin").join(SIDECAR_BIN));
+        }
+        v
+    };
+    for candidate in &absolute_candidates {
+        if candidate.is_file() {
+            return candidate.clone();
+        }
+    }
+    // 4. Last resort: trust PATH. On a fresh GUI-launch this typically fails
+    // on macOS (launchctl PATH is restrictive), but spawn() will return
+    // ErrorKind::NotFound and our caller now handles that gracefully
+    // instead of panicking.
     PathBuf::from(SIDECAR_BIN)
 }
 
@@ -108,6 +159,69 @@ fn locate_sidecar(app_handle: &tauri::AppHandle) -> PathBuf {
 const SIDECAR_BIN: &str = "ascendo.exe";
 #[cfg(not(windows))]
 const SIDECAR_BIN: &str = "ascendo";
+
+/// Minimal percent-encoding (RFC 3986 unreserved + safe HTML chars).
+/// Used to embed our recovery HTML in a data: URL when the sidecar
+/// can't be found. Pulling in a dep just for one urlencode call would
+/// be silly — this covers everything the recovery page emits.
+fn urlencoding_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for byte in s.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            _ => {
+                use std::fmt::Write;
+                let _ = write!(out, "%{:02X}", byte);
+            }
+        }
+    }
+    out
+}
+
+/// Build the recovery HTML page shown when the sidecar can't be spawned.
+fn fallback_html(attempted_path: &PathBuf) -> String {
+    let attempted = attempted_path.display();
+    format!(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ascendo — sidecar not found</title>
+<style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+       background: #1a1a1a; color: #e0e0e0; padding: 40px; line-height: 1.6; max-width: 720px;
+       margin: 40px auto; }}
+h1 {{ font-size: 24px; margin: 0 0 16px; color: #fff; }}
+.hint {{ background: #2a2a2a; padding: 16px; border-radius: 6px; border-left: 3px solid #ffb347; }}
+code {{ background: #333; padding: 2px 6px; border-radius: 3px; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 13px; color: #b8e986; }}
+pre {{ background: #0d1117; color: #d1d5da; padding: 16px; border-radius: 6px; overflow-x: auto;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; line-height: 1.5; }}
+small {{ color: #888; }}
+</style>
+</head>
+<body>
+<h1>Ascendo can't find its backend yet</h1>
+<p>The desktop app tried to launch the <code>ascendo</code> sidecar but couldn't
+locate it on your system.</p>
+<p class="hint">Most likely cause: macOS GUI apps inherit a restricted PATH
+that doesn't include Homebrew. The fix is to symlink <code>ascendo</code> into
+a default-PATH location.</p>
+<p><b>Tried:</b> <code>{attempted}</code></p>
+<p><b>To fix (one time, takes 5 seconds):</b></p>
+<pre>sudo ln -sf $(which ascendo) /usr/local/bin/ascendo
+open -a Ascendo</pre>
+<p>If you don't have <code>ascendo</code> installed yet, run:</p>
+<pre>curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh | bash</pre>
+<small>This page is shown by the Ascendo desktop shell when the sidecar
+spawn fails. The full troubleshooting guide lives in
+<code>MACOS_QUICKSTART.md</code> in the repo.</small>
+</body>
+</html>"#
+    )
+}
 
 /// Spawn the Python sidecar. Stdio is silenced so the child can't pollute
 /// the desktop shell's terminal (and on Windows the console window is
@@ -117,7 +231,7 @@ const SIDECAR_BIN: &str = "ascendo";
 /// in `tests/test_scaffold.py::test_main_rs_spawns_python` continues to
 /// pass — the test asserts both `"ascendo"` and `"dashboard"` appear in
 /// this file regardless of how we invoke them.
-fn spawn_backend(sidecar_path: PathBuf, port: u16) -> Child {
+fn spawn_backend(sidecar_path: PathBuf, port: u16) -> Option<Child> {
     // Invoke the bundled binary as `ascendo dashboard --host ... --port ...`.
     // This is the same CLI surface as `python -m ascendo dashboard` in
     // dev — only the binary itself differs.
@@ -140,7 +254,23 @@ fn spawn_backend(sidecar_path: PathBuf, port: u16) -> Child {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
-    cmd.spawn().expect("failed to spawn ascendo dashboard sidecar")
+    // Fail-soft: a panic here used to manifest as the operator-visible
+    // "Ascendo quit unexpectedly" dialog the user hit on macOS when the
+    // GUI PATH didn't contain ascendo. Now we return None and let the
+    // caller render an in-WebView error page instead, which the user
+    // can read + recover from.
+    match cmd.spawn() {
+        Ok(child) => Some(child),
+        Err(err) => {
+            eprintln!(
+                "ascendo: failed to spawn sidecar '{}': {} ({})",
+                sidecar_path.display(),
+                err,
+                err.kind() as u8
+            );
+            None
+        }
+    }
 }
 
 /// Poll /health until it returns 200 or `timeout` elapses.
@@ -174,18 +304,24 @@ fn main() {
             // installed in shared state before any window event has a
             // chance to ask for it.
             let sidecar_path = locate_sidecar(&app.handle());
-            let child = spawn_backend(sidecar_path, port);
-            if let Some(state) = app.try_state::<SidecarProcess>() {
-                if let Ok(mut guard) = state.0.lock() {
-                    *guard = Some(child);
+            let spawned_ok = match spawn_backend(sidecar_path.clone(), port) {
+                Some(child) => {
+                    if let Some(state) = app.try_state::<SidecarProcess>() {
+                        if let Ok(mut guard) = state.0.lock() {
+                            *guard = Some(child);
+                        }
+                    }
+                    true
                 }
-            }
+                None => false,
+            };
 
             // 60s window: the PyInstaller-bundled sidecar plus uvicorn
             // + adapter discovery cold-starts in 4-15s on a typical
             // Win11 laptop; a 10s ceiling produced connection-refused
-            // webviews intermittently.
-            if !wait_for_health(port, Duration::from_secs(60)) {
+            // webviews intermittently. If spawn failed we skip the
+            // health-poll entirely — there's nothing to wait for.
+            if spawned_ok && !wait_for_health(port, Duration::from_secs(60)) {
                 // Don't bail — let the WebView render a connection-
                 // refused page so the user can read the troubleshooting
                 // hint at the top of ui/desktop-tauri/README.md.
@@ -195,7 +331,19 @@ fn main() {
                 );
             }
 
-            let url = format!("http://127.0.0.1:{}/", port);
+            // If the sidecar spawn failed (most common: macOS GUI PATH
+            // lacks ascendo binary), point the WebView at an embedded
+            // data: URL with a recovery banner instead of failing to
+            // open at all. The user can read the hint and run the
+            // suggested command in Terminal.
+            let url = if spawned_ok {
+                format!("http://127.0.0.1:{}/", port)
+            } else {
+                format!(
+                    "data:text/html,{}",
+                    urlencoding_encode(&fallback_html(&sidecar_path))
+                )
+            };
             let parsed_url = url
                 .parse()
                 .expect("constructed loopback URL must parse");
