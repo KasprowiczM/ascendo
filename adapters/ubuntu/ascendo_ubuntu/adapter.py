@@ -81,6 +81,16 @@ class UbuntuAdapter(IAdapter):
     REPO_ROOT: ClassVar[Path] = _resolve_repo_root()
     SCRIPTS_DIR: ClassVar[Path] = REPO_ROOT / "scripts"
     LIB_DIR: ClassVar[Path] = REPO_ROOT / "lib"
+    # Adapter-local script tree (used by the inventory enumerator, which
+    # ships its own list.sh under adapters/ubuntu/scripts/inventory/).
+    # Per-manager scripts still live at top-level scripts/ for now —
+    # the migration into adapters/ubuntu/scripts/ is incremental.
+    ADAPTER_SCRIPTS_DIR: ClassVar[Path] = (
+        Path(__file__).resolve().parent.parent / "scripts"
+    )
+    ADAPTER_LIB_DIR: ClassVar[Path] = (
+        Path(__file__).resolve().parent.parent / "lib"
+    )
 
     def __init__(self) -> None:
         self._cached_host: HostInfo | None = None
@@ -127,14 +137,16 @@ class UbuntuAdapter(IAdapter):
         ]
 
     def inventory(self) -> IInventory | None:  # type: ignore[override]
-        """Returns a cached UbuntuInventory singleton (placeholder).
+        """Returns a cached :class:`UbuntuInventory` singleton.
 
-        Currently returns an empty inventory snapshot — populated by a
-        future session that wires the legacy ``scripts/inventory/`` flow.
+        Drives ``adapters/ubuntu/scripts/inventory/list.sh`` which
+        enumerates installed packages across apt, snap, flatpak, brew,
+        npm and pip.
         """
         if self._cached_inventory is None:
             self._cached_inventory = UbuntuInventory(
-                scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR
+                scripts_dir=self.ADAPTER_SCRIPTS_DIR,
+                lib_dir=self.ADAPTER_LIB_DIR,
             )
         return self._cached_inventory
 
