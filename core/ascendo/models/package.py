@@ -43,6 +43,8 @@ class SourceType(str, Enum):
     NPM = "npm"
     PIP = "pip"
     PIPX = "pipx"
+    DRIVERS = "drivers"      # Linux/Windows drivers (NVIDIA, fwupd firmware)
+    FIRMWARE = "firmware"    # firmware updates via fwupd (Linux)
     WEB = "web"
     SYSTEM = "system"      # macOS Apple-bundled apps in /System/Applications/
     INVENTORY = "inventory"  # macOS LaunchServices inventory category (M5.3)
