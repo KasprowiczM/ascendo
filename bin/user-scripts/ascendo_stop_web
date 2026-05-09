@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# ascendo_stop_web — gracefully terminate any running ascendo dashboard process.
+# Uses pkill -f to match the python -m ascendo dashboard cmdline.
+set -euo pipefail
+if pkill -f 'python.* -m ascendo dashboard' 2>/dev/null; then
+    printf 'ascendo_stop_web: dashboard stopped.\n'
+else
+    printf 'ascendo_stop_web: no dashboard process running.\n'
+fi

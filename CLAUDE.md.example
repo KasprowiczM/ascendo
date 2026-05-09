@@ -1,0 +1,16 @@
+# CLAUDE.md (placeholder)
+
+AI agent instructions for the **dev edition** of Ascendo live in
+`dev-sync-overlay/ai-instructions/CLAUDE.md` and are pushed to a
+private Proton overlay via `dev-sync-export.sh`.
+
+Public contributors don't need this file. The repo is configured so
+that `claude` (or any other AI coding assistant) doesn't need it to
+work — it picks up project conventions from `CONTRIBUTING.md`,
+`README.md`, and the per-package `pyproject.toml` files.
+
+If you're a maintainer setting up a fresh dev machine: run
+`dev-sync-import.sh` to restore the real `CLAUDE.md` alongside the
+rest of the dev-edition overlay.
+
+See `CONTRIBUTING.md` for project conventions.

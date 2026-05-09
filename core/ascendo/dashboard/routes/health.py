@@ -16,12 +16,14 @@ router = APIRouter()
 
 @router.get("/version", response_model=VersionResponse, tags=["meta"])
 async def get_version(request: Request) -> VersionResponse:
-    """Return Ascendo version + currently-selected adapter info."""
+    """Return Ascendo version + currently-selected adapter info + edition."""
     adapter = getattr(request.app.state, "adapter", None)
+    edition = getattr(request.app.state, "edition", "basic")
     return VersionResponse(
         ascendo=__version__,
         adapter=adapter.name if adapter is not None else None,
         adapter_tier=adapter.tier if adapter is not None else None,
+        edition=edition,
     )
 
 

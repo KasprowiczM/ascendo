@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# ascendo_push — push current branch to GitHub (dev edition only).
+set -euo pipefail
+HOME_DIR="${ASCENDO_HOME:-$HOME/.local/share/ascendo}"
+if [ ! -d "$HOME_DIR/.git" ]; then
+    printf 'ascendo_push: %s is not a git checkout (dev-edition only)\n' "$HOME_DIR" >&2
+    exit 2
+fi
+cd "$HOME_DIR"
+exec git push "$@"

@@ -5,21 +5,35 @@
 #   curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh | bash
 #
 # Flags:
-#   --update / -u            Update an existing installation and exit (no clone)
-#   --reinstall / --force    Wipe ~/.local/share/ascendo and rebuild from scratch
-#   --verbose / -v           Trace every command
-#   --non-interactive        Refuse to prompt; use defaults / env-var overrides
-#   --help / -h              Show this banner and exit
+#   --update / -u                  Update an existing installation and exit (no clone)
+#   --reinstall / --force          Wipe ~/.local/share/ascendo and rebuild from scratch
+#   --edition=basic|dev            Install edition (default: basic)
+#   --profile=cli|web|desktop|full Install profile (default: web)
+#   --verbose / -v                 Trace every command
+#   --non-interactive              Refuse to prompt; use defaults / env-var overrides
+#   --help / -h                    Show this banner and exit
 #
 # Env-var overrides (useful for unattended / CI installs):
-#   ASCENDO_LANG=en|pl              Language (default: en)
-#   ASCENDO_PROFILE=cli|web|desktop Install profile (default: web)
-#   ASCENDO_HOME=<path>             Install directory (default: ~/.local/share/ascendo)
-#   ASCENDO_NONINTERACTIVE=1        Same as --non-interactive
-#   ASCENDO_VERBOSE=1               Same as --verbose
-#   ASCENDO_REPO_URL=<url>          Override clone URL (useful for forks)
-#   ASCENDO_BRANCH=main             Branch to clone (default: main)
-#   HTTPS_PROXY / http_proxy        Honoured by curl + git (no special handling needed)
+#   ASCENDO_LANG=en|pl                   Language (default: en)
+#   ASCENDO_EDITION=basic|dev            Edition (default: basic)
+#   ASCENDO_PROFILE=cli|web|desktop|full Install profile (default: web)
+#   ASCENDO_HOME=<path>                  Install directory (default: ~/.local/share/ascendo)
+#   ASCENDO_NONINTERACTIVE=1             Same as --non-interactive
+#   ASCENDO_VERBOSE=1                    Same as --verbose
+#   ASCENDO_REPO_URL=<url>               Override clone URL (useful for forks)
+#   ASCENDO_BRANCH=main                  Branch to clone (default: main)
+#   HTTPS_PROXY / http_proxy             Honoured by curl + git (no special handling needed)
+#
+# Editions:
+#   basic   — Simplified UI, sensible defaults; for everyday end-users.
+#   dev     — Full feature set: Sync tab, Hosts editor, raw events, dev-sync
+#             overlay tooling. For maintainers / contributors.
+#
+# Profiles:
+#   cli     — fastest, sparse checkout, ~30 MB.
+#   web     — adds the FastAPI dashboard.
+#   desktop — adds the Tauri 2.x desktop shell prerequisites.
+#   full    — cli + web + desktop combined (everything).
 #
 # What it does (install path):
 #   1. Detects OS (Darwin / Ubuntu+Debian / Fedora / Arch).
@@ -29,8 +43,9 @@
 #   5. Asks for an install profile (or reads $ASCENDO_PROFILE).
 #   6. Clones (or pulls) the repo to $ASCENDO_HOME.
 #   7. Sets up venv, pip-installs core/ + adapters/<os>/ editable.
-#   8. Symlinks `ascendo` shim to ~/.local/bin/.
-#   9. Self-tests via `ascendo doctor` and bails on failure.
+#   8. Writes $ASCENDO_HOME/.ascendo-edition marker (basic|dev).
+#   9. Symlinks `ascendo` + helper scripts to ~/.local/bin/.
+#  10. Self-tests via `ascendo doctor` and bails on failure.
 #
 # Idempotent: re-running upgrades in-place. Bash 3.2 compatible.
 
@@ -39,6 +54,7 @@ set -euo pipefail
 # ── Defaults from env ─────────────────────────────────────────────────────
 TR_LANG="${ASCENDO_LANG:-en}"
 PROFILE="${ASCENDO_PROFILE:-}"
+EDITION="${ASCENDO_EDITION:-basic}"
 INSTALL_DIR="${ASCENDO_HOME:-$HOME/.local/share/ascendo}"
 REPO_URL="${ASCENDO_REPO_URL:-https://github.com/KasprowiczM/ascendo.git}"
 REPO_BRANCH="${ASCENDO_BRANCH:-main}"
@@ -50,7 +66,7 @@ MIN_DISK_MB=1024        # 1 GB
 
 # ── Arg parser ────────────────────────────────────────────────────────────
 show_help() {
-    sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,48p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
 }
 
@@ -62,6 +78,7 @@ while [ $# -gt 0 ]; do
         --non-interactive)      NONINTERACTIVE=1 ;;
         --help|-h)              show_help ;;
         --lang=*)               TR_LANG="${1#*=}" ;;
+        --edition=*)            EDITION="${1#*=}" ;;
         --profile=*)            PROFILE="${1#*=}" ;;
         --home=*)               INSTALL_DIR="${1#*=}" ;;
         *)
@@ -71,6 +88,15 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
+
+# Validate edition early (before any work).
+case "$EDITION" in
+    basic|dev) ;;
+    *)
+        printf "Invalid --edition: '%s'. Use basic or dev.\n" "$EDITION" >&2
+        exit 2
+        ;;
+esac
 
 [ "$VERBOSE" = "1" ] && set -x
 
@@ -112,16 +138,18 @@ tr_lookup() {
         pl-DEPS_INSTALL)    echo "Instalowanie brakujących zależności (sudo gdy wymagane)…" ;;
         en-PICK_PROFILE)    echo "Pick install profile:" ;;
         pl-PICK_PROFILE)    echo "Wybierz profil instalacji:" ;;
-        en-PROFILE_1)       echo "  1) CLI only         — fastest, ~30 MB" ;;
-        pl-PROFILE_1)       echo "  1) Tylko CLI        — najszybciej, ~30 MB" ;;
-        en-PROFILE_2)       echo "  2) CLI + Web        — adds the FastAPI dashboard" ;;
-        pl-PROFILE_2)       echo "  2) CLI + Web        — dodaje dashboard FastAPI" ;;
-        en-PROFILE_3)       echo "  3) CLI + Web + Desktop — full Tauri 2.x desktop app" ;;
-        pl-PROFILE_3)       echo "  3) CLI + Web + Desktop — pełna aplikacja Tauri 2.x" ;;
-        en-PROFILE_PROMPT)  echo "Enter 1, 2, or 3 [default 2]:" ;;
-        pl-PROFILE_PROMPT)  echo "Wpisz 1, 2 lub 3 [domyślnie 2]:" ;;
-        en-PROFILE_INVALID) echo "Invalid profile. Enter 1, 2, or 3." ;;
-        pl-PROFILE_INVALID) echo "Niepoprawny profil. Wpisz 1, 2 lub 3." ;;
+        en-PROFILE_1)       echo "  1) CLI only            — fastest, ~30 MB" ;;
+        pl-PROFILE_1)       echo "  1) Tylko CLI           — najszybciej, ~30 MB" ;;
+        en-PROFILE_2)       echo "  2) CLI + Web           — adds the FastAPI dashboard" ;;
+        pl-PROFILE_2)       echo "  2) CLI + Web           — dodaje dashboard FastAPI" ;;
+        en-PROFILE_3)       echo "  3) CLI + Desktop       — adds the Tauri 2.x desktop shell (no web server)" ;;
+        pl-PROFILE_3)       echo "  3) CLI + Desktop       — dodaje aplikację Tauri 2.x (bez serwera web)" ;;
+        en-PROFILE_4)       echo "  4) Full (CLI + Web + Desktop) — everything" ;;
+        pl-PROFILE_4)       echo "  4) Pełna (CLI + Web + Desktop) — wszystko" ;;
+        en-PROFILE_PROMPT)  echo "Enter 1, 2, 3, or 4 [default 2]:" ;;
+        pl-PROFILE_PROMPT)  echo "Wpisz 1, 2, 3 lub 4 [domyślnie 2]:" ;;
+        en-PROFILE_INVALID) echo "Invalid profile. Enter 1, 2, 3, or 4." ;;
+        pl-PROFILE_INVALID) echo "Niepoprawny profil. Wpisz 1, 2, 3 lub 4." ;;
         en-CLONING)         echo "Cloning Ascendo repository…" ;;
         pl-CLONING)         echo "Klonowanie repozytorium Ascendo…" ;;
         en-PULLING)         echo "Existing checkout found — pulling latest…" ;;
@@ -422,21 +450,33 @@ if [ -z "$PROFILE" ]; then
     printf "%s\n" "$(t PROFILE_1)"
     printf "%s\n" "$(t PROFILE_2)"
     printf "%s\n" "$(t PROFILE_3)"
+    printf "%s\n" "$(t PROFILE_4)"
     while [ -z "$PROFILE" ]; do
         prompt_default "$(t PROFILE_PROMPT)" "2"
         case "$REPLY" in
             1|cli)     PROFILE="cli" ;;
             2|web)     PROFILE="web" ;;
             3|desktop) PROFILE="desktop" ;;
+            4|full)    PROFILE="full" ;;
             *)         warn "$(t PROFILE_INVALID)" ;;
         esac
     done
 fi
 case "$PROFILE" in
-    cli|web|desktop) ;;
-    *) fail "Invalid \$ASCENDO_PROFILE: '$PROFILE'. Use cli|web|desktop." ;;
+    cli|web|desktop|full) ;;
+    *) fail "Invalid \$ASCENDO_PROFILE: '$PROFILE'. Use cli|web|desktop|full." ;;
 esac
-ok "profile: $PROFILE"
+ok "edition: $EDITION   profile: $PROFILE"
+
+# Derived feature flags from profile (so subsequent code checks features
+# rather than profile names directly — full enables everything).
+WANT_WEB=0
+WANT_DESKTOP=0
+case "$PROFILE" in
+    web)     WANT_WEB=1 ;;
+    desktop) WANT_DESKTOP=1 ;;
+    full)    WANT_WEB=1; WANT_DESKTOP=1 ;;
+esac
 
 # ── Clone or pull ─────────────────────────────────────────────────────────
 step "Repo @ $INSTALL_DIR"
@@ -454,6 +494,7 @@ else
         git -C "$INSTALL_DIR" sparse-checkout set core adapters bin schemas docs plugins lib scripts share i18n
         git -C "$INSTALL_DIR" checkout "$REPO_BRANCH"
     else
+        # web / desktop / full: full checkout (need ui/desktop-tauri etc.)
         git clone -b "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR"
     fi
 fi
@@ -481,12 +522,12 @@ if [ -n "$ADAPTER_DIR" ] && [ -d "$ADAPTER_DIR" ]; then
         warn "Adapter install reported a non-fatal error; CLI core remains usable."
 fi
 
-if [ "$PROFILE" = "web" ] || [ "$PROFILE" = "desktop" ]; then
+if [ "$WANT_WEB" = "1" ] || [ "$WANT_DESKTOP" = "1" ]; then
     info "$(t DASHBOARD_DEPS)"
     "$VENV_DIR/bin/pip" install fastapi 'uvicorn[standard]' httpx --quiet
 fi
 
-if [ "$PROFILE" = "desktop" ]; then
+if [ "$WANT_DESKTOP" = "1" ]; then
     step "Desktop toolchain"
     info "$(t DESKTOP_DEPS)"
     if ! need_cmd cargo; then
@@ -530,6 +571,48 @@ EOF
 chmod +x "$SHIM"
 ok "$(t SHIM_INSTALL)"
 
+# ── Edition marker ────────────────────────────────────────────────────────
+# Dashboard reads this on startup to decide which UI surface to show.
+printf '%s\n' "$EDITION" > "$INSTALL_DIR/.ascendo-edition"
+ok "Edition marker: $INSTALL_DIR/.ascendo-edition ($EDITION)"
+
+# ── User helper scripts → ~/.local/bin ────────────────────────────────────
+# Every POSIX helper (no extension) in bin/user-scripts/ gets a symlink on
+# PATH. .ps1 files are Windows-only and are skipped here. dev/ subdir
+# only loops when --edition=dev.
+USER_SCRIPTS_DIR="$INSTALL_DIR/bin/user-scripts"
+LOCAL_BIN="$HOME/.local/bin"
+mkdir -p "$LOCAL_BIN"
+if [ -d "$USER_SCRIPTS_DIR" ]; then
+    LINKED_COUNT=0
+    for src in "$USER_SCRIPTS_DIR"/ascendo_*; do
+        # Skip .ps1 files (Windows-only).
+        case "$src" in
+            *.ps1) continue ;;
+        esac
+        [ -f "$src" ] || continue
+        name="$(basename "$src")"
+        ln -sf "$src" "$LOCAL_BIN/$name"
+        LINKED_COUNT=$((LINKED_COUNT + 1))
+    done
+    if [ "$EDITION" = "dev" ] && [ -d "$USER_SCRIPTS_DIR/dev" ]; then
+        for src in "$USER_SCRIPTS_DIR/dev"/ascendo_*; do
+            case "$src" in
+                *.ps1) continue ;;
+            esac
+            [ -f "$src" ] || continue
+            name="$(basename "$src")"
+            ln -sf "$src" "$LOCAL_BIN/$name"
+            LINKED_COUNT=$((LINKED_COUNT + 1))
+        done
+    fi
+    if [ "$LINKED_COUNT" -gt 0 ]; then
+        ok "Helper scripts: $LINKED_COUNT symlink(s) in $LOCAL_BIN/"
+    else
+        info "No helper scripts found in $USER_SCRIPTS_DIR (sparse checkout?)"
+    fi
+fi
+
 # PATH check
 case ":$PATH:" in
     *:"$HOME/.local/bin":*) ok "~/.local/bin already on PATH" ;;
@@ -556,6 +639,8 @@ fi
 
 # ── Usage ─────────────────────────────────────────────────────────────────
 step "$(t DONE)"
+printf "\n  %s✓ Installed:%s edition=%s%s%s profile=%s%s%s\n" \
+    "$C_GREEN" "$C_RESET" "$C_BOLD" "$EDITION" "$C_RESET" "$C_BOLD" "$PROFILE" "$C_RESET"
 printf "\n%s%s%s\n" "$C_BOLD" "$(t USAGE_HEADER)" "$C_RESET"
 printf "  %s\n" "$(t USAGE_PATH)"
 printf "\n"
@@ -563,13 +648,17 @@ printf "  %sascendo doctor%s                       # health snapshot\n" "$C_GREE
 printf "  %sascendo run --phase check%s            # find updates (read-only)\n" "$C_GREEN" "$C_RESET"
 printf "  %sascendo run --phase apply%s            # apply updates (gated)\n" "$C_GREEN" "$C_RESET"
 
-if [ "$PROFILE" = "web" ] || [ "$PROFILE" = "desktop" ]; then
+if [ "$WANT_WEB" = "1" ]; then
     printf "\n  %sascendo dashboard --port 8765%s        # open http://127.0.0.1:8765/\n" "$C_GREEN" "$C_RESET"
     printf "  %sascendo dashboard --background%s        # detached mode\n" "$C_GREEN" "$C_RESET"
+fi
+if [ "$WANT_DESKTOP" = "1" ]; then
+    printf "\n  %sascendo_start_desktop%s                # launch the Tauri desktop app\n" "$C_GREEN" "$C_RESET"
 fi
 
 printf "\n  Repo:    %s\n" "$INSTALL_DIR"
 printf "  venv:    %s\n" "$VENV_DIR"
+printf "  edition: %s\n" "$INSTALL_DIR/.ascendo-edition"
 printf "  config:  %s\n" "$HOME/.config/ascendo/locale.txt"
 printf "  Update:  curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.sh | bash\n"
 printf "\n"

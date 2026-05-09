@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# ascendo_doctor — health snapshot. Wraps `ascendo doctor` plus extra checks.
+set -euo pipefail
+HOME_DIR="${ASCENDO_HOME:-$HOME/.local/share/ascendo}"
+PYTHON="$HOME_DIR/venv/bin/python"
+[ -x "$PYTHON" ] || PYTHON="$(command -v python3)"
+
+rc=0
+printf '== ascendo doctor ==\n'
+"$PYTHON" -m ascendo doctor "$@" || rc=$?
+
+printf '\n== runtime checks ==\n'
+# 1. orphan dashboard processes
+n_proc=$(pgrep -fa 'python.* -m ascendo dashboard' 2>/dev/null | wc -l | tr -d ' ' || echo 0)
+printf '  dashboard processes : %s\n' "$n_proc"
+
+# 2. log dir size
+LOG_DIR="$HOME/.ascendo/runs"
+if [ -d "$LOG_DIR" ]; then
+    size=$(du -sh "$LOG_DIR" 2>/dev/null | awk '{print $1}')
+    n_runs=$(ls -1 "$LOG_DIR" 2>/dev/null | wc -l | tr -d ' ')
+    printf '  runs directory     : %s (%s runs)\n' "$size" "$n_runs"
+fi
+
+# 3. inventory db integrity
+INV_DB="$HOME/.ascendo/inventory.db"
+if [ -f "$INV_DB" ]; then
+    if command -v sqlite3 >/dev/null 2>&1; then
+        result=$(sqlite3 "$INV_DB" 'PRAGMA integrity_check;' 2>/dev/null | head -n1 || echo "unknown")
+        printf '  inventory.db check : %s\n' "$result"
+    else
+        printf '  inventory.db check : skipped (sqlite3 CLI not installed)\n'
+    fi
+fi
+
+printf '\nascendo_doctor: done.\n'
+exit "${rc:-0}"

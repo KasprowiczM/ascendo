@@ -175,3 +175,39 @@ $RECYCLE.BIN/
 .playwright-mcp/
 dashboard-overview-*.png
 dashboard-*.png
+
+# ── Edition split (Sesja 51): private files staged for dev-sync overlay ─
+# These live in the working tree for dev-edition users (because dev-sync
+# pushes them to Proton), but must never be committed to the public repo.
+
+# AI instructions (live + reference)
+/CLAUDE.md
+/AGENTS.md
+/CODEX.md
+/.claude/
+/.claudeignore
+/.codex
+/.codex.local/
+/.codexignore
+/.gemini/
+/.geminiignore
+/.graphifyignore
+
+# Internal handoffs / roadmap / session logs
+/HANDOFF.md
+/PLAN.md
+/DEV_SCRIPTS_README.md
+/docs/superpowers/specs/
+
+# Graphify output (knowledge graphs)
+/graphify-out/
+
+# Dev-sync infrastructure (the rclone tree + wrapper scripts)
+/dev-sync/
+/dev-sync-*.sh
+/dev-sync-*.ps1
+/dev_sync_logs/
+/dev-sync-overlay/
+
+# Build artefacts
+/dist/

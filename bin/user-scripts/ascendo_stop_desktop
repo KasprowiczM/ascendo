@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# ascendo_stop_desktop — stop the Tauri shell process.
+set -euo pipefail
+case "$(uname -s)" in
+    Darwin) pkill -f 'Ascendo\.app' 2>/dev/null || pkill -f 'ascendo-desktop' 2>/dev/null || true ;;
+    *)      pkill -f 'ascendo-desktop' 2>/dev/null || true ;;
+esac
+printf 'ascendo_stop_desktop: ok\n'

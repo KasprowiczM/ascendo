@@ -275,6 +275,12 @@ function _bindServiceButtons() {
 
 const ui = {
   show(view) {
+    // Edition gate: in "basic", redirect dev-only views to History so deep
+    // links (e.g. /#logs after a CLI run) still land somewhere useful.
+    const BASIC_HIDDEN_VIEWS = new Set(["sync", "hosts", "logs"]);
+    if (window.ASCENDO_EDITION === "basic" && BASIC_HIDDEN_VIEWS.has(view)) {
+      view = "history";
+    }
     $$(".view").forEach(v => v.classList.add("hidden"));
     $(`#view-${view}`).classList.remove("hidden");
     $$("a[data-view]").forEach(a => a.classList.toggle("active", a.dataset.view === view));
@@ -1387,17 +1393,19 @@ const ui = {
     try {
       const runs = (await api.get("/runs?limit=1")).runs;
       const last = runs[0];
+      // Staleness line is dev-only chrome; suppress in basic edition.
+      const isBasic = window.ASCENDO_EDITION === "basic";
       if (last) {
         const stale = ui.staleness(last.started_at);
         $("#last-run").innerHTML = `${ui.badge(last.status)} <code>${last.id}</code><br>
            <span class="dim">${ui.fmtTime(last.started_at)} → ${ui.fmtTime(last.ended_at)}</span><br>
            profile: ${last.profile || "-"}, dry-run: ${last.dry_run ? "yes" : "no"}<br>
            ${last.needs_reboot ? `<b>${tr("overview.reboot_required")}</b><br>` : ""}
-           <span class="meta" style="color:${stale.color};font-weight:600" data-staleness="${stale.key}">${stale.label}</span>`;
+           ${isBasic ? "" : `<span class="meta" style="color:${stale.color};font-weight:600" data-staleness="${stale.key}">${stale.label}</span>`}`;
       } else {
         const stale = ui.staleness(null);
-        $("#last-run").innerHTML = `<span class='dim'>${tr("overview.no_runs")}</span><br>
-           <span class="meta" style="color:${stale.color}" data-staleness="${stale.key}">${stale.label}</span>`;
+        $("#last-run").innerHTML = `<span class='dim'>${tr("overview.no_runs")}</span>${isBasic ? "" : `<br>
+           <span class="meta" style="color:${stale.color}" data-staleness="${stale.key}">${stale.label}</span>`}`;
       }
     } catch (e) { $("#last-run").textContent = String(e); }
     try {
@@ -1426,12 +1434,21 @@ const ui = {
       }
       $("#preflight").innerHTML = parts.join("<br>");
     } catch (e) { $("#preflight").textContent = String(e); }
-    try {
-      const g = await api.get("/git/status");
-      $("#git-status").innerHTML = `branch <code>${g.branch || "(unknown)"}</code> ` +
-        (g.dirty ? "<span class='badge warn'>dirty</span>" : "<span class='badge ok'>clean</span>") +
-        ` <span class="dim">↑${g.ahead} ↓${g.behind}</span>`;
-    } catch (e) { $("#git-status").textContent = String(e); }
+    if (window.ASCENDO_EDITION !== "basic") {
+      try {
+        const g = await api.get("/git/status");
+        $("#git-status").innerHTML = `branch <code>${g.branch || "(unknown)"}</code> ` +
+          (g.dirty ? "<span class='badge warn'>dirty</span>" : "<span class='badge ok'>clean</span>") +
+          ` <span class="dim">↑${g.ahead} ↓${g.behind}</span>`;
+      } catch (e) { $("#git-status").textContent = String(e); }
+    } else {
+      // Hide the entire #git-status card in basic edition.
+      const card = $("#git-status");
+      if (card) {
+        const cardWrap = card.closest(".card");
+        if (cardWrap) cardWrap.style.display = "none";
+      }
+    }
     // Inventory charts (slow scan, runs after the rest paints)
     ui.loadInventoryDashboard();
     ui.loadHealth();
@@ -2115,12 +2132,23 @@ const ui = {
     }
     $$("a[data-run]").forEach(a => a.addEventListener("click", e => {
       e.preventDefault();
-      ui.show("logs");
-      ui.loadRunDetail(a.dataset.run);
+      const runId = a.dataset.run;
+      if (window.ASCENDO_EDITION === "basic") {
+        // Inline-expand the row's logs instead of switching to the Logs view
+        // (which is hidden in basic edition).
+        const parentTr = a.closest("tr");
+        if (parentTr) ui.toggleHistoryLogsRow(parentTr, runId);
+      } else {
+        ui.show("logs");
+        ui.loadRunDetail(runId);
+      }
     }));
   },
 
-  async loadRunDetail(runId) {
+  async loadRunDetail(runId, targetEl) {
+    // Resolve render target. Default to the Logs view's #run-detail panel;
+    // basic-edition inline-expand callers pass their own container.
+    const target = targetEl || $("#run-detail");
     try {
       // Backend ``GET /runs/{id}`` returns a list[Sidecar] (the raw
       // sidecar dump). The pre-monorepo backend wrapped that in
@@ -2182,9 +2210,39 @@ const ui = {
         </tr>`;
       }
       html += "</tbody></table>";
-      $("#run-detail").innerHTML = html;
+      if (target) target.innerHTML = html;
     } catch (e) {
-      $("#run-detail").innerHTML = `<p class="badge fail">${e}</p>`;
+      if (target) target.innerHTML = `<p class="badge fail">${e}</p>`;
+    }
+  },
+
+  // Inline log expansion for the History tab in basic edition. Toggles a
+  // sibling <tr class="history-logs-row"> below the clicked row that hosts
+  // the same per-phase table loadRunDetail() renders into the Logs view.
+  async toggleHistoryLogsRow(parentTr, runId) {
+    const next = parentTr.nextElementSibling;
+    if (next && next.classList.contains("history-logs-row") && next.dataset.runId === runId) {
+      next.remove();
+      return;
+    }
+    // Keep only one row open at a time — collapse any existing expansion.
+    document.querySelectorAll("tr.history-logs-row").forEach(r => r.remove());
+    const colCount = parentTr.children.length;
+    const newRow = document.createElement("tr");
+    newRow.className = "history-logs-row";
+    newRow.dataset.runId = runId;
+    const td = document.createElement("td");
+    td.colSpan = colCount;
+    const content = document.createElement("div");
+    content.className = "history-logs-content";
+    content.textContent = "Loading logs…";
+    td.appendChild(content);
+    newRow.appendChild(td);
+    parentTr.parentElement.insertBefore(newRow, parentTr.nextSibling);
+    try {
+      await ui.loadRunDetail(runId, content);
+    } catch (e) {
+      content.textContent = "Failed to load logs: " + String(e);
     }
   },
 
@@ -2604,10 +2662,10 @@ document.addEventListener("click", e => {
 
 // Patch loadRunDetail to add data-phase-log buttons (so user can view inline)
 const _origLoadRunDetail = ui.loadRunDetail;
-ui.loadRunDetail = async function(runId) {
+ui.loadRunDetail = async function(runId, targetEl) {
   // Reuse existing renderer, then post-process the HTML to add inline buttons.
-  await _origLoadRunDetail.call(this, runId);
-  const det = $("#run-detail");
+  await _origLoadRunDetail.call(this, runId, targetEl);
+  const det = targetEl || $("#run-detail");
   if (!det) return;
   // For every phase row, inject an inline "view log" button.
   det.querySelectorAll("tr").forEach(tr => {
@@ -4072,8 +4130,14 @@ async function bootstrap() {
     const adapter = (v && (v.adapter || v.adapter_name)) || "unknown";
     document.documentElement.setAttribute("data-adapter", adapter);
     window.ADAPTER_NAME = adapter;
+    // Edition gate (basic | dev). Default to "basic" so the conservative
+    // state wins if the backend doesn't yet emit `edition` on /version.
+    document.documentElement.setAttribute("data-edition", (v && v.edition) || "basic");
+    window.ASCENDO_EDITION = (v && v.edition) || "basic";
   } catch {
     document.documentElement.setAttribute("data-adapter", "unknown");
+    document.documentElement.setAttribute("data-edition", "basic");
+    window.ASCENDO_EDITION = "basic";
   }
 
   injectIcons();

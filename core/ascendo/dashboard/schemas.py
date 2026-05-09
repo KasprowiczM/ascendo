@@ -39,6 +39,10 @@ class VersionResponse(_WireBase):
         description="Adapter slug (windows/linux_ubuntu/macos) or None if no adapter installed.",
     )
     adapter_tier: int | None = Field(default=None)
+    edition: str = Field(
+        default="basic",
+        description="Edition flag: 'basic' (end-user) or 'dev' (full feature set).",
+    )
 
 
 # ── /health ─────────────────────────────────────────────────────────────────

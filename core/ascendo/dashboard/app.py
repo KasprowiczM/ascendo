@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .inventory_db import InventoryDB
+from .middleware.edition_gate import EditionGateMiddleware
 from .routes.about import router as about_router
 from .routes.ai import router as ai_router
 from .routes.apps import router as apps_router
@@ -57,6 +58,26 @@ def _default_inventory_db_path() -> Path:
     """Per-user inventory DB path. ``ASCENDO_INVENTORY_DB`` overrides."""
     override = os.environ.get("ASCENDO_INVENTORY_DB")
     return Path(override) if override else Path.home() / ".ascendo" / "inventory.db"
+
+
+def _resolve_edition() -> str:
+    """Priority: ASCENDO_EDITION env > $ASCENDO_HOME/.ascendo-edition > basic.
+
+    The marker file holds a single line with ``basic`` or ``dev``. Anything
+    else (missing, unreadable, unknown value) falls back to ``basic``.
+    """
+    env_val = (os.environ.get("ASCENDO_EDITION") or "").strip().lower()
+    if env_val in ("basic", "dev"):
+        return env_val
+    home = os.environ.get("ASCENDO_HOME") or os.path.expanduser("~/.local/share/ascendo")
+    marker = Path(home) / ".ascendo-edition"
+    try:
+        text = marker.read_text(encoding="utf-8").strip().lower()
+        if text in ("basic", "dev"):
+            return text
+    except (OSError, ValueError):
+        pass
+    return "basic"
 
 
 def _resolve_frontend_dir() -> Path | None:
@@ -142,6 +163,11 @@ def create_app(
     app.state.runs_dir = runs_dir or _default_runs_dir()
     app.state.runs_dir.mkdir(parents=True, exist_ok=True)
 
+    # Edition flag (basic | dev). Resolved here so app.state.edition is set
+    # before any request reaches a route or middleware. Default = basic;
+    # see _resolve_edition() for resolution priority.
+    app.state.edition = _resolve_edition()
+
     # In-memory async-run registry (M2.10). Lifetime = process.
     from ..orchestrator import RunRegistry
     app.state.run_registry = RunRegistry()
@@ -170,6 +196,10 @@ def create_app(
         allow_headers=["*"],
         allow_credentials=False,
     )
+
+    # Edition gate: 404s dev-only routes when running in basic edition.
+    # Reads app.state.edition (set above).
+    app.add_middleware(EditionGateMiddleware)
 
     # ── API routes (must come BEFORE the catch-all SPA static mount) ──────
     # Order matters: spa_stubs is registered FIRST so its specific routes

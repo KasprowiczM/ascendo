@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# ascendo_start_desktop — launch the Tauri desktop shell.
+set -euo pipefail
+HOME_DIR="${ASCENDO_HOME:-$HOME/.local/share/ascendo}"
+case "$(uname -s)" in
+    Darwin) exec "$HOME_DIR/bin/launch-desktop-macos.sh" "$@" ;;
+    Linux)  printf 'desktop launcher not yet packaged on Linux\n' >&2; exit 78 ;;
+    *)      printf 'unsupported OS\n' >&2; exit 78 ;;
+esac

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# ascendo_start_web — start the FastAPI dashboard in the background.
+# Uses the same Python venv the installer set up.
+set -euo pipefail
+HOME_DIR="${ASCENDO_HOME:-$HOME/.local/share/ascendo}"
+PYTHON="$HOME_DIR/venv/bin/python"
+[ -x "$PYTHON" ] || PYTHON="$(command -v python3)"
+exec "$PYTHON" -m ascendo dashboard --background "$@"

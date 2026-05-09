@@ -24,7 +24,12 @@ from .test_dashboard import FakeAdapter
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> TestClient:
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    # SPA contract tests assert the full legacy surface (sync / hosts /
+    # git / dev-sync / profiles), which the edition gate hides in basic
+    # mode. Run in dev edition so the stubs remain reachable.
+    monkeypatch.setenv("ASCENDO_EDITION", "dev")
+    monkeypatch.setenv("ASCENDO_HOME", str(tmp_path))
     app = create_app(adapter=FakeAdapter(), runs_dir=tmp_path)
     return TestClient(app)
 

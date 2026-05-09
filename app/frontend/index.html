@@ -30,6 +30,12 @@
       }
     })();
   </script>
+  <!-- Edition gate: default to "basic" before /version resolves so the
+       conservative state (Sync/Hosts/Logs nav links hidden, raw event log
+       hidden, dev-only Settings sections hidden) is the pre-paint default.
+       app.js overwrites this from /version.edition once the backend has
+       responded. -->
+  <script>document.documentElement.setAttribute("data-edition","basic");</script>
   <link rel="icon" type="image/svg+xml" href="/assets/logo-mark.svg" />
   <!-- Design tokens (colors, type, spacing, radii, shadows, motion).
        Loaded BEFORE style.css so component styles can reference them. -->
@@ -848,7 +854,7 @@
             </p>
             <div id="profiles-list">…</div>
           </div>
-          <div class="card">
+          <div class="card" data-edition-only="dev">
             <h3 data-i18n="settings.updates_title">Update notifier</h3>
             <p class="dim" data-i18n="settings.updates_hint">
               Optional: check GitHub Releases for newer Ascendo versions.

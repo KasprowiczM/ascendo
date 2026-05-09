@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# ascendo_update — pull latest Ascendo + refresh editable installs.
+# Resolves $ASCENDO_HOME via env var or defaults to ~/.local/share/ascendo.
+set -euo pipefail
+HOME_DIR="${ASCENDO_HOME:-$HOME/.local/share/ascendo}"
+if [ ! -d "$HOME_DIR" ]; then
+    printf 'ascendo_update: $ASCENDO_HOME (%s) is not a directory\n' "$HOME_DIR" >&2
+    exit 2
+fi
+exec "$HOME_DIR/update.sh" "$@"

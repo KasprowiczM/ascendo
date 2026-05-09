@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# ascendo_maintenance — high-level maintenance ops.
+#
+# Usage:
+#   ascendo_maintenance full                 — run all categories, all phases
+#   ascendo_maintenance quick                — just the check phase
+#   ascendo_maintenance dry-run              — plan only, no apply
+#   ascendo_maintenance category=<name>      — run all phases for one category
+#   ascendo_maintenance rebuild-inventory    — wipe + rebuild ~/.ascendo/inventory.db
+#   ascendo_maintenance check-errors         — scan recent runs for failures
+set -euo pipefail
+HOME_DIR="${ASCENDO_HOME:-$HOME/.local/share/ascendo}"
+PYTHON="$HOME_DIR/venv/bin/python"
+[ -x "$PYTHON" ] || PYTHON="$(command -v python3)"
+
+cmd="${1:-}"
+case "$cmd" in
+    full)
+        exec "$PYTHON" -m ascendo run --profile full
+        ;;
+    quick)
+        exec "$PYTHON" -m ascendo run --profile quick
+        ;;
+    dry-run)
+        exec "$PYTHON" -m ascendo run --dry-run
+        ;;
+    category=*)
+        cat="${cmd#category=}"
+        exec "$PYTHON" -m ascendo run --category "$cat"
+        ;;
+    rebuild-inventory)
+        rm -f "$HOME/.ascendo/inventory.db"
+        printf 'ascendo_maintenance: inventory.db removed; running check phase to rebuild...\n'
+        exec "$PYTHON" -m ascendo run --profile quick
+        ;;
+    check-errors)
+        printf 'ascendo_maintenance: scanning ~/.ascendo/runs for failed sidecars...\n'
+        marker="$HOME/.ascendo/runs/.last-error-scan"
+        if [ -f "$marker" ]; then
+            find "$HOME/.ascendo/runs" -name '*.json' -newer "$marker" 2>/dev/null \
+                -exec grep -l '"status": "failed"' {} + 2>/dev/null | head -20 || true
+        else
+            find "$HOME/.ascendo/runs" -name '*.json' 2>/dev/null \
+                -exec grep -l '"status": "failed"' {} + 2>/dev/null | head -20 || true
+        fi
+        mkdir -p "$HOME/.ascendo/runs"
+        touch "$marker" 2>/dev/null || true
+        ;;
+    ''|help|-h|--help)
+        cat <<'USAGE'
+ascendo_maintenance — high-level maintenance ops
+
+  full                  Run all categories, all phases (check->...->cleanup)
+  quick                 Just the check phase across all categories
+  dry-run               Plan only, no apply
+  category=<name>       All phases for one category (e.g. brew, npm, pip, web)
+  rebuild-inventory     Wipe + rebuild ~/.ascendo/inventory.db
+  check-errors          Scan recent runs for failed sidecars
+  help                  This message
+USAGE
+        ;;
+    *)
+        printf 'ascendo_maintenance: unknown command "%s". Try "ascendo_maintenance help".\n' "$cmd" >&2
+        exit 2
+        ;;
+esac

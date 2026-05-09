@@ -1762,3 +1762,30 @@ button.is-refreshing::before {
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
+
+/* ============================================================
+   Edition: basic — hide dev-only chrome
+   ============================================================ */
+[data-edition="basic"] .nav-link[data-view="sync"],
+[data-edition="basic"] .nav-link[data-view="hosts"],
+[data-edition="basic"] .nav-link[data-view="logs"]   { display: none !important; }
+
+[data-edition="basic"] #view-sync,
+[data-edition="basic"] #view-hosts,
+[data-edition="basic"] #view-logs                     { display: none; }
+
+[data-edition="basic"] #live-log-wrap                 { display: none; }
+
+[data-edition="basic"] [data-edition-only="dev"]      { display: none !important; }
+
+/* History row inline log expansion (basic only) */
+[data-edition="basic"] tr.history-logs-row > td       {
+    background: var(--bg-elev);
+    padding: 12px 18px;
+}
+[data-edition="basic"] tr.history-logs-row .history-logs-content {
+    max-height: 480px;
+    overflow: auto;
+    font: 12px var(--font-mono);
+    color: var(--fg-muted);
+}

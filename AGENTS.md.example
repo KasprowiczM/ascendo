@@ -1,0 +1,17 @@
+# AGENTS.md (placeholder)
+
+Generic AI agent instructions for the **dev edition** of Ascendo live
+in `dev-sync-overlay/ai-instructions/AGENTS.md` and are pushed to a
+private Proton overlay via `dev-sync-export.sh`.
+
+Public contributors don't need this file — the public repo is set up
+to be productive for any AI assistant (Claude, Codex, Gemini, Cursor,
+Aider, Continue.dev, etc.) using only the public docs:
+`README.md`, `CONTRIBUTING.md`, `USER_GUIDE.md`, the per-package
+`pyproject.toml` files, and the inline docstrings.
+
+If you're a maintainer setting up a fresh dev machine: run
+`dev-sync-import.sh` to restore the real `AGENTS.md` alongside the
+rest of the dev-edition overlay.
+
+See `CONTRIBUTING.md` for project conventions.

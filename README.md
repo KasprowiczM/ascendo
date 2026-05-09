@@ -71,46 +71,75 @@ Target releases:
   all three OSes, plugin signing + verification.
 - **v1.0.0** — stable API + signed binaries + plugin marketplace.
 
-## Quick install — one-liner per OS
+## Install (one-liners)
 
-**macOS / Linux** (any of Ubuntu+Debian, Fedora, Arch):
+Pick a row based on what you want. Re-running the same command updates in
+place — every script is idempotent.
+
+### Basic edition (default — simplified UI for everyday use)
+
+| Profile | macOS / Linux | Windows |
+|---------|---------------|---------|
+| **CLI only** | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| ASCENDO_EDITION=basic ASCENDO_PROFILE=cli bash` | `$Env:ASCENDO_EDITION='basic'; $Env:ASCENDO_PROFILE='cli'; iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` |
+| **CLI + Web** | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| ASCENDO_EDITION=basic ASCENDO_PROFILE=web bash` | `$Env:ASCENDO_EDITION='basic'; $Env:ASCENDO_PROFILE='web'; iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` |
+| **CLI + Desktop** | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| ASCENDO_EDITION=basic ASCENDO_PROFILE=desktop bash` | `$Env:ASCENDO_EDITION='basic'; $Env:ASCENDO_PROFILE='desktop'; iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` |
+| **Full** (CLI + Web + Desktop) | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| ASCENDO_EDITION=basic ASCENDO_PROFILE=full bash` | `$Env:ASCENDO_EDITION='basic'; $Env:ASCENDO_PROFILE='full'; iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` |
+
+### Dev edition (full feature set — for maintainers + contributors)
+
+Same matrix, swap `ASCENDO_EDITION=basic` for `ASCENDO_EDITION=dev`. Adds
+the Sync tab, Hosts editor, raw events stream, dev-sync overlay tooling,
+and the dev-only helper scripts under `bin/user-scripts/dev/`.
+
+| Profile | macOS / Linux | Windows |
+|---------|---------------|---------|
+| **CLI only** | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| ASCENDO_EDITION=dev ASCENDO_PROFILE=cli bash` | `$Env:ASCENDO_EDITION='dev'; $Env:ASCENDO_PROFILE='cli'; iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` |
+| **Full** (CLI + Web + Desktop) | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| ASCENDO_EDITION=dev ASCENDO_PROFILE=full bash` | `$Env:ASCENDO_EDITION='dev'; $Env:ASCENDO_PROFILE='full'; iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` |
+
+**What's the difference?** *Basic* hides advanced surfaces (Sync, Hosts,
+raw events) and ships only the end-user helper scripts; the dashboard
+defaults aim at "click and go". *Dev* unlocks every feature toggle plus
+contributor tooling (dev-sync overlay export/import, raw event stream,
+dev helper scripts). The edition is recorded in
+`$ASCENDO_HOME/.ascendo-edition` and the dashboard reads it on startup.
+
+Each installer auto-detects the OS, installs missing system deps
+(Python ≥3.11, git, curl/winget), clones the repo to a per-user dir,
+sets up a venv, pip-installs `core/` + the matching `adapters/<os>/`
+editable, drops an `ascendo` shim plus the helper scripts on PATH, and
+runs `ascendo doctor` as a self-test before declaring success.
+
+## Update
+
+To update an existing installation, re-run the same install one-liner
+(it's idempotent and detects the existing checkout) **or** run the
+helper script that the installer just dropped on PATH:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh | bash
+ascendo_update              # macOS / Linux
+ascendo_update.cmd          # Windows  (or just `ascendo_update`)
 ```
 
-**Windows** (PowerShell 5.1+ or 7.x — both are supported):
-
-```powershell
-iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 | iex
-```
-
-That's it. Each installer auto-detects the OS, installs missing
-system deps (Python ≥3.11, git, curl/winget), asks once for language
-and install profile (CLI / CLI+Web / CLI+Web+Desktop), clones the repo
-to a per-user dir, sets up a venv, pip-installs `core/` + the matching
-`adapters/<os>/` editable, drops an `ascendo` shim on PATH, and runs
-`ascendo doctor` as a self-test before declaring success.
-
-## Quick update — one-liner per OS
-
-**macOS / Linux:**
+Equivalent direct one-liners:
 
 ```bash
+# macOS / Linux:
 curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.sh | bash
 ```
 
-**Windows:**
-
 ```powershell
+# Windows:
 iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.ps1 | iex
 ```
 
 The updater fast-forwards your local checkout against `origin/main`,
 re-runs the editable pip installs, refreshes dashboard deps if you have
-the web profile, restarts any running `ascendo dashboard` (or the
+the web profile, refreshes helper-script symlinks (in case new ones
+shipped upstream), restarts any running `ascendo dashboard` (or the
 `AscendoDashboard` Windows service), and prints a before → after
-version delta.
+version delta. The edition (`basic` / `dev`) is preserved across
+updates — change it only by re-installing with a different
+`ASCENDO_EDITION`.
 
 ### Unattended / CI installs
 
@@ -118,14 +147,18 @@ All four scripts respect the same env vars:
 
 ```bash
 ASCENDO_LANG=en \
-ASCENDO_PROFILE=web \
+ASCENDO_EDITION=basic \
+ASCENDO_PROFILE=full \
 ASCENDO_NONINTERACTIVE=1 \
-  curl -fsSL .../install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh | bash
 ```
 
 ```powershell
-$env:ASCENDO_LANG = 'en'; $env:ASCENDO_PROFILE = 'web'; $env:ASCENDO_NONINTERACTIVE = '1'
-iwr -useb .../install.ps1 | iex
+$env:ASCENDO_LANG = 'en'
+$env:ASCENDO_EDITION = 'basic'
+$env:ASCENDO_PROFILE = 'full'
+$env:ASCENDO_NONINTERACTIVE = '1'
+iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 | iex
 ```
 
 Add `--reinstall` (POSIX) or `-Reinstall` (PowerShell) to wipe and

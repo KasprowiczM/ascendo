@@ -1,0 +1,17 @@
+# HANDOFF.md (placeholder)
+
+Internal session log for the **dev edition** of Ascendo lives in
+`dev-sync-overlay/handoff/HANDOFF.md` and is pushed to a private
+Proton overlay via `dev-sync-export.sh`. It contains per-session
+implementation notes that are useful to maintainers but not to
+public users.
+
+**Public users**: see [`RELEASE_NOTES.md`](./RELEASE_NOTES.md) and
+[`CHANGELOG.md`](./CHANGELOG.md) for what shipped in each release,
+and [`PLAN.md.example`](./PLAN.md.example) (if present) for the
+high-level forward roadmap.
+
+**Maintainers** setting up a fresh dev machine: run
+`dev-sync-import.sh` to restore the real `HANDOFF.md` (and
+`PLAN.md`, and the per-session specs in `docs/superpowers/specs/`)
+alongside the rest of the dev-edition overlay.

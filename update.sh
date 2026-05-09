@@ -152,6 +152,34 @@ if "$VENV_DIR/bin/pip" show fastapi >/dev/null 2>&1; then
     "$VENV_DIR/bin/pip" install --upgrade fastapi 'uvicorn[standard]' httpx --quiet
 fi
 
+# Re-link helper scripts (in case new ones were added upstream).
+EDITION="basic"
+if [ -f "$INSTALL_DIR/.ascendo-edition" ]; then
+    EDITION="$(head -n1 "$INSTALL_DIR/.ascendo-edition" | tr -d '[:space:]')"
+    [ "$EDITION" = "dev" ] || EDITION="basic"
+fi
+USER_SCRIPTS_DIR="$INSTALL_DIR/bin/user-scripts"
+LOCAL_BIN="$HOME/.local/bin"
+if [ -d "$USER_SCRIPTS_DIR" ]; then
+    mkdir -p "$LOCAL_BIN"
+    LINKED_COUNT=0
+    for src in "$USER_SCRIPTS_DIR"/ascendo_*; do
+        case "$src" in *.ps1) continue ;; esac
+        [ -f "$src" ] || continue
+        ln -sf "$src" "$LOCAL_BIN/$(basename "$src")"
+        LINKED_COUNT=$((LINKED_COUNT + 1))
+    done
+    if [ "$EDITION" = "dev" ] && [ -d "$USER_SCRIPTS_DIR/dev" ]; then
+        for src in "$USER_SCRIPTS_DIR/dev"/ascendo_*; do
+            case "$src" in *.ps1) continue ;; esac
+            [ -f "$src" ] || continue
+            ln -sf "$src" "$LOCAL_BIN/$(basename "$src")"
+            LINKED_COUNT=$((LINKED_COUNT + 1))
+        done
+    fi
+    [ "$LINKED_COUNT" -gt 0 ] && ok "Helper scripts: $LINKED_COUNT symlink(s) refreshed (edition=$EDITION)"
+fi
+
 # Restart running dashboard, if any
 if pgrep -f "ascendo dashboard" >/dev/null 2>&1; then
     step "Restarting dashboard"

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# ascendo_sync — push the dev-sync overlay to Proton (dev edition only).
+set -euo pipefail
+HOME_DIR="${ASCENDO_HOME:-$HOME/.local/share/ascendo}"
+SCRIPT="$HOME_DIR/dev-sync-export.sh"
+if [ ! -x "$SCRIPT" ]; then
+    printf 'ascendo_sync: dev-sync-export.sh not found or not executable at %s\n' "$SCRIPT" >&2
+    printf '  (this script is dev-edition only)\n' >&2
+    exit 2
+fi
+exec "$SCRIPT" "$@"
