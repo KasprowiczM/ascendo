@@ -321,12 +321,39 @@ function Install-WindowsUpdateBatch {
         $installArgs['KBArticleID'] = $kbNumbers
     }
 
+    # Capture stderr (PowerShell error stream) into a variable so the
+    # caller can surface install failures in the sidecar instead of
+    # silently dropping them on the floor. Mirrors the macOS apply.sh
+    # Sesja 34 stderr-tail pattern. The `-ErrorVariable` parameter
+    # binds to the cmdlet's error-stream output; `2>&1` would mingle
+    # results into $raw which breaks the dedup-by-KB logic below.
     $raw = $null
+    $installErrors = @()
     try {
-        $raw = @(Install-WindowsUpdate @installArgs 2>$null)
+        $raw = @(Install-WindowsUpdate @installArgs -ErrorVariable installErrors 2>$null)
     } catch {
+        # Catch terminating errors (ErrorAction=Stop). Stash on the
+        # script-level $WUInstallStderr so the caller can surface it.
+        $script:WUInstallStderr = ('Install-WindowsUpdate threw: {0}' -f $_.Exception.Message)
         Write-Verbose "Install-WindowsUpdateBatch: install failed: $_"
         return  # was `return ,@()` — see Stop-PackageProcesses comment
+    }
+
+    # Stash non-terminating errors (e.g. "no updates pending", "agent
+    # busy", per-KB download failures) for the caller. Format last 12
+    # error records, capped at 1500 chars total.
+    if ($installErrors -and $installErrors.Count -gt 0) {
+        $tailLines = @($installErrors |
+                       ForEach-Object { [string]$_ } |
+                       Where-Object { $_ -and $_.Trim() } |
+                       Select-Object -Last 12)
+        $joined = ($tailLines -join "`n")
+        if ($joined.Length -gt 1500) {
+            $joined = $joined.Substring($joined.Length - 1500)
+        }
+        $script:WUInstallStderr = $joined
+    } else {
+        $script:WUInstallStderr = ''
     }
 
     if (-not $raw -or $raw.Count -eq 0) {
@@ -393,6 +420,25 @@ function Install-WindowsUpdateBatch {
     return ,$rows.ToArray()
 }
 
+function Get-WUInstallStderr {
+    <#
+    .SYNOPSIS
+        Returns the captured error-stream tail from the most recent
+        Install-WindowsUpdateBatch invocation, or '' if none.
+    .DESCRIPTION
+        Parity with the macOS apply.sh Sesja 34 stderr-tail pattern.
+        PSWindowsUpdate emits non-terminating errors for transient
+        problems (agent busy, KB download failed, certificate not
+        trusted, etc.) that we'd otherwise swallow with `2>$null`.
+        This accessor lets the apply phase surface them in the sidecar.
+    .OUTPUTS
+        [string] - last 12 non-empty error lines, capped at 1500 chars.
+    #>
+    [CmdletBinding()] [OutputType([string])] param()
+    if ($script:WUInstallStderr) { return [string]$script:WUInstallStderr }
+    return ''
+}
+
 function Convert-WUResultToItemStatus {
     <#
     .SYNOPSIS
@@ -434,5 +480,6 @@ Export-ModuleMember -Function @(
     'Test-PSWindowsUpdateAvailable'
     'Get-PendingWindowsUpdates'
     'Install-WindowsUpdateBatch'
+    'Get-WUInstallStderr'
     'Convert-WUResultToItemStatus'
 )

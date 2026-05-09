@@ -230,8 +230,18 @@ try {
             $results = @(Install-WindowsUpdateBatch -AcceptAll $true -AutoReboot $false -ErrorAction Stop)
         }
     } catch {
+        # Mirror the macOS apply.sh Sesja 34 stderr-tail pattern: when
+        # the cmdlet throws, surface BOTH the exception message AND
+        # any captured PSWindowsUpdate error-stream output (last 12
+        # non-empty lines, capped at 1500 chars).
         Add-SidecarMessage -Sidecar $sidecar -Level 'error' `
             -Text ("Install-WindowsUpdateBatch threw: {0}" -f $_.Exception.Message)
+        $stderrTail = ''
+        try { $stderrTail = Get-WUInstallStderr } catch { }
+        if ($stderrTail) {
+            Add-SidecarMessage -Sidecar $sidecar -Level 'error' `
+                -Text ("stderr (last 12 lines): {0}" -f $stderrTail)
+        }
         Add-SidecarItem -Sidecar $sidecar -Id '__phase_error__' -Name 'apply phase error' `
             -Category 'windows_update' -SourceType 'windows_update' -Status 'failed' | Out-Null
         [void](Save-Sidecar -Sidecar $sidecar -OutputDir $OutputDir)
@@ -240,14 +250,33 @@ try {
     $sw.Stop()
 
     if ($results.Count -eq 0) {
-        Add-SidecarMessage -Sidecar $sidecar -Level 'info' `
-            -Text 'No Windows updates were installed (none pending or PSWindowsUpdate produced no results).'
+        # Surface error-stream tail if any. PSWindowsUpdate sometimes
+        # returns zero results because of transient agent issues (e.g.
+        # WUSA agent busy, certificate untrusted) — those used to be
+        # silently swallowed via `2>$null`. Now they appear in the
+        # sidecar so the operator knows whether to retry or investigate.
+        $stderrTail = ''
+        try { $stderrTail = Get-WUInstallStderr } catch { }
+        if ($stderrTail) {
+            Add-SidecarMessage -Sidecar $sidecar -Level 'warn' `
+                -Text ("PSWindowsUpdate emitted errors but no result rows. stderr (last 12 lines): {0}" -f $stderrTail)
+        } else {
+            Add-SidecarMessage -Sidecar $sidecar -Level 'info' `
+                -Text 'No Windows updates were installed (none pending or PSWindowsUpdate produced no results).'
+        }
         [void](Save-Sidecar -Sidecar $sidecar -OutputDir $OutputDir)
         exit 0
     }
 
     $rebootRequired = $false
     $perItemMs = if ($results.Count -gt 0) { [int]($sw.Elapsed.TotalMilliseconds / $results.Count) } else { 0 }
+
+    # Capture the per-batch stderr ONCE before the per-item loop —
+    # PSWindowsUpdate doesn't tag errors with KBs, so we surface the
+    # batch-level tail on each failed item. Cheap (just a script-var
+    # accessor) and means failed items don't ship as bare exit codes.
+    $batchStderr = ''
+    try { $batchStderr = Get-WUInstallStderr } catch { }
 
     foreach ($r in $results) {
         if (-not $r) { continue }
@@ -262,6 +291,13 @@ try {
         $messages += @{ level = 'info'; text = ('PSWindowsUpdate result: ' + [string]$r.Result) }
         if ($r.RebootRequired) {
             $messages += @{ level = 'warn'; text = 'Update installed but a system restart is required to complete it.' }
+        }
+        # Stderr tail on failed items — parity with macOS apply.sh.
+        if ($itemStatus -eq 'failed' -and $batchStderr) {
+            $messages += @{
+                level = 'error'
+                text  = ("stderr (last 12 lines): {0}" -f $batchStderr)
+            }
         }
 
         $kbNumeric = if ($kb -match '^KB(\d+)$') { $matches[1] } else { $null }
