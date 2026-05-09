@@ -16,6 +16,37 @@ For the cross-OS three-interface walkthrough (CLI vs web vs desktop) see
 
 ## 1 · Install (≈ 3 min, one-time)
 
+**Recommended — one-liner from any terminal:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh | bash
+```
+
+That single command:
+- Detects your OS (Darwin / Ubuntu / Debian / Fedora / Arch)
+- Asks for language (en/pl) and install profile (cli / web / desktop)
+- Verifies network connectivity + ≥1 GB free disk
+- Detects + reports missing Python 3.11+ (you install via Homebrew if needed)
+- Auto-installs missing system deps via `brew` (or `apt` / `dnf` / `pacman` on Linux)
+- Clones to `~/.local/share/ascendo`
+- Sets up a venv-equivalent + editable pip install of core + macOS adapter
+- Symlinks `ascendo` to `~/.local/bin/ascendo` (auto-detects `$SHELL` for PATH instructions)
+- Runs `ascendo doctor` self-test; bails loudly on non-zero
+
+Optional flags: `--reinstall` (wipe + rebuild), `--update` (skip clone, just upgrade),
+`--verbose` (trace every command), `--non-interactive` (CI mode).
+Env-var overrides: `ASCENDO_LANG`, `ASCENDO_PROFILE`, `ASCENDO_HOME`,
+`ASCENDO_NONINTERACTIVE`, `ASCENDO_REPO_URL`, `ASCENDO_BRANCH`.
+
+**To update an existing install:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.sh | bash
+```
+(`git pull --ff-only`, refresh editable installs, restart any running
+dashboard, print version delta.)
+
+**Manual / dev path** (if you've already cloned the repo):
+
 ```bash
 cd ~/Dev_Env
 git clone https://github.com/KasprowiczM/ascendo.git

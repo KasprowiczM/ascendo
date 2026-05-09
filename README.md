@@ -7,9 +7,9 @@
 > and a plugin system. **Open source, MIT.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Status: macOS v0.2.0 + Windows v0.0.7](https://img.shields.io/badge/status-macOS%20v0.2.0%20%7C%20Windows%20v0.0.7-green)](HANDOFF.md)
+[![Status: macOS v0.5.2 + Windows v0.0.7 + Ubuntu Tier-1](https://img.shields.io/badge/status-macOS%20v0.5.2%20%7C%20Windows%20v0.0.7%20%7C%20Ubuntu%20Tier--1-green)](HANDOFF.md)
 [![Made for: Windows | Linux | macOS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux%20%7C%20macOS-blue)](README.md)
-[![Tests: 242 macOS + 158 Windows green](https://img.shields.io/badge/tests-400%2B%20green-brightgreen)](#tests)
+[![Tests: 841 / 848 green](https://img.shields.io/badge/tests-841%2F848%20green-brightgreen)](#tests)
 
 ---
 
@@ -44,9 +44,9 @@ memory on the next.
 
 | Platform | Adapter | CLI | Dashboard | Tauri shell | Installer | Released |
 |---|---|---|---|---|---|---|
-| macOS    | ✅ Tier-1 feature-complete (6 managers + scheduler + snapshot + elevation + inventory) | ✅ | ✅ | ✅ dev + unsigned `.app`/`.dmg` build | 🟡 brew tap (planned) | **v0.3.0** |
-| Windows  | ✅ Tier-1 feature-complete (4 managers + scheduler + snapshot + elevation + inventory) | ✅ | ✅ | ✅ dev + signed `.msi`/`.exe` build | ✅ NSIS + WiX MSI | **v0.0.7** |
-| Linux    | ✅ legacy code (migrating into `adapters/ubuntu/`) | ✅ | ✅ | 🟡 needs polish | ✅ `.deb` | (rolling, M5+) |
+| macOS    | ✅ Tier-1 feature-complete (6 managers + scheduler + snapshot + elevation + inventory + 100% web coverage) | ✅ | ✅ | ✅ dev + unsigned `.app`/`.dmg` build | ✅ `install.sh` + `update.sh` one-liners | **v0.5.2** |
+| Windows  | ✅ Tier-1 feature-complete (4 managers + scheduler + snapshot + elevation + inventory + Sesja-45 stderr capture + up_to_date guard) | ✅ | ✅ | ✅ dev + signed `.msi`/`.exe` build | ✅ NSIS + WiX MSI + `install.ps1` + `update.ps1` one-liners | **v0.0.7** |
+| Linux    | ✅ Tier-1 Python adapter shipped Sesja 45 (UbuntuAdapter + 7 managers + IInventory enumeration; bridges to mature legacy bash scripts) | ✅ | ✅ | 🟡 needs polish | ✅ `.deb` + `install.sh` + `update.sh` one-liners | (rolling, M5+) |
 
 See [`HANDOFF.md`](HANDOFF.md) for the live session log,
 [`PLAN.md`](PLAN.md) for the forward roadmap, and

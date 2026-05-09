@@ -3,9 +3,10 @@
 A cross-OS, three-interface walkthrough. Pick your interface, follow the
 copy-paste recipe.
 
-> Operating systems supported: **macOS** (v0.2.0 — feature-complete),
-> **Windows** (v0.0.7 — feature-complete), **Linux/Ubuntu** (legacy code,
-> being migrated into `adapters/ubuntu/`).
+> Operating systems supported: **macOS** (v0.5.2 — feature-complete),
+> **Windows** (v0.0.7 + Sesja-45 parity fixes — apply phase stderr
+> capture + up_to_date guards), **Linux/Ubuntu** (Tier-1 Python
+> adapter shipped Sesja 45; bridges to mature legacy bash scripts).
 >
 > For OS-specific install + first-run see:
 > - [MACOS_QUICKSTART.md](MACOS_QUICKSTART.md)
@@ -39,11 +40,25 @@ Three interfaces, same backend:
 
 ## 0. First-time install
 
+**Recommended — one-liner from terminal:**
+
+| OS | Install one-liner | Update one-liner |
+|----|-------------------|-----------------|
+| macOS / Linux | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| bash` | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.sh \| bash` |
+| Windows (PowerShell) | `iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` | `iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.ps1 \| iex` |
+
+Each install one-liner: detects the OS, auto-installs Python 3.11+ if
+missing, clones to a per-user dir, builds a venv, runs `ascendo doctor`
+self-test at the end. Each update one-liner: `git pull --ff-only`,
+refresh editable installs, restart the dashboard, print version delta.
+
+**Manual / dev path** (already-cloned repo):
+
 | OS | Command |
 |----|---------|
 | macOS | `bash bin/install-dev-macos.sh` |
 | Windows (PowerShell) | `.\bin\install-dev.ps1` |
-| Linux (Ubuntu) | `pip install -e core/` then `pip install -e adapters/ubuntu/` (manual until M5+ Ubuntu adapter polish lands) |
+| Linux (Ubuntu) | `pip install -e core/ -e adapters/ubuntu/` (Tier-1 adapter shipped Sesja 45) |
 
 After install, run `bash bin/validate-macos.sh` (or `.\bin\validate-windows.ps1`)
 to confirm everything works. Expected: `ALL CHECKS PASSED. (34/34)` on

@@ -1,5 +1,72 @@
 # Ascendo — Release Notes
 
+## v0.5.2 — 2026-05-09 (Cross-platform parity + one-line install/update)
+
+### Highlights
+
+- **One-line install + update for all 3 OSes.** macOS / Linux:
+  `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh | bash`
+  Windows: `iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 | iex`.
+  Update equivalents at `update.sh` / `update.ps1`. Idempotent,
+  resilient to missing deps (auto-installs Python via winget on
+  Windows; via Homebrew/apt on Linux/Mac), behind-corporate-proxy
+  aware, locked-package-manager safe, final `ascendo doctor` self-test.
+- **Ubuntu transitions from stub to Tier-1 Python adapter** with
+  `UbuntuAdapter` + 7 managers (apt/snap/brew/npm/pip/flatpak/drivers)
+  + full IInventory enumeration via `adapters/ubuntu/scripts/
+  inventory/list.sh` covering all 6 sources with graceful fallback on
+  missing CLIs. Bridges to mature legacy bash scripts via env-var IPC
+  contract; schema translation transparent.
+- **Windows apply.ps1 stderr capture** — operators finally see actual
+  error reasons in sidecar messages instead of cryptic "exited N".
+- **Pre-dispatch up_to_date guard** in winget + msstore apply skips
+  re-attempts on already-current packages.
+- **Cross-cutting bug fix**: `_flush_run_to_inventory_db` clears
+  categories before bulk_upsert (4th missing path from Sesja 40
+  stale-rows fix).
+
+### Added
+
+- `install.sh` rewrite (451 LOC): `--update` / `--reinstall` /
+  `--verbose` / `--non-interactive` flags + env-var overrides
+  (`ASCENDO_LANG`, `ASCENDO_PROFILE`, `ASCENDO_HOME`,
+  `ASCENDO_NONINTERACTIVE`, `ASCENDO_REPO_URL`, `ASCENDO_BRANCH`).
+  Network preflight, disk-space check, locked-pkg-mgr detection.
+- `update.sh` (187 LOC) — POSIX one-liner updater. `git pull
+  --ff-only`, refresh editable installs, restart any running dashboard.
+- `install.ps1` (382 LOC) — Windows `iwr | iex` one-liner. PS 5.1 +
+  7.x compatible. Auto-installs Python 3.12 via winget. Refuses
+  Win < 10 b17763.
+- `update.ps1` (147 LOC) — Windows updater. Restarts AscendoDashboard
+  service if installed.
+- `adapters/ubuntu/ascendo_ubuntu/` — full Python adapter scaffold.
+- `adapters/ubuntu/scripts/inventory/list.sh` (427 LOC) — full
+  inventory enumeration across apt+snap+flatpak+brew+npm+pip.
+- `SourceType.DRIVERS` + `SourceType.FIRMWARE` core enum values.
+- 4 stderr-capture fixes in Windows apply.ps1 scripts (winget /
+  msstore / arp / windows_update).
+- 6 Windows regression tests + 36 Ubuntu adapter tests + 9 inventory
+  tests + 32 installer contract tests.
+
+### Fixed
+
+- Post-run flush stale rows: was the missing 4th path from Sesja 40's
+  fix. Operator's local DB had 312 web rows when discovery only
+  emitted 37.
+
+### Tests
+
+```
+contract:   283/292   (9 pre-existing service_endpoints failures unchanged)
+macOS:      391/391   (no regression)
+Windows:     99/99    (after fixes)
+Ubuntu:      36/36    (+ 2 Linux-only skips on macOS sandbox)
+installers:  32/32    (+ 1 pwsh-only skip)
+TOTAL:      841/848 = 99.2% green
+```
+
+---
+
 ## v0.5.0 — 2026-05-04 (Release-quality polish, profile templates, apt rollback)
 
 ### Added

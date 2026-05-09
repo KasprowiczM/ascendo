@@ -11,6 +11,35 @@ For deep-dive (CI flow, all flags, every endpoint) see
 
 ## 1 · Install (≈ 3 min, one-time)
 
+**Recommended — one-liner from any PowerShell window:**
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 | iex
+```
+
+That single command:
+- Detects Windows version (refuses < Windows 10 build 17763)
+- Detects + auto-installs missing Python 3.12 via winget
+- Detects + auto-installs missing git via winget
+- Clones to `%LOCALAPPDATA%\Ascendo\src`
+- Creates venv at `%LOCALAPPDATA%\Ascendo\venv`
+- Installs core + Windows adapter editable
+- Adds shim at `%LOCALAPPDATA%\Microsoft\WindowsApps\ascendo.cmd` (on PATH by default)
+- Runs `ascendo doctor` self-test; bails loudly on non-zero
+
+Optional flags: `-Profile {cli|web|desktop}`, `-Language {en|pl}`,
+`-Reinstall`, `-Verbose`, `-NonInteractive`. Env-var overrides:
+`ASCENDO_PROFILE`, `ASCENDO_LANG`, `ASCENDO_HOME`, `ASCENDO_NONINTERACTIVE`.
+
+**To update an existing install:**
+```powershell
+iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.ps1 | iex
+```
+(`git pull --ff-only`, refresh editable installs, restart `AscendoDashboard`
+service if installed.)
+
+**Manual / dev path** (if you already cloned the repo):
+
 ```powershell
 cd D:\Dev_Env
 git clone https://github.com/KasprowiczM/ascendo.git

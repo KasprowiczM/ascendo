@@ -1,6 +1,29 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-09 (sesja 44) — **5 operator bug fixes + 1
+> Last updated: 2026-05-09 (sesja 45) — **cross-platform parity +
+> one-line install/update for all 3 OSes shipped as v0.5.2**. Brings
+> Windows + Ubuntu adapters up to functional parity with macOS and
+> ships true `curl|bash` (POSIX) + `iwr|iex` (Windows) one-liners for
+> install + update. **Ubuntu**: full Tier-1 Python adapter scaffold
+> (UbuntuAdapter + 7 managers + 10-component health_check) bridges to
+> mature legacy bash scripts via env-var IPC; full IInventory
+> enumeration via `adapters/ubuntu/scripts/inventory/list.sh` covering
+> apt/snap/flatpak/brew/npm/pip with 10s timeout per tool, graceful
+> skip on missing CLIs. **Windows**: stderr capture in 4 apply.ps1
+> scripts (winget/msstore/arp/windows_update) so operators see actual
+> error reasons instead of "exited N"; pre-dispatch up_to_date guard
+> in winget+msstore mirrors macOS web/apply.sh Sesja 40 pattern. **One-
+> line install + update**: install.sh rewrite (--update + --reinstall +
+> --verbose + --non-interactive + env-var overrides + network preflight
+> + disk-space check + locked-package-manager detection + final doctor
+> self-test) + update.sh (POSIX) + install.ps1 + update.ps1 (Windows;
+> auto-installs Python via winget). **Cross-cutting bug fix**:
+> `_flush_run_to_inventory_db` now clears categories before
+> bulk_upsert (4th missing path from Sesja 40 stale-rows fix).
+> 841/848 tests green (9 pre-existing service_endpoints failures
+> unchanged). See HANDOFF.md Sesja 45.
+>
+> Previous milestone (sesja 44): **5 operator bug fixes + 1
 > portability doc shipped as v0.5.1**. Fixes: (1) Brave x86_64 Mac
 > bundle replaced with arm64 + new `download_asset_pattern` field on
 > release_feed selects universal DMG from GitHub release assets so

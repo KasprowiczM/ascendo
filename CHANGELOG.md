@@ -14,6 +14,113 @@ OSes, plugin signing + verification, plugin marketplace UX in dashboard.
 
 ---
 
+## [0.5.2] — 2026-05-09 — Cross-platform parity + one-line install/update
+
+Sesja 45. Brings Windows + Ubuntu adapters up to functional parity with
+macOS v0.5.1 and ships true one-line install + update for all three OSes.
+**841/848 tests green** (9 pre-existing service_endpoints failures + 7
+platform-specific skips).
+
+### Added — Ubuntu (transitions from stub to Tier-1)
+
+- **`adapters/ubuntu/ascendo_ubuntu/`** — full Python adapter scaffold:
+  `UbuntuAdapter` + 7 managers (apt/snap/brew/npm/pip/flatpak/drivers)
+  + `UbuntuInventory` + `BashPhaseManager` base. Capabilities
+  `PACKAGE_MANAGEMENT | INVENTORY`. Bridges to mature legacy bash
+  scripts at top-level `scripts/<cat>/<phase>.sh` via env-var IPC
+  contract matching `lib/orchestrator.sh`. Schema translation
+  transparent via `parse_sidecar()`.
+- **`adapters/ubuntu/scripts/inventory/list.sh`** (427 LOC) — full
+  inventory enumeration across apt+snap+flatpak+brew+npm+pip with
+  10s timeout per tool, graceful skip on missing CLIs, single
+  ascendo/v1 sidecar with `<source>:<package>` IDs.
+- **`SourceType.DRIVERS` + `SourceType.FIRMWARE`** in core enum;
+  legacy translator `'drivers' → SourceType.DRIVERS` (was UNKNOWN).
+- 36 new Ubuntu adapter tests + 9 inventory tests; mock-based
+  (no real apt/dpkg required).
+
+### Added — Windows parity fixes
+
+- **stderr capture in apply.ps1 × 4 sources** (winget/msstore/arp/
+  windows_update). On non-zero exit, last 12 stderr lines (capped at
+  1500 chars) appended to sidecar messages — operator finally sees
+  actual error reason instead of "exited N". winget+msstore use
+  `Start-Process -RedirectStandardError`; windows_update uses
+  `-ErrorVariable` (cmdlet, not subprocess).
+- **Pre-dispatch up_to_date guard** in winget + msstore apply — skips
+  packages where installed == latest. Mirrors macOS `web/apply.sh`
+  Sesja 40 pattern.
+- 6 new regression tests; 99/99 Windows tests pass.
+
+### Added — One-line install + update for all three OSes
+
+- **`install.sh`** (rewrite, 451 LOC) — adds `--update` / `--reinstall` /
+  `--verbose` / `--non-interactive`, env-var overrides
+  (`ASCENDO_LANG`, `ASCENDO_PROFILE`, `ASCENDO_HOME`,
+  `ASCENDO_NONINTERACTIVE`, `ASCENDO_REPO_URL`, `ASCENDO_BRANCH`),
+  network preflight, disk-space check, locked-package-manager
+  detection (apt fuser), final `ascendo doctor` self-test that bails
+  on non-zero.
+- **`update.sh`** (new, 187 LOC) — POSIX one-liner. `git pull
+  --ff-only` (refuses to merge), refresh editable installs, restart
+  any running dashboard via pgrep, version delta print.
+- **`install.ps1`** (new, 382 LOC) — Windows `iwr | iex` one-liner.
+  PowerShell 5.1 + 7.x compatible. Detects + auto-installs Python 3.12
+  via winget, refuses Win < 10 b17763, shim at
+  `%LOCALAPPDATA%\Microsoft\WindowsApps\ascendo.cmd`.
+- **`update.ps1`** (new, 147 LOC) — Windows updater. Restarts
+  `AscendoDashboard` Windows service if installed.
+- **32 new contract tests** for installer entrypoints (argv parsing,
+  help text, env-var wiring); pwsh AST validation skipped on hosts
+  without pwsh.
+
+### Fixed — Cross-cutting
+
+- **`_flush_run_to_inventory_db` clears categories before bulk_upsert**
+  (Sesja 40 added clear_category to 3 paths but missed the 4th —
+  post-run flush in `run_async.py`). User's local DB had 312 web
+  rows when discovery emitted 37; root cause fixed.
+
+### One-liners
+
+```bash
+# macOS / Linux install:
+curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh | bash
+# macOS / Linux update:
+curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.sh | bash
+```
+```powershell
+# Windows install:
+iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 | iex
+# Windows update:
+iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.ps1 | iex
+```
+
+---
+
+## [0.5.1] — 2026-05-09 — 5 operator bug fixes + portability doc
+
+Sesja 44. Five operator-reported issues plus an architectural Q&A
+documented as `docs/PORTABILITY.md`. 391/391 macOS tests + 249 contract
+tests.
+
+### Fixed
+
+- Brave x86_64 mac bundle replaced with arm64; new
+  `download_asset_pattern` field on release_feed selects universal DMG
+  from GitHub release assets.
+- `.npmrc prefix=` line stops coming back — `npm config set prefix`
+  replaced with `NPM_CONFIG_PREFIX` env var + `scrub_npmrc` helper.
+- Categories collapse-back fixed via missing CSS rule
+  `.cat-detail.hidden { display: none }`.
+- Touch ID sudo cache now honoured — `/sudo/status` probes `sudo -n -v`
+  (1s cap) when no SPA password registered.
+- Discovery brew classification fixed — `_flatten()` handles str/list,
+  app filename matching, zap.trash plist mining, opt-in codesign deep
+  ownership.
+
+---
+
 ## [0.2.0] — 2026-05-05
 
 **macOS adapter feature-complete (M5 done). Tier-1 minus source-verification.**

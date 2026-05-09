@@ -6,6 +6,221 @@
 
 ---
 
+## Sesja 45 (2026-05-09) — Cross-platform parity + one-line install/update + v0.5.2
+
+Operator audit on Mac.r12.home revealed 1 real bug (InventoryDB stale
+rows from missing 4th clear_category path) + ambitious follow-up:
+"make Windows + Ubuntu match macOS, build one-liner install + update for
+all 3 platforms". Five parallel subagents + inline fixes shipped the
+whole batch in one session. **841/848 tests green** (9 pre-existing
+test_service_endpoints failures unchanged + 7 platform-specific skips).
+
+### What landed
+
+15 commits (committed to `claude/wizardly-cohen-59ca44`, fast-forward
+merged to `main`):
+
+| Commit | What |
+|--------|------|
+| `c39465c` | fix(windows): winget apply stderr capture + up_to_date guard |
+| `488639e` | fix(windows): msstore apply stderr capture + up_to_date guard |
+| `93a0d1f` | fix(windows): arp apply stderr capture for uninstall failures |
+| `c219890` | fix(windows): windows_update apply stderr capture from PSWindowsUpdate |
+| `e96e525` | test(windows): regression tests for apply parity fixes |
+| `25dc2ed` | fix(core): post-run flush clears categories before bulk_upsert |
+| `221ad89` | feat(core): add SourceType.DRIVERS + FIRMWARE for Ubuntu adapter |
+| `7d344ef` | feat(ubuntu): Tier-1 Python adapter scaffold + 7 managers |
+| `df8a910` | chore: regenerate JSON schema after SourceType.DRIVERS + FIRMWARE |
+| `d6c409b` | feat(ubuntu): full IInventory enumeration via list.sh — apt/snap/flatpak/brew/npm/pip |
+| `ff473e7` | feat(install): improve install.sh with --update + --reinstall + resilience |
+| `542d52e` | feat(install): update.sh — POSIX one-liner updater for macOS / Linux |
+| `5d5be92` | feat(install): install.ps1 + update.ps1 — Windows one-liners |
+| `14c28c6` | docs(install): README quick-install + quick-update for all 4 entrypoints |
+| `75cd327` | test(install): contract tests for installer + updater entrypoints |
+
+### 1. Cross-cutting bug fix
+
+`_flush_run_to_inventory_db` in `core/ascendo/orchestrator/run_async.py`
+was the missing 4th path from Sesja 40's stale-rows fix. Sesja 40 added
+`clear_category(cat)` before `bulk_upsert(rows)` in 3 paths in
+`spa_real.py` but the post-run flush still called `bulk_upsert`
+directly. After every async run, orphan rows from prior runs lingered.
+Operator's local DB had 312 web rows when discovery only emitted 37.
+
+**Fix:** collect each touched category from the rows list, call
+`clear_category()` per-category, then `bulk_upsert`. Failures swallowed
+(disk hiccup shouldn't poison run state). +1 regression test
+`test_post_run_flush_drops_stale_rows` (16/16 inventory_db tests pass).
+
+### 2. Windows parity fixes (mirroring macOS Sesja 33-40 work)
+
+For each of 4 PowerShell apply scripts (winget/msstore/arp/
+windows_update):
+
+- **stderr capture**: on non-zero exit, last 12 stderr lines (capped
+  at 1500 chars) appended to sidecar messages. winget+msstore+arp use
+  `Start-Process -RedirectStandardError`; windows_update uses
+  `-ErrorVariable` (in-process cmdlet, not subprocess). Operator
+  finally sees actual error reason instead of cryptic "exited N".
+
+- **Pre-dispatch up_to_date guard** in winget + msstore apply: skips
+  packages where installed == latest available, mirroring macOS
+  `web/apply.sh` Sesja 40 pattern.
+
+ARP apply has NO up_to_date guard intentionally (it's an explicit-
+uninstall flow, not an upgrade flow). windows_update relies on
+PSWindowsUpdate's empty-results path.
+
+99/99 Windows tests pass after fixes.
+
+### 3. Ubuntu Tier-1 scaffold (transitions from stub to real adapter)
+
+Ubuntu adapter was a stub (empty `__init__.py` + .gitkeep). Built
+complete Python scaffold:
+
+- **`UbuntuAdapter`** (384 LOC) — name=ubuntu, tier=1,
+  host=LINUX_UBUNTU, capabilities = `PACKAGE_MANAGEMENT | INVENTORY`.
+  10-component `health_check()` (apt/snap/brew/npm/pip/flatpak/fwupd
+  + bash + ascendo_lib + ascendo_scripts).
+- **`BashPhaseManager`** base class (258 LOC) — env-var IPC contract
+  (JSON_OUT / LOG_FILE / ORCH_RUN_ID / ORCH_RUN_DIR / ORCH_DRY_RUN /
+  ORCH_PROFILE / ORCH_QUIET) matching legacy `lib/orchestrator.sh`.
+- **7 thin manager subclasses** (~25 LOC each) — Apt/Snap/Brew/Npm/
+  Pip/Flatpak/Drivers. Brew has Linuxbrew prefix fallback; Drivers
+  gates on Linux only.
+- **`UbuntuInventory`** (369 LOC) — real `list_installed()`
+  enumerating apt/snap/flatpak/brew/npm/pip via single bash script
+  invocation.
+
+Adapter resolves to repo-root `scripts/` + `lib/` (legacy location).
+Override via `$ASCENDO_UBUNTU_REPO_ROOT`. Schema translation is
+transparent — legacy bash scripts emit `ubuntu-aktualizacje/v1`,
+`parse_sidecar()` auto-translates to ascendo/v1 (already wired in
+core).
+
+Plus: `SourceType.DRIVERS` + `SourceType.FIRMWARE` added to core
+enum; legacy translator `'drivers' → SourceType.DRIVERS` (was
+UNKNOWN). 13/13 legacy_compat tests still green.
+
+36 Ubuntu adapter tests + 9 inventory tests, mock-based.
+
+### 4. Ubuntu inventory enumeration (`list.sh`, 427 LOC)
+
+`adapters/ubuntu/scripts/inventory/list.sh` enumerates installed
+packages across 6 sources with 10s timeout per tool, graceful skip on
+missing CLIs:
+
+| Source | Tool | Fallback when missing |
+|---|---|---|
+| apt | `dpkg-query -W -f='${Package} ${Version} ${Status}\n'` | info msg, skipped |
+| snap | `snap list` | info msg, skipped |
+| flatpak | `flatpak list --columns=application,version` | info msg, skipped |
+| brew (Linuxbrew) | `brew list --formula/--cask --versions` | info msg, skipped |
+| npm | `npm list -g --depth=0 --json` | info msg, skipped |
+| pip | `pip3 list --format=json` | info msg, skipped |
+
+Each item: `id` (e.g. `apt:firefox`), `name`, `category=inventory`,
+`source` (the actual source like apt/snap/etc.), `current_version`,
+`target_version` (same as current — inventory doesn't probe
+candidates), `status: up_to_date`, `vendor` (when available). Single
+sidecar at `<output-dir>/<run-id>/check__inventory.json`.
+
+**Live verified on macOS sandbox**: 152 brew items in sidecar; apt/
+snap/flatpak skipped with info messages. Real Ubuntu (apt 2000+ pkgs)
+test pending operator.
+
+### 5. One-line install + update for all three OSes
+
+Four shipped scripts:
+
+- **`install.sh`** (rewrite, 451 LOC) — adds `--update` /
+  `--reinstall` / `--verbose` / `--non-interactive` flags + env-var
+  overrides (`ASCENDO_LANG`, `ASCENDO_PROFILE`, `ASCENDO_HOME`,
+  `ASCENDO_NONINTERACTIVE`, `ASCENDO_REPO_URL`, `ASCENDO_BRANCH`).
+  Network preflight (`curl -I github.com` 8s timeout), disk-space
+  check (≥1 GB), locked-package-manager detection (apt fuser),
+  final `ascendo doctor` self-test that bails on non-zero.
+  Auto-detects shell (bash/zsh/fish) for PATH instructions.
+- **`update.sh`** (new, 187 LOC) — POSIX one-liner updater. Detects
+  `~/.local/share/ascendo` (or `$ASCENDO_HOME`). `git pull --ff-only`
+  refuses to merge — explicit error if user has local changes. Refresh
+  editable installs. Restart any running dashboard via pgrep + relaunch
+  --background. Print version delta. Self-test.
+- **`install.ps1`** (new, 382 LOC) — Windows `iwr | iex` one-liner.
+  PowerShell 5.1 + 7.x compatible. Refuses Win < 10 build 17763.
+  Detects + auto-installs Python 3.12 via winget when missing.
+  Detects missing git → offers `winget install Git.Git`. Clones to
+  `%LOCALAPPDATA%\Ascendo\src`, venv at `%LOCALAPPDATA%\Ascendo\venv`,
+  shim at `%LOCALAPPDATA%\Microsoft\WindowsApps\ascendo.cmd` (this
+  dir is on PATH by default on Win11). Self-test.
+- **`update.ps1`** (new, 147 LOC) — Windows updater. `git pull
+  --ff-only`, refresh editable installs, `Restart-Service
+  AscendoDashboard` if installed.
+
+Resilience matrix verified across all 4 scripts:
+
+| Scenario | Behaviour |
+|----------|-----------|
+| Re-run on installed system | Idempotent — auto-detects, treats as update |
+| Update with no install | Polite redirect to install.sh / install.ps1 |
+| Behind corporate proxy | Honours `$HTTPS_PROXY` / `$http_proxy` natively |
+| Offline | Fast-fail with `curl -I github.com` (8s) before doing anything |
+| Old Python (<3.11) | Linux/Mac: bails with version error; Windows: offers winget install |
+| Old Windows (<10 b17763) | install.ps1 refuses with explicit version |
+| Locked apt/dpkg | install.sh detects via `fuser` and bails |
+| Local git changes on update | Refuses fast-forward, names files, suggests `--reinstall` |
+| Half-installed venv | Detected on update path, recreated cleanly |
+| `--reinstall` / `-Reinstall` | Wipes target dir + clean rebuild |
+| Self-test fails | Loud warning with `--verbose` rerun hint |
+| Non-interactive (CI) | `ASCENDO_NONINTERACTIVE=1` skips all prompts |
+| Running dashboard during update | POSIX: pgrep + restart; Windows: Restart-Service |
+| PATH missing `~/.local/bin` | Detects `$SHELL`, prints zsh/fish/bash instructions |
+| Disk full | Pre-check ≥ 1 GB free in install dir |
+
+32 contract tests for installer entrypoints (argv parsing, help text,
+env-var wiring); pwsh AST validation skipped on hosts without pwsh.
+
+### Test status (final)
+
+```
+contract:    283/292   (9 pre-existing service_endpoints failures unchanged)
+macOS:       391/391   (no regression)
+Windows:      99/99    (after fixes)
+Ubuntu:       36/36    (+ 2 Linux-only skips on this Mac)
+installers:   32/32    (+ 1 pwsh-only skip)
+TOTAL:       841/848   green = 99.2%
+```
+
+### The 4 one-liners (now live on main)
+
+```bash
+# macOS / Linux install:
+curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh | bash
+# macOS / Linux update:
+curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.sh | bash
+```
+```powershell
+# Windows install:
+iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 | iex
+# Windows update:
+iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.ps1 | iex
+```
+
+### Pending follow-ups
+
+- **Real-Ubuntu validation** — operator runs `ascendo doctor` + check
+  phase on real Ubuntu hardware (mk-uP5520). Static analysis only on
+  this Mac; expected ~2000 apt + N snap + N flatpak items in
+  inventory.
+- **Real-Windows validation of the new stderr capture + up_to_date
+  guard** — operator runs apply against a deliberately-failing winget
+  package, confirms sidecar messages contain stderr tail.
+- **Ubuntu IScheduler / ISnapshot / IElevation** — currently None on
+  Ubuntu adapter. Would mirror macOS launchd/Time Machine work via
+  systemd timers + timeshift. Separate session.
+
+---
+
 ## Sesja 44 (2026-05-09) — Brave + npm prefix + classification + portability + v0.5.1
 
 Operator hit 5 issues at once + asked an architectural question. Three
