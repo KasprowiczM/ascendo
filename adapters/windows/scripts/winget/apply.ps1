@@ -186,22 +186,66 @@ function Get-TruncatedOutput {
     return $joined
 }
 
+function Get-StderrTailExcerpt {
+    <#
+    .SYNOPSIS
+        Return the last $MaxLines non-empty lines of a stderr capture
+        file, joined with newlines and truncated to $MaxChars total.
+    .DESCRIPTION
+        Mirror of the macOS apply.sh pattern (npm/web): capture last 12
+        non-empty stderr lines, cap at 1500 chars, surface as a sidecar
+        message so the operator sees the actual failure reason
+        (registry 404, EACCES, network blip, etc.) instead of bare exit
+        codes.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] [string] $StderrFile,
+        [Parameter()]          [int]    $MaxLines = 12,
+        [Parameter()]          [int]    $MaxChars = 1500
+    )
+    if (-not (Test-Path -LiteralPath $StderrFile)) { return '' }
+    try {
+        $lines = Get-Content -LiteralPath $StderrFile -ErrorAction SilentlyContinue |
+                 Where-Object { $_ -and $_.Trim() } |
+                 Select-Object -Last $MaxLines
+        if (-not $lines) { return '' }
+        $joined = ($lines -join "`n")
+        if ($joined.Length -gt $MaxChars) {
+            $joined = $joined.Substring($joined.Length - $MaxChars)
+        }
+        return $joined
+    } catch {
+        return ''
+    }
+}
+
 function Invoke-WingetMutation {
     <#
     .SYNOPSIS
         Run `winget upgrade` (or `winget install`) on a single package and
-        return the captured output + exit code.
+        return the captured output + exit code + stderr tail excerpt.
     .PARAMETER PackageId
         winget package ID.
     .PARAMETER Action
         'upgrade' (default) or 'install'. Use 'install' when the
         uninstall-first entry has InstallAfterUninstall=$true.
     .OUTPUTS
-        [pscustomobject] with: Output [string], ExitCode [int].
+        [pscustomobject] with: Output [string], ExitCode [int],
+        StderrExcerpt [string] (last 12 non-empty stderr lines, capped
+        at 1500 chars; empty when the run succeeded or no stderr was
+        produced).
     .NOTES
         --disable-interactivity is mandatory. --silent is supplied so EXE
         installers run without UI. --accept-*-agreements to avoid the
         first-run consent prompt that would block unattended runs.
+
+        Stderr is captured to a separate temp file via
+        `Start-Process -RedirectStandardError` so we can surface the
+        actual failure reason (registry 404, EACCES, etc.) in the
+        sidecar message — parity with the macOS apply.sh pattern from
+        Sesja 34.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -224,33 +268,81 @@ function Invoke-WingetMutation {
 
     Write-Verbose ("Invoke-WingetMutation: 'winget {0}'" -f ($argv -join ' '))
 
-    # Parity with macOS: when ASCENDO_STREAM_LOG is set (the dashboard's
-    # async run sets it to <run-id>/_stream.log), emit a "currently
-    # processing" marker + tee winget's output line-by-line so the SSE
-    # endpoint shows every download/install line in real time. Falls
-    # back to a single Out-String capture when the env var is unset
-    # (CLI / tests).
-    $streamLog = $env:ASCENDO_STREAM_LOG
-    if ($streamLog) {
-        try {
-            ">>> winget $($argv -join ' ')" | Out-File -FilePath $streamLog -Append -Encoding utf8 -ErrorAction SilentlyContinue
-        } catch { }
-        # Tee-Object preserves the lines on stdout for capture while
-        # appending them to the stream log.
-        $rawLines = & winget @argv 2>&1 | ForEach-Object {
-            $line = $_.ToString()
-            try { $line | Out-File -FilePath $streamLog -Append -Encoding utf8 -ErrorAction SilentlyContinue } catch { }
-            $line
-        }
-        $raw = ($rawLines -join "`n")
-    } else {
-        $raw = & winget @argv 2>&1 | Out-String
+    # Resolve winget binary path so Start-Process can target it with
+    # -FilePath. Get-Command is more portable than relying on it being
+    # at a fixed path.
+    $wingetCmd = Get-Command -Name 'winget' -ErrorAction SilentlyContinue
+    if ($null -eq $wingetCmd) {
+        $wingetCmd = Get-Command -Name 'winget.exe' -ErrorAction SilentlyContinue
     }
-    $code = $LASTEXITCODE
+    if ($null -eq $wingetCmd) {
+        # Fall back to legacy & winget path so tests with a fake winget
+        # on PATH still work (Get-Command would resolve a fake .ps1 to
+        # itself, not its target).
+        $wingetTarget = 'winget'
+    } else {
+        $wingetTarget = [string]$wingetCmd.Source
+    }
+
+    $stdoutFile = $null
+    $stderrFile = $null
+    $raw    = ''
+    $code   = -1
+    $stderr = ''
+
+    try {
+        $stdoutFile = [System.IO.Path]::GetTempFileName()
+        $stderrFile = [System.IO.Path]::GetTempFileName()
+
+        # Start-Process -RedirectStandardError gives us a clean stderr
+        # stream separate from stdout. -NoNewWindow + -Wait + -PassThru
+        # is the canonical pattern for synchronous capture.
+        $proc = Start-Process -FilePath $wingetTarget `
+                              -ArgumentList $argv `
+                              -RedirectStandardOutput $stdoutFile `
+                              -RedirectStandardError  $stderrFile `
+                              -NoNewWindow -Wait -PassThru `
+                              -ErrorAction Stop
+        $code = [int]$proc.ExitCode
+
+        if (Test-Path -LiteralPath $stdoutFile) {
+            $raw = Get-Content -LiteralPath $stdoutFile -Raw -ErrorAction SilentlyContinue
+            if ($null -eq $raw) { $raw = '' }
+        }
+
+        # Stream-log mirroring (parity with the legacy 2>&1 path): when
+        # ASCENDO_STREAM_LOG is set, append both the invocation marker
+        # and the captured stdout so the SSE endpoint sees the install
+        # progress lines. Stderr is appended too so failures are
+        # visible in the live log.
+        $streamLog = $env:ASCENDO_STREAM_LOG
+        if ($streamLog) {
+            try {
+                ">>> winget $($argv -join ' ')" | Out-File -FilePath $streamLog -Append -Encoding utf8 -ErrorAction SilentlyContinue
+                if ($raw) { $raw | Out-File -FilePath $streamLog -Append -Encoding utf8 -ErrorAction SilentlyContinue }
+                if (Test-Path -LiteralPath $stderrFile) {
+                    $stderrAll = Get-Content -LiteralPath $stderrFile -Raw -ErrorAction SilentlyContinue
+                    if ($stderrAll) { $stderrAll | Out-File -FilePath $streamLog -Append -Encoding utf8 -ErrorAction SilentlyContinue }
+                }
+            } catch { }
+        }
+
+        if ($code -ne 0) {
+            $stderr = Get-StderrTailExcerpt -StderrFile $stderrFile
+        }
+    }
+    finally {
+        foreach ($p in @($stdoutFile, $stderrFile)) {
+            if ($p -and (Test-Path -LiteralPath $p)) {
+                Remove-Item -LiteralPath $p -ErrorAction SilentlyContinue
+            }
+        }
+    }
 
     return [pscustomobject]@{
-        Output   = $raw
-        ExitCode = [int]$code
+        Output        = $raw
+        ExitCode      = [int]$code
+        StderrExcerpt = $stderr
     }
 }
 
@@ -622,6 +714,33 @@ try {
             }
         }
 
+        # 5e2. Pre-dispatch up_to_date guard.
+        # Mirrors the macOS web/apply.sh pattern (Sesja 40): if installed
+        # version already equals the candidate, skip the wasteful
+        # `winget upgrade` spawn and emit an `up_to_date` item directly.
+        # We only guard the plain 'upgrade' path; uninstall-first +
+        # install always forces the install (different version semantics).
+        if ($wingetAction -eq 'upgrade' -and $current -and $target -and ($current -eq $target)) {
+            $sw.Stop()
+            $skipArgs = @{
+                Sidecar         = $sidecar
+                Id              = [string]$pkg.Id
+                Name            = [string]$pkg.Name
+                Category        = 'winget'
+                SourceType      = 'winget'
+                Status          = 'up_to_date'
+                ExitCode        = 0
+                DurationMs      = [int]$sw.Elapsed.TotalMilliseconds
+                CurrentVersion  = $current
+                TargetVersion   = $current
+                ResolvedVersion = $current
+                Messages        = @( @{ level='info'; text='already at latest version' } )
+            }
+            if ($sourceFeed) { $skipArgs['SourceFeed'] = $sourceFeed }
+            [void](Add-SidecarItem @skipArgs)
+            continue
+        }
+
         # 5f. Run upgrade (or install)
         $mutation = $null
         try {
@@ -659,6 +778,19 @@ try {
             $itemMessages += @{
                 level = 'info'
                 text  = $outputTail
+            }
+        }
+
+        # Surface stderr excerpt on non-zero exit (parity with macOS
+        # apply.sh — last 12 non-empty lines, capped at 1500 chars).
+        # Mapped to 'error' level so the SPA + post-apply REPORT.md can
+        # filter on it. PowerShell's [pscustomobject] supports direct
+        # property access without PSObject.Properties when the property
+        # was set in the New-Object/[pscustomobject]@{} literal.
+        if ($mutation.ExitCode -ne 0 -and $mutation.StderrExcerpt) {
+            $itemMessages += @{
+                level = 'error'
+                text  = ("stderr (last 12 lines): {0}" -f $mutation.StderrExcerpt)
             }
         }
 
