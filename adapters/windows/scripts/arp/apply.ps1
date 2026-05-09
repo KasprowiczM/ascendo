@@ -132,17 +132,22 @@ try {
             # macOS apply.sh Sesja 34 stderr-tail pattern.
             $stdoutFile = [System.IO.Path]::GetTempFileName()
             $stderrFile = [System.IO.Path]::GetTempFileName()
+            Write-AscendoStreamLine -Text (">>> arp uninstall: {0}" -f $id)
             $proc = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', $uninstall) `
                                   -Wait -NoNewWindow -PassThru `
                                   -RedirectStandardOutput $stdoutFile `
                                   -RedirectStandardError  $stderrFile
             $exitCode = $proc.ExitCode
+            # Mirror captured output to Run Center SSE log (best-effort).
+            Write-AscendoStreamFile -Path $stdoutFile
+            Write-AscendoStreamFile -Path $stderrFile
             if ($exitCode -ne 0 -and $exitCode -ne 3010) {
                 $stderrExcerpt = _Get-StderrTailExcerpt -StderrFile $stderrFile
             }
         } catch {
             Add-SidecarMessage -Sidecar $sidecar -Level 'error' `
                 -Text ("arp apply: {0} uninstall threw: {1}" -f $id, $_.Exception.Message)
+            Write-AscendoStreamLine -Text ("[error] arp apply {0} threw: {1}" -f $id, $_.Exception.Message)
         }
         finally {
             foreach ($p in @($stdoutFile, $stderrFile)) {

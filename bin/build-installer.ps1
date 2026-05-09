@@ -130,6 +130,34 @@ Copy-Item -Force $LicenseSrc $LicenseDst
 Write-Host "      → assets     : $AssetsDst" -ForegroundColor Green
 Write-Host "      → license    : $LicenseDst" -ForegroundColor Green
 
+# Mirror the post-install helper scripts that NSIS hooks expect at
+# `$INSTDIR\bin\` (smart bootstrap, service installer, user-scripts).
+# Without this mirror the hooks reference scripts that don't exist on
+# the target machine. The mirror is .gitignored.
+$BinSrc = Join-Path $RepoRoot "bin"
+$BinDst = Join-Path $RepoRoot "ui/desktop-tauri/src-tauri/bin-staging"
+if (Test-Path $BinDst) { Remove-Item -Recurse -Force $BinDst }
+New-Item -ItemType Directory -Force -Path $BinDst | Out-Null
+# Whitelisted scripts only — no need to ship .sh / macOS-only stuff.
+foreach ($f in @(
+    "first-run-bootstrap-windows.ps1",
+    "install-service.ps1",
+    "install-shortcut.ps1",
+    "Ascendo.cmd"
+)) {
+    $srcF = Join-Path $BinSrc $f
+    if (Test-Path $srcF) {
+        Copy-Item -Force $srcF (Join-Path $BinDst $f)
+    }
+}
+# user-scripts subdirectory (whole tree) — both .cmd shims and .ps1 mirrors.
+$UsSrc = Join-Path $BinSrc "user-scripts"
+$UsDst = Join-Path $BinDst "user-scripts"
+if (Test-Path $UsSrc) {
+    Copy-Item -Recurse -Force $UsSrc $UsDst
+}
+Write-Host "      → bin/       : $BinDst" -ForegroundColor Green
+
 # ── Step 3: Tauri build ───────────────────────────────────────────────
 if (-not $SkipTauri) {
     Write-Host "[3/4] running Tauri build (this can take 5-10 min on first run)…" -ForegroundColor Cyan

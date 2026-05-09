@@ -222,6 +222,8 @@ try {
     $filterArray = $null
     if ($null -ne $itemFilterArray) { $filterArray = $itemFilterArray }
 
+    Write-AscendoStreamLine -Text ">>> Install-WindowsUpdateBatch starting (this may take several minutes)"
+
     $results = @()
     try {
         if ($null -ne $filterArray) {
@@ -236,11 +238,13 @@ try {
         # non-empty lines, capped at 1500 chars).
         Add-SidecarMessage -Sidecar $sidecar -Level 'error' `
             -Text ("Install-WindowsUpdateBatch threw: {0}" -f $_.Exception.Message)
+        Write-AscendoStreamLine -Text ("[error] Install-WindowsUpdateBatch threw: {0}" -f $_.Exception.Message)
         $stderrTail = ''
         try { $stderrTail = Get-WUInstallStderr } catch { }
         if ($stderrTail) {
             Add-SidecarMessage -Sidecar $sidecar -Level 'error' `
                 -Text ("stderr (last 12 lines): {0}" -f $stderrTail)
+            Write-AscendoStreamLine -Text ("[stderr] {0}" -f $stderrTail)
         }
         Add-SidecarItem -Sidecar $sidecar -Id '__phase_error__' -Name 'apply phase error' `
             -Category 'windows_update' -SourceType 'windows_update' -Status 'failed' | Out-Null

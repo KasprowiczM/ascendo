@@ -81,15 +81,22 @@ function _Invoke-MsStoreUpgrade {
     try {
         $stdoutFile = [System.IO.Path]::GetTempFileName()
         $stderrFile = [System.IO.Path]::GetTempFileName()
+        Write-AscendoStreamLine -Text (">>> winget {0}" -f ($argv -join ' '))
         $proc = Start-Process -FilePath $wingetTarget -ArgumentList $argv `
                               -RedirectStandardOutput $stdoutFile `
                               -RedirectStandardError  $stderrFile `
                               -NoNewWindow -Wait -PassThru -ErrorAction Stop
         $code = [int]$proc.ExitCode
+        # Mirror combined stdout+stderr into Run Center's live SSE feed
+        # so the operator sees msstore output as it happens (parity with
+        # macOS web/apply.sh _stream_tee infrastructure).
+        Write-AscendoStreamFile -Path $stdoutFile
+        Write-AscendoStreamFile -Path $stderrFile
         if ($code -ne 0) { $excerpt = _Get-StderrTailExcerpt -StderrFile $stderrFile }
     } catch {
         $code = -1
         $excerpt = $_.Exception.Message
+        Write-AscendoStreamLine -Text ("[error] msstore apply spawn threw: {0}" -f $excerpt)
     }
     finally {
         foreach ($p in @($stdoutFile, $stderrFile)) {

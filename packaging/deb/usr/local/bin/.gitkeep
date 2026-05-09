@@ -1,0 +1,2 @@
+# Auto-populated by packaging/build-deb.sh — every script in
+# bin/user-scripts/ becomes a shim here at build time.

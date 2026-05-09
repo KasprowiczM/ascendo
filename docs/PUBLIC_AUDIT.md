@@ -4,7 +4,17 @@ Audit of every top-level path in the Ascendo working tree, marking
 each as **PUBLIC** (stays in the public GitHub repo) or **PRIVATE**
 (moves to `dev-sync-overlay/` and is gitignored).
 
-> Last updated: 2026-05-09 (Sesja 51 — pre-public-flip audit).
+> Last updated: 2026-05-09 (Sesja 52 — corrected: dev-sync TOOLING is public,
+> only per-user CONFIG is private).
+>
+> **Sesja 52 correction**: The earlier draft of this audit treated the entire
+> `dev-sync/` Python lib + 15 `dev-sync-*.sh|.ps1` wrapper scripts as private.
+> That was wrong. Those scripts are GENERIC rclone wrappers — they contain no
+> user data, no credentials, no Proton-specific paths. Anyone can clone the
+> public repo, point them at their own cloud provider via
+> `.dev_sync_config.json`, and use them. The corrected split keeps the
+> tooling public so dev-edition users can bootstrap; only the per-user
+> config + the overlay payload itself are private.
 
 ## What's public
 
@@ -12,11 +22,14 @@ All source code, all user-facing docs, all configs needed to build
 and run Ascendo from a fresh clone:
 
 - **Source trees**: `core/`, `adapters/`, `app/`, `ui/`, `lib/`,
-  `plugins/`, `bin/` (minus dev-sync helpers — see below),
-  `schemas/`, `i18n/`, `share/`, `systemd/`, `packaging/`, `config/`,
-  `contrib/`, `tests/`, `scripts/`, `website/`, `branding/`,
-  `Ascendo_Design_System/`, `docs/` (minus
-  `docs/superpowers/specs/`).
+  `plugins/`, `bin/`, `schemas/`, `i18n/`, `share/`, `systemd/`,
+  `packaging/`, `config/`, `contrib/`, `tests/`, `scripts/`,
+  `website/`, `branding/`, `Ascendo_Design_System/`, `docs/`
+  (minus `docs/superpowers/specs/`).
+- **Dev-sync tooling**: `dev-sync/` (Python lib) + the 15
+  `dev-sync-*.sh|.ps1` wrapper scripts at the repo root. Generic
+  rclone wrappers — anyone can clone + point them at their own
+  provider. **Public** as of Sesja 52.
 - **Project configs**: `pyproject.toml`, `.gitignore`,
   `.gitattributes`, `.markdownlint.json`, `.pre-commit-config.yaml`,
   `.github/`.
@@ -50,9 +63,10 @@ and run Ascendo from a fresh clone:
 | `PLAN.md` (44 KB)                 | Internal forward roadmap            | `dev-sync-overlay/handoff/`               |
 | `DEV_SCRIPTS_README.md`           | Dev-sync internal docs              | `dev-sync-overlay/handoff/`               |
 | `docs/superpowers/specs/`         | Per-session design docs             | `dev-sync-overlay/handoff/specs/`         |
-| `dev-sync/`                       | Rclone configs + Python helpers     | (stays in tree, gitignored)               |
-| `dev-sync-*.sh`, `dev-sync-*.ps1` | 15 wrapper scripts                  | (stay in tree, gitignored)                |
-| `dev_sync_logs/`                  | Already gitignored                  | (no change)                               |
+| `.dev_sync_config.json`           | YOUR Proton path / cloud creds      | (gitignored, never committed)             |
+| `.dev_sync_manifest.json`         | Local sync manifest                 | (gitignored, never committed)             |
+| `dev_sync_logs/`                  | Per-machine sync logs               | (gitignored, never committed)             |
+| `dev-sync-overlay/`               | Overlay payload (this directory)    | (gitignored, never committed — IS the overlay) |
 | `dist/`                           | Build artefacts                     | (gitignored)                              |
 
 `.env`, `.env.local`, `__pycache__/`, `node_modules/`, `target/`,
@@ -95,17 +109,17 @@ Run this end-to-end before flipping the GitHub repo to public:
 - [ ] Run `bash dev-sync-export.sh` (push overlay to Proton).
 - [ ] Run `bash dev-sync-verify-full.sh` (confirm overlay reached
       Proton with the expected file set).
-- [ ] Manually `git rm` the private originals. The complete list:
+- [ ] Manually `git rm --cached` the private originals. Sesja 52
+      corrected list (dev-sync tooling stays PUBLIC, do NOT include it):
   - `CLAUDE.md`, `AGENTS.md`, `CODEX.md`
   - `.claudeignore`, `.codex`, `.codex.local/`, `.codexignore`,
     `.gemini/`, `.geminiignore`, `.graphifyignore`
   - `HANDOFF.md`, `PLAN.md`, `DEV_SCRIPTS_README.md`
   - `docs/superpowers/specs/` (whole directory)
   - `graphify-out/` (whole directory)
-  - `dev-sync/` (whole directory)
-  - All `dev-sync-*.sh` and `dev-sync-*.ps1` (15 files)
-- [ ] `git ls-files | grep -Ei 'claude|codex|gemini|handoff|plan\.md|graphify|dev-sync'`
-      should return only the `.example` stubs.
+  - `dist/ascendo_0.3.0_all.deb` (legacy build artefact)
+- [ ] `git ls-files | grep -Ei 'claude|codex|gemini|handoff|^PLAN\.md|graphify-out|^\.dev_sync'`
+      should return only the `.example` stubs and `dev-sync/` (TOOLING — public).
 - [ ] `git status` shows clean.
 - [ ] Tag the release: `git tag -a v0.6.0 -m "v0.6.0 — public release"`.
 - [ ] `git push origin main --tags`.

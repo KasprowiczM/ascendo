@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Ascendo .deb post-remove hook
+# =============================================================================
+#
+# Two modes:
+#   $1 == remove   — files removed but config kept (default `apt remove`)
+#   $1 == purge    — also purge /etc/ascendo + offer to clean per-user state
+#
+# We NEVER touch ~/.local/share/ascendo or ~/.ascendo automatically — the
+# user might want to keep their run history across a re-install. The
+# banner mentions the path so they can `rm -rf` manually if they want.
+# =============================================================================
+set -e
+
+case "${1:-}" in
+    purge)
+        # Remove system-wide config + preseed
+        rm -rf /etc/ascendo 2>/dev/null || true
+        if command -v update-desktop-database >/dev/null 2>&1; then
+            update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+        fi
+        cat <<'EOF'
+[ascendo-postrm] System-wide config removed.
+
+Per-user state is preserved by design — remove manually if desired:
+
+    rm -rf ~/.ascendo                   # run history + sidecars
+    rm -rf ~/.local/share/ascendo       # editable Python install
+    rm -rf ~/.config/ascendo            # locale + AI provider creds
+    rm -rf ~/.cache/ascendo             # ephemeral caches
+EOF
+        ;;
+    remove|upgrade|deconfigure|failed-upgrade|abort-install|abort-upgrade|disappear)
+        # Nothing to do for non-purge events.
+        :
+        ;;
+esac
+
+exit 0

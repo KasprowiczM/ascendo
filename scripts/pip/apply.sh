@@ -53,18 +53,33 @@ while IFS= read -r line; do
     lat=$(echo "$line"  | awk -F'|' '{print $3}')
     [[ -z "$name" ]] && continue
     print_step "pip upgrade ${name}"
-    if "$PY3" -m pip install --quiet --user --upgrade "$name" 2>/dev/null; then
+    _stream_emit ">>> pip install --user --upgrade ${name}"
+    _pip_log="$(mktemp 2>/dev/null || echo /tmp/ascendo-pip-apply.$$)"
+    if "$PY3" -m pip install --user --upgrade "$name" >"${_pip_log}" 2>&1; then
+        [[ -s "${_pip_log}" && -n "${LOG_FILE:-}" ]] && cat "${_pip_log}" >> "${LOG_FILE}"
+        [[ -s "${_pip_log}" && -n "${ASCENDO_STREAM_LOG:-}" ]] \
+            && cat "${_pip_log}" >> "${ASCENDO_STREAM_LOG}" 2>/dev/null
         print_ok
         json_add_item id="pip:upgrade:${name}" action="upgrade" \
             from="${cur}" to="${lat}" result="ok"
         json_count_ok
     else
+        _pip_rc=$?
+        [[ -s "${_pip_log}" && -n "${LOG_FILE:-}" ]] && cat "${_pip_log}" >> "${LOG_FILE}"
+        [[ -s "${_pip_log}" && -n "${ASCENDO_STREAM_LOG:-}" ]] \
+            && cat "${_pip_log}" >> "${ASCENDO_STREAM_LOG}" 2>/dev/null
         print_warn "failed"
         json_add_item id="pip:upgrade:${name}" action="upgrade" \
             from="${cur}" to="${lat}" result="failed"
+        _tail="$(_stderr_tail "${_pip_log}")"
+        if [[ -n "$_tail" ]]; then
+            json_add_diag warn PIP-UPGRADE-FAIL \
+                "pip install --user --upgrade ${name} exited ${_pip_rc} — last output: ${_tail}"
+        fi
         json_count_warn
         [[ $EXIT_RC -eq 0 ]] && EXIT_RC=1
     fi
+    rm -f "${_pip_log}" 2>/dev/null
     n=$((n + 1))
 done < <(echo "$outdated" | python3 -c "
 import json, sys

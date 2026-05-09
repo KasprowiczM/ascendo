@@ -37,13 +37,26 @@ fi
 
 # ── 2. Update apps ────────────────────────────────────────────────────────────
 print_step "flatpak update --noninteractive"
+_stream_emit ">>> flatpak update --noninteractive"
 update_out=$(flatpak update --noninteractive 2>&1) && update_rc=0 || update_rc=$?
 echo "${update_out}" >> "${LOG_FILE}"
+# Mirror to SSE stream log (best-effort) so Run Center sees the output live.
+if [[ -n "${ASCENDO_STREAM_LOG:-}" && -n "${update_out}" ]]; then
+    printf '%s\n' "${update_out}" >> "${ASCENDO_STREAM_LOG}" 2>/dev/null || true
+fi
 
 if [[ $update_rc -ne 0 ]]; then
     print_error "flatpak update failed"
     json_add_item id="flatpak:update" action="upgrade" result="failed"
-    json_add_diag error FLATPAK-UPDATE-FAIL "flatpak update returned ${update_rc}"
+    # Surface last 12 non-empty lines of flatpak output (Sesja-34 style).
+    _fp_tail="$(printf '%s\n' "${update_out}" | awk 'NF{print}' \
+                | tail -n 12 | tr '\t' ' ' | head -c 1500 || true)"
+    if [[ -n "$_fp_tail" ]]; then
+        json_add_diag error FLATPAK-UPDATE-FAIL \
+            "flatpak update returned ${update_rc} — last output: ${_fp_tail}"
+    else
+        json_add_diag error FLATPAK-UPDATE-FAIL "flatpak update returned ${update_rc}"
+    fi
     json_count_err
     EXIT_RC=20
 elif echo "${update_out}" | grep -q "Nothing to do"; then

@@ -241,6 +241,51 @@ window.I18N = {
         scan:    "Inventory",
         sources: "Sources",
         done:    "Try & finish",
+        // Dev-edition extras (steps 7-9). Basic edition never renders these.
+        github_config:   "GitHub repo",
+        dev_sync_setup:  "Dev-sync",
+        dev_resources:   "Dev resources",
+      },
+      // Dev-edition step 7: GitHub repo configuration. Lets the operator
+      // name the upstream repo for update notifications. Test button hits
+      // GitHub's public releases API (no auth) — works for any public repo.
+      github: {
+        title:   "Source repository",
+        body:    "Ascendo polls this repo's GitHub Releases for update notifications. Defaults to the canonical repo; change if you forked or vendor your own build.",
+        label:   "Repo (owner/repo):",
+        test_btn: "Test connection",
+        skip:     "Skip",
+        testing:  "Testing…",
+        test_ok:  "OK — latest release: {tag}",
+        test_404: "Repo reachable but has no releases yet (this is OK for new forks).",
+        test_failed: "Failed: {error}",
+        bad_format: "Use the form 'owner/repo' (e.g. KasprowiczM/ascendo).",
+      },
+      // Dev-edition step 8: Dev-sync provider setup. Reads
+      // .dev_sync_config.json status, offers to run the setup script.
+      devsync: {
+        title:    "Dev-sync provider",
+        body:     "Dev-sync pushes your private overlay (AI instructions, internal logs, host config) to a cloud provider via rclone. GitHub remains the source of truth for everything else. Skip this if you don't use dev-sync.",
+        status_h: "Current status",
+        checking: "Checking config…",
+        status_present: "Configured — provider: {provider} (config: {path})",
+        status_missing: "Not configured (no file at {path}).",
+        status_invalid: "Config file at {path} exists but is malformed.",
+        status_error:   "Could not read config: {error}",
+        setup_btn: "Run provider setup",
+        skip:      "Skip",
+        running:   "Running dev-sync-provider-setup.sh…",
+        setup_failed: "Setup failed: {error}",
+      },
+      // Dev-edition step 9: Developer resources. Last step — Finish gates here.
+      devresources: {
+        title:   "Developer resources",
+        intro:   "You're all set. Here's where to find the important reference files when you need them.",
+        github:  "GitHub: github.com/{repo}",
+        plan:    "forward roadmap (single source of truth for what's next)",
+        handoff: "session log (history of what shipped, when, and why)",
+        guide:   "operator + developer reference (if present in your overlay)",
+        overlay_note: "Note: PLAN.md, HANDOFF.md, and DEV_GUIDE.md ride in the dev-sync overlay rather than the public repo. Use the dev-sync setup step above to mirror them across machines.",
       },
       theme: {
         title: "Pick your theme",
@@ -1072,6 +1117,51 @@ window.I18N = {
         scan:    "Inwentarz",
         sources: "Źródła",
         done:    "Spróbuj i zakończ",
+        // Dodatki edycji deweloperskiej (kroki 7-9). Edycja basic ich nie pokazuje.
+        github_config:   "Repo GitHub",
+        dev_sync_setup:  "Dev-sync",
+        dev_resources:   "Zasoby dev",
+      },
+      // Krok 7 (dev): konfiguracja repozytorium GitHub. Pozwala wskazać
+      // upstream do powiadomień o aktualizacjach. Test używa publicznego
+      // API GitHuba (bez tokena) — działa dla każdego publicznego repo.
+      github: {
+        title:    "Repozytorium źródłowe",
+        body:     "Ascendo odpytuje GitHub Releases tego repo o powiadomienia o aktualizacjach. Domyślnie repo kanoniczne; zmień jeśli korzystasz z forka lub własnego buildu.",
+        label:    "Repo (owner/repo):",
+        test_btn: "Sprawdź połączenie",
+        skip:     "Pomiń",
+        testing:  "Sprawdzanie…",
+        test_ok:  "OK — najnowsze wydanie: {tag}",
+        test_404: "Repo dostępne, ale nie ma jeszcze żadnego wydania (to OK dla świeżego forka).",
+        test_failed: "Błąd: {error}",
+        bad_format: "Użyj formatu 'owner/repo' (np. KasprowiczM/ascendo).",
+      },
+      // Krok 8 (dev): konfiguracja dev-sync. Czyta status .dev_sync_config.json
+      // i pozwala uruchomić skrypt setupowy.
+      devsync: {
+        title:    "Provider dev-sync",
+        body:     "Dev-sync wypycha Twój prywatny overlay (instrukcje AI, lokalne logi, konfigurację hostów) do providera w chmurze przez rclone. GitHub pozostaje źródłem prawdy dla całej reszty. Pomiń jeśli nie używasz dev-sync.",
+        status_h: "Stan obecny",
+        checking: "Sprawdzanie konfiguracji…",
+        status_present: "Skonfigurowane — provider: {provider} (plik: {path})",
+        status_missing: "Brak konfiguracji (nie znaleziono pliku {path}).",
+        status_invalid: "Plik {path} istnieje, ale jest uszkodzony.",
+        status_error:   "Nie udało się odczytać konfiguracji: {error}",
+        setup_btn: "Uruchom setup providera",
+        skip:      "Pomiń",
+        running:   "Uruchamiam dev-sync-provider-setup.sh…",
+        setup_failed: "Setup nieudany: {error}",
+      },
+      // Krok 9 (dev): zasoby deweloperskie. Ostatni krok — Zakończ tutaj.
+      devresources: {
+        title:   "Zasoby deweloperskie",
+        intro:   "Wszystko gotowe. Oto gdzie znajdziesz najważniejsze pliki referencyjne, kiedy ich potrzebujesz.",
+        github:  "GitHub: github.com/{repo}",
+        plan:    "plan rozwoju (źródło prawdy o tym, co dalej)",
+        handoff: "log sesji (historia tego, co weszło, kiedy i dlaczego)",
+        guide:   "przewodnik operatora i dewelopera (jeśli jest w Twoim overlay)",
+        overlay_note: "Uwaga: PLAN.md, HANDOFF.md i DEV_GUIDE.md jadą w overlay dev-sync, a nie w publicznym repo. Użyj kroku setupu dev-sync powyżej, aby mirrować je między maszynami.",
       },
       theme: {
         title: "Wybierz motyw",

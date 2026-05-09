@@ -1,460 +1,444 @@
-# Ascendo — User Guide
+# Ascendo — User Guide (Basic Edition)
 
-A cross-OS, three-interface walkthrough. Pick your interface, follow the
-copy-paste recipe.
+End-user walkthrough for the Basic edition. If you installed with the
+default `ASCENDO_EDITION=basic` (or no override at all), this is the
+guide for you. Contributors and maintainers running the **dev edition**
+should read [DEV_GUIDE.md](DEV_GUIDE.md) instead.
 
-> Operating systems supported: **macOS** (v0.5.2 — feature-complete),
-> **Windows** (v0.0.7 + Sesja-45 parity fixes — apply phase stderr
-> capture + up_to_date guards), **Linux/Ubuntu** (Tier-1 Python
-> adapter shipped Sesja 45; bridges to mature legacy bash scripts).
+> **Operating systems supported**
+> macOS (Apple Silicon + Intel) — feature-complete
+> Windows 11 / 10 — feature-complete
+> Ubuntu 22.04+ / Debian 12+ — stable, parity in progress
 >
-> For OS-specific install + first-run see:
-> - [MACOS_QUICKSTART.md](MACOS_QUICKSTART.md)
-> - [WINDOWS_QUICKSTART.md](WINDOWS_QUICKSTART.md)
-> - [docs/CROSS_PLATFORM.md](docs/CROSS_PLATFORM.md) — details on the
->   shared 5-phase contract + sidecar JSON
+> See [docs/PLATFORM_STATUS.md](docs/PLATFORM_STATUS.md) for the
+> per-feature matrix.
 
 ---
 
-## What Ascendo does in one paragraph
+## What Ascendo does for you
 
 Ascendo is a **unified-update orchestrator**. You install it once, and
 it talks to every package source on your machine through one set of
-commands: Homebrew + Mac App Store + macOS softwareupdate (on macOS);
-winget + Microsoft Store + Add/Remove Programs + Windows Update (on
-Windows); apt + snap + brew + flatpak + npm + pip (on Linux). Every
-operation goes through a **5-phase contract** — `check` (read-only
-inventory), `plan` (what would change), `apply` (the only mutating
-phase), `verify` (post-apply re-check), `cleanup` — and writes a JSON
-"receipt" (sidecar) for every change.
+commands:
 
-Three interfaces, same backend:
-- **CLI** — `python3 -m ascendo …` for power users + scripting.
-- **Web app** — FastAPI dashboard at `http://127.0.0.1:8765/`. Vanilla
-  JS SPA with the Categories tab, Run Center (live progress), History,
-  Logs, Sync, Apps inventory, Settings.
-- **Desktop app** — Tauri 2.x native window that wraps the same web
-  app in a single 1280×800 webview, no browser needed.
+- **macOS:** Homebrew · Mac App Store · macOS softwareupdate · npm · pip · web apps (DMG / Sparkle / Keystone / Squirrel / Microsoft AutoUpdate / Docker Desktop)
+- **Windows:** winget · Microsoft Store · Add/Remove Programs · Windows Update · npm · pip
+- **Linux:** apt · snap · brew · flatpak · npm · pip
 
----
+Every operation goes through the same five phases:
 
-## 0. First-time install
+| Phase | What happens | Mutating? |
+|-------|--------------|-----------|
+| `check`   | Read-only inventory + "what's outdated?" | no |
+| `plan`    | Dry-run "what would change?" | no |
+| `apply`   | The only mutating step | **yes** |
+| `verify`  | Post-apply re-check | no |
+| `cleanup` | Caches / autoremove | sometimes |
 
-**Recommended — one-liner from terminal:**
-
-| OS | Install one-liner | Update one-liner |
-|----|-------------------|-----------------|
-| macOS / Linux | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| bash` | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.sh \| bash` |
-| Windows (PowerShell) | `iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` | `iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.ps1 \| iex` |
-
-Each install one-liner: detects the OS, auto-installs Python 3.11+ if
-missing, clones to a per-user dir, builds a venv, runs `ascendo doctor`
-self-test at the end. Each update one-liner: `git pull --ff-only`,
-refresh editable installs, restart the dashboard, print version delta.
-
-**Manual / dev path** (already-cloned repo):
-
-| OS | Command |
-|----|---------|
-| macOS | `bash bin/install-dev-macos.sh` |
-| Windows (PowerShell) | `.\bin\install-dev.ps1` |
-| Linux (Ubuntu) | `pip install -e core/ -e adapters/ubuntu/` (Tier-1 adapter shipped Sesja 45) |
-
-After install, run `bash bin/validate-macos.sh` (or `.\bin\validate-windows.ps1`)
-to confirm everything works. Expected: `ALL CHECKS PASSED. (34/34)` on
-macOS, similar on Windows.
+Every phase writes a JSON receipt ("sidecar") to
+`~/.ascendo/runs/<run-id>/<phase>__<source>.json` so you can audit,
+replay, or diagnose any change after the fact.
 
 ---
 
-## 1. CLI walkthrough (the precision tool)
+## 1. Install
 
-Best for: scripting, CI, headless servers, "run this profile every
-night via cron / Task Scheduler / launchd."
+The recommended path is the one-liner from the README — it auto-detects
+your OS, installs missing dependencies (Python 3.11+, git), clones the
+repo to a per-user dir, sets up a venv, and finishes with a
+`ascendo doctor` self-test.
 
-### 1a. The 30-second tour
+| OS | Install one-liner |
+|----|-------------------|
+| macOS / Linux | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| bash` |
+| Windows (PowerShell) | `iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` |
+
+The Basic edition ships four install profiles. Pick one with
+`ASCENDO_PROFILE=…`:
+
+| Profile | What you get | Disk |
+|---------|--------------|------|
+| `cli` | Just the `ascendo` CLI | ~30 MB |
+| `web` *(default)* | CLI + FastAPI dashboard at `http://127.0.0.1:8765/` | ~50 MB |
+| `desktop` | CLI + native Tauri 2.x desktop app | ~80 MB |
+| `full` | Everything (CLI + Web + Desktop) | ~100 MB |
+
+Example — the most common pick:
 
 ```bash
-# Health snapshot (10 components: brew/jq/mas/system_profiler/softwareupdate/
-# tmutil/launchctl/bash/ascendo_lib/ascendo_scripts on macOS)
-python3 -m ascendo doctor
-
-# What package sources can my adapter talk to?
-python3 -m ascendo doctor --verbose
-
-# Read-only check across the brew source
-python3 -m ascendo run --category brew --phase check
-
-# What would change if I ran apply?
-python3 -m ascendo run --category brew --phase plan
-
-# Apply (mutating)
-python3 -m ascendo run --category brew --phase apply
-
-# Re-scan to confirm everything took
-python3 -m ascendo run --category brew --phase verify
-
-# Tidy up source caches
-python3 -m ascendo run --category brew --phase cleanup
+curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \
+  | ASCENDO_PROFILE=full bash
 ```
 
-Each command writes a JSON sidecar to `~/.ascendo/runs/<run-id>/<phase>__<category>.json`.
+After install completes you'll have:
 
-### 1b. Profiles (canned multi-category runs)
+- `ascendo` on PATH (the underlying CLI)
+- A handful of friendly `ascendo_*` helper shims also on PATH
+- A per-user data dir at `~/.ascendo/` (runs, sidecars, logs)
+- A repo checkout at `~/.local/share/ascendo/` (POSIX) or
+  `%LOCALAPPDATA%\Ascendo\src` (Windows)
 
-Profiles bundle multiple categories into one invocation:
+For platform-specific notes (sudo/UAC handling, browser launch, Tauri
+build prerequisites) see the platform quickstarts:
+
+- [MACOS_QUICKSTART.md](MACOS_QUICKSTART.md)
+- [WINDOWS_QUICKSTART.md](WINDOWS_QUICKSTART.md)
+- [LINUX_QUICKSTART.md](LINUX_QUICKSTART.md)
+
+---
+
+## 2. Open the dashboard
+
+Three equivalent ways to launch the dashboard. Pick whichever you
+prefer:
 
 ```bash
-python3 -m ascendo run --profile=quick   # check on every available category (≈15 s)
-python3 -m ascendo run --profile=safe    # 5-phase pipeline, but skips drivers
-python3 -m ascendo run --profile=full    # everything (drivers gated by manual confirm)
+# A. Web profile — open in your browser
+ascendo_start_web                   # starts FastAPI on 127.0.0.1:8765
+# then open http://127.0.0.1:8765/
+
+# B. Desktop profile — native window (macOS / Windows)
+ascendo_start_desktop
+
+# C. CLI fallback if you skipped Web/Desktop
+ascendo doctor                      # one-shot health snapshot
 ```
 
-### 1c. Browsing prior runs
+To stop the background dashboard later:
 
 ```bash
-python3 -m ascendo runs list -n 10                          # last 10 runs
-python3 -m ascendo runs show <run-id>                       # human-readable summary
-python3 -m ascendo runs json <run-id> --pretty | jq .       # machine-readable JSON
-python3 -m ascendo runs json <run-id> --pretty | jq '.summary'
-python3 -m ascendo runs json <run-id> --pretty | jq '.sidecars[] | {phase, category, status}'
-```
-
-### 1d. Snapshots (system rollback)
-
-| OS | Backend | What `snapshot create` does |
-|----|---------|---------------------------|
-| macOS | Time Machine local APFS | `snapshot list` works (read-only); `snapshot create` raises `SnapshotError` because APFS local snapshots are auto-managed by macOS — use System Settings → Time Machine to seed a real backup |
-| Windows | Volume Shadow Copy | `snapshot create` runs `Checkpoint-Computer -Description "Ascendo …"` — registers a System Restore point |
-| Linux | timeshift / etckeeper / btrfs | (placeholder until `adapters/ubuntu/` polish lands) |
-
-```bash
-python3 -m ascendo snapshot list
-python3 -m ascendo snapshot create -m "before manual brew upgrade"
-python3 -m ascendo snapshot restore <id>      # destructive; confirm prompt
-```
-
-### 1e. Scheduler (run automatically on a cron-like schedule)
-
-| OS | Backend | Schedule store |
-|----|---------|----------------|
-| macOS | launchd LaunchAgent | `~/Library/LaunchAgents/dev.ascendo.<name>.plist` |
-| Windows | Task Scheduler | `\Ascendo\<name>` task hierarchy |
-| Linux | systemd timer | (placeholder) |
-
-DSL is **identical across OSes**. `python3 -m ascendo schedule install --calendar "<expression>"`:
-
-| `--calendar` form     | When it runs                  |
-|-----------------------|-------------------------------|
-| `DAILY 03:30`         | every day at 03:30            |
-| `WEEKLY MONDAY 06:00` | every Monday at 06:00         |
-| `MONTHLY 03:00`       | the 1st of the month at 03:00 |
-| `MONTHLY 15 03:00`    | the 15th of the month at 03:00|
-| `HOURLY :15`          | every hour at :15 past        |
-| `MINUTE 30`           | every 30 minutes              |
-
-```bash
-# Install
-python3 -m ascendo schedule install --name nightly --calendar "DAILY 03:30" --profile safe
-
-# List
-python3 -m ascendo schedule list
-
-# Run NOW (synchronous)
-python3 -m ascendo schedule trigger --name nightly
-
-# Remove
-python3 -m ascendo schedule remove --name nightly
-```
-
-### 1f. Exit codes (for cron / CI gates)
-
-| Code | Meaning |
-|------|---------|
-| `0`  | success |
-| `1`  | warnings only |
-| `2`  | bad input (unknown flag / category / etc.) |
-| `30` | hard failure during apply (system in known state) |
-| `75` | success **but reboot required** (macOS softwareupdate, Windows Update, etc.) |
-
-Bash one-liner that gates a CI step on a successful Ascendo run:
-
-```bash
-python3 -m ascendo run --profile=safe || {
-    rc=$?
-    case $rc in
-        75) echo "Reboot required."; exit 0 ;;
-        *)  echo "Ascendo failed with exit $rc"; exit $rc ;;
-    esac
-}
+ascendo_stop_web                    # or ascendo_restart_web to bounce it
+ascendo_stop_desktop                # if you started the Tauri shell
 ```
 
 ---
 
-## 2. Web app walkthrough (the dashboard)
+## 3. Tour of the dashboard
 
-Best for: visual exploration, demos, ad-hoc apply with the safety
-modal, watching live progress via SSE.
+The Basic edition ships eight tabs in the sidebar. Top to bottom:
 
-### 2a. Start it
+| Tab | What it's for |
+|-----|---------------|
+| **Overview** | Health card (per-source status), reboot banner, "last run was X ago" indicator, quick-action buttons |
+| **Categories** | One row per package source. Click to expand; per-source 5-phase buttons live here |
+| **Run Center** | Live SSE stream while a run is in progress; per-package log lines, progress bar |
+| **History** | Paginated list of past runs with their inline logs and parsed sidecars |
+| **Apps** | Per-app inventory: search, filter by source, see installed/candidate version, per-app history, exclude apps from runs |
+| **Suggestions** | Preset "rules" (security, staleness, feature-add) + an optional AI-assisted recommender |
+| **Settings** | Locale (EN / PL), light/dark theme, scheduler entries, Touch ID / askpass tweaks |
+| **About** + **Help** | Version, release notes, troubleshooting links |
 
-```bash
-python3 -m ascendo dashboard --port 8765
-# (in another shell or browser)
-open http://127.0.0.1:8765/
-```
-
-`Ctrl+C` to stop.
-
-Background mode (returns immediately):
-
-```bash
-python3 -m ascendo dashboard --background --port 8765
-```
-
-### 2b. The five tabs
-
-The sidebar has five primary tabs:
-
-1. **Overview** — health card (10 component statuses), reboot banner if
-   set, quick actions. The health card maps to `GET /health` on the REST
-   API.
-2. **Categories** — one row per source (brew / mas / softwareupdate on
-   macOS; winget / msstore / registry_arp / windows_update on Windows).
-   Click a row to expand. Each row has 5 phase buttons.
-3. **Run Center** — live SSE progress stream of the current run. Shows
-   per-(phase × category) status pills as sidecars stream in.
-4. **History** — paginated list of all past runs. Click any row to see
-   the parsed sidecars + per-phase logs.
-5. **Logs** — newest run highlighted; pick any run-id from the dropdown
-   to see its `.log` files.
-
-### 2c. The apply flow (with confirm modal)
-
-1. Click any category row (e.g. `brew`).
-2. Click **check** — read-only, ≈ 5–10 s. Run Center pops open.
-3. After check completes, click **plan** to see what apply would do.
-4. Click **apply**. A modal appears:
-   ```
-   This will run apply on brew.
-   Type 'apply' to confirm:
-   [____________]   [Cancel]   [Confirm]
-   ```
-   Type the literal word `apply` (case-sensitive) and press Confirm.
-5. Run Center streams progress live. When done, a banner shows the
-   overall result + a "show sidecar" link.
-6. (macOS) If apply needs sudo (`mas`, `softwareupdate`), the dashboard
-   prompts once for the password — cached in memory only, forwarded to
-   subprocesses via `SUDO_ASKPASS`.
-
-### 2d. REST API endpoints (for integration)
-
-| Endpoint | What it does |
-|---|---|
-| `GET /version` | adapter + ascendo version |
-| `GET /health` | 10-component status dict |
-| `GET /inventory` | installed apps (cached 60 s) |
-| `GET /inventory/summary` | per-source counts |
-| `GET /inventory/category/<source>` | drill into one source |
-| `POST /runs/async` | start a run, returns 202 + `{run_id, stream_url, status_url}` |
-| `GET /runs/<id>/status` | poll lifecycle (pending/running/completed/failed) |
-| `GET /runs/<id>/events` | **SSE stream** of `status` / `sidecar` / `done` events |
-| `GET /runs` | list run-ids on disk |
-| `GET /runs/<id>` | parsed sidecars for one run |
-| `POST /elevation/auth` | (macOS) supply sudo password, get 200/401 |
-| `GET /elevation/status` | (macOS) is the sudo cache populated? |
-
-Full Swagger UI at `http://127.0.0.1:8765/docs`.
+The **Sync**, **Hosts**, and raw-events stream are intentionally
+hidden in Basic — those surfaces ship with the dev edition only.
 
 ---
 
-## 3. Desktop app walkthrough (Tauri 2.x)
+## 4. Scan for what's outdated
 
-Best for: daily use without a browser tab, production-style icon in
-your dock / Start menu / task switcher.
+The everyday flow:
 
-### 3a. Dev mode (compiles in 1-3 min on first run)
+1. Open **Categories**.
+2. Click any source row to expand it.
+3. Click **check** on that row. A read-only scan runs (~5–30 s); the
+   Run Center pops open with live progress.
+4. When the row's "outdated" count updates, you know what's pending.
 
-| OS | Command |
-|----|---------|
-| macOS | `bash bin/launch-desktop-macos.sh` |
-| Windows | `.\bin\launch-desktop.ps1` |
+You can repeat this per source, or use the **Overview → Quick actions**
+buttons to fire a multi-source sweep:
 
-Prerequisites (one-time):
-
-- **Rust** (1.78+) — install with `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh` (macOS/Linux) or `winget install Rustlang.Rustup` (Windows).
-- **Node 18+** — `brew install node` (macOS) or `winget install OpenJS.NodeJS.LTS` (Windows).
-- **macOS Apple CLI tools** — `xcode-select --install` (one-time).
-- **Windows MSVC build tools** — `winget install Microsoft.VisualStudio.2022.BuildTools` (with C++ workload).
-- **Windows WebView2 runtime** — preinstalled on Win 11; on Win 10 install from Microsoft.
-
-What dev mode does:
-
-1. `npm install` (one-time, ≈ 30 s).
-2. Cargo compiles `src-tauri/` (≈ 5–10 min on first run, < 30 s after).
-3. The shell binary spawns `python3 -m ascendo dashboard --port <ephemeral>`
-   as a sidecar process.
-4. Polls `/health` for up to 10 s.
-5. Opens a 1280×800 native webview window pointing at the dashboard.
-6. On close: kills the sidecar.
-
-### 3b. Production build
-
-| OS | Command | Output |
-|----|---------|--------|
-| macOS | `bash bin/launch-desktop-macos.sh --build` | `ui/desktop-tauri/src-tauri/target/release/bundle/macos/Ascendo.app` + `…/dmg/Ascendo_<v>_aarch64.dmg` |
-| Windows | `.\bin\launch-desktop.ps1 -Build` | `ui/desktop-tauri/src-tauri/target/release/bundle/{msi,nsis}/` |
-
-The build is **not code-signed yet** (M6 work). On macOS, Gatekeeper
-will refuse to open the `.app` unless you right-click → Open the first
-time, or `xattr -dr com.apple.quarantine Ascendo.app`. On Windows,
-SmartScreen will warn "Unknown publisher" — click "More info" → "Run anyway".
-
-### 3c. Run as a service / agent (background daemon)
-
-| OS | How |
-|----|-----|
-| macOS | Use the launchd scheduler instead — it's the macOS-native way. See [MACOS_QUICKSTART.md §8](MACOS_QUICKSTART.md). |
-| Windows | `.\bin\install-service.ps1 -Action install` registers AscendoDashboard as a real Windows service via NSSM. See [WINDOWS_QUICKSTART.md §8](WINDOWS_QUICKSTART.md). |
-
----
-
-## 4. Side-by-side: same outcome, three interfaces
-
-To upgrade Homebrew packages on macOS, all three of these do the same thing:
-
-```bash
-# CLI
-python3 -m ascendo run --category brew --phase apply
-
-# Web app
-# Open http://127.0.0.1:8765/ → Categories → brew → click "apply" → type "apply" in modal
-
-# Desktop app
-# bash bin/launch-desktop-macos.sh → Categories → brew → click "apply" → type "apply" in modal
+```
+[1] Build inventory   [2] Quick check   [3] Safe update   [4] Full dry-run   [5] Full update
 ```
 
-They all hit the same orchestrator (`core/ascendo/orchestrator/runner.py`),
-which calls the same `BrewManager.run_phase()`, which spawns
-`bash adapters/macos/scripts/brew/apply.sh`, which writes the same
-`~/.ascendo/runs/<run-id>/apply__brew.json` sidecar.
-
-Differences:
-
-| | CLI | Web | Desktop |
-|---|---|---|---|
-| Best for | scripting, CI | demos, exploration | daily use |
-| Confirm gate | `--phase apply` directly mutates (no prompt unless via `bin/run-tag-release-*.sh`) | Modal: type `apply` | Modal: type `apply` |
-| Live progress | text in terminal | SSE → Run Center tab | SSE → Run Center tab in window |
-| Sidecar paths | `~/.ascendo/runs/…` | same | same |
-| Reboot detection | exit code 75 | top banner | top banner |
-| Sudo (macOS) | interactive prompt | password modal once, cached | password modal once, cached |
-
----
-
-## 5. Common workflows (recipes)
-
-### "What's outdated?" (read-only, ≈ 30 s)
+Equivalent CLI one-liners (handy for terminals or scripts):
 
 ```bash
-# CLI:
-python3 -m ascendo run --profile=quick
-
-# Web/Desktop: Categories tab → click each row's "check" button.
-```
-
-### "Update everything except drivers" (safe profile)
-
-```bash
-# CLI:
-python3 -m ascendo run --profile=safe
-
-# Web: Quick Actions → Safe profile (or click each category's check → plan
-# → apply in turn, confirming each).
-```
-
-### "Set up nightly auto-update on a Mac" (one-time)
-
-```bash
-python3 -m ascendo schedule install \
-    --name nightly \
-    --calendar "DAILY 03:30" \
-    --profile safe
-```
-
-(Verify with `python3 -m ascendo schedule list`.)
-
-### "Investigate why an apply failed last night"
-
-```bash
-# Find the latest run
-last_run=$(python3 -m ascendo runs list -n 1 --status failed | awk 'NR==2 {print $1}')
-
-# Show the summary
-python3 -m ascendo runs show "$last_run"
-
-# Drill into the apply phase sidecar
-python3 -m ascendo runs json "$last_run" --pretty | jq '.sidecars[] | select(.phase == "apply") | .messages'
-
-# Look at the per-phase log
-cat ~/.ascendo/runs/"$last_run"/apply__*.log
-```
-
-### "Wipe Ascendo state (start fresh)"
-
-```bash
-rm -rf ~/.ascendo/                           # all runs + sidecars + logs
-# (re-running ascendo will recreate it on next run)
+ascendo run --profile=quick                       # check on every source (~15 s)
+ascendo run --category brew --phase check         # one source
+ascendo_maintenance quick                         # same, via helper shim
 ```
 
 ---
 
-## 6. Where things live
+## 5. Apply updates
+
+Every apply gates on a **confirmation modal** — you must type the
+literal word `apply` (case-sensitive) before anything mutates. This
+prevents accidental click-throughs from changing system state.
+
+### Per source
+
+1. Categories → row → **plan** (preview the changes)
+2. Categories → row → **apply** (modal opens; type `apply`; confirm)
+3. Watch the Run Center stream the run live
+4. When done, the Apps tab + Categories counts auto-refresh
+
+### "Update everything"
+
+Click **Overview → 5. Full update**. Same modal, all sources at once,
+sequential apply (brew/winget first, OS updates last because of reboot
+semantics).
+
+### Dry-run first if you're nervous
+
+**Overview → 4. Full dry-run** — runs every source through `plan` only,
+shows you exactly what *would* change, never mutates.
+
+### Reboot detection
+
+If any source's apply sets the `needs_reboot` flag (Windows Update,
+macOS softwareupdate, kernel updates on Linux), a banner appears at
+the top of the dashboard. Reboot on your own schedule.
+
+---
+
+## 6. Schedule recurring runs
+
+The schedule DSL is the same on every OS — Ascendo translates it to
+launchd / Task Scheduler / systemd timers under the hood.
+
+**Settings → Scheduler** → click **+ New schedule**, fill in:
+
+- **Name** — short slug, e.g. `nightly`
+- **Calendar** — see table below
+- **Profile** — `quick` / `safe` / `full`
+
+| Calendar form          | Runs at                       |
+|------------------------|-------------------------------|
+| `DAILY 03:30`          | every day at 03:30            |
+| `WEEKLY MONDAY 06:00`  | every Monday at 06:00         |
+| `MONTHLY 15 03:00`     | the 15th of the month at 03:00|
+| `HOURLY :15`           | every hour at :15 past        |
+| `MINUTE 30`            | every 30 minutes              |
+
+CLI equivalent:
+
+```bash
+ascendo schedule install --name nightly --calendar "DAILY 03:30" --profile safe
+ascendo schedule list
+ascendo schedule trigger --name nightly        # run now, synchronously
+ascendo schedule remove --name nightly
+```
+
+Scheduled runs write the same sidecars to `~/.ascendo/runs/`. Check the
+History tab afterwards to see what happened.
+
+---
+
+## 7. The Apps tab — per-app history + exclusions
+
+The Apps tab is your "what's installed across every source" view:
+
+- **Search box** with debounce — find an app by name fast
+- **Status chips** — filter by `outdated` / `up_to_date` / `triggered` / etc.
+- **Source chips** — filter by brew / winget / mas / web / etc.
+- **Group by source** with collapsible sticky headers
+- **Candidate column** — installed version vs available version
+- **History link** per row — toggles an inline table of past upgrades for that app:
+
+  ```
+  When           From         To           Status   Run ID
+  3 hours ago    1.14.40      1.14.41      ✓        abc-…
+  2 days ago     1.14.39      1.14.40      ✓        def-…
+  ```
+
+- **Exclude** — toggle off any app you don't want Ascendo to upgrade
+  automatically. Excluded apps stay visible but are skipped during
+  apply runs. Stored in `~/.ascendo/excluded_apps.json`.
+
+---
+
+## 8. Reading the History tab
+
+Every run gets one row in History. Click to expand — you'll see:
+
+- Per-(phase × source) status pills
+- The full **`REPORT.md`** if it's an apply run — a human-readable
+  Markdown summary of what changed (e.g. "3 upgraded, 211 already
+  up-to-date, 6 deferred")
+- Inline `.log` files for each phase
+- Links to the underlying JSON sidecars
+
+The History tab also exposes a status filter (`success` / `partial` /
+`failed`) and pagination. Use it to investigate "why did last night's
+run fail?" without leaving the dashboard.
+
+CLI equivalent:
+
+```bash
+ascendo runs list -n 10                         # last 10 runs
+ascendo runs show <run-id>                      # human-readable summary
+ascendo runs report <run-id>                    # the post-apply REPORT.md
+ascendo runs json <run-id> --pretty | jq .      # machine-readable
+```
+
+---
+
+## 9. Suggestions
+
+The **Suggestions** tab gives you an opinionated recommendation engine:
+
+- **Preset library** — rule-based "if X then Y" suggestions
+  (e.g. "Brave is on x86_64 but you're on arm64 — reinstall via the
+  arm64 DMG"). Click any to schedule it directly.
+- **AI mode** *(optional)* — wire your own provider key in **Settings →
+  AI providers**, pick a model, and ask free-form questions like
+  "what should I update this week?". Supported providers include
+  Anthropic, OpenAI, OpenRouter, Ollama, Google Gemini, and LM Studio.
+  Credentials are stored locally in `~/.config/ascendo/ai.json` with
+  the API key redacted at rest.
+
+---
+
+## 10. Common day-to-day tasks
+
+### Update Ascendo itself
+
+```bash
+ascendo_update                       # one-liner; idempotent
+```
+
+Equivalent direct one-liner:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/update.sh | bash
+```
+
+### Health check
+
+```bash
+ascendo_doctor                       # full report (10 components on macOS, similar elsewhere)
+ascendo doctor --verbose             # same, with capability flags
+```
+
+### Rebuild the inventory cache
+
+If the Categories tab looks stale or wrong:
+
+```bash
+ascendo_maintenance rebuild-inventory
+```
+
+Equivalent: delete `~/.ascendo/inventory.db` and run any `check` —
+the dashboard repopulates it on next request.
+
+### Investigate a failed run
+
+```bash
+last_failed=$(ascendo runs list -n 1 --status failed | awk 'NR==2 {print $1}')
+ascendo runs show "$last_failed"
+ascendo runs json "$last_failed" --pretty | jq '.sidecars[] | select(.phase == "apply") | .messages'
+cat ~/.ascendo/runs/"$last_failed"/apply__*.log
+```
+
+### Check for recent errors across all runs
+
+```bash
+ascendo_maintenance check-errors
+```
+
+### Wipe runtime state (start fresh)
+
+```bash
+rm -rf ~/.ascendo/                   # all runs, sidecars, logs, inventory cache
+# next ascendo run recreates it
+```
+
+---
+
+## 11. Where things live
 
 ```
-~/Dev_Env/Ascendo/                  # the repo
-├── adapters/{macos,windows,ubuntu}/  # OS-specific managers
-├── core/ascendo/                     # OS-agnostic core (CLI, dashboard, orchestrator)
-├── ui/desktop-tauri/                 # Tauri 2.x native shell
-├── app/frontend/                     # vanilla JS SPA
-├── bin/                              # PowerShell + bash launcher / install / validate scripts
-└── plugins/dell-driver-update/       # first official plugin (Windows only)
+~/.local/share/ascendo/   (POSIX)            # repo checkout
+%LOCALAPPDATA%\Ascendo\src   (Windows)
 
-~/.ascendo/                          # runtime state
-├── runs/<uuid>/                       # one folder per run
+~/.ascendo/                                  # runtime state
+├── runs/<uuid>/                             # one folder per run
 │   ├── check__brew.json
 │   ├── plan__brew.json
-│   ├── apply__brew.json               # the sidecar = the receipt
-│   ├── apply__brew.log                # plain log
+│   ├── apply__brew.json                     # the sidecar = the receipt
+│   ├── apply__brew.log                      # plain log
 │   ├── verify__brew.json
 │   ├── cleanup__brew.json
-│   └── run.json                       # consolidated summary
-└── (no other files)
+│   ├── REPORT.md                            # human-readable apply summary
+│   └── run.json                             # consolidated summary
+├── inventory.db                             # SQLite cache for the Apps tab
+└── excluded_apps.json                       # per-app exclusions
 
-~/Library/LaunchAgents/dev.ascendo.<name>.plist     # macOS schedules
-~/Library/Application Support/Ascendo/schedules/    # macOS schedule sidecars
-%LocalAppData%\Ascendo\logs\service\                # Windows service logs
-\Ascendo\<name>                                     # Windows Task Scheduler tasks
+~/.config/ascendo/                           # user-overridable config
+├── ai.json                                  # AI provider creds (api_key redacted)
+└── web_apps.toml                            # per-app override registry
 ```
 
 ---
 
-## 7. Trouble?
+## 12. Troubleshooting
 
-- **macOS** issues → see [MACOS_TESTING.md §9 Troubleshooting](MACOS_TESTING.md#9-troubleshooting).
-- **Windows** issues → see [WINDOWS_TESTING.md §6 Troubleshooting](WINDOWS_TESTING.md#6-troubleshooting).
-- **Linux** issues → still in migration; see legacy `app/README.md` for the FastAPI dashboard until `adapters/ubuntu/` polish completes.
+The most common ten things people hit on a fresh install:
 
-If anything in this guide doesn't match what you see, paste the exact
-command + output + `git log --oneline -3` so we can pin it to a commit.
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| `ascendo: command not found` | Helper shims dir not on PATH | Restart your shell, or run the install one-liner again — it re-adds PATH |
+| `Categories tab is empty` | First-run inventory not yet built | Click **Overview → 1. Build inventory** or `ascendo_maintenance rebuild-inventory` |
+| `Dashboard 422 errors after a git pull` | Stale browser tab | Hard reload (`Ctrl-Shift-R` / `Cmd-Shift-R`) |
+| `apply hangs at sudo prompt` (macOS) | No askpass / Touch ID configured | See [MACOS_QUICKSTART.md §6](MACOS_QUICKSTART.md) |
+| `apply fails with "exited 1"` | Insufficient privilege | Re-run from an Administrator (Windows) / sudo-cached (macOS/Linux) shell |
+| `Last run says "deferred"` | App was running during apply (defer-if-running) | Quit the app and re-run apply |
+| `History entries missing inline logs` | Pre-Sesja-46 dashboard | Update Ascendo: `ascendo_update` |
+| `"Reboot required" banner won't clear` | The flag stays until you actually reboot | Reboot, or click **Settings → Acknowledge reboot** if you've already restarted |
+| `winget says X but Ascendo says Y` | Inventory cache 24h stale | Click the refresh button on Apps / Categories or `rebuild-inventory` |
+| `Tauri desktop window won't open` | Missing build prerequisites (Rust / Node / WebView2) | See platform quickstart for your OS |
+
+For platform-specific issues:
+
+- macOS — [MACOS_QUICKSTART.md](MACOS_QUICKSTART.md), [MACOS_TESTING.md](MACOS_TESTING.md)
+- Windows — [WINDOWS_QUICKSTART.md](WINDOWS_QUICKSTART.md), [WINDOWS_TESTING.md](WINDOWS_TESTING.md)
+- Linux — [LINUX_QUICKSTART.md](LINUX_QUICKSTART.md)
+
+If anything in this guide doesn't match what you see, file an issue
+with the exact command, the output, and `ascendo doctor --verbose` —
+that gives us enough to diagnose.
 
 ---
 
-## 8. Roadmap pointers
+## 13. Uninstall
 
-- **Forward roadmap** → [PLAN.md](PLAN.md)
-- **Per-session log** → [HANDOFF.md](HANDOFF.md)
-- **Architecture decisions** → [docs/architecture/](docs/architecture/)
-- **5-phase JSON contract** → [docs/agents/contract.md](docs/agents/contract.md)
-- **Cross-platform notes** → [docs/CROSS_PLATFORM.md](docs/CROSS_PLATFORM.md)
+```bash
+# macOS / Linux
+rm -rf ~/.local/share/ascendo/                   # repo checkout
+rm -rf ~/.ascendo/                               # runtime state (optional — keep if you might reinstall)
+rm -rf ~/.config/ascendo/                        # config (optional)
+rm -f  ~/.local/bin/ascendo*                     # helper shims
 
-License: [MIT](LICENSE) — do whatever you want, just keep the copyright notice.
+# Windows (PowerShell)
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Ascendo"
+Remove-Item -Recurse -Force "$env:USERPROFILE\.ascendo"
+Remove-Item -Force "$env:LOCALAPPDATA\Microsoft\WindowsApps\ascendo*.cmd"
+```
+
+If you used the Windows NSIS installer, **Add/Remove Programs →
+Ascendo → Uninstall** does all of this in one click and removes the
+AscendoDashboard service if installed.
+
+Schedules survive uninstall by design (so a partial reinstall doesn't
+break a running cron). To remove them explicitly:
+
+```bash
+ascendo schedule list                            # see what's there
+ascendo schedule remove --name <each one>        # remove each
+```
+
+---
+
+## 14. Where to next
+
+- **Switch to dev edition** — [DEV_GUIDE.md](DEV_GUIDE.md) covers the
+  Sync / Hosts / raw-events surfaces, dev-sync overlay, and how to
+  hack on Ascendo itself.
+- **Forward roadmap** — [PLAN.md](PLAN.md)
+- **Architecture** — [docs/architecture/](docs/architecture/)
+- **Cross-platform contract** — [docs/CROSS_PLATFORM.md](docs/CROSS_PLATFORM.md)
+- **5-phase JSON contract** — [docs/agents/contract.md](docs/agents/contract.md)
+
+License: [MIT](LICENSE) — do whatever you want, just keep the
+copyright notice.

@@ -32,14 +32,21 @@ EXIT_RC=0
 
 # ── 1. brew update ────────────────────────────────────────────────────────────
 print_step "brew update"
-if run_silent_as_user "${BREW_BIN}" update; then
+_stream_emit ">>> brew update"
+if run_capture_as_user "${BREW_BIN}" update; then
     print_ok
     json_add_item id="brew:update" action="refresh" result="ok"
     json_count_ok
 else
     print_warn "brew update non-zero"
     json_add_item id="brew:update" action="refresh" result="warn"
-    json_add_diag warn BREW-UPDATE-WARN "brew update returned non-zero (network?)"
+    _tail="$(_stderr_tail "${_LAST_RUN_OUT_FILE}")"
+    if [[ -n "$_tail" ]]; then
+        json_add_diag warn BREW-UPDATE-WARN \
+            "brew update returned non-zero — last output: ${_tail}"
+    else
+        json_add_diag warn BREW-UPDATE-WARN "brew update returned non-zero (network?)"
+    fi
     json_count_warn
 fi
 
@@ -48,28 +55,42 @@ outdated_json=$(run_as_user "${BREW_BIN}" outdated --json=v2 2>/dev/null || echo
 
 # ── 3. brew upgrade --formula ─────────────────────────────────────────────────
 print_step "brew upgrade --formula"
-if run_silent_as_user "${BREW_BIN}" upgrade --formula; then
+_stream_emit ">>> brew upgrade --formula"
+if run_capture_as_user "${BREW_BIN}" upgrade --formula; then
     print_ok
     json_add_item id="brew:upgrade:formula" action="upgrade" result="ok"
     json_count_ok
 else
     print_warn "formula upgrade non-zero"
     json_add_item id="brew:upgrade:formula" action="upgrade" result="warn"
-    json_add_diag warn BREW-FORMULA-WARN "some formulas failed to upgrade"
+    _tail="$(_stderr_tail "${_LAST_RUN_OUT_FILE}")"
+    if [[ -n "$_tail" ]]; then
+        json_add_diag warn BREW-FORMULA-WARN \
+            "some formulas failed to upgrade — last output: ${_tail}"
+    else
+        json_add_diag warn BREW-FORMULA-WARN "some formulas failed to upgrade"
+    fi
     json_count_warn
     EXIT_RC=1
 fi
 
 # ── 4. brew upgrade --cask --greedy ───────────────────────────────────────────
 print_step "brew upgrade --cask --greedy"
-if run_silent_as_user "${BREW_BIN}" upgrade --cask --greedy; then
+_stream_emit ">>> brew upgrade --cask --greedy"
+if run_capture_as_user "${BREW_BIN}" upgrade --cask --greedy; then
     print_ok
     json_add_item id="brew:upgrade:cask" action="upgrade" result="ok"
     json_count_ok
 else
     print_warn "cask upgrade non-zero"
     json_add_item id="brew:upgrade:cask" action="upgrade" result="warn"
-    json_add_diag warn BREW-CASK-WARN "some casks failed to upgrade"
+    _tail="$(_stderr_tail "${_LAST_RUN_OUT_FILE}")"
+    if [[ -n "$_tail" ]]; then
+        json_add_diag warn BREW-CASK-WARN \
+            "some casks failed to upgrade — last output: ${_tail}"
+    else
+        json_add_diag warn BREW-CASK-WARN "some casks failed to upgrade"
+    fi
     json_count_warn
     EXIT_RC=1
 fi

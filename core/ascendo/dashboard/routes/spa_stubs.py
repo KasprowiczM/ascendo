@@ -84,6 +84,7 @@ _SPA_FETCH_INVENTORY: dict[str, str] = {
     "GET /sudo/status": "stub",
     "GET /suggestions": "stub",
     "GET /sync/browse": "stub",
+    "GET /sync/config-status": "stub",  # dev-only (wizard step 8)
     "GET /sync/provider": "stub",
     "GET /sync/remotes": "stub",
     "GET /sync/status": "stub",
@@ -112,6 +113,7 @@ _SPA_FETCH_INVENTORY: dict[str, str] = {
     "POST /sync/export": "stub",
     "POST /sync/provider": "stub",
     "POST /sync/provider/test": "stub",
+    "POST /sync/setup": "stub",  # dev-only (wizard step 8)
     "POST /system/reboot": "stub",
     "PUT /settings": "stub",
 }
@@ -353,6 +355,119 @@ async def sync_browse_stub(path: str = "") -> dict[str, Any]:
 @router.post("/sync/export")
 async def sync_export_stub(dry_run: bool = False) -> dict[str, Any]:
     return {"ok": True, "stub": True, "dry_run": dry_run, "output": ""}
+
+
+# -- Dev-edition only: dev-sync provider setup wizard helpers --------------
+#
+# Both endpoints below sit under the ``/sync/`` prefix, which is gated by
+# :class:`~ascendo.dashboard.middleware.edition_gate.EditionGateMiddleware`
+# to return 404 on basic edition. Dev edition exposes them so the
+# first-run wizard's "Run dev-sync setup" step can probe state and shell
+# out to the user-side script without leaving the dashboard.
+
+
+def _dev_sync_repo_root() -> "Path":
+    """Resolve repo root from this file's location.
+
+    spa_stubs.py lives at ``core/ascendo/dashboard/routes/spa_stubs.py``,
+    so four parents up gets us to ``<repo>``.
+    """
+    from pathlib import Path
+    return Path(__file__).resolve().parents[4]
+
+
+@router.get("/sync/config-status")
+async def sync_config_status() -> dict[str, Any]:
+    """Report the state of ``.dev_sync_config.json`` for the wizard.
+
+    Returns one of three states:
+
+    - ``present=True, valid=True``  -> JSON parses, ``provider`` populated
+    - ``present=True, valid=False`` -> file exists but is malformed
+    - ``present=False, valid=False`` -> not yet configured
+
+    Dev-edition only; the EditionGateMiddleware 404s this on basic.
+    """
+    import json
+
+    repo_root = _dev_sync_repo_root()
+    cfg_path = repo_root / ".dev_sync_config.json"
+    if not cfg_path.is_file():
+        return {
+            "present": False,
+            "valid": False,
+            "provider": None,
+            "path": str(cfg_path),
+        }
+    try:
+        data = json.loads(cfg_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        return {
+            "present": True,
+            "valid": False,
+            "provider": None,
+            "path": str(cfg_path),
+            "error": str(exc),
+        }
+    provider = None
+    if isinstance(data, dict):
+        provider = data.get("provider") or data.get("remote") or None
+    return {
+        "present": True,
+        "valid": True,
+        "provider": provider,
+        "path": str(cfg_path),
+    }
+
+
+@router.post("/sync/setup")
+async def sync_setup() -> dict[str, Any]:
+    """Invoke the dev-sync provider setup script and return its output.
+
+    The script is part of the dev-sync overlay (see ``dev-sync/README.md``)
+    and walks the operator through configuring rclone + a remote name +
+    a remote path. It is interactive in a TTY but degrades to a non-zero
+    exit on a bare subprocess — we still return whatever it printed so
+    the wizard can surface a useful error.
+
+    Filename probe: tries ``dev-sync-provider-setup.sh`` first (the name
+    the wizard step copy mentions for documentation purposes), then
+    ``provider_setup.sh`` (the actual file shipped in the overlay).
+
+    Dev-edition only; the EditionGateMiddleware 404s this on basic.
+    """
+    import subprocess
+
+    repo_root = _dev_sync_repo_root()
+    candidates = [
+        repo_root / "dev-sync" / "dev-sync-provider-setup.sh",
+        repo_root / "dev-sync" / "provider_setup.sh",
+    ]
+    script = next((c for c in candidates if c.is_file()), None)
+    if script is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"dev-sync provider setup script not found (looked for: "
+                   f"{', '.join(str(c) for c in candidates)})",
+        )
+    try:
+        result = subprocess.run(
+            ["bash", str(script)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=str(repo_root),
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="provider setup timed out")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"failed to spawn bash: {exc}")
+    return {
+        "ok": result.returncode == 0,
+        "exit_code": result.returncode,
+        "stdout": (result.stdout or "")[-2000:],
+        "stderr": (result.stderr or "")[-2000:],
+    }
 
 
 # -- Sudo / system ---------------------------------------------------------

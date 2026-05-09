@@ -34,6 +34,10 @@
     "homepage": "https://github.com/KasprowiczM/ascendo",
     "license": "MIT",
     "licenseFile": "LICENSE",
+    "resources": [
+      "first-run-bootstrap-macos.sh",
+      "bin-staging/**/*"
+    ],
     "windows": {
       "digestAlgorithm": "sha256",
       "wix": {

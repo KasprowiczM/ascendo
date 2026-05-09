@@ -1,19 +1,58 @@
 #!/usr/bin/env bash
-# Post-install: leave the heavy bring-up (Python venv, dashboard service,
-# Proton overlay restore) to the operator's first interactive run of
-# `ubuntu-aktualizacje fresh`. We only fix permissions and print a hint.
+# =============================================================================
+# Ascendo .deb post-install hook
+# =============================================================================
+#
+# Runs as root after dpkg unpacks /opt/ascendo/. We do the smart bootstrap
+# here:
+#
+#   1. Fix permissions on /opt/ascendo (read+exec for everyone, write for root).
+#   2. Pre-seed config from /etc/ascendo/install.conf if present (unattended).
+#   3. Refresh icon + desktop databases so the menu entry appears.
+#   4. Print next-steps banner. The actual `pip install -e core/` is deferred
+#      to the user's first interactive run because each user has their own
+#      venv at $XDG_DATA_HOME/ascendo (per Linux convention — the system .deb
+#      ships the source tree, not a global Python install).
+#
+# Failure here is non-fatal: dpkg will still report install OK, and the
+# user's first `ascendo` invocation will report any setup issues. Exit
+# non-zero ONLY for things that genuinely block usage.
+# =============================================================================
 set -e
 
-INSTALL_DIR=/opt/ubuntu-aktualizacje
+INSTALL_DIR=/opt/ascendo
+
+# ── 1. Permissions ───────────────────────────────────────────────────────
 chmod -R u+rwX,go+rX "$INSTALL_DIR" 2>/dev/null || true
-chmod +x "$INSTALL_DIR"/update-all.sh \
-         "$INSTALL_DIR"/scripts/*.sh \
-         "$INSTALL_DIR"/scripts/*/*.sh 2>/dev/null || true
+# Mark every shipped shell script executable (defensive — git ls-files
+# strips exec bits in some cases, dpkg-deb --build re-applies them only
+# for files in DEBIAN/).
+find "$INSTALL_DIR" -type f -name '*.sh' -exec chmod 0755 {} + 2>/dev/null || true
+[ -d "$INSTALL_DIR/bin" ] && find "$INSTALL_DIR/bin" -type f -exec chmod 0755 {} + 2>/dev/null || true
 
-# /usr/bin/ubuntu-aktualizacje shim is already installed by dpkg from the
-# package tree (see usr/bin/ubuntu-aktualizacje below).
+# ── 2. Read /etc/ascendo/install.conf for unattended pre-seed ───────────
+# Format: simple KEY=VALUE pairs. Mirrors the install.sh env vars.
+#   ASCENDO_EDITION=basic|dev
+#   ASCENDO_PROFILE=cli|web|desktop|full
+#   ASCENDO_LANG=en|pl
+ASCENDO_EDITION="${ASCENDO_EDITION:-basic}"
+ASCENDO_PROFILE="${ASCENDO_PROFILE:-full}"
+ASCENDO_LANG="${ASCENDO_LANG:-en}"
+if [ -r /etc/ascendo/install.conf ]; then
+    # shellcheck disable=SC1091
+    set -a; . /etc/ascendo/install.conf; set +a
+fi
 
-# Refresh icon + desktop databases so the Ascendo entry shows in app menus.
+# Stash the pre-seed for the user's first ascendo invocation.
+mkdir -p /etc/ascendo
+{
+    printf 'ASCENDO_EDITION=%s\n' "$ASCENDO_EDITION"
+    printf 'ASCENDO_PROFILE=%s\n' "$ASCENDO_PROFILE"
+    printf 'ASCENDO_LANG=%s\n'    "$ASCENDO_LANG"
+} > /etc/ascendo/preseed.conf
+chmod 0644 /etc/ascendo/preseed.conf
+
+# ── 3. Refresh desktop databases so the menu entry appears ──────────────
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
 fi
@@ -21,16 +60,30 @@ if command -v gtk-update-icon-cache >/dev/null 2>&1; then
     gtk-update-icon-cache -t /usr/share/icons/hicolor >/dev/null 2>&1 || true
 fi
 
-cat <<EOF
+# ── 4. Banner ────────────────────────────────────────────────────────────
+cat <<'EOF'
 ─────────────────────────────────────────────────────────────────
-  Ubuntu_Aktualizacje installed at $INSTALL_DIR
+  Ascendo installed system-wide at /opt/ascendo
+  Symlinks placed in /usr/local/bin (ascendo, ascendo_*, …)
 
   Next steps (run as your normal user, NOT root):
-    ubuntu-aktualizacje fresh           # full bring-up incl. dashboard
-    ubuntu-aktualizacje                 # alias for update-all.sh
-    ubuntu-aktualizacje dashboard       # start dashboard ad-hoc
 
-  Dashboard URL after install: http://127.0.0.1:8765
+    ascendo doctor             # 5-component health check
+    ascendo                    # default action: full update
+    ascendo dashboard          # start dashboard ad-hoc
+                               # (then open http://127.0.0.1:8765)
+
+  First-time bring-up (creates your per-user venv automatically):
+    /opt/ascendo/install.sh --update
+    # or, the canonical one-liner:
+    curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh | bash
+
+  Switch to the developer edition later:
+    ascendo_update --edition dev
+
+  Pre-seed /etc/ascendo/install.conf (KEY=VALUE pairs) for
+  unattended installs across a fleet.
 ─────────────────────────────────────────────────────────────────
 EOF
+
 exit 0

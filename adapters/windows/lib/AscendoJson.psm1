@@ -617,6 +617,70 @@ function Save-Sidecar {
 }
 
 # -----------------------------------------------------------------------------
+# Stream-log helpers (parity with macOS adapters/macos/lib/ascendo_json.sh)
+# -----------------------------------------------------------------------------
+# When the orchestrator sets $env:ASCENDO_STREAM_LOG, every apply script can
+# mirror its mutating output through these helpers so the dashboard's SSE
+# endpoint streams every line live to Run Center. When the env var is unset
+# (CLI runs), these are no-ops.
+
+function Write-AscendoStreamLine {
+    <#
+    .SYNOPSIS
+        Append a single line (or block of lines) to $env:ASCENDO_STREAM_LOG
+        when set. No-op otherwise. Best-effort — failures (disk full,
+        rotated log, locked file) are swallowed.
+
+    .PARAMETER Text
+        Multi-line string to append. Each call adds a trailing newline if
+        the input doesn't already end with one.
+
+    .EXAMPLE
+        Write-AscendoStreamLine -Text ">>> winget upgrade $id"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Text
+    )
+    $log = $env:ASCENDO_STREAM_LOG
+    if (-not $log) { return }
+    try {
+        $payload = if ($Text.EndsWith("`n")) { $Text } else { $Text + "`n" }
+        # Append-only; tolerate failures so the apply pipeline never breaks
+        # because of a stream-log issue.
+        Add-Content -LiteralPath $log -Value $payload `
+            -Encoding utf8 -ErrorAction SilentlyContinue
+    } catch {
+        # Swallow — stream-log is best-effort.
+    }
+}
+
+function Write-AscendoStreamFile {
+    <#
+    .SYNOPSIS
+        Append the contents of a file to $env:ASCENDO_STREAM_LOG. Used by
+        apply scripts that capture child-process stdout/stderr to tempfiles
+        and want to mirror the captures into Run Center's live feed.
+    .PARAMETER Path
+        Path to the file whose contents should be appended.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [string] $Path)
+    $log = $env:ASCENDO_STREAM_LOG
+    if (-not $log) { return }
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    try {
+        $body = Get-Content -LiteralPath $Path -Raw -ErrorAction SilentlyContinue
+        if ($body) {
+            Add-Content -LiteralPath $log -Value $body `
+                -Encoding utf8 -ErrorAction SilentlyContinue
+        }
+    } catch {
+        # Best-effort.
+    }
+}
+
+# -----------------------------------------------------------------------------
 # Exports
 # -----------------------------------------------------------------------------
 
@@ -625,5 +689,7 @@ Export-ModuleMember -Function @(
     'Add-SidecarItem',
     'Add-SidecarMessage',
     'Save-Sidecar',
-    'Get-AscendoHostInfo'
+    'Get-AscendoHostInfo',
+    'Write-AscendoStreamLine',
+    'Write-AscendoStreamFile'
 )

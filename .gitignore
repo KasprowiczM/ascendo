@@ -40,6 +40,8 @@ ui/desktop-tauri/src-tauri/binaries/
 # under `packaging/installer-assets/` and the repo root LICENSE.
 ui/desktop-tauri/src-tauri/installer-assets/
 ui/desktop-tauri/src-tauri/LICENSE
+ui/desktop-tauri/src-tauri/first-run-bootstrap-macos.sh
+ui/desktop-tauri/src-tauri/bin-staging/
 
 # Throw-away preview PNGs from the installer-assets generator.
 packaging/installer-assets/_preview-*.png
@@ -176,11 +178,18 @@ $RECYCLE.BIN/
 dashboard-overview-*.png
 dashboard-*.png
 
-# ── Edition split (Sesja 51): private files staged for dev-sync overlay ─
+# ── Edition split (Sesja 51, revised Sesja 52): private files only ─
 # These live in the working tree for dev-edition users (because dev-sync
 # pushes them to Proton), but must never be committed to the public repo.
+#
+# Important: the dev-sync TOOLING (Python lib + wrapper scripts) STAYS in
+# the public repo — it's generic rclone-wrapper code anyone can use with
+# their own provider. Only the per-user CONFIG (Proton paths, payload)
+# is private. Same logic applies to AI instructions: the .example stubs
+# are public; the real CLAUDE.md / AGENTS.md / CODEX.md with project-
+# specific instructions are private.
 
-# AI instructions (live + reference)
+# AI instructions (real content — agent-readable, project-specific)
 /CLAUDE.md
 /AGENTS.md
 /CODEX.md
@@ -193,20 +202,25 @@ dashboard-*.png
 /.geminiignore
 /.graphifyignore
 
-# Internal handoffs / roadmap / session logs
+# Internal handoffs / roadmap / session logs (313KB + 44KB)
 /HANDOFF.md
 /PLAN.md
 /DEV_SCRIPTS_README.md
 /docs/superpowers/specs/
 
-# Graphify output (knowledge graphs)
+# Graphify output (knowledge graphs — user-specific)
 /graphify-out/
 
-# Dev-sync infrastructure (the rclone tree + wrapper scripts)
-/dev-sync/
-/dev-sync-*.sh
-/dev-sync-*.ps1
+# Per-user dev-sync config + payload (paths + cloud credentials)
+/.dev_sync_config.json
+/.dev_sync_manifest.json
 /dev_sync_logs/
+/dev-sync-overlay/
+
+# NOTE: dev-sync/ Python lib + dev-sync-*.{sh,ps1} wrappers are NOT
+# gitignored here. They are GENERIC tooling (rclone wrappers, no user
+# data) and stay in the public repo so dev-edition users can clone +
+# install + bootstrap their own overlay against their own provider.
 /dev-sync-overlay/
 
 # Build artefacts

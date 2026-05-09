@@ -1,8 +1,32 @@
 #!/usr/bin/env bash
-# Stop user-services that may have been installed; never error out on absence.
+# =============================================================================
+# Ascendo .deb pre-remove hook
+# =============================================================================
+# Stop any user-level systemd dashboard service before files disappear.
+# Never error out on absence (typical case: user never installed the unit).
+# =============================================================================
 set -e
+
+# Stop user-services across all real local users (UID ≥ 1000, < 60000).
 for u in $(getent passwd | awk -F: '$3>=1000 && $3<60000 {print $1}'); do
-    sudo -u "$u" XDG_RUNTIME_DIR="/run/user/$(id -u "$u")" \
+    UID_NUM="$(id -u "$u" 2>/dev/null || echo)"
+    [ -z "$UID_NUM" ] && continue
+    sudo -u "$u" XDG_RUNTIME_DIR="/run/user/$UID_NUM" \
+        systemctl --user stop ascendo-dashboard.service 2>/dev/null || true
+    # Legacy unit name from the Ubuntu_Aktualizacje era — drop on next minor.
+    sudo -u "$u" XDG_RUNTIME_DIR="/run/user/$UID_NUM" \
         systemctl --user stop ubuntu-aktualizacje-dashboard.service 2>/dev/null || true
 done
+
+# Warn if a dashboard process is still running (typically a foreground
+# `ascendo dashboard` launched from a Terminal that systemctl can't see).
+if pgrep -af 'ascendo dashboard' >/dev/null 2>&1; then
+    cat <<'EOF' >&2
+
+[ascendo-prerm] WARNING: An `ascendo dashboard` process is still running.
+                It will be killed when /opt/ascendo is removed. Save any
+                in-progress runs before continuing.
+EOF
+fi
+
 exit 0

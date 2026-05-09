@@ -145,6 +145,30 @@ run_silent_as_user() {
     fi
 }
 
+# ── Run a command silently as the invoking user, capturing tail on failure ──
+# Same dispatch rule as run_silent_as_user but routes through run_capture
+# (defined in lib/json.sh) so the captured output lives at
+# $_LAST_RUN_OUT_FILE and the SSE stream sees every line live. Returns the
+# command's exit code; the caller decides how to surface the failure.
+#
+# Pair with run_silent_with_tail when you also want an automatic
+# json_add_diag emit. This thin wrapper exists to preserve the
+# user-context dispatch (brew/npm refuse root) while sharing the capture
+# infrastructure.
+run_capture_as_user() {
+    if ! declare -F run_capture >/dev/null 2>&1; then
+        # Caller forgot to source lib/json.sh — degrade to run_silent
+        # so the script still works, just without SSE / tail capture.
+        run_silent_as_user "$@"
+        return $?
+    fi
+    if [[ $EUID -eq 0 && -n "${SUDO_USER:-}" ]]; then
+        run_capture sudo -u "${SUDO_USER}" HOME="$(_real_user_home)" "$@"
+    else
+        run_capture "$@"
+    fi
+}
+
 # ── Require root or sudo ───────────────────────────────────────────────────────
 require_sudo() {
     if [[ $EUID -eq 0 ]]; then return 0; fi

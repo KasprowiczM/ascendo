@@ -39,8 +39,13 @@ if (( n_pre > 0 )); then
     progress_start "snap-refresh" "$n_pre" "snap refresh"
 fi
 print_step "snap refresh"
+_stream_emit ">>> snap refresh"
 refresh_out=$(sudo snap refresh 2>&1) || refresh_rc=$? || true
 echo "${refresh_out}" >> "${LOG_FILE}"
+# Mirror to SSE stream log (best-effort) so Run Center sees live progress.
+if [[ -n "${ASCENDO_STREAM_LOG:-}" && -n "${refresh_out}" ]]; then
+    printf '%s\n' "${refresh_out}" >> "${ASCENDO_STREAM_LOG}" 2>/dev/null || true
+fi
 
 if echo "${refresh_out}" | grep -q "All snaps up to date"; then
     if (( n_pre > 0 )); then
@@ -91,7 +96,18 @@ elif echo "${refresh_out}" | grep -qi "running apps"; then
 elif echo "${refresh_out}" | grep -qi "error:"; then
     print_error "snap refresh failed"
     json_add_item id="snap:refresh" action="refresh" result="failed"
-    json_add_diag error SNAP-REFRESH-FAIL "$(echo "${refresh_out}" | grep -i 'error:' | head -1)"
+    # Surface the last 12 non-empty lines of refresh output (capped at
+    # 1500 chars) so the operator sees the actual failure context, not
+    # just the first "error:" line.
+    _snap_tail="$(printf '%s\n' "${refresh_out}" | awk 'NF{print}' \
+                  | tail -n 12 | tr '\t' ' ' | head -c 1500 || true)"
+    if [[ -n "$_snap_tail" ]]; then
+        json_add_diag error SNAP-REFRESH-FAIL \
+            "snap refresh failed — last output: ${_snap_tail}"
+    else
+        json_add_diag error SNAP-REFRESH-FAIL \
+            "$(echo "${refresh_out}" | grep -i 'error:' | head -1)"
+    fi
     json_count_err
     EXIT_RC=20
 else

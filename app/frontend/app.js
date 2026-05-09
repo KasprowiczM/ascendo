@@ -383,7 +383,15 @@ const ui = {
   // wizard never has empty strings.
   wizard: {
     state: null,
+    // Basic edition shows the original 6-step path (welcome -> prefs ->
+    // admin -> scan -> sources -> done). Dev edition appends three more
+    // steps after `done` was renamed (see below) so the operator sees
+    // GitHub repo config, dev-sync provider setup, and developer
+    // resource links before finishing. The step list is rebuilt in
+    // start() so a runtime edition flip (rare) doesn't strand the user.
     steps: ["welcome", "prefs", "admin", "scan", "sources", "done"],
+    BASIC_STEPS: ["welcome", "prefs", "admin", "scan", "sources", "done"],
+    DEV_EXTRA_STEPS: ["github_config", "dev_sync_setup", "dev_resources"],
     currentIdx: 0,
     // Resolve a per-adapter wizard string. Reads adapter from <html>
     // and falls back to 'windows' if no per-adapter copy exists for
@@ -411,6 +419,13 @@ const ui = {
       return Array.isArray(v) ? v : [];
     },
     start() {
+      // Branch the step list on edition. Basic = 6 steps; dev = 9. Dev
+      // edition picks up after `done` because the dry-run step is shared
+      // and sensible for both audiences.
+      const isDev = (window.ASCENDO_EDITION === "dev");
+      this.steps = isDev
+        ? [...this.BASIC_STEPS, ...this.DEV_EXTRA_STEPS]
+        : [...this.BASIC_STEPS];
       this.state = {
         language: window.UI_LANG || "en",
         theme:    "dark",
@@ -420,6 +435,12 @@ const ui = {
         sources_summary: null,
         wu_check: null,         // {status: "idle"|"running"|"done"|"failed", count?, error?}
         dry_run: null,          // {status, items, error?}
+        // Dev-only state. Empty/null on basic; the builders just don't
+        // run in that case so it never gets read.
+        github_repo: "KasprowiczM/ascendo",
+        github_test: null,      // {status: "ok"|"failed", message?}
+        dev_sync_config: null,  // last /sync/config-status response
+        dev_sync_setup_run: null, // {status, exit_code?, stdout?}
       };
       // Pull any mid-wizard scratch from a previous reload so progress
       // survives. Keys are namespaced under 'wizard:'.
@@ -493,15 +514,33 @@ const ui = {
       // Footer state.
       $("#wizard-back").style.visibility = (this.currentIdx === 0) ? "hidden" : "visible";
       const nextBtn = $("#wizard-next");
+      const isLastStep = (this.currentIdx === this.steps.length - 1);
       // Welcome step uses its own internal CTA so hide footer Next.
-      // Done step swaps Next for Finish, gated on dry_run_seen.
+      // The "done" step gates Next on dry_run_seen so the operator can't
+      // skip past the dry-run on basic edition (the last step). On dev
+      // edition `done` is mid-sequence so the Next-as-finish gating
+      // shifts to the actual last step (`dev_resources`).
       if (id === "welcome") {
         nextBtn.style.display = "none";
-      } else if (id === "done") {
+      } else if (id === "done" && isLastStep) {
         nextBtn.style.display = "";
         nextBtn.textContent = tr("wizard.done.finish_btn");
         nextBtn.disabled = !this.state.dry_run_seen;
         nextBtn.dataset.role = "finish";
+      } else if (isLastStep) {
+        // Dev edition's last step (dev_resources). Finish always enabled
+        // there — the dry-run gate already passed when leaving `done`.
+        nextBtn.style.display = "";
+        nextBtn.textContent = tr("wizard.done.finish_btn");
+        nextBtn.disabled = false;
+        nextBtn.dataset.role = "finish";
+      } else if (id === "done") {
+        // Dev edition: leaving `done` shouldn't be possible until the
+        // operator has either run or skipped the dry-run.
+        nextBtn.style.display = "";
+        nextBtn.textContent = tr("wizard.next");
+        nextBtn.disabled = !this.state.dry_run_seen;
+        nextBtn.dataset.role = "next";
       } else {
         nextBtn.style.display = "";
         nextBtn.textContent = tr("wizard.next");
@@ -1191,6 +1230,224 @@ const ui = {
       }
       if (btn) btn.disabled = false;
       this.render();
+    },
+    // ── Step 7 (dev only): GitHub repo config ──────────────────────
+    // Lets the operator name the source repo Ascendo polls for update
+    // notifications. The Test button does a single GET against the
+    // GitHub releases API with no auth header — works for any public
+    // repo without burning a token.
+    build_github_config(host) {
+      const h = document.createElement("h3");
+      h.textContent = tr("wizard.github.title");
+      host.appendChild(h);
+      const body = document.createElement("p");
+      body.textContent = tr("wizard.github.body");
+      host.appendChild(body);
+      const row = document.createElement("div");
+      row.className = "wizard-dryrun-row";
+      const label = document.createElement("label");
+      label.textContent = tr("wizard.github.label");
+      label.style.marginRight = "0.5rem";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.id = "wizard-gh-repo";
+      input.value = this.state.github_repo || "KasprowiczM/ascendo";
+      input.placeholder = "owner/repo";
+      input.style.minWidth = "260px";
+      input.addEventListener("input", (e) => {
+        this.state.github_repo = e.target.value.trim();
+      });
+      const testBtn = document.createElement("button");
+      testBtn.type = "button";
+      testBtn.textContent = tr("wizard.github.test_btn");
+      const skipLink = document.createElement("button");
+      skipLink.type = "button";
+      skipLink.className = "secondary";
+      skipLink.textContent = tr("wizard.github.skip");
+      skipLink.addEventListener("click", () => this.advance());
+      const status = document.createElement("span");
+      status.className = "dim";
+      status.id = "wizard-gh-status";
+      status.style.fontSize = "0.85rem";
+      status.style.marginLeft = "0.5rem";
+      if (this.state.github_test) {
+        status.textContent = (this.state.github_test.status === "ok")
+          ? tr("wizard.github.test_ok").replace("{tag}", this.state.github_test.tag || "")
+          : tr("wizard.github.test_failed").replace("{error}", this.state.github_test.message || "");
+      }
+      testBtn.addEventListener("click", () => this.testGithubRepo(status));
+      label.appendChild(input);
+      row.appendChild(label);
+      row.appendChild(testBtn);
+      row.appendChild(skipLink);
+      row.appendChild(status);
+      host.appendChild(row);
+    },
+    async testGithubRepo(statusEl) {
+      const repo = (this.state.github_repo || "").trim();
+      if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
+        this.state.github_test = {status: "failed", message: tr("wizard.github.bad_format")};
+        if (statusEl) statusEl.textContent = tr("wizard.github.test_failed")
+          .replace("{error}", tr("wizard.github.bad_format"));
+        return;
+      }
+      if (statusEl) statusEl.textContent = tr("wizard.github.testing");
+      try {
+        const r = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+          headers: {accept: "application/vnd.github+json"},
+        });
+        if (r.status === 404) {
+          this.state.github_test = {status: "failed", message: "404 — no releases yet (this is OK for new repos)"};
+          if (statusEl) statusEl.textContent = tr("wizard.github.test_404");
+          return;
+        }
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        const tag = (data && data.tag_name) || "(unknown)";
+        this.state.github_test = {status: "ok", tag};
+        if (statusEl) statusEl.textContent = tr("wizard.github.test_ok").replace("{tag}", tag);
+      } catch (e) {
+        this.state.github_test = {status: "failed", message: String(e)};
+        if (statusEl) statusEl.textContent = tr("wizard.github.test_failed")
+          .replace("{error}", String(e));
+      }
+    },
+    // ── Step 8 (dev only): Dev-sync provider setup ─────────────────
+    // GET /sync/config-status reports whether .dev_sync_config.json
+    // exists + parses + has a provider; POST /sync/setup shells out to
+    // dev-sync/dev-sync-provider-setup.sh. Both are gated by the
+    // EditionGateMiddleware so they never reach this step on basic.
+    build_dev_sync_setup(host) {
+      const h = document.createElement("h3");
+      h.textContent = tr("wizard.devsync.title");
+      host.appendChild(h);
+      const body = document.createElement("p");
+      body.textContent = tr("wizard.devsync.body");
+      host.appendChild(body);
+      const statusBox = document.createElement("div");
+      statusBox.className = "wizard-admin-callout";
+      statusBox.id = "wizard-devsync-status-box";
+      const statusH = document.createElement("h4");
+      statusH.textContent = tr("wizard.devsync.status_h");
+      const statusLine = document.createElement("p");
+      statusLine.id = "wizard-devsync-status";
+      statusLine.textContent = tr("wizard.devsync.checking");
+      statusBox.appendChild(statusH);
+      statusBox.appendChild(statusLine);
+      host.appendChild(statusBox);
+      const row = document.createElement("div");
+      row.className = "wizard-dryrun-row";
+      const setupBtn = document.createElement("button");
+      setupBtn.type = "button";
+      setupBtn.id = "wizard-devsync-setup-btn";
+      setupBtn.textContent = tr("wizard.devsync.setup_btn");
+      setupBtn.addEventListener("click", () => this.runDevSyncSetup());
+      const skipLink = document.createElement("button");
+      skipLink.type = "button";
+      skipLink.className = "secondary";
+      skipLink.textContent = tr("wizard.devsync.skip");
+      skipLink.addEventListener("click", () => this.advance());
+      row.appendChild(setupBtn);
+      row.appendChild(skipLink);
+      host.appendChild(row);
+      const out = document.createElement("pre");
+      out.className = "wizard-dryrun-output";
+      out.id = "wizard-devsync-out";
+      host.appendChild(out);
+      // Probe status on entry; cached result wins to avoid hammering disk
+      // on every render() pass.
+      if (!this.state.dev_sync_config) {
+        this.refreshDevSyncStatus(statusLine);
+      } else {
+        this.renderDevSyncStatus(statusLine, this.state.dev_sync_config);
+      }
+    },
+    renderDevSyncStatus(el, cfg) {
+      if (!el) return;
+      if (cfg.present && cfg.valid) {
+        el.textContent = tr("wizard.devsync.status_present")
+          .replace("{provider}", cfg.provider || "(no provider set)")
+          .replace("{path}", cfg.path || "");
+      } else if (cfg.present && !cfg.valid) {
+        el.textContent = tr("wizard.devsync.status_invalid").replace("{path}", cfg.path || "");
+      } else {
+        el.textContent = tr("wizard.devsync.status_missing").replace("{path}", cfg.path || "");
+      }
+    },
+    async refreshDevSyncStatus(el) {
+      try {
+        const cfg = await api.get("/sync/config-status");
+        this.state.dev_sync_config = cfg;
+        this.renderDevSyncStatus(el, cfg);
+      } catch (e) {
+        if (el) el.textContent = tr("wizard.devsync.status_error").replace("{error}", String(e));
+      }
+    },
+    async runDevSyncSetup() {
+      const out = $("#wizard-devsync-out");
+      const btn = $("#wizard-devsync-setup-btn");
+      const statusLine = $("#wizard-devsync-status");
+      if (out) out.textContent = tr("wizard.devsync.running") + "\n";
+      if (btn) btn.disabled = true;
+      try {
+        const r = await api.post("/sync/setup", {});
+        this.state.dev_sync_setup_run = r;
+        if (out) {
+          const lines = [];
+          if (r.stdout) lines.push("--- stdout ---", r.stdout);
+          if (r.stderr) lines.push("--- stderr ---", r.stderr);
+          lines.push(`--- exit code: ${r.exit_code} ---`);
+          out.textContent = lines.join("\n");
+        }
+        // Re-probe — config may now exist.
+        await this.refreshDevSyncStatus(statusLine);
+      } catch (e) {
+        this.state.dev_sync_setup_run = {ok: false, error: String(e)};
+        if (out) out.textContent = tr("wizard.devsync.setup_failed").replace("{error}", String(e));
+      }
+      if (btn) btn.disabled = false;
+    },
+    // ── Step 9 (dev only): Developer resources ────────────────────
+    // Static reference list. PLAN.md / HANDOFF.md ride in the dev-sync
+    // overlay so we render them as plain text rather than clickable
+    // links — those files are never served by the dashboard.
+    build_dev_resources(host) {
+      const h = document.createElement("h3");
+      h.textContent = tr("wizard.devresources.title");
+      host.appendChild(h);
+      const body = document.createElement("p");
+      body.textContent = tr("wizard.devresources.intro");
+      host.appendChild(body);
+      const ul = document.createElement("ul");
+      // GitHub link is clickable; the rest are descriptive (overlay
+      // files aren't served by the dashboard).
+      const ghRepo = this.state.github_repo || "KasprowiczM/ascendo";
+      const ghLi = document.createElement("li");
+      const ghA = document.createElement("a");
+      ghA.href = `https://github.com/${ghRepo}`;
+      ghA.target = "_blank";
+      ghA.rel = "noopener noreferrer";
+      ghA.textContent = tr("wizard.devresources.github").replace("{repo}", ghRepo);
+      ghLi.appendChild(ghA);
+      ul.appendChild(ghLi);
+      [
+        ["plan", "PLAN.md"],
+        ["handoff", "HANDOFF.md"],
+        ["guide", "DEV_GUIDE.md"],
+      ].forEach(([key, file]) => {
+        const li = document.createElement("li");
+        const code = document.createElement("code");
+        code.textContent = file;
+        li.appendChild(code);
+        li.appendChild(document.createTextNode(" — " + tr(`wizard.devresources.${key}`)));
+        ul.appendChild(li);
+      });
+      host.appendChild(ul);
+      const note = document.createElement("p");
+      note.className = "dim";
+      note.style.fontSize = "0.85rem";
+      note.textContent = tr("wizard.devresources.overlay_note");
+      host.appendChild(note);
     },
     async finalize(skip) {
       const choices = {

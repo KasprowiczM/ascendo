@@ -222,14 +222,18 @@ print_step "apt-get upgrade (streaming)"
 echo
 # Emit start marker for the dashboard progress bar before apt streams.
 printf 'PROGRESS|start|apt-upgrade|%d|apt upgrade\n' "${#_upgradable[@]}"
+_stream_emit ">>> apt-get upgrade (${#_upgradable[@]} pkgs)"
 # Stream apt output through tee to BOTH the per-phase log and a parser that
 # emits one human-friendly line per package, plus a JSON sidecar item.
 # Dpkg::Progress-Fancy=0 keeps lines plain (no terminal-resize escape codes).
+# When ASCENDO_STREAM_LOG is set, we ALSO append a copy via _stream_tee so
+# the dashboard's SSE Run Center sees apt's live output (parity with macOS).
 set +e
 sudo apt-get upgrade "${APT_OPTS[@]}" \
     -o Dpkg::Progress-Fancy=0 \
     -o Dpkg::Use-Pty=0 2>&1 \
 | tee -a "${LOG_FILE}" \
+| _stream_tee \
 | awk -v total=${#_upgradable[@]} '
     BEGIN { i = 0 }
     /^Setting up / {
@@ -283,20 +287,35 @@ else
 fi
 
 print_step "apt-get dist-upgrade"
+_stream_emit ">>> apt-get dist-upgrade"
 dist_rc=0
-if sudo apt-get dist-upgrade "${APT_OPTS[@]}" >> "${LOG_FILE}" 2>&1; then
+# Capture combined output to a temp file so we can tail it on failure.
+_du_log="$(mktemp 2>/dev/null || echo /tmp/ascendo-apt-dist-upgrade.$$)"
+if sudo apt-get dist-upgrade "${APT_OPTS[@]}" >"${_du_log}" 2>&1; then
+    [[ -s "${_du_log}" ]] && cat "${_du_log}" >> "${LOG_FILE}"
+    [[ -s "${_du_log}" && -n "${ASCENDO_STREAM_LOG:-}" ]] \
+        && cat "${_du_log}" >> "${ASCENDO_STREAM_LOG}" 2>/dev/null
     print_ok
     json_add_item id="apt:dist-upgrade" action="dist-upgrade" result="ok"
     json_count_ok
 else
     dist_rc=$?
+    [[ -s "${_du_log}" ]] && cat "${_du_log}" >> "${LOG_FILE}"
+    [[ -s "${_du_log}" && -n "${ASCENDO_STREAM_LOG:-}" ]] \
+        && cat "${_du_log}" >> "${ASCENDO_STREAM_LOG}" 2>/dev/null
     print_warn "apt-get dist-upgrade non-zero (${dist_rc})"
     if grep -qiE "nvidia-dkms|dkms.*nvidia" "${LOG_FILE}" 2>/dev/null; then
         json_add_diag warn APT-DKMS-NVIDIA "dist-upgrade hit NVIDIA DKMS build error"
     fi
+    _du_tail="$(_stderr_tail "${_du_log}")"
+    if [[ -n "$_du_tail" ]]; then
+        json_add_diag warn APT-DIST-UPGRADE-FAIL \
+            "apt-get dist-upgrade exited ${dist_rc} — last output: ${_du_tail}"
+    fi
     json_add_item id="apt:dist-upgrade" action="dist-upgrade" result="warn"
     json_count_warn
 fi
+rm -f "${_du_log}" 2>/dev/null
 
 if [[ $upgrade_rc -ne 0 && $dist_rc -ne 0 ]]; then
     json_add_diag error APT-UPGRADE-BOTH-FAILED "both upgrade and dist-upgrade returned non-zero"

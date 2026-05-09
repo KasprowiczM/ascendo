@@ -1,17 +1,29 @@
 Package: ascendo
-Source: ubuntu-aktualizacje
-Version: 0.3.0
+Source: ascendo
+Version: 0.0.7
 Section: admin
 Priority: optional
 Architecture: all
-Depends: bash (>= 5.0), python3 (>= 3.11), python3-venv, git, util-linux, sudo, apt
-Recommends: timeshift | etckeeper, snapd, fwupd, libsecret-tools
+Depends: bash (>= 5.0),
+ python3 (>= 3.11),
+ python3-pip,
+ python3-venv,
+ git,
+ curl,
+ jq,
+ ca-certificates,
+ util-linux,
+ sudo
+Recommends: timeshift | etckeeper, snapd, flatpak, fwupd, libsecret-tools
+Suggests: nodejs (>= 18), npm
 Maintainer: Mateusz Kasprowicz <gaipro.mk@gmail.com>
-Homepage: https://github.com/KasprowiczM/Ubuntu_Aktualizacje
-Description: One-command Ubuntu system update manager with dashboard
- Ubuntu_Aktualizacje is a hybrid CLI + local FastAPI dashboard that drives
- a 5-phase per-category update pipeline (apt, snap, brew, npm, pip,
- flatpak, drivers, inventory). Each run emits structured JSON sidecars
- (schema v1) so the state of every update is auditable. Includes
- single-prompt sudo, live progress, snapshot integration (timeshift /
- etckeeper), Prometheus /metrics, and Markdown report export.
+Homepage: https://github.com/KasprowiczM/ascendo
+Description: Cross-platform unified updates orchestrator (CLI + dashboard)
+ Ascendo is a hybrid CLI + local FastAPI dashboard + Tauri 2.x desktop
+ shell that drives a 5-phase per-category update pipeline across
+ Linux (apt/snap/flatpak/brew/npm/pip/drivers), macOS (brew/mas/
+ softwareupdate/web/launchctl) and Windows (winget/msstore/MSI/
+ Windows Update). Each run emits structured JSON sidecars (schema v1)
+ so the state of every update is auditable. Includes single-prompt
+ sudo, live progress streaming over SSE, snapshot integration
+ (timeshift / etckeeper), and a localizable web dashboard.

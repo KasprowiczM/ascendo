@@ -34,14 +34,21 @@ outdated=$(run_as_user "${NPM_BIN}" outdated -g --json 2>/dev/null || echo '{}')
 
 # ── 2. npm update -g ──────────────────────────────────────────────────────────
 print_step "npm update -g"
-if run_silent_as_user "${NPM_BIN}" update -g; then
+_stream_emit ">>> npm update -g"
+if run_capture_as_user "${NPM_BIN}" update -g; then
     print_ok
     json_add_item id="npm:update" action="upgrade" result="ok"
     json_count_ok
 else
     print_warn "npm update -g non-zero"
     json_add_item id="npm:update" action="upgrade" result="warn"
-    json_add_diag warn NPM-UPDATE-WARN "npm update -g returned non-zero"
+    _tail="$(_stderr_tail "${_LAST_RUN_OUT_FILE}")"
+    if [[ -n "$_tail" ]]; then
+        json_add_diag warn NPM-UPDATE-WARN \
+            "npm update -g returned non-zero — last output: ${_tail}"
+    else
+        json_add_diag warn NPM-UPDATE-WARN "npm update -g returned non-zero"
+    fi
     json_count_warn
     EXIT_RC=1
 fi
@@ -72,13 +79,22 @@ if [[ -f "$CONFIG_NPM" ]]; then
             json_count_ok
         else
             print_step "npm install -g ${pkg}"
-            if run_silent_as_user "${NPM_BIN}" install -g "$pkg"; then
+            _stream_emit ">>> npm install -g ${pkg}"
+            if run_capture_as_user "${NPM_BIN}" install -g "$pkg"; then
                 print_ok
                 json_add_item id="npm:install:${pkg}" action="install" result="ok"
                 json_count_ok
             else
                 print_warn "install failed"
                 json_add_item id="npm:install:${pkg}" action="install" result="failed"
+                _tail="$(_stderr_tail "${_LAST_RUN_OUT_FILE}")"
+                if [[ -n "$_tail" ]]; then
+                    json_add_diag warn NPM-INSTALL-FAIL \
+                        "npm install -g ${pkg} failed — last output: ${_tail}"
+                else
+                    json_add_diag warn NPM-INSTALL-FAIL \
+                        "npm install -g ${pkg} failed"
+                fi
                 json_count_warn
                 [[ $EXIT_RC -eq 0 ]] && EXIT_RC=1
             fi
@@ -89,14 +105,22 @@ fi
 # ── 4. Force latest for priority AI CLIs ──────────────────────────────────────
 for pkg in "${PRIORITY_AI_CLI_PKGS[@]}"; do
     print_step "npm install -g ${pkg}@latest"
-    if run_silent_as_user "${NPM_BIN}" install -g "${pkg}@latest"; then
+    _stream_emit ">>> npm install -g ${pkg}@latest"
+    if run_capture_as_user "${NPM_BIN}" install -g "${pkg}@latest"; then
         print_ok
         json_add_item id="npm:force-latest:${pkg}" action="reinstall" result="ok"
         json_count_ok
     else
         print_warn "failed"
         json_add_item id="npm:force-latest:${pkg}" action="reinstall" result="failed"
-        json_add_diag warn NPM-AI-CLI-FAIL "failed to force-install ${pkg}@latest"
+        _tail="$(_stderr_tail "${_LAST_RUN_OUT_FILE}")"
+        if [[ -n "$_tail" ]]; then
+            json_add_diag warn NPM-AI-CLI-FAIL \
+                "failed to force-install ${pkg}@latest — last output: ${_tail}"
+        else
+            json_add_diag warn NPM-AI-CLI-FAIL \
+                "failed to force-install ${pkg}@latest"
+        fi
         json_count_warn
         [[ $EXIT_RC -eq 0 ]] && EXIT_RC=1
     fi
