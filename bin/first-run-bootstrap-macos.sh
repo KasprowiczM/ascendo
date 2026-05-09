@@ -126,13 +126,34 @@ brew_install_if_missing jq     jq
 # ── 3. Run install.sh from the canonical repo ────────────────────────────
 step "Run Ascendo installer (install.sh)"
 
-EDITION="${ASCENDO_EDITION:-basic}"
-PROFILE="${ASCENDO_PROFILE:-full}"
+# Resolution priority for edition + profile:
+#   1. Env var ($ASCENDO_EDITION / $ASCENDO_PROFILE) — explicit override
+#   2. Baked marker file shipped inside the .app (Resources/bin-staging/.ascendo-edition)
+#      The DMG builder writes this so each artefact (Ascendo-Basic.dmg vs
+#      Ascendo-Dev.dmg) declares which edition it ships.
+#   3. Default ("basic" / "full")
+#
+# When the .app launches this script, the working directory is somewhere
+# else; resolve our own location to find the sibling Resources/bin-staging.
+BOOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+EDITION_MARKER="$BOOT_DIR/bin-staging/.ascendo-edition"
+PROFILE_MARKER="$BOOT_DIR/bin-staging/.ascendo-profile"
+BAKED_EDITION=""
+BAKED_PROFILE=""
+if [ -f "$EDITION_MARKER" ]; then
+    BAKED_EDITION="$(head -n1 "$EDITION_MARKER" | tr -d '[:space:]' || true)"
+fi
+if [ -f "$PROFILE_MARKER" ]; then
+    BAKED_PROFILE="$(head -n1 "$PROFILE_MARKER" | tr -d '[:space:]' || true)"
+fi
+
+EDITION="${ASCENDO_EDITION:-${BAKED_EDITION:-basic}}"
+PROFILE="${ASCENDO_PROFILE:-${BAKED_PROFILE:-full}}"
 LANG_PICK="${ASCENDO_LANG:-en}"
 NONINTERACTIVE="${ASCENDO_NONINTERACTIVE:-1}"   # default to non-interactive for first-run
 
-info "Edition:  $EDITION"
-info "Profile:  $PROFILE"
+info "Edition:  $EDITION   (baked=${BAKED_EDITION:-none}, env=${ASCENDO_EDITION:-none})"
+info "Profile:  $PROFILE   (baked=${BAKED_PROFILE:-none}, env=${ASCENDO_PROFILE:-none})"
 info "Language: $LANG_PICK"
 
 INSTALLER_URL="https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh"

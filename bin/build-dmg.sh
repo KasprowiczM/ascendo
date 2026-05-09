@@ -3,16 +3,21 @@
 # bin/build-dmg.sh — Build the macOS Ascendo.app + wrap it in a DMG installer.
 # =============================================================================
 #
-# Output: dist/Ascendo-<version>-<arch>.dmg  (sha256 printed at end)
+# Output: dist/Ascendo-<Edition>-<version>-<arch>.dmg  (sha256 printed at end)
 #
 # This is the canonical macOS installer build. It composes the same building
 # blocks as bin/build-installer.ps1 (the Windows side), but produces a .dmg
 # rather than .msi/.exe. End users then drag Ascendo.app to /Applications;
-# on first launch the bundled `first-run-bootstrap-macos.sh` ensures Python
-# 3.11+, git, and curl are present (installing via Homebrew if needed),
-# then runs install.sh --edition basic --profile full.
+# on first launch the bundled `first-run-bootstrap-macos.sh` reads the baked
+# edition from Resources/bin-staging/.ascendo-edition, ensures Python 3.11+,
+# git, curl, jq are present (installing via Homebrew if needed), then runs
+# install.sh --edition <baked> --profile <baked>.
 #
 # Modes / flags:
+#   --edition=basic|dev   Bake the edition into the DMG. Default: basic.
+#                         (Or set ASCENDO_EDITION=dev in the env.)
+#   --profile=cli|web|desktop|full   Default profile the bootstrap installs
+#                         on first run. Default: full.
 #   --skip-tauri          Re-use existing .app under target/release/bundle/macos/
 #                         (useful while iterating on DMG cosmetics).
 #   --skip-deps           Forwarded to launch-desktop-macos.sh (no `npm install`).
@@ -21,6 +26,11 @@
 #   --output=<path>       Override the .dmg output path.
 #   --dry-run             Print what would happen, do nothing.
 #   --help / -h           Show this banner.
+#
+# To build BOTH editions in one go:
+#   bash bin/build-dmg.sh --edition=basic
+#   bash bin/build-dmg.sh --edition=dev
+# Each produces a separate, labeled DMG that can be distributed independently.
 #
 # Environment variables (all optional):
 #   APPLE_CERT_NAME       "Developer ID Application: <Team> (XXXXXXXXXX)"
@@ -58,7 +68,9 @@ NO_SIGN=0
 NO_NOTARIZE=0
 DRY_RUN=0
 OUTPUT_OVERRIDE=""
-VOLNAME="${ASCENDO_DMG_VOLNAME:-Ascendo}"
+EDITION="${ASCENDO_EDITION:-basic}"           # basic | dev
+PROFILE_FOR_DMG="${ASCENDO_PROFILE:-full}"    # cli | web | desktop | full
+VOLNAME="${ASCENDO_DMG_VOLNAME:-}"            # auto-generated below if empty
 
 show_help() {
     sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'
@@ -73,6 +85,10 @@ while [ $# -gt 0 ]; do
         --no-notarize)  NO_NOTARIZE=1 ;;
         --dry-run)      DRY_RUN=1 ;;
         --output=*)     OUTPUT_OVERRIDE="${1#*=}" ;;
+        --edition=*)    EDITION="${1#*=}" ;;
+        --edition)      shift; EDITION="${1:-}" ;;
+        --profile=*)    PROFILE_FOR_DMG="${1#*=}" ;;
+        --profile)      shift; PROFILE_FOR_DMG="${1:-}" ;;
         --help|-h)      show_help ;;
         \#*)            ;;  # tolerate accidental comment fragments
         *)
@@ -81,6 +97,23 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
+
+# Validate edition + profile
+case "$EDITION" in
+    basic|dev) ;;
+    *) printf "build-dmg.sh: --edition must be basic or dev (got: %s)\n" "$EDITION" >&2; exit 2 ;;
+esac
+case "$PROFILE_FOR_DMG" in
+    cli|web|desktop|full) ;;
+    *) printf "build-dmg.sh: --profile must be cli/web/desktop/full (got: %s)\n" "$PROFILE_FOR_DMG" >&2; exit 2 ;;
+esac
+
+# Edition title-case for filenames + DMG volume name.
+case "$EDITION" in
+    basic) EDITION_LABEL="Basic" ;;
+    dev)   EDITION_LABEL="Dev"   ;;
+esac
+[ -z "$VOLNAME" ] && VOLNAME="Ascendo $EDITION_LABEL"
 
 step() { printf "\n==> %s\n" "$1"; }
 ok()   { printf "  [OK] %s\n" "$1"; }
@@ -102,6 +135,8 @@ VERSION_FILE="$REPO_ROOT/core/ascendo/__version__.py"
 VERSION="$(awk -F'"' '/__version__/ {print $2}' "$VERSION_FILE")"
 [ -n "$VERSION" ] || fail "could not parse __version__ from $VERSION_FILE"
 ok "version: $VERSION"
+ok "edition: $EDITION  (volume name: $VOLNAME)"
+ok "profile: $PROFILE_FOR_DMG"
 
 ARCH="$(uname -m)"        # arm64 on Apple Silicon, x86_64 on Intel
 case "$ARCH" in
@@ -111,7 +146,7 @@ case "$ARCH" in
 esac
 ok "arch:    $ARCH_LABEL"
 
-DMG_FILENAME="Ascendo-${VERSION}-${ARCH_LABEL}.dmg"
+DMG_FILENAME="Ascendo-${EDITION_LABEL}-${VERSION}-${ARCH_LABEL}.dmg"
 if [ -n "$OUTPUT_OVERRIDE" ]; then
     DMG_OUT="$OUTPUT_OVERRIDE"
 else
@@ -186,13 +221,20 @@ if [ "$DRY_RUN" -eq 0 ]; then
     if [ -d "$BIN_SRC/user-scripts" ]; then
         cp -R "$BIN_SRC/user-scripts" "$BIN_STAGING/user-scripts"
     fi
+    # Bake the edition + profile marker. The first-run bootstrap reads this
+    # priority order: shipped marker > $ASCENDO_EDITION env var > "basic"
+    # default. So a user who downloads Ascendo-Dev-VERSION.dmg gets dev
+    # edition without setting any env var, and a user who downloads
+    # Ascendo-Basic-VERSION.dmg gets basic — clear separation per artefact.
+    printf '%s\n' "$EDITION"          > "$BIN_STAGING/.ascendo-edition"
+    printf '%s\n' "$PROFILE_FOR_DMG"  > "$BIN_STAGING/.ascendo-profile"
     # Sanity: bundle.resources requires at least one file matching the glob.
     if [ -z "$(ls -A "$BIN_STAGING" 2>/dev/null)" ]; then
         # Drop a placeholder so Tauri's glob doesn't return empty.
         printf "Ascendo bin-staging — placeholder\n" > "$BIN_STAGING/.gitkeep"
     fi
 fi
-ok "staged: $BIN_STAGING"
+ok "staged: $BIN_STAGING (edition=$EDITION profile=$PROFILE_FOR_DMG)"
 
 # ── 4. Build the .app via Tauri (delegate to launch-desktop-macos.sh) ────
 APP_PATH="$BUNDLE_DIR/macos/Ascendo.app"
