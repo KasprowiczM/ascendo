@@ -164,6 +164,36 @@ else
     warn "first-run-bootstrap-macos.sh not found — bundle will be missing the post-install smart-deps step"
 fi
 
+# ── 3b. Mirror bin/user-scripts + helpers into bin-staging/ ────────────────
+# tauri.conf.json's bundle.resources references "bin-staging/**/*" so the
+# helper shims (ascendo_doctor, ascendo_maintenance, etc.) ship inside the
+# .app's Resources/. Without this, Tauri's build aborts with
+# `glob pattern bin-staging/**/* path not found or didn't match any files.`
+# Mirrors `bin/build-installer.ps1`'s equivalent step but with the POSIX
+# scripts and macOS-only first-run-bootstrap.
+step "Mirror bin/user-scripts into bin-staging/"
+BIN_SRC="$REPO_ROOT/bin"
+BIN_STAGING="$TAURI_DIR/src-tauri/bin-staging"
+if [ "$DRY_RUN" -eq 0 ]; then
+    rm -rf "$BIN_STAGING"
+    mkdir -p "$BIN_STAGING"
+    # Whitelisted top-level helpers — POSIX bootstraps + macOS-relevant scripts.
+    for f in first-run-bootstrap-macos.sh first-run-bootstrap-linux.sh launch-desktop-macos.sh; do
+        [ -f "$BIN_SRC/$f" ] && cp -f "$BIN_SRC/$f" "$BIN_STAGING/$f" && chmod +x "$BIN_STAGING/$f" 2>/dev/null || true
+    done
+    # bin/user-scripts/ tree (POSIX scripts have no extension; .ps1 are
+    # Windows-only but harmless if shipped — keep the whole tree for parity).
+    if [ -d "$BIN_SRC/user-scripts" ]; then
+        cp -R "$BIN_SRC/user-scripts" "$BIN_STAGING/user-scripts"
+    fi
+    # Sanity: bundle.resources requires at least one file matching the glob.
+    if [ -z "$(ls -A "$BIN_STAGING" 2>/dev/null)" ]; then
+        # Drop a placeholder so Tauri's glob doesn't return empty.
+        printf "Ascendo bin-staging — placeholder\n" > "$BIN_STAGING/.gitkeep"
+    fi
+fi
+ok "staged: $BIN_STAGING"
+
 # ── 4. Build the .app via Tauri (delegate to launch-desktop-macos.sh) ────
 APP_PATH="$BUNDLE_DIR/macos/Ascendo.app"
 
