@@ -191,7 +191,13 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
             )
     if not rows:
         return 0
+    touched_categories = {row["category"] for row in rows}
     try:
+        for cat in touched_categories:
+            try:
+                inventory_db.clear_category(cat)
+            except Exception:  # noqa: BLE001
+                _log.exception("inventory_db: clear_category(%s) failed", cat)
         return inventory_db.bulk_upsert(rows)
     except Exception:  # noqa: BLE001
         _log.exception("inventory_db: post-run flush failed")

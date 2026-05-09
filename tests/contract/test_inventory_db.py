@@ -422,3 +422,81 @@ def test_inventory_db_refresh_drops_stale_rows_for_shrunk_manifest(
     assert names == {"wget", "curl"}, (
         f"Stale row leaked through DB refresh: {sorted(names)}"
     )
+
+
+def test_post_run_flush_drops_stale_rows(tmp_path: Path) -> None:
+    """Regression: ``_flush_run_to_inventory_db`` must clear each touched
+    category before bulk-upserting the new sidecar rows.
+
+    The bug: post-run flush in ``run_async.py`` was calling
+    ``bulk_upsert(rows)`` directly, leaving orphan rows from prior runs
+    when discovery shrank (e.g. a brew formula uninstalled, a web app
+    that aged out of the registry). Live discovery would then report N
+    items but the DB would hold N+K, breaking the Apps↔Categories
+    parity contract. Documented at HANDOFF Sesja 34 hygiene-followup;
+    fix in Sesja 45.
+
+    The fix: ``_flush_run_to_inventory_db`` now calls
+    ``inventory_db.clear_category(cat)`` for each category present in
+    ``rows`` before the upsert.
+    """
+    import json
+    from ascendo.orchestrator.run_async import _flush_run_to_inventory_db
+
+    db_path = tmp_path / "inv.db"
+    db = InventoryDB(db_path)
+
+    # Seed the DB with 3 brew rows from a previous run.
+    db.bulk_upsert(
+        [
+            {"category": "brew", "name": "wget", "installed": "1.0",
+             "candidate": "1.0", "status": "up_to_date"},
+            {"category": "brew", "name": "curl", "installed": "1.0",
+             "candidate": "1.0", "status": "up_to_date"},
+            {"category": "brew", "name": "jq", "installed": "1.0",
+             "candidate": "1.0", "status": "up_to_date"},
+        ],
+    )
+    assert db.count(category="brew") == 3
+
+    # Write a hand-rolled ascendo/v1 sidecar containing only 2 of the 3
+    # items (jq dropped between runs). Using the canonical fixture as a
+    # base avoids replicating Sidecar's full Pydantic surface in tests.
+    fixture = (
+        Path(__file__).resolve().parent.parent
+        / "fixtures" / "sidecars" / "ascendo_v1_apply_winget.json"
+    )
+    payload = json.loads(fixture.read_text(encoding="utf-8"))
+    payload["category"] = "brew"
+    payload["phase"] = "check"
+    payload["items"] = [
+        {**(payload["items"][0]), "id": "brew:wget", "name": "wget",
+         "category": "brew", "source": {"type": "brew"},
+         "current_version": "1.0", "target_version": "1.0",
+         "status": "up_to_date"},
+        {**(payload["items"][0]), "id": "brew:curl", "name": "curl",
+         "category": "brew", "source": {"type": "brew"},
+         "current_version": "1.0", "target_version": "1.0",
+         "status": "up_to_date"},
+    ]
+    payload["summary"] = {
+        "total": 2, "success": 0, "up_to_date": 2,
+        "failed": 0, "skipped": 0, "planned": 0, "partial": 0, "triggered": 0,
+    }
+    payload["status"] = "success"
+
+    run_dir = tmp_path / "runs" / "abc-123"
+    run_dir.mkdir(parents=True)
+    (run_dir / "check__brew.json").write_text(
+        json.dumps(payload), encoding="utf-8",
+    )
+
+    # Flush — this must clear `jq` and replace with the 2 from the sidecar.
+    flushed = _flush_run_to_inventory_db(run_dir, db)
+    assert flushed == 2
+
+    rows = db.query(category="brew")
+    names = {r["name"] for r in rows}
+    assert names == {"wget", "curl"}, (
+        f"Stale row leaked through post-run flush: {sorted(names)}"
+    )
