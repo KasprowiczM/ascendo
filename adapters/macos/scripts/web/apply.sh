@@ -83,15 +83,36 @@ COUNT_SKIPPED=0
 COUNT_PLANNED=0
 COUNT_UPTODATE=0
 
+# Sesja 47 perf fix: parallel probe phase, then sequential dispatch.
+# The probe step (HTTP) parallelizes safely; the actual install step
+# (DMG mount, /Applications copy, sudo prompt) does NOT — it stays
+# sequential so we don't fight ourselves on filesystem + UI.
+INDICES_FILE="$OUTPUT_DIR/$RUN_ID/_web_apply_idx.list"
+RESULTS_DIR="$OUTPUT_DIR/$RUN_ID/_web_apply_probes"
+mkdir -p "$(dirname "$INDICES_FILE")" "$RESULTS_DIR" 2>/dev/null
+: > "$INDICES_FILE"
+export ASCENDO_WEB_ADAPTER_LIB="$ADAPTER_LIB"
+
+# ── Pass 1: build per-idx work files (sequential, fast) ──────────────
+WORK_IDX=0
 while IFS= read -r SLUG; do
     [ -z "$SLUG" ] && continue
     in_filter "$SLUG" || continue
 
     CFG=$(python3 "$REG_SHIM" "${_reg_args[@]}" --get-app "$SLUG" 2>/dev/null) || continue
-    BUNDLE_ID=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("bundle_id",""))')
-    HANDLER=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("handler",""))')
-    DISPLAY_NAME=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("display_name",""))')
-    APP_PATH=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("app_path") or "")')
+    # Single python3 invocation: extract all 4 fields in one fork.
+    eval "$(printf '%s' "$CFG" | python3 -c '
+import json, sys, shlex
+d = json.load(sys.stdin)
+fields = {
+    "BUNDLE_ID":    d.get("bundle_id", ""),
+    "HANDLER":      d.get("handler", ""),
+    "DISPLAY_NAME": d.get("display_name", ""),
+    "APP_PATH":     d.get("app_path") or "",
+}
+for k, v in fields.items():
+    print(f"{k}={shlex.quote(v)}")
+' 2>/dev/null)"
     [ -z "$APP_PATH" ] && APP_PATH="/Applications/${DISPLAY_NAME}.app"
 
     INSTALLED=$(_web_installed_version "$APP_PATH")
@@ -103,23 +124,39 @@ while IFS= read -r SLUG; do
         continue
     fi
 
-    # ── Step 1: probe candidate version (Tier-A handlers only) ──────────
-    # Order matters: candidate probe BEFORE the defer-if-running check,
-    # so apps that are already up-to-date don't get misleadingly marked
-    # "deferred_app_in_use" just because the user has them open.
-    # Tier-B handlers (keystone/squirrel/builtin) have no synchronous
-    # candidate — daemon reconciles, so we always invoke them.
-    CAND=""
+    # Stash everything keyed by idx for pass 2 (parallel) + pass 3 (sequential).
+    printf '%s' "$CFG"          > "$RESULTS_DIR/${WORK_IDX}.cfg.json"
+    printf '%s' "$SLUG"         > "$RESULTS_DIR/${WORK_IDX}.slug"
+    printf '%s' "$HANDLER"      > "$RESULTS_DIR/${WORK_IDX}.handler"
+    printf '%s' "$INSTALLED"    > "$RESULTS_DIR/${WORK_IDX}.installed"
+    printf '%s' "$BUNDLE_ID"    > "$RESULTS_DIR/${WORK_IDX}.bundle_id"
+    printf '%s' "$DISPLAY_NAME" > "$RESULTS_DIR/${WORK_IDX}.display_name"
+    printf '%s' "$APP_PATH"     > "$RESULTS_DIR/${WORK_IDX}.app_path"
+    printf '%d\n' "$WORK_IDX"   >> "$INDICES_FILE"
+    WORK_IDX=$((WORK_IDX + 1))
+done < <(python3 "$REG_SHIM" "${_reg_args[@]}" --list-slugs 2>/dev/null)
+
+# ── Pass 2: parallel HTTP probes ──────────────────────────────────────
+if [ "$DRY_RUN" != "true" ]; then
+    _web_probe_parallel "$INDICES_FILE" "$RESULTS_DIR"
+fi
+
+# ── Pass 3: sequential dispatch (reads probe results + emits items) ──
+i=0
+while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
+    SLUG=$(cat "$RESULTS_DIR/${i}.slug" 2>/dev/null)
+    HANDLER=$(cat "$RESULTS_DIR/${i}.handler" 2>/dev/null)
+    INSTALLED=$(cat "$RESULTS_DIR/${i}.installed" 2>/dev/null)
+    BUNDLE_ID=$(cat "$RESULTS_DIR/${i}.bundle_id" 2>/dev/null)
+    DISPLAY_NAME=$(cat "$RESULTS_DIR/${i}.display_name" 2>/dev/null)
+    APP_PATH=$(cat "$RESULTS_DIR/${i}.app_path" 2>/dev/null)
+    CFG=$(cat "$RESULTS_DIR/${i}.cfg.json" 2>/dev/null)
+    CAND=$(_web_read_probe_result "$RESULTS_DIR" "$i")
+    i=$((i + 1))
+
     case "$HANDLER" in
         sparkle|github_dmg|release_feed|docker|msupdate|omaha)
-            case "$HANDLER" in
-                sparkle)      CAND=$(sparkle_check      "$SLUG" "$CFG" 2>/dev/null) ;;
-                github_dmg)   CAND=$(github_dmg_check   "$SLUG" "$CFG" 2>/dev/null) ;;
-                release_feed) CAND=$(release_feed_check "$SLUG" "$CFG" 2>/dev/null) ;;
-                docker)       CAND=$(docker_check       "$SLUG" "$CFG" 2>/dev/null) ;;
-                msupdate)     CAND=$(msupdate_check     "$SLUG" "$CFG" 2>/dev/null) ;;
-                omaha)        CAND=$(omaha_check        "$SLUG" "$CFG" 2>/dev/null) ;;
-            esac
+            # CAND came from parallel pass 2 above (already probed).
             # Skip apply when installed >= candidate OR candidate is a
             # pre-release the user didn't ask for. Common cases:
             #   * Spotify 1.2.89.539 installed; brew API still on 1.2.88.483
@@ -235,7 +272,10 @@ while IFS= read -r SLUG; do
         json_add_message "error" "${SLUG}: handler exit ${rc}: ${tail_msg}"
         COUNT_FAILED=$((COUNT_FAILED + 1))
     fi
-done < <(python3 "$REG_SHIM" "${_reg_args[@]}" --list-slugs 2>/dev/null)
+done
+
+# Clean up temp work artefacts (keep the sidecar)
+rm -rf "$RESULTS_DIR" "$INDICES_FILE" 2>/dev/null
 
 if [ "$DRY_RUN" = "true" ]; then
     json_add_message "info" "web apply (dry-run): ${COUNT_PLANNED} planned, ${COUNT_SKIPPED} skipped"

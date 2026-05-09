@@ -108,6 +108,108 @@ _should_skip_upgrade() {
 }
 
 # ============================================================
+# Parallel probe helper (Sesja 47 — speed up web phase)
+# ============================================================
+#
+# The check + apply phases each iterate ~30+ web apps and spend ~3s
+# per item on serial HTTP probes. With 8-way parallelism this collapses
+# to ~10-15s total instead of ~100s.
+#
+# Contract (callable from any script that has sourced this file + the
+# handler libs):
+#
+#   _web_probe_parallel <indices_file> <results_dir> [parallelism]
+#
+# Where <indices_file> contains one numeric idx per line. Each idx must
+# have these companion files in <results_dir>:
+#
+#     <idx>.slug         — registry slug (e.g. "brave")
+#     <idx>.handler      — handler type (e.g. "release_feed")
+#     <idx>.cfg.json     — per-app CFG JSON
+#
+# We use newline-separated indices instead of TSV rows because BSD
+# xargs collapses embedded tabs to spaces when substituting {} —
+# losing the field boundaries.
+#
+# After return, <results_dir>/<idx>.txt contains the probe output
+# (latest version string, or empty / `__GH_RATE_LIMITED__`).
+#
+# Defaults: parallelism = $ASCENDO_WEB_PARALLEL or 8.
+# Bash 3.2 compatible. Uses xargs -P (BSD + GNU support it).
+# ============================================================
+
+_web_probe_parallel() {
+    local indices_file="$1"
+    local results_dir="$2"
+    local parallelism="${3:-${ASCENDO_WEB_PARALLEL:-8}}"
+    [ -z "$indices_file" ] || [ ! -s "$indices_file" ] && return 0
+    mkdir -p "$results_dir" 2>/dev/null
+
+    # Generate a self-contained probe script that xargs re-invokes per
+    # work item. We can't pass bash functions to xargs-spawned subshells;
+    # the only portable surface is filesystem + argv. The script sources
+    # the handler libs once per worker process then dispatches.
+    #
+    # All per-item state (slug, handler, cfg) comes from files keyed by
+    # idx, so the only argv needed is the idx itself.
+    local probe_script="$results_dir/_probe_one.sh"
+    local adapter_lib="${ASCENDO_WEB_ADAPTER_LIB:-${ADAPTER_LIB:-}}"
+    if [ -z "$adapter_lib" ]; then
+        adapter_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    fi
+    cat >"$probe_script" <<'PROBE_EOF'
+#!/usr/bin/env bash
+# Per-work-item probe runner spawned by xargs. argv: <adapter_lib> <results_dir> <idx>
+set -o pipefail
+ADAPTER_LIB="$1"
+RESULTS_DIR="$2"
+idx="$3"
+[ -z "$idx" ] && exit 0
+slug=$(cat "$RESULTS_DIR/${idx}.slug" 2>/dev/null)
+handler=$(cat "$RESULTS_DIR/${idx}.handler" 2>/dev/null)
+cfg_file="$RESULTS_DIR/${idx}.cfg.json"
+if [ ! -f "$cfg_file" ] || [ -z "$handler" ]; then
+    : > "$RESULTS_DIR/${idx}.txt"
+    exit 0
+fi
+# shellcheck source=/dev/null
+. "$ADAPTER_LIB/ascendo_web.sh"
+for h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed omaha; do
+    # shellcheck source=/dev/null
+    . "$ADAPTER_LIB/handlers/${h}.sh"
+done
+cfg=$(cat "$cfg_file")
+latest=""
+case "$handler" in
+    sparkle)      latest=$(sparkle_check "$slug" "$cfg" 2>/dev/null || true) ;;
+    github_dmg)   latest=$(github_dmg_check "$slug" "$cfg" 2>/dev/null || true) ;;
+    keystone)     latest=$(keystone_check "$slug" "$cfg" 2>/dev/null || true) ;;
+    msupdate)     latest=$(msupdate_check "$slug" "$cfg" 2>/dev/null || true) ;;
+    docker)       latest=$(docker_check "$slug" "$cfg" 2>/dev/null || true) ;;
+    release_feed) latest=$(release_feed_check "$slug" "$cfg" 2>/dev/null || true) ;;
+    omaha)        latest=$(omaha_check "$slug" "$cfg" 2>/dev/null || true) ;;
+    squirrel|builtin) latest="" ;;
+esac
+printf '%s' "$latest" | tr -d '[:space:]' > "$RESULTS_DIR/${idx}.txt"
+PROBE_EOF
+    chmod +x "$probe_script" 2>/dev/null
+
+    # xargs -P parallelism. -I{} replaces {} with each line (idx).
+    # newline-separated input → no tab-collapse problem.
+    /usr/bin/xargs -P "$parallelism" -I{} \
+        bash "$probe_script" "$adapter_lib" "$results_dir" "{}" \
+        < "$indices_file" 2>/dev/null
+}
+
+# _web_read_probe_result <results_dir> <idx>
+# Echo the probed candidate version (or empty) for work-item idx.
+_web_read_probe_result() {
+    local results_dir="$1" idx="$2"
+    local f="$results_dir/${idx}.txt"
+    [ -f "$f" ] && cat "$f" || true
+}
+
+# ============================================================
 # Process probes
 # ============================================================
 

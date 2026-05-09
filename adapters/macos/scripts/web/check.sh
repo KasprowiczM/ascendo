@@ -86,31 +86,43 @@ COUNT_UTD=0
 COUNT_SKIPPED=0
 COUNT_FAILED=0
 
+# Working files for the parallel-probe pipeline (Sesja 47 perf fix).
+# We split the loop into two passes:
+#   1. Sequential: build per-idx files in RESULTS_DIR (slug, handler,
+#      installed, cfg.json) and a newline-separated indices file.
+#   2. Parallel: xargs -P 8 fans out the actual HTTP probes,
+#      one xargs line per idx → no tab-collapse issue.
+#   3. Sequential: read results + emit sidecar items in deterministic order.
+INDICES_FILE="$OUTPUT_DIR/$RUN_ID/_web_check_idx.list"
+RESULTS_DIR="$OUTPUT_DIR/$RUN_ID/_web_check_probes"
+mkdir -p "$(dirname "$INDICES_FILE")" "$RESULTS_DIR" 2>/dev/null
+: > "$INDICES_FILE"
+
+# Make ascendo_web.sh's parallel helper aware of the adapter lib path.
+export ASCENDO_WEB_ADAPTER_LIB="$ADAPTER_LIB"
+
+# ── Pass 1: build work list (sequential, fast) ────────────────────────
+WORK_IDX=0
 while IFS= read -r DISC_LINE; do
     [ -z "$DISC_LINE" ] && continue
 
-    BUNDLE_ID=$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
-import json, os
+    # Single python3 invocation extracts all 5 fields → eliminates 4
+    # cold-start fork penalties per app (was ~150ms × 5 calls per item).
+    eval "$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
+import json, os, shlex
 d = json.loads(os.environ["ASCENDO_WEB_LINE"])
-print(d.get("bundle_id", ""))')
-    [ -z "$BUNDLE_ID" ] && continue
-    APP_PATH=$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
-import json, os
-d = json.loads(os.environ["ASCENDO_WEB_LINE"])
-print(d.get("app_path", ""))')
-    INSTALLED=$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
-import json, os
-d = json.loads(os.environ["ASCENDO_WEB_LINE"])
-print(d.get("version", ""))')
-    DISPLAY_NAME=$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
-import json, os
-d = json.loads(os.environ["ASCENDO_WEB_LINE"])
-print(d.get("display_name", ""))')
-    DISC_HANDLER=$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
-import json, os
-d = json.loads(os.environ["ASCENDO_WEB_LINE"])
-print(d.get("fingerprint_handler", "builtin"))')
+fields = {
+    "BUNDLE_ID": d.get("bundle_id", ""),
+    "APP_PATH": d.get("app_path", ""),
+    "INSTALLED": d.get("version", ""),
+    "DISPLAY_NAME": d.get("display_name", ""),
+    "DISC_HANDLER": d.get("fingerprint_handler", "builtin"),
+}
+for k, v in fields.items():
+    print(f"{k}={shlex.quote(v)}")
+' 2>/dev/null)"
 
+    [ -z "$BUNDLE_ID" ] && continue
     [ -z "$INSTALLED" ] && continue
 
     CFG=$(python3 "$REG_SHIM" "${_reg_args[@]}" --get-app-by-bundle-id "$BUNDLE_ID" 2>/dev/null || true)
@@ -121,9 +133,6 @@ print(d.get("fingerprint_handler", "builtin"))')
         SLUG=$(printf '%s' "$DISPLAY_NAME" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-')
         [ -z "$SLUG" ] && SLUG="bundle-$(printf '%s' "$BUNDLE_ID" | tr '.' '-')"
         HANDLER="$DISC_HANDLER"
-        # Synthesize a CFG that carries discovery's extracted URL/ID
-        # (appcast_url for sparkle, ksadmin_product_id for keystone) so
-        # the handler has what it needs to actually probe.
         CFG=$(SLUG="$SLUG" HANDLER="$HANDLER" APP_PATH="$APP_PATH" \
               ASCENDO_DISC_LINE="$DISC_LINE" \
               python3 -c '
@@ -136,7 +145,6 @@ out = {
     "handler":      os.environ["HANDLER"],
     "app_path":     os.environ["APP_PATH"],
 }
-# Carry handler-specific fields extracted by discovery.
 if disc.get("appcast_url"):
     out["appcast_url"] = disc["appcast_url"]
 if disc.get("ksadmin_product_id"):
@@ -147,18 +155,30 @@ print(json.dumps(out))
 
     in_filter "$SLUG" || continue
 
-    LATEST=""
-    case "$HANDLER" in
-        sparkle)      LATEST=$(sparkle_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        github_dmg)   LATEST=$(github_dmg_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        keystone)     LATEST=$(keystone_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        msupdate)     LATEST=$(msupdate_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        docker)       LATEST=$(docker_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        release_feed) LATEST=$(release_feed_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        omaha)        LATEST=$(omaha_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        squirrel|builtin) LATEST="" ;;
-    esac
+    # Per-idx file fanout (NOT TSV — BSD xargs collapses embedded tabs to
+    # spaces in argv, losing field boundaries). Write everything keyed by
+    # idx, pass only the idx via xargs.
+    printf '%s' "$CFG" > "$RESULTS_DIR/${WORK_IDX}.cfg.json"
+    printf '%s' "$HANDLER" > "$RESULTS_DIR/${WORK_IDX}.handler"
+    printf '%s' "$INSTALLED" > "$RESULTS_DIR/${WORK_IDX}.installed"
+    printf '%s' "$SLUG" > "$RESULTS_DIR/${WORK_IDX}.slug"
+    printf '%d\n' "$WORK_IDX" >> "$INDICES_FILE"
+    WORK_IDX=$((WORK_IDX + 1))
+done < <(bash "$ADAPTER_LIB/web_discovery.sh" --emit-json 2>/dev/null)
+
+# ── Pass 2: parallel HTTP probes ──────────────────────────────────────
+_web_probe_parallel "$INDICES_FILE" "$RESULTS_DIR"
+
+# ── Pass 3: read results + emit sidecar items (sequential) ────────────
+i=0
+while [ "$i" -lt "$WORK_IDX" ]; do
+    SLUG=$(cat "$RESULTS_DIR/${i}.slug" 2>/dev/null)
+    HANDLER=$(cat "$RESULTS_DIR/${i}.handler" 2>/dev/null)
+    INSTALLED=$(cat "$RESULTS_DIR/${i}.installed" 2>/dev/null)
+    LATEST=$(_web_read_probe_result "$RESULTS_DIR" "$i")
     LATEST=$(printf '%s' "$LATEST" | tr -d '[:space:]')
+    # Increment i FIRST so any `continue` below doesn't infinite-loop.
+    i=$((i + 1))
 
     # Rate-limit sentinel from github_dmg handler: classify as skipped
     # (transient, will resolve when GH window resets or GITHUB_TOKEN set).
@@ -202,7 +222,10 @@ print(json.dumps(out))
         json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "planned" "web" "$HANDLER"
         COUNT_PLANNED=$((COUNT_PLANNED + 1))
     fi
-done < <(bash "$ADAPTER_LIB/web_discovery.sh" --emit-json 2>/dev/null)
+done
+
+# Clean up the work artefacts (keep the sidecar; ditch the temp probe files)
+rm -rf "$RESULTS_DIR" "$INDICES_FILE" 2>/dev/null
 
 json_add_message "info" "web: ${COUNT_PLANNED} outdated, ${COUNT_UTD} up-to-date, ${COUNT_SKIPPED} skipped, ${COUNT_FAILED} failed"
 exit 0
