@@ -42,7 +42,7 @@ if [ "$DRY_RUN" = "true" ]; then
 fi
 
 if [ -n "$NPM_BIN" ] && [ -x "$NPM_BIN" ]; then
-    "$NPM_BIN" cache clean --force >/dev/null 2>&1 || true
+    _ascendo_npm_invoke "$NPM_BIN" cache clean --force >/dev/null 2>&1 || true
     json_add_item "npm:cache:clean" "" "" "success" "npm" "cache"
 else
     json_add_message "info" "npm not installed; cache cleanup skipped"

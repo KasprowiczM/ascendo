@@ -85,6 +85,49 @@ ascendo_npm_node_bin() {
     command -v node 2>/dev/null || true
 }
 
+# _ascendo_npm_invoke <npm_bin> <args...>
+# Run npm via its sibling node binary AND with our toolchain's
+# NPM_CONFIG_PREFIX exported. Two bugs this fixes (Sesja 48):
+#
+#   1. npm script uses `#!/usr/bin/env node` so it picks up whichever
+#      `node` is first on PATH. On boxes with nvm/asdf/volta installed,
+#      npm gets executed by a *different* node version than the one it
+#      was bundled with — `wrapModuleLoad` cjs/loader errors on every
+#      `npm install -g <pkg>` call.
+#
+#   2. Without explicit NPM_CONFIG_PREFIX, npm picks up its prefix from
+#      ~/.npmrc or its own bundled config (which on nvm boxes points
+#      at nvm's per-version prefix). `npm ls -g` then returns empty
+#      for our toolchain-installed packages because npm is looking at
+#      the wrong prefix entirely. Setting NPM_CONFIG_PREFIX inside this
+#      helper means every check / apply / verify call is consistent.
+_ascendo_npm_invoke() {
+    local _npm="$1"; shift
+    [ -z "$_npm" ] && return 1
+    # Pin the prefix to our toolchain so `npm ls -g`, `npm install -g`,
+    # `npm cache clean` etc. all agree on where global packages live.
+    # Per-call, not exported, so we don't poison sibling commands.
+    local _prefix="$(ascendo_npm_global_prefix)"
+    # Resolve sibling node: <prefix>/bin/node lives next to <prefix>/bin/npm.
+    local _node_dir="$(dirname "$_npm")"
+    local _node="$_node_dir/node"
+    if [ -x "$_node" ] && [ -f "$_npm" ]; then
+        # NPM_BIN may be a symlink to lib/node_modules/npm/bin/npm-cli.js
+        local _npm_cli="$_npm"
+        if [ -L "$_npm" ]; then
+            local _t
+            _t="$(/usr/bin/readlink "$_npm")"
+            case "$_t" in
+                /*) _npm_cli="$_t" ;;
+                *)  _npm_cli="$_node_dir/$_t" ;;
+            esac
+        fi
+        NPM_CONFIG_PREFIX="$_prefix" "$_node" "$_npm_cli" "$@"
+        return $?
+    fi
+    NPM_CONFIG_PREFIX="$_prefix" "$_npm" "$@"
+}
+
 ascendo_npm_npm_bin() {
     local _user="$(ascendo_npm_n_prefix)/bin/npm"
     if [ -x "$_user" ]; then printf '%s' "$_user"; return 0; fi
@@ -129,7 +172,7 @@ ascendo_npm_outdated_json() {
     # IMPORTANT: redirect stdin from /dev/null so this never drains a
     # parent's pipe (e.g. `manifest | while read ...; do call_this; done`
     # would otherwise lose the manifest stream after the first iteration).
-    _out="$("$_npm" outdated -g --json </dev/null 2>/dev/null || true)"
+    _out="$(_ascendo_npm_invoke "$_npm" outdated -g --json </dev/null 2>/dev/null || true)"
     if [ -z "$_out" ]; then printf '{}'; else printf '%s' "$_out"; fi
 }
 
@@ -143,7 +186,7 @@ ascendo_npm_prime_installed_cache() {
     local _npm
     _npm="$(ascendo_npm_npm_bin)"
     if [ -z "$_npm" ]; then _ASCENDO_NPM_LS_CACHE="{}"; _ASCENDO_NPM_LS_CACHED=1; return 0; fi
-    _ASCENDO_NPM_LS_CACHE="$("$_npm" ls -g --depth=0 --json </dev/null 2>/dev/null || true)"
+    _ASCENDO_NPM_LS_CACHE="$(_ascendo_npm_invoke "$_npm" ls -g --depth=0 --json </dev/null 2>/dev/null || true)"
     if [ -z "$_ASCENDO_NPM_LS_CACHE" ]; then _ASCENDO_NPM_LS_CACHE="{}"; fi
     _ASCENDO_NPM_LS_CACHED=1
 }
@@ -177,7 +220,7 @@ ascendo_npm_latest_version() {
     local _npm
     _npm="$(ascendo_npm_npm_bin)"
     if [ -z "$_npm" ] || [ -z "$_pkg" ]; then return 0; fi
-    "$_npm" view "$_pkg" version </dev/null 2>/dev/null || true
+    _ascendo_npm_invoke "$_npm" view "$_pkg" version </dev/null 2>/dev/null || true
 }
 
 # Installed bun version (or empty).

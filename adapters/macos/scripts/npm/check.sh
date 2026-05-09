@@ -49,7 +49,7 @@ if [ "${EUID:-$(id -u)}" -eq 0 ]; then HOST_IS_ELEVATED="true"; else HOST_IS_ELE
 NPM_BIN="$(ascendo_npm_npm_bin)"
 TOOL_VERSION="unknown"
 if [ -n "$NPM_BIN" ]; then
-    TOOL_VERSION="$("$NPM_BIN" --version 2>/dev/null || echo unknown)"
+    TOOL_VERSION="$(_ascendo_npm_invoke "$NPM_BIN" --version 2>/dev/null || echo unknown)"
 fi
 
 # -- init sidecar --------------------------------------------------------------

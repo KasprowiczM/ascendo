@@ -30,7 +30,7 @@ HOST_IS_ELEVATED="false"; [ "${EUID:-$(id -u)}" -eq 0 ] && HOST_IS_ELEVATED="tru
 
 NPM_BIN="$(ascendo_npm_npm_bin)"
 TOOL_VERSION="unknown"
-[ -n "$NPM_BIN" ] && TOOL_VERSION="$("$NPM_BIN" --version 2>/dev/null || echo unknown)"
+[ -n "$NPM_BIN" ] && TOOL_VERSION="$(_ascendo_npm_invoke "$NPM_BIN" --version 2>/dev/null || echo unknown)"
 
 json_init "verify" "npm" "$RUN_ID" "$TRIGGER" "$PROFILE_NAME" \
           "npm" "$TOOL_VERSION" \

@@ -45,7 +45,14 @@ HOST_IS_ELEVATED="false"; [ "${EUID:-$(id -u)}" -eq 0 ] && HOST_IS_ELEVATED="tru
 
 NPM_BIN="$(ascendo_npm_npm_bin)"
 TOOL_VERSION="unknown"
-[ -n "$NPM_BIN" ] && TOOL_VERSION="$("$NPM_BIN" --version 2>/dev/null || echo unknown)"
+[ -n "$NPM_BIN" ] && TOOL_VERSION="$(_ascendo_npm_invoke "$NPM_BIN" --version 2>/dev/null || echo unknown)"
+
+# Convenience wrapper around _ascendo_npm_invoke that uses the
+# script-scope NPM_BIN. Replaces bare `"$NPM_BIN" args` calls so we
+# always invoke npm via its sibling node binary.
+_run_npm() {
+    _ascendo_npm_invoke "$NPM_BIN" "$@"
+}
 
 json_init "apply" "npm" "$RUN_ID" "$TRIGGER" "$PROFILE_NAME" \
           "npm" "$TOOL_VERSION" \
@@ -98,7 +105,7 @@ apply_native_node() {
         fi
     fi
     # Install `n` to user prefix, then run `n lts` to put node in TOOLCHAIN_HOME.
-    "$NPM_BIN" install -g n 2>&1 | _stream_tee >/dev/null
+    _run_npm install -g n 2>&1 | _stream_tee >/dev/null
     if [ "${PIPESTATUS[0]:-1}" -ne 0 ]; then
         json_add_item "$_display" "" "" "failed" "npm" "native-node"
         json_add_message "error" "'npm install -g n' failed"
@@ -166,7 +173,7 @@ apply_npm() {
     # the sidecar message instead of a bare exit code.
     local _tmp_log
     _tmp_log="$(mktemp -t ascendo-npm-apply.XXXXXX 2>/dev/null || mktemp /tmp/ascendo-npm-apply.XXXXXX)"
-    "$NPM_BIN" install -g "$_pkg" 2>&1 | tee "$_tmp_log" | _stream_tee >/dev/null
+    _run_npm install -g "$_pkg" 2>&1 | tee "$_tmp_log" | _stream_tee >/dev/null
     local _rc="${PIPESTATUS[0]:-1}"
     if [ "$_rc" -ne 0 ]; then
         json_add_item "$_display" "" "" "failed" "npm" "npm"
