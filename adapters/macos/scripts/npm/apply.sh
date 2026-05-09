@@ -65,6 +65,30 @@ in_filter() {
     case ",$FILTER," in (*",$1,"*) return 0 ;; (*) return 1 ;; esac
 }
 
+# classify <installed> <latest>  -> up_to_date | planned | missing
+# Mirrors the rule used in check.sh: empty installed -> missing,
+# empty latest (network probe failed) -> up_to_date (don't punish on
+# probe failure), installed == latest -> up_to_date, semver-sort says
+# installed >= latest -> up_to_date, otherwise planned.
+classify() {
+    local _installed="$1"
+    local _latest="$2"
+    if [ -z "$_installed" ]; then printf 'missing'; return; fi
+    if [ -z "$_latest" ];    then printf 'up_to_date'; return; fi
+    if [ "$_installed" = "$_latest" ]; then printf 'up_to_date'; return; fi
+    local _lower
+    _lower="$(printf '%s\n%s\n' "$_installed" "$_latest" | sort -V 2>/dev/null | head -n1 || true)"
+    if [ -n "$_lower" ] && [ "$_lower" = "$_latest" ]; then
+        printf 'up_to_date'; return
+    fi
+    printf 'planned'
+}
+
+# Prime the `npm ls -g` cache once so per-package lookups in apply_npm
+# are O(1) jq queries instead of O(N) npm spawns. Saves ~100ms per pkg
+# on the up_to_date guard.
+ascendo_npm_prime_installed_cache
+
 # -- bootstrap npm-global prefix (idempotent, safe to repeat) -----------------
 # We deliberately do NOT write the prefix into ~/.npmrc (legacy bug:
 # `npm config set prefix` did exactly that, and nvm refuses to load
@@ -84,6 +108,17 @@ apply_native_node() {
     local _display="$1"
     if [ "$DRY_RUN" = "true" ]; then
         json_add_item "$_display" "" "" "planned" "npm" "native-node"
+        return
+    fi
+    # Sesja 50 fix — up_to_date guard: skip the bootstrap if Node is
+    # already at the latest LTS. Without this, every apply re-runs
+    # `npm install -g n` + `n lts` even when nothing has changed.
+    local _installed _latest _status
+    _installed="$(ascendo_npm_node_installed_version 2>/dev/null)"
+    _latest="$(ascendo_npm_node_latest_version 2>/dev/null)"
+    _status="$(classify "$_installed" "$_latest")"
+    if [ "$_status" = "up_to_date" ]; then
+        json_add_item "$_display" "$_installed" "$_latest" "up_to_date" "npm" "native-node"
         return
     fi
     _stream_emit ">>> bootstrapping native-node ($_display)"
@@ -134,6 +169,16 @@ apply_native_bun() {
         json_add_item "$_display" "" "" "planned" "npm" "native-bun"
         return
     fi
+    # Sesja 50 fix — up_to_date guard: skip the bun installer when
+    # bun is already at the latest published GitHub release.
+    local _installed _latest _status
+    _installed="$(ascendo_npm_bun_installed_version 2>/dev/null)"
+    _latest="$(ascendo_npm_bun_latest_version 2>/dev/null)"
+    _status="$(classify "$_installed" "$_latest")"
+    if [ "$_status" = "up_to_date" ]; then
+        json_add_item "$_display" "$_installed" "$_latest" "up_to_date" "npm" "native-bun"
+        return
+    fi
     _stream_emit ">>> bootstrapping native-bun ($_display)"
     if ! command -v curl >/dev/null 2>&1; then
         json_add_item "$_display" "" "" "failed" "npm" "native-bun"
@@ -166,6 +211,19 @@ apply_npm() {
         json_add_message "error" "npm not installed; bootstrap node first ($_display)"
         return
     fi
+    # Sesja 50 fix — up_to_date guard. Without this, every apply ran
+    # `npm install -g <pkg>` for every manifest entry regardless of
+    # whether it was already at latest, generating a wall of
+    # "Requirement already satisfied" output and ~1-3s of network
+    # round-trips per package.
+    local _installed _latest _status
+    _installed="$(ascendo_npm_installed_version "$_pkg" 2>/dev/null)"
+    _latest="$(ascendo_npm_latest_version "$_pkg" 2>/dev/null)"
+    _status="$(classify "$_installed" "$_latest")"
+    if [ "$_status" = "up_to_date" ]; then
+        json_add_item "$_display" "$_installed" "$_latest" "up_to_date" "npm" "npm"
+        return
+    fi
     _stream_emit ">>> npm install -g $_pkg ($_display)"
     # Capture combined stdout+stderr to a temp log AND tee to live
     # stream — same pattern as pip apply, so a failure surfaces npm's
@@ -191,6 +249,10 @@ apply_npm() {
         return
     fi
     rm -f "$_tmp_log" 2>/dev/null
+    # Bust the npm-ls cache so the post-install version reflects the
+    # version we just installed, not the pre-install snapshot.
+    _ASCENDO_NPM_LS_CACHE=""
+    _ASCENDO_NPM_LS_CACHED=0
     local _new="$(ascendo_npm_installed_version "$_pkg")"
     json_add_item "$_display" "$_new" "$_new" "success" "npm" "npm"
 }

@@ -2330,6 +2330,19 @@ const ui = {
   },
 
   attachStream(runId) {
+    // Sesja 50 fix — 4× duplicate output bug. Each call to attachStream
+    // used to create a fresh EventSource without closing any prior one.
+    // If the user clicked "Full update" twice, or if the wizard had
+    // started its own ES that never reached `done` (e.g. user navigated
+    // away mid-flow), N stale ESes were all still listening to the new
+    // run and appending the same line to #live-log + #run-stream-log,
+    // producing the wall of N× duplicates the operator saw on Sesja 49.
+    if (window._ascendoActiveStreams) {
+      for (const es of window._ascendoActiveStreams) {
+        try { es.close(); } catch {}
+      }
+    }
+    window._ascendoActiveStreams = [];
     const log = $("#live-log");
     log.textContent = "";
     const prog = $("#run-progress");
@@ -2448,6 +2461,7 @@ const ui = {
     // /runs/active/stream if the per-run URL 404s (older backend).
     const perRunUrl = `/runs/${encodeURIComponent(runId)}/events`;
     let es = new EventSource(perRunUrl);
+    window._ascendoActiveStreams.push(es);
     let usingLegacy = false;
     const phaseRows = new Map();
     function ensureProgVisible() { prog.classList.remove("hidden"); }
@@ -2544,6 +2558,7 @@ const ui = {
       if (!usingLegacy) {
         usingLegacy = true; try { es.close(); } catch {}
         es = new EventSource(`/runs/active/stream`);
+        window._ascendoActiveStreams.push(es);
         es.addEventListener("log", e => { try { const m=JSON.parse(e.data); const ln=m.line||""; if (!handleMarker(ln)) { log.textContent += ln + "\n"; log.scrollTop=log.scrollHeight; } } catch {} });
         es.addEventListener("done", e => { let m={}; try{m=JSON.parse(e.data);}catch{} log.textContent += `\n[done - exit ${m.exit_code}]\n`; es.close(); ui.invalidateCaches(); ui.checkRebootBanner(); ui.loadHealth(); });
         es.onerror = () => { try { es.close(); } catch {} };

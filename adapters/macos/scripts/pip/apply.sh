@@ -80,6 +80,10 @@ classify() {
     printf 'planned'
 }
 
+# Prime the `pip list` cache once so per-package up_to_date guards
+# don't spawn pip per manifest entry.
+ascendo_pip_prime_installed_cache
+
 # -- compute pip install flags ONCE ------------------------------------------
 # The break-system-packages and --user flags depend on the active pip's
 # flavour, not on per-package state. Compute once and reuse.
@@ -120,6 +124,18 @@ apply_pip() {
             return
             ;;
     esac
+    # Sesja 50 fix — up_to_date guard. Without this, every apply ran
+    # `pip install -U <pkg>` for every manifest entry regardless of
+    # current version, producing the "Requirement already satisfied"
+    # wall the operator was seeing. Mirrors the npm/apply guard.
+    local _installed _latest _status
+    _installed="$(ascendo_pip_installed_version "$_pkg" 2>/dev/null)"
+    _latest="$(ascendo_pip_latest_version "$_pkg" 2>/dev/null)"
+    _status="$(classify "$_installed" "$_latest")"
+    if [ "$_status" = "up_to_date" ]; then
+        json_add_item "$_display" "$_installed" "$_latest" "up_to_date" "pip" "pip"
+        return
+    fi
     _stream_emit ">>> pip install -U $_pkg ($_display)"
     # Capture pip's combined stdout+stderr to a temp file AND tee to the
     # live stream. On failure we slice the last 12 lines into the sidecar

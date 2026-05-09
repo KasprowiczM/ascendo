@@ -587,11 +587,28 @@ async def stream_run_events(run_id: UUID, request: Request):
                 #      managers may write directly (older convention,
                 #      kept for backward compat with winget's apply path).
                 try:
+                    # Sesja 50 fix — `_stream.log` matches `*.log`, so the
+                    # glob below pulls it back in after the explicit
+                    # append, producing a duplicate Path in `log_files`.
+                    # The per-file offset check usually dedupes the second
+                    # iteration, BUT under concurrent writes (apply.sh
+                    # tee'ing live) the file size CAN grow between the
+                    # explicit and glob iterations, so the second
+                    # iteration ends up emitting whatever bytes arrived
+                    # in that tiny window — causing the operator-visible
+                    # 2x output. Fix: dedupe by Path identity.
                     log_files: list[Path] = []
+                    seen_paths: set[str] = set()
                     stream_log = run_dir / STREAM_LOG_FILENAME
                     if stream_log.is_file():
                         log_files.append(stream_log)
-                    log_files.extend(sorted(run_dir.glob("*.log")))
+                        seen_paths.add(str(stream_log))
+                    for p in sorted(run_dir.glob("*.log")):
+                        key = str(p)
+                        if key in seen_paths:
+                            continue
+                        seen_paths.add(key)
+                        log_files.append(p)
                 except OSError:
                     log_files = []
                 for log_path in log_files:
