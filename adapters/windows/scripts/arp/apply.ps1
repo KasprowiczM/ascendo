@@ -37,6 +37,28 @@ function Find-ArpEntry {
     return $null
 }
 
+function _Get-StderrTailExcerpt {
+    # Parity with macOS apply.sh (Sesja 34): last 12 non-empty stderr
+    # lines, capped at 1500 chars, surfaced as a sidecar message so
+    # operators see the actual UninstallString failure (msiexec error,
+    # missing dependency, etc.) instead of bare exit codes.
+    [CmdletBinding()] [OutputType([string])]
+    param([Parameter(Mandatory)] [string] $StderrFile,
+          [int] $MaxLines = 12, [int] $MaxChars = 1500)
+    if (-not (Test-Path -LiteralPath $StderrFile)) { return '' }
+    try {
+        $lines = Get-Content -LiteralPath $StderrFile -ErrorAction SilentlyContinue |
+                 Where-Object { $_ -and $_.Trim() } |
+                 Select-Object -Last $MaxLines
+        if (-not $lines) { return '' }
+        $joined = ($lines -join "`n")
+        if ($joined.Length -gt $MaxChars) {
+            $joined = $joined.Substring($joined.Length - $MaxChars)
+        }
+        return $joined
+    } catch { return '' }
+}
+
 $sidecar = $null
 try {
     $_sidecarArgs = @{
@@ -100,13 +122,34 @@ try {
         }
 
         $exitCode = -1
+        $stderrExcerpt = ''
+        $stdoutFile = $null
+        $stderrFile = $null
         try {
+            # Capture stdout/stderr separately so failures surface the
+            # uninstaller's actual error message (msiexec /qn rc, missing
+            # MSI source, etc.) rather than just an exit code. Mirrors
+            # macOS apply.sh Sesja 34 stderr-tail pattern.
+            $stdoutFile = [System.IO.Path]::GetTempFileName()
+            $stderrFile = [System.IO.Path]::GetTempFileName()
             $proc = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', $uninstall) `
-                                  -Wait -NoNewWindow -PassThru
+                                  -Wait -NoNewWindow -PassThru `
+                                  -RedirectStandardOutput $stdoutFile `
+                                  -RedirectStandardError  $stderrFile
             $exitCode = $proc.ExitCode
+            if ($exitCode -ne 0 -and $exitCode -ne 3010) {
+                $stderrExcerpt = _Get-StderrTailExcerpt -StderrFile $stderrFile
+            }
         } catch {
             Add-SidecarMessage -Sidecar $sidecar -Level 'error' `
                 -Text ("arp apply: {0} uninstall threw: {1}" -f $id, $_.Exception.Message)
+        }
+        finally {
+            foreach ($p in @($stdoutFile, $stderrFile)) {
+                if ($p -and (Test-Path -LiteralPath $p)) {
+                    Remove-Item -LiteralPath $p -ErrorAction SilentlyContinue
+                }
+            }
         }
         $status = if ($exitCode -eq 0 -or $exitCode -eq 3010) { 'success' } else { 'failed' }
         $okArgs = @{
@@ -116,6 +159,12 @@ try {
             Rollback = @{ available = $false; method = 'reinstall_required' }
         }
         if ($version) { $okArgs['CurrentVersion'] = $version }
+        if ($stderrExcerpt) {
+            $okArgs['Messages'] = @( @{
+                level = 'error'
+                text  = ("stderr (last 12 lines): {0}" -f $stderrExcerpt)
+            } )
+        }
         [void](Add-SidecarItem @okArgs)
     }
 
