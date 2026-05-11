@@ -29,6 +29,29 @@ out/
 *.egg
 __pycache__/
 
+# ── Native installer artifacts ───────────────────────────────────────────────
+# These are produced by bin/build-dmg.sh, bin/build-installer.ps1, and
+# packaging/build-deb.sh. NEVER commit them — they're large binary blobs
+# that bloat clone time, leak the build host's signing identity (or lack
+# thereof), and quickly go stale. Public-release distribution via GitHub
+# Releases attaches them to tag pages, not the repo tree.
+#
+# Intentionally NOT blanket-ignoring *.icns or *.app/ — the Tauri shell's
+# tracked icon bundle (ui/desktop-tauri/src-tauri/icons/icon.icns) and
+# the test fixtures (adapters/macos/tests/fixtures/discovery/Applications/
+# Fake*.app/) need to stay tracked. Built .app bundles already get caught
+# by the `dist/`, `target/`, and `bin-staging*/` exclusions.
+*.dmg
+*.pkg
+*.msi
+*.exe
+*.deb
+*.appx
+*.appxbundle
+# Per-build staging dirs that prefix with bin-staging (matches
+# bin/build-dmg.sh's bin-staging/, bin-staging-dev/, etc.).
+/bin-staging*/
+
 # Tauri sidecar staging — populated by bin/build-installer.ps1 from the
 # PyInstaller bundle. The exe + _internal/ tree is too large to commit.
 ui/desktop-tauri/src-tauri/binaries/
