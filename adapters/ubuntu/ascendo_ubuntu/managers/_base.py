@@ -165,10 +165,30 @@ class BashPhaseManager(IPackageManager):
                 type(self).__name__, phase.value, run.id, argv, sidecar_path,
             )
 
+            # Heartbeat: write a marker into ASCENDO_STREAM_LOG so the SPA
+            # SSE stream shows "now running <cat> <phase>" even before the
+            # bash script produces its own output. Without this, multi-
+            # category apply runs look frozen between phases.
+            stream_log = env.get("ASCENDO_STREAM_LOG")
+            if stream_log:
+                try:
+                    with open(stream_log, "a", encoding="utf-8") as f:
+                        f.write(f">>> {self.SCRIPT_DIR} {phase.value} (starting)\n")
+                except OSError:
+                    pass  # best-effort
+
             try:
                 completed = subprocess.run(  # noqa: S603 (argv list, not shell)
                     argv,
                     env=env,
+                    # CRITICAL: stdin=DEVNULL so any read attempt gets
+                    # immediate EOF instead of blocking forever. Without
+                    # this, sudo / apt / dpkg / brew prompts hang the
+                    # whole dashboard when launched from a non-TTY parent
+                    # (e.g. `ascendo dashboard --background`). The legacy
+                    # bash scripts use SUDO_ASKPASS via env injection
+                    # (LinuxElevation) when they need elevation.
+                    stdin=subprocess.DEVNULL,
                     capture_output=True,
                     text=True,
                     timeout=self._timeout_sec,
@@ -260,6 +280,20 @@ class BashPhaseManager(IPackageManager):
         # Quiet mode hint: this isn't the legacy orchestrator driving the
         # script; we capture stdout/stderr directly.
         env.setdefault("ORCH_QUIET", "1")
+        # Force every downstream tool (apt/dpkg/snap/brew/npm) into
+        # non-interactive mode. Without these, an apt-listchanges prompt
+        # or a needrestart "services to restart?" question would deadlock
+        # the bridge subprocess (we close stdin so the child gets EOF
+        # immediately, but some tools still wait for tty input). These
+        # env vars are the standard escape hatches each tool documents.
+        env.setdefault("DEBIAN_FRONTEND", "noninteractive")
+        env.setdefault("APT_LISTCHANGES_FRONTEND", "none")
+        env.setdefault("NEEDRESTART_MODE", "a")          # auto-restart services
+        env.setdefault("NEEDRESTART_SUSPEND", "1")       # never prompt
+        env.setdefault("HOMEBREW_NO_AUTO_UPDATE", "1")
+        env.setdefault("HOMEBREW_NO_ENV_HINTS", "1")
+        env.setdefault("HOMEBREW_NO_INSTALL_CLEANUP", "1")
+        env.setdefault("ASCENDO_NONINTERACTIVE", "1")
         return env
 
     def _resolve_bash(self) -> str:

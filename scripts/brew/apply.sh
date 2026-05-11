@@ -74,10 +74,22 @@ else
     EXIT_RC=1
 fi
 
-# ── 4. brew upgrade --cask --greedy ───────────────────────────────────────────
-print_step "brew upgrade --cask --greedy"
-_stream_emit ">>> brew upgrade --cask --greedy"
-if run_capture_as_user "${BREW_BIN}" upgrade --cask --greedy; then
+# ── 4. brew upgrade --cask ────────────────────────────────────────────────────
+# NB: previously --greedy unconditionally. That re-downloads every cask
+# whose version is "latest" or that has auto_updates=true on every apply,
+# easily 10+ minutes per run on Linuxbrew with no SPA progress visible —
+# the run looks frozen. Default upgrade is enough for normal flow; opt-in
+# greedy via ASCENDO_BREW_GREEDY=1 when you actually want it.
+GREEDY_ARGS=()
+if [[ "${ASCENDO_BREW_GREEDY:-0}" = "1" ]]; then
+    GREEDY_ARGS=(--greedy)
+    print_step "brew upgrade --cask --greedy (ASCENDO_BREW_GREEDY=1)"
+    _stream_emit ">>> brew upgrade --cask --greedy"
+else
+    print_step "brew upgrade --cask"
+    _stream_emit ">>> brew upgrade --cask  (ASCENDO_BREW_GREEDY=1 to force --greedy)"
+fi
+if run_capture_as_user "${BREW_BIN}" upgrade --cask "${GREEDY_ARGS[@]}"; then
     print_ok
     json_add_item id="brew:upgrade:cask" action="upgrade" result="ok"
     json_count_ok
