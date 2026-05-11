@@ -74,6 +74,7 @@ class BashPhaseManager(IPackageManager):
         repo_root: Path | None = None,
         bash_path: str | None = None,
         timeout_sec: int | None = None,
+        elevation: object | None = None,
     ) -> None:
         self._scripts_dir = Path(scripts_dir)
         self._lib_dir = Path(lib_dir)
@@ -83,6 +84,15 @@ class BashPhaseManager(IPackageManager):
         )
         self._bash_override = bash_path
         self._timeout_sec = timeout_sec or self.DEFAULT_TIMEOUT_SEC
+        # Optional LinuxElevation — when non-None and a sudo password is
+        # registered, _build_env(phase=APPLY) extends the child env with
+        # SUDO_ASKPASS + _ASCENDO_SUDO_PW so the legacy bash apply scripts
+        # (which already honour SUDO_ASKPASS via lib/orchestrator.sh) can
+        # authenticate non-interactively from the dashboard.
+        self._elevation = elevation
+        # Test seam: populated each run_phase call so tests can inspect
+        # the env we would have passed to the child.
+        self._last_env_for_test: dict[str, str] = {}
 
     # ── Identity ────────────────────────────────────────────────────────
 
@@ -142,11 +152,13 @@ class BashPhaseManager(IPackageManager):
 
             argv = [bash, str(script_path)]
             env = self._build_env(
+                phase=phase,
                 run=run,
                 run_dir=run_dir,
                 sidecar_path=sidecar_path,
                 log_path=log_path,
             )
+            self._last_env_for_test = dict(env)
 
             _log.debug(
                 "%s.run_phase phase=%s run_id=%s argv=%r sidecar=%s",
@@ -200,6 +212,7 @@ class BashPhaseManager(IPackageManager):
     def _build_env(
         self,
         *,
+        phase: Phase,
         run: RunInfo,
         run_dir: Path,
         sidecar_path: Path,
@@ -210,8 +223,25 @@ class BashPhaseManager(IPackageManager):
         Mirrors the variables exported by ``lib/orchestrator.sh`` plus
         passes through the parent process's PATH so the script can find
         ``apt-get``, ``snap``, etc.
+
+        For ``Phase.APPLY`` only, when a ``LinuxElevation`` instance was
+        injected at construction time AND a password has been registered
+        (typically via the dashboard's ``/elevation/auth`` endpoint), the
+        env is further extended with ``SUDO_ASKPASS`` and
+        ``_ASCENDO_SUDO_PW`` so the legacy apply scripts can authenticate
+        non-interactively. The static askpass helper at
+        ``adapters/ubuntu/lib/askpass_helper.sh`` reads the password from
+        ``_ASCENDO_SUDO_PW`` and prints it on stdout when sudo asks for it.
         """
-        env: dict[str, str] = dict(os.environ)
+        # Base env: full environment + orchestrator-contract variables.
+        if self._elevation is not None and phase is Phase.APPLY:
+            build_env = getattr(self._elevation, "build_subprocess_env", None)
+            if callable(build_env):
+                env: dict[str, str] = dict(build_env())
+            else:
+                env = dict(os.environ)
+        else:
+            env = dict(os.environ)
         env["JSON_OUT"] = str(sidecar_path)
         env["LOG_FILE"] = str(log_path)
         env["ORCH_RUN_ID"] = str(run.id)

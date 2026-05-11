@@ -32,26 +32,69 @@ def test_adapter_identity() -> None:
 
 
 def test_capabilities_includes_package_management_and_inventory() -> None:
-    """The scaffold declares PACKAGE_MANAGEMENT | INVENTORY only."""
+    """The adapter declares PACKAGE_MANAGEMENT | INVENTORY at minimum."""
     a = UbuntuAdapter()
     caps = a.capabilities
     assert AdapterCapability.PACKAGE_MANAGEMENT in caps
     assert AdapterCapability.INVENTORY in caps
-    # Other capabilities are deferred to a later session.
-    assert AdapterCapability.SCHEDULING not in caps
-    assert AdapterCapability.SNAPSHOTS not in caps
-    assert AdapterCapability.ELEVATION not in caps
+
+
+def test_capabilities_includes_snapshots() -> None:
+    """SNAPSHOTS landed via TimeshiftSnapshot wiring."""
+    a = UbuntuAdapter()
+    assert AdapterCapability.SNAPSHOTS in a.capabilities
+
+
+def test_capabilities_includes_elevation() -> None:
+    """ELEVATION landed via LinuxElevation wiring."""
+    a = UbuntuAdapter()
+    assert AdapterCapability.ELEVATION in a.capabilities
+
+
+def test_capabilities_includes_scheduling() -> None:
+    """SCHEDULING landed via SystemdScheduler wiring."""
+    a = UbuntuAdapter()
+    assert AdapterCapability.SCHEDULING in a.capabilities
+
+
+def test_scheduler_returns_systemd_scheduler_singleton() -> None:
+    from ascendo_ubuntu.managers.scheduler import SystemdScheduler
+
+    a = UbuntuAdapter()
+    s1 = a.scheduler()
+    s2 = a.scheduler()
+    assert isinstance(s1, SystemdScheduler)
+    assert s1 is s2
 
 
 # ── Sub-interface accessors ──────────────────────────────────────────────
 
 
 def test_unsupported_accessors_return_none() -> None:
+    """source remains unimplemented for now (reserved for M6)."""
     a = UbuntuAdapter()
-    assert a.snapshot() is None
-    assert a.scheduler() is None
     assert a.source() is None
-    assert a.elevation() is None
+
+
+def test_elevation_returns_linux_elevation_singleton() -> None:
+    """elevation() returns a cached LinuxElevation instance."""
+    from ascendo_ubuntu.managers.elevation import LinuxElevation
+
+    a = UbuntuAdapter()
+    e1 = a.elevation()
+    e2 = a.elevation()
+    assert isinstance(e1, LinuxElevation)
+    assert e1 is e2
+
+
+def test_snapshot_returns_timeshift_snapshot_singleton() -> None:
+    from ascendo_ubuntu.snapshot import TimeshiftSnapshot
+
+    a = UbuntuAdapter()
+    s1 = a.snapshot()
+    s2 = a.snapshot()
+    assert isinstance(s1, TimeshiftSnapshot)
+    assert s1 is s2
 
 
 def test_inventory_returns_singleton() -> None:
@@ -402,7 +445,7 @@ def test_adapter_via_select_adapter() -> None:
 
 
 def test_health_check_reports_required_keys() -> None:
-    """health_check returns the 10 expected component keys."""
+    """health_check returns at minimum the expected component keys."""
     a = UbuntuAdapter()
     h = a.health_check()
     expected_keys = {
@@ -412,6 +455,30 @@ def test_health_check_reports_required_keys() -> None:
     assert expected_keys.issubset(h.keys()), (
         f"missing keys: {expected_keys - h.keys()}"
     )
+
+
+def test_health_check_includes_timeshift() -> None:
+    """timeshift component lands when snapshots wire in."""
+    a = UbuntuAdapter()
+    assert "timeshift" in a.health_check()
+
+
+def test_health_check_includes_systemctl() -> None:
+    """systemctl component lands when scheduling wires in."""
+    a = UbuntuAdapter()
+    assert "systemctl" in a.health_check()
+
+
+def test_health_check_includes_sudo() -> None:
+    """sudo component lands when elevation wires in."""
+    a = UbuntuAdapter()
+    assert "sudo" in a.health_check()
+
+
+def test_health_check_has_at_least_eleven_components() -> None:
+    """Component count grew from 10 → 11 (timeshift) → 12 (sudo)."""
+    a = UbuntuAdapter()
+    assert len(a.health_check()) >= 11
 
 
 def test_health_check_values_are_strings() -> None:

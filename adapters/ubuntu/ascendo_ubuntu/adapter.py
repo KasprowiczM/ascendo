@@ -35,12 +35,15 @@ from ascendo.interfaces import (
 from ascendo.models.host import ElevationMethod, HostInfo, OperatingSystem
 
 from .inventory import UbuntuInventory
+from .snapshot import TimeshiftSnapshot
 from .managers.apt import AptManager
 from .managers.brew import BrewManager
 from .managers.drivers import DriversManager
+from .managers.elevation import LinuxElevation
 from .managers.flatpak import FlatpakManager
 from .managers.npm import NpmManager
 from .managers.pip import PipManager
+from .managers.scheduler import SystemdScheduler
 from .managers.snap import SnapManager
 
 _log = logging.getLogger(__name__)
@@ -95,6 +98,9 @@ class UbuntuAdapter(IAdapter):
     def __init__(self) -> None:
         self._cached_host: HostInfo | None = None
         self._cached_inventory: UbuntuInventory | None = None
+        self._cached_snapshot: TimeshiftSnapshot | None = None
+        self._cached_elevation: LinuxElevation | None = None
+        self._cached_scheduler: SystemdScheduler | None = None
 
     # ── Identity ──────────────────────────────────────────────────────────
 
@@ -115,6 +121,9 @@ class UbuntuAdapter(IAdapter):
         return (
             AdapterCapability.PACKAGE_MANAGEMENT
             | AdapterCapability.INVENTORY
+            | AdapterCapability.SNAPSHOTS
+            | AdapterCapability.ELEVATION
+            | AdapterCapability.SCHEDULING
         )
 
     # ── Sub-interface accessors ───────────────────────────────────────────
@@ -125,15 +134,29 @@ class UbuntuAdapter(IAdapter):
         Order matches legacy ``update-all.sh`` and ``lib/orchestrator.sh``:
         apt → snap → brew → npm → pip → flatpak → drivers. Drivers runs
         last because the NVIDIA / fwupd flow may require a reboot.
+
+        Each manager is wired with the cached :class:`LinuxElevation`
+        singleton; when an apply phase runs AND a sudo password has been
+        registered (via the dashboard's ``/elevation/auth`` endpoint),
+        the manager's ``_build_env(phase=APPLY)`` injects
+        ``SUDO_ASKPASS`` + ``_ASCENDO_SUDO_PW`` so the legacy bash
+        ``apply.sh`` scripts authenticate non-interactively.
         """
+        elev = self.elevation()
+        kwargs = {
+            "scripts_dir": self.SCRIPTS_DIR,
+            "lib_dir": self.LIB_DIR,
+            "repo_root": self.REPO_ROOT,
+            "elevation": elev,
+        }
         return [
-            AptManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, repo_root=self.REPO_ROOT),
-            SnapManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, repo_root=self.REPO_ROOT),
-            BrewManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, repo_root=self.REPO_ROOT),
-            NpmManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, repo_root=self.REPO_ROOT),
-            PipManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, repo_root=self.REPO_ROOT),
-            FlatpakManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, repo_root=self.REPO_ROOT),
-            DriversManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, repo_root=self.REPO_ROOT),
+            AptManager(**kwargs),
+            SnapManager(**kwargs),
+            BrewManager(**kwargs),
+            NpmManager(**kwargs),
+            PipManager(**kwargs),
+            FlatpakManager(**kwargs),
+            DriversManager(**kwargs),
         ]
 
     def inventory(self) -> IInventory | None:  # type: ignore[override]
@@ -151,20 +174,52 @@ class UbuntuAdapter(IAdapter):
         return self._cached_inventory
 
     def snapshot(self) -> ISnapshot | None:
-        """Not implemented in this scaffold (deferred). Returns None."""
-        return None
+        """Returns a cached :class:`TimeshiftSnapshot` singleton.
+
+        The instance is constructed lazily on first call. It is returned
+        unconditionally — callers should check ``is_available(host)``
+        before invoking ``create()`` / ``list()``. (Returning the
+        instance even when timeshift is not installed lets callers
+        surface a friendly "snapshots unavailable" message instead of
+        ``AttributeError`` on ``None``.)
+        """
+        if self._cached_snapshot is None:
+            self._cached_snapshot = TimeshiftSnapshot()
+        return self._cached_snapshot
 
     def scheduler(self) -> IScheduler | None:
-        """Not implemented in this scaffold (deferred). Returns None."""
-        return None
+        """Returns a cached :class:`SystemdScheduler` singleton.
+
+        Drives ``adapters/ubuntu/scripts/scheduler/scheduler.sh`` over
+        JSON-IPC. Per-user systemd timers — no root required.
+        """
+        if self._cached_scheduler is None:
+            self._cached_scheduler = SystemdScheduler(
+                scripts_dir=self.ADAPTER_SCRIPTS_DIR,
+                lib_dir=self.ADAPTER_LIB_DIR,
+            )
+        return self._cached_scheduler
 
     def source(self) -> ISource | None:
         """Not implemented; reserved for M6 (cross-cutting source verification)."""
         return None
 
     def elevation(self) -> IElevation | None:
-        """Not implemented in this scaffold (deferred). Returns None."""
-        return None
+        """Returns a cached :class:`LinuxElevation` singleton.
+
+        The instance is constructed lazily on first call with the
+        adapter's static askpass helper at
+        ``adapters/ubuntu/lib/askpass_helper.sh``. The dashboard's
+        ``/elevation/auth`` endpoint cooperates via the duck-typed
+        ``register_password`` / ``has_password_registered`` /
+        ``invalidate`` methods (see
+        ``core/ascendo/dashboard/routes/elevation.py``).
+        """
+        if self._cached_elevation is None:
+            self._cached_elevation = LinuxElevation(
+                askpass_helper=self.ADAPTER_LIB_DIR / "askpass_helper.sh",
+            )
+        return self._cached_elevation
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -202,9 +257,9 @@ class UbuntuAdapter(IAdapter):
     def health_check(self) -> dict[str, str]:
         """Adapter self-test for ``ascendo doctor``.
 
-        Components checked (10 total):
-            apt, snap, brew, npm, pip, flatpak, fwupd, bash,
-            ascendo_lib, ascendo_scripts
+        Components checked (12 total):
+            apt, snap, brew, npm, pip, flatpak, fwupd, timeshift, sudo,
+            bash, ascendo_lib, ascendo_scripts
         """
         out: dict[str, str] = {}
         out["apt"] = self._tool_status("apt", "apt-get", flag="--version")
@@ -214,6 +269,9 @@ class UbuntuAdapter(IAdapter):
         out["pip"] = self._pip_status()
         out["flatpak"] = self._tool_status("flatpak", flag="--version")
         out["fwupd"] = self._tool_status("fwupdmgr", flag="--version")
+        out["timeshift"] = self._timeshift_status()
+        out["sudo"] = self._sudo_status()
+        out["systemctl"] = self._systemctl_status()
         out["bash"] = self._bash_status()
         out["ascendo_lib"] = self._lib_status()
         out["ascendo_scripts"] = self._scripts_status()
@@ -359,6 +417,112 @@ class UbuntuAdapter(IAdapter):
         if res.returncode != 0:
             return f"error: pip --version exited {res.returncode}"
         line = (res.stdout or "").strip().splitlines()
+        v = line[0] if line else ""
+        return f"ok: {v}" if v else "ok"
+
+    def _systemctl_status(self) -> str:
+        """Probe systemctl (used by SystemdScheduler for per-user timers).
+
+        Optional component: missing => degraded (not error) because the
+        scheduler is a nice-to-have, not a hard requirement for apply.
+        """
+        path = shutil.which("systemctl")
+        if path is None:
+            return (
+                "degraded: systemctl not on PATH "
+                "(scheduler unavailable; install: apt install systemd)"
+            )
+        try:
+            res = subprocess.run(
+                [path, "--version"],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"error: {exc}"
+        out = (res.stdout or res.stderr or "").strip().splitlines()
+        v = out[0] if out else "systemctl"
+        return f"ok: {v}"
+
+    def _sudo_status(self) -> str:
+        """Probe sudo + the static askpass helper.
+
+        Three states:
+          - ok: sudo on PATH AND askpass_helper.sh exists + executable
+          - degraded: sudo present but askpass helper missing/non-exec
+                      (apply phases will fall back to TTY prompts)
+          - unavailable: sudo not installed (elevation impossible)
+        """
+        path = shutil.which("sudo")
+        if path is None:
+            return (
+                "unavailable: sudo not on PATH "
+                "(install: apt install sudo)"
+            )
+        helper = self.ADAPTER_LIB_DIR / "askpass_helper.sh"
+        if not helper.is_file():
+            return (
+                f"degraded: sudo at {path} but "
+                f"askpass helper missing at {helper} "
+                f"(apply phases will require TTY prompt)"
+            )
+        try:
+            mode = helper.stat().st_mode
+        except OSError as exc:
+            return f"error: cannot stat askpass helper: {exc}"
+        if not (mode & 0o111):
+            return (
+                f"degraded: askpass helper at {helper} is not executable "
+                f"(chmod +x to fix)"
+            )
+        try:
+            res = subprocess.run(
+                [path, "--version"],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"error: {exc}"
+        out = (res.stdout or res.stderr or "").strip().splitlines()
+        v = out[0] if out else "sudo"
+        return f"ok: {v} + askpass helper"
+
+    def _timeshift_status(self) -> str:
+        """Probe timeshift CLI.
+
+        Treated as an optional component: missing => warn (not error)
+        because snapshots are a nice-to-have, not a hard requirement.
+        """
+        path = shutil.which("timeshift")
+        if path is None:
+            return (
+                "degraded: timeshift not installed "
+                "(snapshots unavailable; install: sudo apt install timeshift)"
+            )
+        try:
+            res = subprocess.run(
+                [path, "--version"],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"error: {exc}"
+        out = (res.stdout or res.stderr or "").strip().splitlines()
+        v = out[0] if out else ""
+        return f"ok: {v}" if v else "ok"
+
+    def _systemctl_status(self) -> str:
+        path = shutil.which("systemctl")
+        if path is None:
+            return "warn: not available (systemctl not on PATH)"
+        try:
+            res = subprocess.run(
+                [path, "--user", "is-system-running"],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"warn: {exc}"
+        # is-system-running returns non-zero on degraded/initializing/etc.,
+        # but systemctl itself is functional. Treat any successful spawn
+        # as ok.
+        line = (res.stdout or res.stderr or "").strip().splitlines()
         v = line[0] if line else ""
         return f"ok: {v}" if v else "ok"
 
