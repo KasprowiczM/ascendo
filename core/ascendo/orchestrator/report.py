@@ -58,7 +58,7 @@ _CATEGORY_LABELS: dict[str, str] = {
     "pip": "Python (pip)",
     "pipx": "Python (pipx)",
     "softwareupdate": "macOS system updates",
-    "web": "macOS web apps",
+    "web": "Web apps (AppImage / GitHub releases / Sparkle)",
     "winget": "winget",
     "msstore": "Microsoft Store",
     "windows_update": "Windows Update",

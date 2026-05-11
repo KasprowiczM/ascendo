@@ -187,7 +187,21 @@ require_sudo() {
     fi
     (while true; do sudo -n true 2>/dev/null || break; sleep 50; done) &
     SUDO_KEEP_ALIVE_PID=$!
-    trap 'kill ${SUDO_KEEP_ALIVE_PID} 2>/dev/null' EXIT
+    # CRITICAL: chain — do NOT replace. lib/json.sh registers a json_finalize
+    # EXIT trap so the sidecar gets written; if we clobber it with a single
+    # keepalive-killer trap, the script's exit produces NO sidecar and the
+    # bridge raises "no sidecar produced", marking the apply as failed even
+    # though every command succeeded. Chain by reading the current EXIT trap
+    # body and prepending our killer.
+    _existing_exit_trap=$(trap -p EXIT 2>/dev/null | sed -E "s/^trap -- '(.*)' EXIT$/\1/" || true)
+    if [[ -n "${_existing_exit_trap}" ]]; then
+        # shellcheck disable=SC2064  # we WANT eager expansion of $SUDO_KEEP_ALIVE_PID
+        trap "kill ${SUDO_KEEP_ALIVE_PID} 2>/dev/null; ${_existing_exit_trap}" EXIT
+    else
+        # shellcheck disable=SC2064
+        trap "kill ${SUDO_KEEP_ALIVE_PID} 2>/dev/null" EXIT
+    fi
+    unset _existing_exit_trap
 }
 
 # ── Check if a command exists ─────────────────────────────────────────────────
