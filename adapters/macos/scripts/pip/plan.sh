@@ -79,6 +79,13 @@ while IFS='|' read -r DISPLAY PKG METHOD DESC; do
     if [ "$STATUS" = "planned" ]; then
         case "$(_ascendo_pip_flavour "$(ascendo_pip_pip_bin)"):$PKG" in
             brew:pip|brew:setuptools|brew:wheel) continue ;;
+            brew:*)
+                # Same cross-manager rule as check.sh: skip pip packages
+                # that brew also owns as formulas (uv/ruff/black/poetry/…).
+                if ascendo_pip_brew_owns "$PKG"; then
+                    continue
+                fi
+                ;;
         esac
     fi
     # Only emit items that would CHANGE in apply (planned + missing).

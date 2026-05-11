@@ -424,21 +424,31 @@ def test_inventory_db_refresh_drops_stale_rows_for_shrunk_manifest(
     )
 
 
-def test_post_run_flush_drops_stale_rows(tmp_path: Path) -> None:
-    """Regression: ``_flush_run_to_inventory_db`` must clear each touched
-    category before bulk-upserting the new sidecar rows.
+def test_post_run_flush_is_upsert_only(tmp_path: Path) -> None:
+    """Regression: ``_flush_run_to_inventory_db`` must NOT clear rows
+    outside the sidecar's enumeration set.
 
-    The bug: post-run flush in ``run_async.py`` was calling
-    ``bulk_upsert(rows)`` directly, leaving orphan rows from prior runs
-    when discovery shrank (e.g. a brew formula uninstalled, a web app
-    that aged out of the registry). Live discovery would then report N
-    items but the DB would hold N+K, breaking the Apps↔Categories
-    parity contract. Documented at HANDOFF Sesja 34 hygiene-followup;
-    fix in Sesja 45.
+    Original bug (Sesja 34) wanted: "clear stale rows when a manifest
+    shrinks". Sesja 45 over-corrected by adding ``clear_category(cat)``
+    before bulk_upsert in the post-run flush.
 
-    The fix: ``_flush_run_to_inventory_db`` now calls
-    ``inventory_db.clear_category(cat)`` for each category present in
-    ``rows`` before the upsert.
+    The over-correction was catastrophic: check__web.json reports the
+    registry-driven subset (~37 apps with vendor probes), while the
+    full inventory live-scan has ~316 web-classified bundles. After a
+    check run the flush cleared all 316 and wrote back only 37 — the
+    operator saw "Web: 37 apps" instead of the truth.
+
+    The right model: post-run flush is **UPSERT-ONLY**. The explicit
+    live-scan paths (POST /inventory/db/refresh, /inventory cold
+    start in spa_real._replace_buckets_in_db) keep their clear+write
+    semantics because they ARE authoritative for the full set. Apply
+    sidecars only carry items that got touched; clearing on those
+    was always wrong.
+
+    This test asserts:
+      1. Pre-existing rows for items NOT in the sidecar are preserved.
+      2. Rows that ARE in the sidecar get their installed/candidate
+         updated.
     """
     import json
     from ascendo.orchestrator.run_async import _flush_run_to_inventory_db
@@ -446,11 +456,14 @@ def test_post_run_flush_drops_stale_rows(tmp_path: Path) -> None:
     db_path = tmp_path / "inv.db"
     db = InventoryDB(db_path)
 
-    # Seed the DB with 3 brew rows from a previous run.
+    # Seed: 3 brew rows from a prior live-scan ("inventory enumeration"
+    # outside the manifest). jq is the row NOT in the upcoming sidecar
+    # — it must SURVIVE the flush (live-scan said it's installed; the
+    # check sidecar's narrower view shouldn't nuke it).
     db.bulk_upsert(
         [
-            {"category": "brew", "name": "wget", "installed": "1.0",
-             "candidate": "1.0", "status": "up_to_date"},
+            {"category": "brew", "name": "wget", "installed": "0.9",
+             "candidate": "0.9", "status": "up_to_date"},
             {"category": "brew", "name": "curl", "installed": "1.0",
              "candidate": "1.0", "status": "up_to_date"},
             {"category": "brew", "name": "jq", "installed": "1.0",
@@ -459,9 +472,8 @@ def test_post_run_flush_drops_stale_rows(tmp_path: Path) -> None:
     )
     assert db.count(category="brew") == 3
 
-    # Write a hand-rolled ascendo/v1 sidecar containing only 2 of the 3
-    # items (jq dropped between runs). Using the canonical fixture as a
-    # base avoids replicating Sidecar's full Pydantic surface in tests.
+    # Build a check__brew.json with only 2 items — wget upgraded to 1.0,
+    # curl unchanged, jq absent from sidecar.
     fixture = (
         Path(__file__).resolve().parent.parent
         / "fixtures" / "sidecars" / "ascendo_v1_apply_winget.json"
@@ -491,14 +503,20 @@ def test_post_run_flush_drops_stale_rows(tmp_path: Path) -> None:
         json.dumps(payload), encoding="utf-8",
     )
 
-    # Flush — this must clear `jq` and replace with the 2 from the sidecar.
     flushed = _flush_run_to_inventory_db(run_dir, db)
     assert flushed == 2
 
     rows = db.query(category="brew")
     names = {r["name"] for r in rows}
-    assert names == {"wget", "curl"}, (
-        f"Stale row leaked through post-run flush: {sorted(names)}"
+    # All 3 must remain: wget + curl from sidecar, jq preserved from
+    # earlier live-scan (not in this sidecar — must not be wiped).
+    assert names == {"wget", "curl", "jq"}, (
+        f"Post-run flush WRONGLY cleared rows it shouldn't own: {sorted(names)}"
+    )
+    # wget's row should now reflect the sidecar's upgraded version (1.0).
+    wget = next(r for r in rows if r["name"] == "wget")
+    assert wget["installed"] == "1.0", (
+        f"Upsert did not refresh wget.installed: {wget}"
     )
 
 

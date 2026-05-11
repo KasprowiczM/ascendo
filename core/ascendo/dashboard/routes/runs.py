@@ -20,17 +20,72 @@ from ...orchestrator import DEFAULT_PHASE_ORDER, RunReport, run_phases
 
 # Profile -> default phase set. Profiles are the user-facing knob; phases
 # are the orchestrator-facing primitive. The dashboard only exposes
-# profile, so we need an explicit map. Aligned with docs/agents/contract.md
-# §Profiles:
-#   quick — read-only sweep (CHECK only). No mutations, no sudo.
-#   safe  — full 5-phase, drivers excluded (driver exclusion happens at
-#           the categories layer; here we run the whole pipeline).
-#   full  — full 5-phase, every category.
+# profile, so we need an explicit map.
+#
+# Aligned with docs/agents/contract.md §Profiles:
+#
+#   quick — read-only sweep (CHECK only). No mutations, no sudo, ~10-60s.
+#           Use case: "is there anything new to install?"
+#
+#   safe  — full 5-phase pipeline, but skips categories that can force a
+#           reboot or touch hardware. Concrete exclusions per
+#           ``_PROFILE_EXCLUDED_CATEGORIES``: softwareupdate (OS patches
+#           may force reboot), drivers, firmware. Use case: "upgrade my
+#           apps without losing my session".
+#
+#   full  — full 5-phase pipeline, every category including
+#           softwareupdate / drivers / firmware. Use case: "upgrade
+#           everything; I'm ready to reboot if needed."
+#
+# Phase-level mapping (this dict) and category-level mapping
+# (_PROFILE_EXCLUDED_CATEGORIES below) are both consulted by
+# ``_phases_for_request`` and ``_categories_for_request`` respectively.
 _PROFILE_PHASES: dict[str, tuple[Phase, ...]] = {
     "quick": (Phase.CHECK,),
     "safe":  DEFAULT_PHASE_ORDER,
     "full":  DEFAULT_PHASE_ORDER,
 }
+
+# Profile -> categories that get EXCLUDED when the caller didn't pin an
+# explicit category list. quick has no exclusions because check is
+# read-only and can't break anything. safe excludes the categories that
+# either force a reboot (softwareupdate) or touch hardware (drivers,
+# firmware). full excludes nothing.
+#
+# Per-source category names match SourceType values; case-sensitive.
+_PROFILE_EXCLUDED_CATEGORIES: dict[str, frozenset[str]] = {
+    "quick": frozenset(),
+    "safe":  frozenset({"softwareupdate", "drivers", "firmware"}),
+    "full":  frozenset(),
+}
+
+
+def _categories_for_request(
+    explicit: list[str] | None,
+    profile: str | None,
+    adapter_categories: list[str],
+) -> list[str] | None:
+    """Resolve which categories a run should target.
+
+    Precedence: explicit > profile-driven filter > None (= all).
+    Returns ``None`` when the caller didn't restrict and the profile
+    has no exclusions — falling through to the orchestrator's "all
+    adapter-supported categories" default.
+    """
+    if explicit:
+        return list(explicit)
+    if not profile:
+        return None
+    excluded = _PROFILE_EXCLUDED_CATEGORIES.get(profile, frozenset())
+    if not excluded:
+        return None
+    # Only restrict if any adapter category is actually excluded —
+    # otherwise return None so the orchestrator default kicks in
+    # (avoids materialising a long list when there's nothing to drop).
+    kept = [c for c in adapter_categories if c not in excluded]
+    if len(kept) == len(adapter_categories):
+        return None
+    return kept
 
 
 def _phases_for_request(
@@ -212,8 +267,26 @@ async def create_run(req: RunRequest, request: Request) -> RunResponse:
     )
 
     resolved_phases = _phases_for_request(req.phases, req.profile)
+    # Resolve categories via profile filter — safe excludes
+    # softwareupdate/drivers/firmware to avoid forced reboots; full has
+    # no exclusions. Caller-supplied explicit list always wins.
+    explicit_cats = [
+        c.value if hasattr(c, "value") else str(c)
+        for c in (req.categories or [])
+    ]
+    adapter_cats: list[str] = []
+    try:
+        adapter_cats = [
+            (m.category.value if hasattr(m.category, "value") else str(m.category))
+            for m in adapter.package_managers(host)
+        ]
+    except Exception:  # noqa: BLE001
+        adapter_cats = []
+    resolved_categories = _categories_for_request(
+        explicit_cats or None, req.profile, adapter_cats,
+    )
     resolved_filter = _resolve_item_filter(
-        req.item_filter, req.categories, resolved_phases, runs_dir,
+        req.item_filter, resolved_categories, resolved_phases, runs_dir,
     )
     try:
         report: RunReport = run_phases(
@@ -221,7 +294,7 @@ async def create_run(req: RunRequest, request: Request) -> RunResponse:
             run_info,
             host,
             phases=resolved_phases,
-            categories=req.categories,
+            categories=resolved_categories,
             base_dir=runs_dir,
             stop_on_failure=req.stop_on_failure,
             item_filter=resolved_filter,
@@ -477,8 +550,26 @@ async def create_run_async(req: RunRequest, request: Request) -> dict:
     )
 
     resolved_phases = _phases_for_request(req.phases, req.profile)
+    # Resolve categories via profile filter — safe excludes
+    # softwareupdate/drivers/firmware so users have a "upgrade my apps
+    # without forced reboot" knob distinct from full.
+    explicit_cats_strs = [
+        c.value if hasattr(c, "value") else str(c)
+        for c in (req.categories or [])
+    ]
+    adapter_cats: list[str] = []
+    try:
+        adapter_cats = [
+            (m.category.value if hasattr(m.category, "value") else str(m.category))
+            for m in adapter.package_managers(host)
+        ]
+    except Exception:  # noqa: BLE001
+        adapter_cats = []
+    resolved_categories = _categories_for_request(
+        explicit_cats_strs or None, req.profile, adapter_cats,
+    )
     resolved_filter = _resolve_item_filter(
-        req.item_filter, req.categories, resolved_phases, runs_dir,
+        req.item_filter, resolved_categories, resolved_phases, runs_dir,
     )
 
     # Concurrent-apply guard: refuse a new apply if an apply is already
@@ -489,9 +580,7 @@ async def create_run_async(req: RunRequest, request: Request) -> dict:
     # also serialize-by-process (e.g. brew owns its own per-machine lock),
     # but the dashboard layer should refuse upfront so the user sees a
     # clear 409 instead of confusing half-state.
-    new_cats = [
-        c.value if hasattr(c, "value") else str(c) for c in (req.categories or ())
-    ]
+    new_cats = resolved_categories or adapter_cats
     new_phases = [
         p.value if hasattr(p, "value") else str(p) for p in resolved_phases
     ]
@@ -513,7 +602,7 @@ async def create_run_async(req: RunRequest, request: Request) -> dict:
         host=host,
         base_dir=runs_dir,
         phases=resolved_phases,
-        categories=req.categories,
+        categories=resolved_categories,
         stop_on_failure=req.stop_on_failure,
         item_filter=resolved_filter,
         inventory_db=getattr(request.app.state, "inventory_db", None),

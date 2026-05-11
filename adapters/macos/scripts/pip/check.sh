@@ -143,6 +143,19 @@ while IFS='|' read -r DISPLAY PKG METHOD DESC; do
                 LATEST="$INSTALLED"
                 json_add_message "info" "$PKG is brew-managed; upgrade via 'brew upgrade python', not pip"
                 ;;
+            brew:*)
+                # Cross-manager skip: pip is brew-flavoured AND brew owns
+                # this package as a formula (e.g. uv, ruff, black,
+                # poetry, mypy). pip install would race brew for
+                # /opt/homebrew/bin/<name>, breaking brew link. Defer to
+                # brew. Pinning LATEST=INSTALLED so the dashboard overlay
+                # doesn't re-flip to outdated.
+                if ascendo_pip_brew_owns "$PKG"; then
+                    STATUS="up_to_date"
+                    LATEST="$INSTALLED"
+                    json_add_message "info" "$PKG is brew-owned (formula); pip defers — upgrade flows through brew category"
+                fi
+                ;;
         esac
     fi
     case "$STATUS" in

@@ -100,6 +100,30 @@ def _augment_path_for_macos_gui() -> None:
     if new_entries:
         os.environ["PATH"] = ":".join(new_entries + existing)
 
+    # Same fix-class as PATH augmentation: when the dashboard is launched
+    # without a controlling TTY (Tauri sidecar, Ascendo.app
+    # double-click), the apply scripts' `_ascendo_sudo_warm` helper can't
+    # use the TTY-PAM Touch ID path. If we don't also enable the
+    # GUI/SecurityAgent fallback, sudo invocations hang silently with no
+    # prompt visible to the user — the exact "Touch ID stopped prompting,
+    # updates don't apply" regression operators saw after the Sesja 44
+    # timestamp-probe + Sesja 52/53 Tauri-shell rework.
+    #
+    # Enable ASCENDO_SUDO_ALLOW_GUI=1 only when:
+    #   * no /dev/tty is openable from this process (true GUI launch)
+    #   * the operator hasn't already pinned it (respect explicit setting)
+    # The SecurityAgent dialog this triggers honours PAM Touch ID via the
+    # AuthorizationCreate API on Sonoma 14+, so users with pam_tid still
+    # get a Touch ID prompt — just sourced from SecurityAgent instead of
+    # the apply script's TTY-PAM path.
+    if "ASCENDO_SUDO_ALLOW_GUI" not in os.environ:
+        try:
+            fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+            os.close(fd)
+            # We have a real TTY — leave GUI fallback opt-in.
+        except OSError:
+            os.environ["ASCENDO_SUDO_ALLOW_GUI"] = "1"
+
 
 def _resolve_edition() -> str:
     """Priority: ASCENDO_EDITION env > $ASCENDO_HOME/.ascendo-edition > basic.

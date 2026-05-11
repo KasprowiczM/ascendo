@@ -88,6 +88,39 @@ The script:
 
 **Skip the validate step:** `bash bin/install-dev-macos.sh --skip-validate`.
 
+### Profiles: quick vs safe vs full
+
+The Overview tab exposes three "Quick action" buttons that map to update
+profiles. They differ in **which phases run** AND **which categories are
+in scope**:
+
+| Profile | Phases | Categories | Forced reboot risk | Use case |
+|---------|--------|------------|--------------------|----------|
+| **Quick** (action 2) | `check` only | all | none (read-only) | "What's available to update?" — ~10–60 s, no sudo |
+| **Safe** (action 3) | `check + plan + apply + verify + cleanup` | all EXCEPT `softwareupdate`, `drivers`, `firmware` | none — your session stays alive | "Upgrade my apps without losing my session" |
+| **Full** (action 5) | `check + plan + apply + verify + cleanup` | all (incl. `softwareupdate`) | macOS patches may force reboot | "Upgrade everything; I'm ready to reboot" |
+| Full dry-run (action 4) | all 5 phases | all | none (no mutation) | "Show me exactly what Full would do, without doing it" |
+
+Concretely on macOS:
+
+- **Quick** scans brew + mas + npm + pip + web + softwareupdate for
+  candidates and surfaces them in Categories / Apps. No mutations.
+- **Safe** updates brew formulae, Mac App Store apps, npm globals, pip
+  globals, and web apps (sparkle/github_dmg/release_feed/omaha apply
+  paths). Skips `softwareupdate` so macOS patches that require a reboot
+  don't fire mid-day.
+- **Full** does everything Safe does, plus `softwareupdate` (with the
+  mandatory `-R` flag — restart required if any patch needs it).
+
+CLI equivalents:
+```bash
+python3 -m ascendo run --profile quick                  # read-only sweep
+python3 -m ascendo run --profile safe                   # upgrade apps, skip OS patches
+python3 -m ascendo run --profile full                   # upgrade everything (may reboot)
+python3 -m ascendo run --profile full --dry-run         # show full plan, no mutation
+python3 -m ascendo run -c brew,npm --phases check,apply # explicit override
+```
+
 ### Editions: basic (default) vs dev
 
 Ascendo ships in two editions. The same code, different surfaces:

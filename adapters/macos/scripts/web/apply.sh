@@ -116,7 +116,19 @@ for k, v in fields.items():
     [ -z "$APP_PATH" ] && APP_PATH="/Applications/${DISPLAY_NAME}.app"
 
     INSTALLED=$(_web_installed_version "$APP_PATH")
-    [ -z "$INSTALLED" ] && continue
+    # Pre-fix this `continue` silently dropped any registered slug whose
+    # APP_PATH didn't resolve to a real CFBundleShortVersionString. The
+    # operator then saw plan reporting "7 apps to upgrade" but apply only
+    # actually doing 1 — the other 6 vanished without diagnostic.
+    # Common causes: app moved out of /Applications, registry path wrong,
+    # app not actually installed (registry-only entry). Emit `skipped`
+    # with explicit reason so the row appears in the sidecar.
+    if [ -z "$INSTALLED" ]; then
+        json_add_item "web:${SLUG}" "" "" "skipped" "web" "$HANDLER"
+        json_add_message "info" "${SLUG}: not_installed_or_path_mismatch (registry app_path='${APP_PATH}' — bundle missing or unreadable; remove from override registry or fix app_path)"
+        COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+        continue
+    fi
 
     if [ "$DRY_RUN" = "true" ]; then
         json_add_item "web:${SLUG}" "$INSTALLED" "" "planned" "web" "$HANDLER"

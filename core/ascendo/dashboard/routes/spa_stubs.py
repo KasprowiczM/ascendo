@@ -491,6 +491,28 @@ async def sudo_status_stub(request: Request) -> dict[str, Any]:
     success — without this, the pill stays "sudo not active" forever
     even though every subsequent apply succeeds silently.
     """
+    # The dashboard's own process tells us whether apply subprocesses
+    # will have a /dev/tty. If we (the dashboard) have no controlling
+    # terminal, neither will the subprocesses we spawn — so the TTY-PAM
+    # Touch ID path is unavailable and the modal MUST be shown unless
+    # askpass is already wired. This single probe distinguishes
+    # Tauri/GUI launch (no TTY) from terminal launch.
+    tty_available = False
+    try:
+        import os as _os
+        tty_available = _os.isatty(0) or _os.path.exists("/dev/tty")
+        # /dev/tty existence is not enough — try opening it like
+        # _ascendo_sudo_warm does. If THAT works, PAM can drive the
+        # Touch ID sheet from a child process.
+        if tty_available:
+            try:
+                fd = _os.open("/dev/tty", _os.O_RDWR | _os.O_NOCTTY)
+                _os.close(fd)
+            except OSError:
+                tty_available = False
+    except Exception:  # noqa: BLE001
+        tty_available = False
+
     adapter = getattr(request.app.state, "adapter", None)
     cached_via_password = False
     if adapter is not None:
@@ -501,12 +523,32 @@ async def sudo_status_stub(request: Request) -> dict[str, Any]:
         if elev is not None and callable(getattr(elev, "has_password_registered", None)):
             cached_via_password = bool(elev.has_password_registered())
             if cached_via_password:
-                return {"cached": True, "method": "askpass"}
-            # No password registered — probe the OS sudo timestamp on
-            # POSIX. `sudo -n -v` exits 0 when there's a fresh cached
-            # credential (Touch ID, prior sudo -v, etc.) and non-zero
-            # otherwise. Bounded 1-second timeout so a wedged sudo
-            # never blocks the polling pill.
+                # Real askpass IS wired (a password is registered, the
+                # askpass helper file exists, SUDO_ASKPASS will be set in
+                # subprocesses). Safe for the SPA to skip the modal.
+                return {
+                    "cached": True,
+                    "method": "askpass",
+                    "askpass_ready": True,
+                    "tty_available": tty_available,
+                }
+            # No password registered. Probe the OS sudo timestamp via
+            # `sudo -n -v` (1s timeout) — this tells us whether the OS
+            # would let the apply scripts elevate WITHOUT a password
+            # prompt. BUT: even when cached=True via timestamp, the apply
+            # subprocesses have NO SUDO_ASKPASS set (we never registered
+            # one), and if they're spawned from a GUI launch (Tauri,
+            # double-click .app) they also have NO /dev/tty for PAM
+            # Touch ID. So timestamp-only "cached" was misleading the SPA
+            # into skipping the modal AND then apply hung waiting for a
+            # password it couldn't read.
+            #
+            # The fix: return `askpass_ready=False` whenever no password
+            # is registered. SPA gates the modal-skip on
+            # `askpass_ready === true`, not on `cached` alone. The
+            # timestamp branch still surfaces "cached=true" for the UI
+            # footer pill, but the SPA's apply-flow logic now refuses to
+            # rely on it.
             import platform
             import subprocess
             if platform.system() in ("Darwin", "Linux"):
@@ -518,11 +560,25 @@ async def sudo_status_stub(request: Request) -> dict[str, Any]:
                         check=False,
                     )
                     if r.returncode == 0:
-                        return {"cached": True, "method": "timestamp"}
+                        return {
+                            "cached": True,
+                            "method": "timestamp",
+                            "askpass_ready": False,
+                            "tty_available": tty_available,
+                        }
                 except (OSError, subprocess.TimeoutExpired):
                     pass
-            return {"cached": False}
-    return {"cached": True, "stub": True}
+            return {
+                "cached": False,
+                "askpass_ready": False,
+                "tty_available": tty_available,
+            }
+    return {
+        "cached": True,
+        "stub": True,
+        "askpass_ready": False,
+        "tty_available": tty_available,
+    }
 
 
 @router.post("/sudo/auth")

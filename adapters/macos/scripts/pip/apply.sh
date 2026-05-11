@@ -123,6 +123,23 @@ apply_pip() {
                 "skipped pip-self-upgrade of '$_pkg' on brew Python (installed without RECORD; run 'brew upgrade python' to bump)"
             return
             ;;
+        brew:*)
+            # Cross-manager skip mirroring check.sh + plan.sh. When pip is
+            # brew-flavoured AND brew owns this package as a formula, pip
+            # would create /opt/homebrew/bin/<name> ahead of brew's own
+            # link step — every subsequent `brew upgrade <pkg>` then fails
+            # with "Target already exists" because pip occupies the path
+            # (operator-reported uv 0.11.12→0.11.13 collision). Defer to
+            # brew silently.
+            if ascendo_pip_brew_owns "$_pkg"; then
+                local _new
+                _new="$(ascendo_pip_installed_version "$_pkg")"
+                json_add_item "$_display" "$_new" "$_new" "skipped" "pip" "pip"
+                json_add_message "info" \
+                    "skipped pip upgrade of '$_pkg' — brew also owns this formula; upgrade flows through brew (preserves /opt/homebrew/bin/$_pkg)"
+                return
+            fi
+            ;;
     esac
     # Sesja 50 fix — up_to_date guard. Without this, every apply ran
     # `pip install -U <pkg>` for every manifest entry regardless of

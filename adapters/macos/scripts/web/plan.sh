@@ -74,6 +74,18 @@ in_filter() {
 COUNT_PLANNED=0
 COUNT_SKIPPED=0
 
+# Sesja 54 perf fix: plan/web used to do per-app HTTP probes SEQUENTIALLY
+# (~5s per app × 30 registered apps = 150s of wall time, dominating a
+# 10-minute safe-update run). check.sh + apply.sh already use the
+# parallel pattern from Sesja 50; plan.sh was missed. Mirror the
+# 3-pass approach: build work list → parallel probes → sequential emit.
+INDICES_FILE="$OUTPUT_DIR/$RUN_ID/_web_plan_idx.list"
+RESULTS_DIR="$OUTPUT_DIR/$RUN_ID/_web_plan_probes"
+mkdir -p "$(dirname "$INDICES_FILE")" "$RESULTS_DIR" 2>/dev/null
+: > "$INDICES_FILE"
+WORK_IDX=0
+
+# ── Pass 1: walk discovery, stash per-idx work files (no HTTP) ───────
 while IFS= read -r DISC_LINE; do
     [ -z "$DISC_LINE" ] && continue
 
@@ -131,18 +143,31 @@ print(json.dumps(out))
 
     in_filter "$SLUG" || continue
 
-    LATEST=""
-    case "$HANDLER" in
-        sparkle)      LATEST=$(sparkle_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        github_dmg)   LATEST=$(github_dmg_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        keystone)     LATEST=$(keystone_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        msupdate)     LATEST=$(msupdate_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        docker)       LATEST=$(docker_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        release_feed) LATEST=$(release_feed_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        omaha)        LATEST=$(omaha_check "$SLUG" "$CFG" 2>/dev/null || true) ;;
-        squirrel|builtin) LATEST="" ;;
-    esac
-    LATEST=$(printf '%s' "$LATEST" | tr -d '[:space:]')
+    # Stash per-idx state for Pass 3 (parallel probe + emit).
+    printf '%s' "$CFG"          > "$RESULTS_DIR/${WORK_IDX}.cfg.json"
+    printf '%s' "$SLUG"         > "$RESULTS_DIR/${WORK_IDX}.slug"
+    printf '%s' "$HANDLER"      > "$RESULTS_DIR/${WORK_IDX}.handler"
+    printf '%s' "$INSTALLED"    > "$RESULTS_DIR/${WORK_IDX}.installed"
+    printf '%s' "$BUNDLE_ID"    > "$RESULTS_DIR/${WORK_IDX}.bundle_id"
+    printf '%s' "$DISPLAY_NAME" > "$RESULTS_DIR/${WORK_IDX}.display_name"
+    printf '%d\n' "$WORK_IDX"   >> "$INDICES_FILE"
+    WORK_IDX=$((WORK_IDX + 1))
+done < <(bash "$ADAPTER_LIB/web_discovery.sh" --emit-json 2>/dev/null)
+
+# ── Pass 2: parallel HTTP probes (8-way concurrency by default) ──────
+_web_probe_parallel "$INDICES_FILE" "$RESULTS_DIR"
+
+# ── Pass 3: sequential per-handler emit using probe results ──────────
+i=0
+while [ "$i" -lt "$WORK_IDX" ]; do
+    SLUG=$(cat "$RESULTS_DIR/${i}.slug" 2>/dev/null)
+    HANDLER=$(cat "$RESULTS_DIR/${i}.handler" 2>/dev/null)
+    INSTALLED=$(cat "$RESULTS_DIR/${i}.installed" 2>/dev/null)
+    BUNDLE_ID=$(cat "$RESULTS_DIR/${i}.bundle_id" 2>/dev/null)
+    DISPLAY_NAME=$(cat "$RESULTS_DIR/${i}.display_name" 2>/dev/null)
+    CFG=$(cat "$RESULTS_DIR/${i}.cfg.json" 2>/dev/null)
+    LATEST=$(_web_read_probe_result "$RESULTS_DIR" "$i")
+    i=$((i + 1))
 
     # GH rate-limit sentinel: skip with explanation, don't plan.
     if [ "$LATEST" = "__GH_RATE_LIMITED__" ]; then
@@ -218,7 +243,10 @@ print(json.dumps(out))
             fi
             ;;
     esac
-done < <(bash "$ADAPTER_LIB/web_discovery.sh" --emit-json 2>/dev/null)
+done
+
+# Cleanup per-idx probe scratch (best-effort).
+rm -rf "$RESULTS_DIR" "$INDICES_FILE" 2>/dev/null
 
 json_add_message "info" "web plan: ${COUNT_PLANNED} planned, ${COUNT_SKIPPED} skipped"
 exit 0

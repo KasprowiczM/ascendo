@@ -145,7 +145,17 @@ const sudoMgr = {
   },
   async ensure() {
     const s = await api.get("/sudo/status");
-    if (s.cached) return true;
+    // CRITICAL: only skip the password modal when the backend has
+    // confirmed BOTH (a) sudo credentials are cached AND (b) askpass is
+    // wired (a real SPA password is registered, SUDO_ASKPASS will be
+    // set in subprocess env). Pre-fix this also accepted "cached=true,
+    // method=timestamp" — but a fresh OS-sudo-timestamp does not
+    // guarantee the apply subprocess can drive sudo non-interactively.
+    // When the dashboard is launched from Tauri/Ascendo.app (no TTY),
+    // apply subprocesses then hung silently on sudo with no Touch ID
+    // prompt visible. This was the operator-reported "Touch ID stopped
+    // prompting, updates don't apply" regression.
+    if (s.cached === true && s.askpass_ready === true) return true;
     // macOS shortcut: if PAM Touch ID is wired (auth sufficient pam_tid.so
     // in /etc/pam.d/sudo_local), skip the password modal entirely. The
     // first apply phase's `_ascendo_sudo_warm` will trigger the Touch ID
@@ -153,7 +163,16 @@ const sudoMgr = {
     // phase short-circuits via `sudo -n -v`. Apply scripts pick `sudo`
     // vs `sudo -A` automatically (see _ascendo_sudo helper) so no
     // askpass is needed.
-    if (this._adapter() === "macos") {
+    //
+    // BUT: Touch-ID-only skip only works when the dashboard subprocess
+    // has access to a real TTY (e.g. you launched it from Terminal). A
+    // GUI-launched dashboard (Tauri-spawned sidecar, Ascendo.app
+    // double-click) has no /dev/tty, so TTY-PAM can't drive Touch ID
+    // and we MUST register a password via the modal. Heuristic: the
+    // backend exposes `tty_available` in the status endpoint when known;
+    // if missing, fall back to "always modal when no askpass" for
+    // safety.
+    if (this._adapter() === "macos" && s.tty_available !== false) {
       try {
         const ti = await api.get("/elevation/touchid/status");
         if (ti && ti.enabled) return true;

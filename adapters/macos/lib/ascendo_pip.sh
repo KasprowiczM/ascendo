@@ -146,6 +146,50 @@ _ascendo_pip_flavour() {
     printf 'user'
 }
 
+# -- cross-manager ownership: is this package owned by Homebrew? -----------
+#
+# Background: when a Python CLI is installable BOTH via brew (e.g.
+# `brew install uv`) AND via pip (e.g. `pip install uv`), and the active pip
+# is the brew-Python's pip, both managers race over the same binary path
+# at `/opt/homebrew/bin/<name>`. brew's `brew link` step fails with
+# "Target already exists" because pip created the file first; pip's install
+# meanwhile re-extracts the wheel into brew Python's site-packages, leaving
+# the brew Cellar formula unlinked. Every run repeats the collision.
+#
+# Solution: when pip is the brew flavour AND brew has the package as a
+# formula, pip skips it (mirrors the existing brew-self-skip pattern for
+# pip/setuptools/wheel from Sesja 33). The result: brew owns the upgrade;
+# pip leaves the binary alone; no version drift.
+#
+# Implementation: lazy-loaded cache of brew's formula list. We populate once
+# per phase (check/plan/apply) on first call, then membership-check is
+# string-grep against the cached list. 5s timeout so a wedged brew never
+# blocks the whole phase.
+_ASCENDO_BREW_FORMULAS_CACHE=""
+_ASCENDO_BREW_FORMULAS_CACHE_INIT=0
+
+ascendo_pip_brew_owns() {
+    # Argument: $1 = package name (case-sensitive — brew formula names are
+    # canonical lowercase, but we lowercase $1 just in case).
+    local _pkg
+    _pkg="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+    if [ -z "$_pkg" ]; then return 1; fi
+    if [ "$_ASCENDO_BREW_FORMULAS_CACHE_INIT" -eq 0 ]; then
+        if command -v brew >/dev/null 2>&1; then
+            # `brew list --formula -1` is the fastest cross-version brew query
+            # (no JSON parse, just newline-delimited names). Capped at 5s.
+            _ASCENDO_BREW_FORMULAS_CACHE="$(
+                { ( brew list --formula -1 2>/dev/null & BREW_PID=$!; \
+                    ( sleep 5; kill $BREW_PID 2>/dev/null ) & \
+                    wait $BREW_PID; ) ; } </dev/null
+            )"
+        fi
+        _ASCENDO_BREW_FORMULAS_CACHE_INIT=1
+    fi
+    # Use printf to feed grep so we never invoke `echo -e` interpretation.
+    printf '%s\n' "$_ASCENDO_BREW_FORMULAS_CACHE" | grep -i -q "^${_pkg}$"
+}
+
 # Emits `--break-system-packages` when a brew-managed pip is active,
 # empty otherwise. Caller does:
 #   args=($pip install -U $pkg $(ascendo_pip_break_system_packages_arg))

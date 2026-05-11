@@ -246,13 +246,25 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
             )
     if not rows:
         return 0
-    touched_categories = {row["category"] for row in rows}
+    # IMPORTANT: post-run flush is UPSERT-ONLY. The previous implementation
+    # called clear_category() before bulk_upsert, but that destroyed live-scan
+    # rows that the run's sidecars don't enumerate. Concrete failure:
+    #   1. User clicks "Build inventory" → /inventory live-scan classifies
+    #      316 apps in /Applications as web (everything not brew/mas/Apple).
+    #   2. User runs Quick check → check__web.json has 37 items (only the
+    #      registry-driven + auto-classified Tier-A/B apps with vendor
+    #      probes).
+    #   3. Post-run flush: clear_category("web") nukes 316 rows, then
+    #      bulk_upsert writes 37 — losing 279 visible apps.
+    #
+    # Apply / verify sidecars are even smaller subsets (only items that
+    # got touched), so clearing on those is catastrophic too.
+    #
+    # The full live-scan paths (POST /inventory/db/refresh, /inventory
+    # cold start) still do clear+write per category — they're the only
+    # source authoritative for the FULL set. Post-run sidecars only carry
+    # the items each phase saw; we upsert those and leave the rest alone.
     try:
-        for cat in touched_categories:
-            try:
-                inventory_db.clear_category(cat)
-            except Exception:  # noqa: BLE001
-                _log.exception("inventory_db: clear_category(%s) failed", cat)
         return inventory_db.bulk_upsert(rows)
     except Exception:  # noqa: BLE001
         _log.exception("inventory_db: post-run flush failed")
