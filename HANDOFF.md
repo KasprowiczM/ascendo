@@ -6,6 +6,172 @@
 
 ---
 
+## Sesja 54 (2026-05-11) — Ubuntu adapter brought to macOS feature parity
+
+Worked entirely on `mk-uP5520` (Ubuntu 24.04, Python 3.14). Started from a
+state where the Ubuntu adapter declared only `PACKAGE_MANAGEMENT | INVENTORY`
+and the legacy bash bridge was aborting every run on the first phase. Ended
+with **all 5 IAdapter capabilities declared + WebManager added + 23/23
+end-to-end validate passing live on this host**, matching macOS feature
+surface.
+
+### Six commits on `main` (no worktrees per CLAUDE.md)
+
+| Commit | What |
+|--------|------|
+| `b90387a` | feat(ubuntu): ISnapshot via timeshift wrapper |
+| `11b6d69` | fix(ubuntu+core): exit_code 1 = warn = success, 75 = skipped |
+| `5e658f1` | feat(ubuntu): IElevation via sudo askpass cache + dashboard wiring (also swept up scheduler agent's files in atomic commit) |
+| `f9159b3` | feat(ubuntu): WebManager (AppImage + GitHub releases + release_feed) |
+| `1421727` | feat(ubuntu): bin/validate-ubuntu.sh — 10-stage end-to-end smoke harness |
+| `966a826` | fix(ubuntu): legacy_compat sidecar run.id overwrite preserves orchestrator run.id |
+
+### Strategy: 4 parallel subagents + controller-side fixes
+
+Dispatched 4 background subagents simultaneously on independent capability
+slices (each got a tight prompt naming the macOS reference files to copy
+the pattern from):
+
+- **IElevation** → `LinuxElevation` mirroring `MacElevation`. sudo askpass
+  cache via `_ASCENDO_SUDO_PW` env + helper script at
+  `adapters/ubuntu/lib/askpass_helper.sh`. `register_password(verify=True)`
+  validates via `sudo -S -k -p '' -v` then caches in-memory. The dashboard
+  `/elevation/auth` + `/elevation/status` endpoints from core work
+  unchanged. 29 tests.
+- **ISnapshot** → `TimeshiftSnapshot` wrapping `sudo -A timeshift --create
+  --scripted` + `--list` parser. `restore` deliberately omitted (destructive;
+  ISnapshot contract excludes it). Degrades gracefully when timeshift
+  isn't installed — health component returns warn, not error. 16 tests.
+- **IScheduler** → `SystemdScheduler` driving systemd user timers via
+  `~/.config/systemd/user/ascendo-<name>.{service,timer}` plus sidecar
+  JSON at `~/.local/share/ascendo/schedules/`. DSL parser identical to
+  `LaunchdScheduler` (DAILY/WEEKLY/MONTHLY/HOURLY/MINUTE) but emits
+  `OnCalendar=` / `OnUnitActiveSec=` instead of `StartCalendarInterval`
+  plist dicts. 33 tests.
+- **WebManager** → 8th IPackageManager. Slimmer than macOS (no
+  Sparkle/keystone/squirrel/omaha — those are Mac-only frameworks).
+  Tier-A handlers: `appimage`, `github_release`, `release_feed`,
+  `builtin`. Discovery walks `~/Applications`, `~/.local/share/AppImages`,
+  `/opt`, with dpkg-owned exclusion. Shipped registry `web_apps.toml`
+  has 5 entries (obsidian, joplin, cursor, vscode-insiders-tarball
+  [disabled], discord). 17 tests.
+
+All 4 agents finished in ~14 minutes wallclock (would have been ~50
+sequential). They coordinated by reading `adapter.py` fresh, doing
+targeted `Edit` calls, and never touching capabilities flag wholesale —
+the resulting flag composes as
+`PACKAGE_MANAGEMENT | INVENTORY | SNAPSHOTS | SCHEDULING | ELEVATION`.
+
+### Two real bugs caught + fixed inline by controller
+
+**Bug #1 — exit-code semantics drift (`11b6d69`).** Legacy bash phase
+scripts emit `exit 1` to mean "completed with non-critical advisories"
+per `docs/agents/contract.md` (e.g. apt check exits 1 when source lists
+are >24h old). The `legacy_compat` translator at
+`core/ascendo/models/legacy.py:243` had `status = "success" if exit_code
+== 0 else "failed"` — anything non-zero became failed, which tripped the
+orchestrator's `stop_on_failure` heuristic and aborted the whole run
+after the first manager. Fix: three-way mapping
+`{0,1 → success, 75 → skipped, else → failed}`. Two test fixtures (which
+asserted the buggy behaviour explicitly) updated to exercise all three
+paths.
+
+**Bug #2 — REPORT.md silently never generated on Ubuntu (`966a826`).**
+The legacy_compat translator synthesises `run.id` as
+`uuid5(host, started_at)` since legacy bash sidecars don't carry one.
+Without correction, every Ubuntu sidecar landed at
+`<base_dir>/<synthetic-uuid>/<phase>__<cat>.json` while the runner's
+post-apply hooks (REPORT.md generator + update_history flush + dashboard
+`/runs/{id}` routes) all expected `<base_dir>/<orchestrator-run-id>/`.
+Result: REPORT.md was silently NOT generated for any Ubuntu apply run,
+update_history rows referenced synthetic uuids nothing else could
+correlate, and dashboard run-detail endpoints 404'd. Fix:
+`BashPhaseManager.run_phase` overwrites `sc.run.id` with the
+orchestrator's real run.id immediately after `read_sidecar`, via a
+small `model_copy(update=...)` chain (Sidecar is frozen Pydantic).
+Verified live: brew apply now produces `apply__brew_formula.json` +
+`REPORT.md` side-by-side in the orchestrator's run dir.
+
+### `bin/validate-ubuntu.sh` (10 stages, 23 checks)
+
+Mirror of `bin/validate-macos.sh` + `bin/validate-windows.ps1`:
+
+1. CLI (`--help`, `version`, `doctor` — confirms ubuntu adapter selected)
+2. brew_formula 5-phase contract (check/plan/apply --dry-run/verify/cleanup)
+3. All 6 categories check phase (apt/snap/brew/npm/pip/flatpak)
+4. plan + verify + cleanup across 6 categories
+5. inventory list.sh (≥50 packages enumerated — got **2538** on this host)
+6. Dashboard `/version` + `/health` + `POST /runs/async` + status poll
+7. ISnapshot via timeshift (degraded gracefully when missing)
+8. IScheduler via systemd (live `list` action smoke)
+9. IElevation: askpass helper round-trip + LinuxElevation lifecycle
+10. WebManager check phase
+
+Default port `18765` (avoids conflict with a running ascendo dashboard
+on canonical 8765 — that snag came up during the session).
+
+### Live result on `mk-uP5520`
+
+```
+$ python3 -m ascendo doctor
+adapter: ubuntu (Ubuntu / Debian) tier=1
+capabilities: AdapterCapability.PACKAGE_MANAGEMENT|INVENTORY|SNAPSHOTS|SCHEDULING|ELEVATION
+  apt        ok: apt 2.8.3 (amd64)
+  brew       ok: Homebrew 5.1.11
+  bash       ok: GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)
+  flatpak    ok: Flatpak 1.14.6
+  fwupd      ok: ...
+  npm        ok: 11.13.0
+  pip        ok: pip 26.1
+  snap       ok: snap 2.75.2
+  sudo       ok: Sudo version 1.9.15p5 + askpass helper
+  systemctl  ok: running
+  timeshift  degraded: timeshift not installed (snapshots unavailable; install: sudo apt install timeshift)
+  ascendo_lib    ok: 14 module(s)
+  ascendo_scripts ok
+
+$ bash bin/validate-ubuntu.sh
+ALL CHECKS PASSED. (23/23)
+
+$ python3 -m ascendo run -c apt,snap,brew,npm,pip,flatpak,web -p check,plan
+overall: success (14 sidecars, 17 items)
+```
+
+### Test counts
+
+- 143/143 Ubuntu adapter tests
+- 13/13 contract `test_legacy_compat` tests
+- 36/36 Ubuntu adapter smoke tests (capabilities + 11-component health
+  rollup including new sudo / systemctl / timeshift / curl)
+
+### What's NOT done (M5.x parity follow-ups)
+
+Skip-listed deliberately to keep this session bounded; tracked for next
+push:
+- Ubuntu doesn't yet auto-trigger `update_history.bulk_upsert` from
+  apply sidecars in `run_async.py` — flushing wires through the same
+  core path as macOS but needs to be re-verified now that the run.id
+  preservation fix landed.
+- WebManager's `apply` for AppImage URLs is plumbed but not
+  zsync-driven (legacy bash `_web_install_artifact` re-downloads the
+  full file). zsync is on roadmap for AppImage v2.
+- Polkit (`pkexec`) integration for IElevation is left as a TODO in
+  `elevation.py`. The askpass path is sufficient for the dashboard's
+  needs; pkexec would unlock CLI-driven installs from non-interactive
+  contexts.
+- No Ubuntu-side `update-all.sh` ↔ `ascendo run` cross-reconciliation;
+  the legacy CLI path keeps working independently and the new path is
+  the preferred route.
+
+### Forward state (post-Sesja 54)
+
+Tier-1 Ubuntu adapter is now feature-complete vs macOS at the
+capability level. The 7 manager Python wrappers
+(apt/snap/brew/npm/pip/flatpak/drivers) plus the new web manager give
+8 IPackageManager implementations on Linux — beats macOS's 6.
+
+---
+
 ## Sesja 51-53 (2026-05-09) — Edition split + GUI-PATH fixes + v0.6.0-rc1
 
 Three sessions back-to-back-to-back, all shipped in one push to main.
