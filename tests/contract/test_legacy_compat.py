@@ -65,9 +65,20 @@ def test_translate_maps_exit_code_zero_to_success(
 def test_translate_maps_nonzero_exit_code_to_failed(
     sample_legacy_v1_npm_apply: dict[str, Any],
 ) -> None:
-    """exit_code != 0 -> status='failed'."""
-    translated = translate_legacy_v1(sample_legacy_v1_npm_apply)
+    """exit_code >= 2 -> status='failed' (1 is legacy 'warn' which is success-with-advisories;
+    75 is 'already-running' which maps to skipped). See docs/agents/contract.md."""
+    payload = copy.deepcopy(sample_legacy_v1_npm_apply)
+    payload["exit_code"] = 20  # apply-fail-known
+    translated = translate_legacy_v1(payload)
     assert translated["status"] == "failed"
+
+    payload["exit_code"] = 1  # legacy "warn" — sidecar items[] are clean, advisories only
+    translated = translate_legacy_v1(payload)
+    assert translated["status"] == "success"
+
+    payload["exit_code"] = 75  # already-running
+    translated = translate_legacy_v1(payload)
+    assert translated["status"] == "skipped"
 
 
 def test_translate_handles_empty_items(
@@ -142,12 +153,18 @@ def test_translate_item_result_to_status_mapping(
 def test_translate_npm_apply_round_trips_through_parse_sidecar(
     sample_legacy_v1_npm_apply: dict[str, Any],
 ) -> None:
-    """Full integration check: legacy npm apply -> ascendo Sidecar instance."""
+    """Full integration check: legacy npm apply -> ascendo Sidecar instance.
+
+    Note: fixture uses exit_code=1 (legacy 'warn' = success-with-advisories);
+    per-item failures surface in items[] regardless of overall sidecar status.
+    """
     sidecar = parse_sidecar(sample_legacy_v1_npm_apply)
     assert sidecar.tool.name == "npm"
     assert sidecar.category.value == "npm"
     assert sidecar.phase.value == "apply"
-    assert sidecar.status.value == "failed"
+    # exit_code=1 = warn = success at the run level; the failing item is still
+    # surfaced via items[] for the orchestrator's per-item view.
+    assert sidecar.status.value == "success"
 
     # Per-item details surfaced as info-level message under the failed item.
     failed = next(i for i in sidecar.items if i.status.value == "failed")

@@ -240,7 +240,17 @@ def translate_legacy_v1(payload: dict[str, Any]) -> dict[str, Any]:
     legacy_diags = payload.get("diagnostics", []) or []
 
     source_type = _category_to_source_type(legacy_category)
-    status = "success" if exit_code == 0 else "failed"
+    # Legacy exit-code semantics (docs/agents/contract.md):
+    #   0  ok        -> success
+    #   1  warn      -> success (non-critical advisories; sidecar items[] are clean)
+    #   75 already-running -> skipped
+    #   anything else -> failed
+    if exit_code == 0 or exit_code == 1:
+        status = "success"
+    elif exit_code == 75:
+        status = "skipped"
+    else:
+        status = "failed"
 
     run_id = _synthesize_run_id(legacy_host, started_at)
 
