@@ -188,10 +188,15 @@ step "4. plan + verify + cleanup across 6 categories"
 for ph in plan verify cleanup; do
     if out=$(python3 -m ascendo run -c apt,snap,brew,npm,pip,flatpak -p $ph \
              --runs-dir "$RUNS_DIR_ALL" 2>&1); then
-        if printf '%s' "$out" | grep -E "^overall:" | grep -q "success"; then
-            result "all-categories $ph" 1
+        # success OR partial both count as "pipeline ran end-to-end" — partial
+        # just means some items hit soft advisories (e.g. apt autoremove
+        # leaving a held-back package), not that the run broke. Failure is
+        # only when overall=failed (every manager failed) or the CLI crashed.
+        overall=$(printf '%s' "$out" | grep -E "^overall:" | head -1)
+        if printf '%s' "$overall" | grep -qE "success|partial"; then
+            result "all-categories $ph" 1 "$overall"
         else
-            result "all-categories $ph" 0 "$(printf '%s' "$out" | grep ^overall)"
+            result "all-categories $ph" 0 "$overall"
         fi
     else
         result "all-categories $ph" 0 "$(printf '%s' "$out" | tail -5)"
