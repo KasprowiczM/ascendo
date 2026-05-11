@@ -75,7 +75,23 @@ printf '== migrate handoff docs ==\n'
 copy_if_exists "$REPO_ROOT/HANDOFF.md"             "$OVERLAY/handoff/"
 copy_if_exists "$REPO_ROOT/PLAN.md"                "$OVERLAY/handoff/"
 copy_if_exists "$REPO_ROOT/DEV_SCRIPTS_README.md"  "$OVERLAY/handoff/"
-copy_if_exists "$REPO_ROOT/docs/superpowers/specs" "$OVERLAY/handoff/specs"
+# Idempotency fix (Sesja 57): `cp -a docs/superpowers/specs $OVERLAY/handoff/specs`
+# WORKS on first run (creates `handoff/specs/`) but on re-runs, when
+# `handoff/specs/` already exists, cp copies the SOURCE into the existing
+# destination creating `handoff/specs/specs/`. Use rsync with the
+# trailing-slash idiom that copies CONTENTS-of-src into dst regardless of
+# whether dst exists. cp fallback removes the existing target first to
+# avoid the nesting bug.
+if [ -d "$REPO_ROOT/docs/superpowers/specs" ]; then
+    printf '  copy: %s -> %s/  (idempotent — clears destination first)\n' \
+        "$REPO_ROOT/docs/superpowers/specs" "$OVERLAY/handoff/specs"
+    if command -v rsync >/dev/null 2>&1; then
+        rsync -a --delete "$REPO_ROOT/docs/superpowers/specs/" "$OVERLAY/handoff/specs/"
+    else
+        rm -rf "$OVERLAY/handoff/specs"
+        cp -a "$REPO_ROOT/docs/superpowers/specs" "$OVERLAY/handoff/specs"
+    fi
+fi
 
 printf '== migrate graphify ==\n'
 copy_if_exists "$REPO_ROOT/graphify-out" "$OVERLAY/graphify/"

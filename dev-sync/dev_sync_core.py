@@ -84,6 +84,21 @@ DEFAULT_EXCLUDE_PATTERNS = [
     "ui/desktop-tauri/src-tauri/installer-assets/",
     "**/src-tauri/installer-assets/",
     "ui/desktop-tauri/src-tauri/LICENSE",
+    # bin-staging is populated by bin/build-installer.ps1 + bin/build-dmg.sh
+    # before Tauri build. Pre-Sesja 57 these files were getting shipped to
+    # the Proton overlay (28 stray files) because they weren't tracked in
+    # Git and dev-sync claimed them as private. They're build scratch —
+    # exclude wherever they live.
+    "ui/desktop-tauri/src-tauri/bin-staging/",
+    "**/src-tauri/bin-staging/",
+    # first-run-bootstrap-macos.sh + launch-desktop-macos.sh inside
+    # src-tauri are copies that the Tauri build pipeline pulls from
+    # repo root into src-tauri/Resources at build time. Originals live
+    # in bin/ and are tracked there. The src-tauri/ copies are
+    # build-time scratch.
+    "ui/desktop-tauri/src-tauri/first-run-bootstrap-macos.sh",
+    "ui/desktop-tauri/src-tauri/first-run-bootstrap-linux.sh",
+    "ui/desktop-tauri/src-tauri/launch-desktop-macos.sh",
     # Go / Java / Gradle / Maven build outputs.
     ".gradle/",
     ".m2/",
