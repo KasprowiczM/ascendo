@@ -459,6 +459,22 @@ def _latest_check_overlay(runs_dir: Path, category: str) -> dict[str, dict[str, 
         item_id = it.get("id")
         if item_id and str(item_id) != str(name):
             overlay[str(item_id)] = record
+        # Also index by the trailing segment of any colon-prefixed ID.
+        # Legacy Ubuntu bash scripts emit synthetic IDs like
+        #   snap:upgrade:firefox    snap:configured:thunderbird
+        #   apt:upgrade:libpng16   brew:formula:openssl   pip:numpy
+        # but the inventory enumerator emits clean names (firefox,
+        # thunderbird, libpng16, openssl, numpy). Without this extra
+        # key the overlay never matches and the SPA shows a stale
+        # "ok" status with no candidate version after a check phase.
+        for src in (name, item_id):
+            if not src:
+                continue
+            s = str(src)
+            if ":" in s:
+                tail = s.rsplit(":", 1)[-1]
+                if tail and tail not in overlay:
+                    overlay[tail] = record
     return overlay
 
 
