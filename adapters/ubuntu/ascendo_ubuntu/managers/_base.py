@@ -198,6 +198,15 @@ class BashPhaseManager(IPackageManager):
                     f"sidecar at {sidecar_path}: {exc}"
                 ) from exc
 
+            # Legacy bash sidecars carry no run.id; the legacy_compat
+            # translator synthesizes a uuid5 from (host, started_at).
+            # Overwrite it with the orchestrator's real run.id so:
+            #   (a) write_sidecar lands at base_dir/<orchestrator-run-id>/
+            #       (where the runner's REPORT.md hook expects it).
+            #   (b) update_history rows tie back to this run, not a synthetic id.
+            if sc.run.id != run.id:
+                sc = sc.model_copy(update={"run": sc.run.model_copy(update={"id": run.id})})
+
             if completed.returncode != 0:
                 _log.warning(
                     "%s %s script exited %d but produced a valid sidecar; "
