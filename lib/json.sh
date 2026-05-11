@@ -142,6 +142,34 @@ json_register_exit_trap() {
     JSON_OUT_PATH="${1:-${JSON_OUT:-}}"
     [[ -z "${JSON_OUT_PATH}" ]] && return 0
     trap '_json_finalize_on_exit $?' EXIT
+    # Also catch INT (Ctrl+C) and TERM (kill from orchestrator on shutdown)
+    # so an interrupted apply still produces a sidecar with status=failed
+    # and a diagnostic message — orchestrator-side write_sidecar then has
+    # something to read instead of "missing sidecar" errors.
+    trap '_json_interrupt_handler INT'  INT
+    trap '_json_interrupt_handler TERM' TERM
+}
+
+# Handle SIGINT/SIGTERM by adding a diagnostic + finalizing with the
+# canonical exit code for "interrupted" (130 for INT, 143 for TERM per
+# POSIX), then re-raising the signal so the parent's wait sees the
+# real exit status. The EXIT trap registered above will NOT fire after
+# this because we exit explicitly with the chosen code.
+_json_interrupt_handler() {
+    local sig="$1"
+    local rc=130
+    [[ "$sig" = "TERM" ]] && rc=143
+    if [[ -n "${JSON_BUFDIR:-}" && -d "${JSON_BUFDIR}" ]]; then
+        json_add_diag warn ASCENDO-INTERRUPTED \
+            "phase script received SIG${sig}; partial sidecar saved" \
+            2>/dev/null || true
+    fi
+    json_finalize "$rc" "${JSON_OUT_PATH}" 2>/dev/null || true
+    JSON_FINALIZED=1
+    # Reset trap and re-raise so the parent process sees the right
+    # exit status (130/143).
+    trap - "$sig" EXIT
+    kill -"$sig" $$
 }
 
 _json_finalize_on_exit() {

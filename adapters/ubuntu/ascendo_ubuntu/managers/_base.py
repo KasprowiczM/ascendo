@@ -23,6 +23,8 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
+import time
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import ClassVar
@@ -177,6 +179,45 @@ class BashPhaseManager(IPackageManager):
                 except OSError:
                     pass  # best-effort
 
+            # Watchdog thread: if the bash subprocess produces no
+            # _stream.log output for 10s, append a "still running …"
+            # heartbeat. This keeps the SPA's SSE consumer rendering
+            # live activity during silent stretches (e.g. brew network
+            # download, npm install postinstall) so the user never
+            # mistakes slow work for a hang.
+            stop_heartbeat = threading.Event()
+
+            def _heartbeat_loop() -> None:
+                if not stream_log:
+                    return
+                start = time.time()
+                last_size = 0
+                try:
+                    last_size = os.path.getsize(stream_log)
+                except OSError:
+                    pass
+                while not stop_heartbeat.wait(10.0):
+                    try:
+                        cur_size = os.path.getsize(stream_log)
+                    except OSError:
+                        continue
+                    if cur_size == last_size:
+                        elapsed = int(time.time() - start)
+                        try:
+                            with open(stream_log, "a", encoding="utf-8") as f:
+                                f.write(
+                                    f">>> {self.SCRIPT_DIR} {phase.value} "
+                                    f"still running ({elapsed}s elapsed)\n"
+                                )
+                            last_size = os.path.getsize(stream_log)
+                        except OSError:
+                            pass
+                    else:
+                        last_size = cur_size
+
+            heartbeat = threading.Thread(target=_heartbeat_loop, daemon=True)
+            heartbeat.start()
+
             try:
                 completed = subprocess.run(  # noqa: S603 (argv list, not shell)
                     argv,
@@ -184,26 +225,39 @@ class BashPhaseManager(IPackageManager):
                     # CRITICAL: stdin=DEVNULL so any read attempt gets
                     # immediate EOF instead of blocking forever. Without
                     # this, sudo / apt / dpkg / brew prompts hang the
-                    # whole dashboard when launched from a non-TTY parent
-                    # (e.g. `ascendo dashboard --background`). The legacy
-                    # bash scripts use SUDO_ASKPASS via env injection
-                    # (LinuxElevation) when they need elevation.
+                    # whole dashboard when launched from a non-TTY parent.
                     stdin=subprocess.DEVNULL,
+                    # CRITICAL: start_new_session=True puts the bash
+                    # child in its own process group. Without this, a
+                    # Ctrl+C in the terminal running `ascendo dashboard`
+                    # sends SIGINT to the entire foreground process
+                    # group — including any in-flight apply scripts —
+                    # killing them mid-execution before they can write
+                    # their sidecar via the EXIT trap. With this set,
+                    # the dashboard process catches SIGINT alone; child
+                    # bash processes continue and finish cleanly. If
+                    # you really want to kill an in-flight apply, send
+                    # SIGTERM to the bash PID directly.
+                    start_new_session=True,
                     capture_output=True,
                     text=True,
                     timeout=self._timeout_sec,
                     check=False,
                 )
             except subprocess.TimeoutExpired as exc:
+                stop_heartbeat.set()
                 raise ManagerError(
                     f"{self.SCRIPT_DIR} {phase.value} script timed out after "
                     f"{self._timeout_sec}s: {script_path}"
                 ) from exc
             except OSError as exc:
+                stop_heartbeat.set()
                 raise ManagerError(
                     f"failed to spawn bash for {self.SCRIPT_DIR} "
                     f"{phase.value}: {exc}"
                 ) from exc
+            finally:
+                stop_heartbeat.set()
 
             if not sidecar_path.exists():
                 raise ManagerError(self._missing_sidecar_error(
