@@ -1,7 +1,16 @@
 # Distributing Ascendo as a macOS DMG
 
+> **Public-release stance (v0.6+):** DMG distribution is **NOT** part
+> of the public-release surface. Ascendo on macOS ships via the
+> `curl … install.sh \| bash` one-liner (CLI + Web profile). This doc
+> is kept for **two audiences only**: (a) contributors who want to
+> build a DMG locally for their own MacBook testing, and (b) future
+> operators who plan to sign + notarize and re-introduce DMG releases.
+> See [DESKTOP_INSTALLER_STATUS.md](DESKTOP_INSTALLER_STATUS.md) for
+> the cross-platform rationale.
+
 Honest, plain-English guide for shipping `Ascendo-Basic-*.dmg` and
-`Ascendo-Dev-*.dmg` to users via GitHub Releases. Read this before
+`Ascendo-Dev-*.dmg` privately or after signing. Read this before
 clicking Publish — there are real gotchas around macOS Gatekeeper that
 will block your friends from running the app on first try unless you
 plan for them.

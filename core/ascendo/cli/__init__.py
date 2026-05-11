@@ -859,15 +859,16 @@ def web_start(
     host: str = typer.Option("127.0.0.1", "--host", help="Bind address."),
     port: int = typer.Option(8765, "--port", help="TCP port."),
     open_browser: bool = typer.Option(
-        False, "--open/--no-open",
-        help="Open the dashboard in your default browser after start.",
+        True, "--open/--no-open",
+        help="Open the dashboard in your default browser after start. On by default; pass --no-open for headless / SSH sessions.",
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
-    """Start the web dashboard in the background.
+    """Start the web dashboard in the background and open it in your browser.
 
-    Idempotent: if already running on the same port, prints the URL and
-    exits 0. Use ``ascendo web restart`` to force a fresh start.
+    Idempotent: if already running on the same port, prints the URL,
+    opens the browser, and exits 0. Use ``ascendo web restart`` to
+    force a fresh start. Pass ``--no-open`` for headless / SSH sessions.
     """
     _setup_logging(verbose)
 
@@ -1008,7 +1009,10 @@ def web_stop(
 def web_restart(
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8765, "--port"),
-    open_browser: bool = typer.Option(False, "--open/--no-open"),
+    open_browser: bool = typer.Option(
+        True, "--open/--no-open",
+        help="Open the dashboard in your default browser after restart. Mirrors start default.",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
     """Stop the running dashboard (if any) and start a fresh one.

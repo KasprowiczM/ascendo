@@ -52,15 +52,15 @@ Re-running `install-dev.ps1` after a `git pull` is safe — it's idempotent
 and re-installs the editable Python packages so your dashboard always
 runs the latest code.
 
-## 2 · Open the desktop app
+## 2 · Open the web dashboard
 
-Three equivalent paths — pick whichever you prefer:
+Three paths — pick one:
 
 | | Where | What it does |
 |-|-------|--------------|
-| **A** | Double-click "Ascendo" on the Desktop | Spawns the FastAPI sidecar, opens the SPA in your default browser |
-| **B** | `.\bin\launch-desktop.ps1` (elevated PS) | Native Tauri 2.x window — the app in a real OS window, not a browser tab |
-| **C** | `python -m ascendo dashboard` | Server only; open `http://127.0.0.1:8765` yourself |
+| **A** *(recommended)* | `ascendo web start` (any PowerShell window) | Detached background dashboard with pidfile tracking, **opens browser automatically**. Pair with `ascendo web stop`, `restart`, `status`. Idempotent. |
+| **B** | `python -m ascendo dashboard` | Server in the foreground (Ctrl-C to stop); visit `http://127.0.0.1:8765` in your browser. Useful for debugging. |
+| **C** *(dev / testing only)* | `.\bin\launch-desktop.ps1` (elevated PS) | Native Tauri 2.x window. Requires Rust + Node. Not part of the public release surface yet — see §11 for SmartScreen reality on unsigned native installers. |
 
 The first time you launch any of these, the **Apps inventory** is
 populated by the `inventory/list.ps1` script — count is on the bottom of
@@ -260,7 +260,42 @@ D:\Dev_Env\ascendo\
 └─ logs\runs\<uuid>\           # All sidecars and per-phase logs
 ```
 
-## 11 · One-liner sanity check
+## 11 · Native installers (.msi / .exe) — current status
+
+> **Native installer distribution is dev-only today on the public
+> repo.** Public Windows users get the `iwr … install.ps1 \| iex`
+> one-liner (CLI + Web profile). MSI / NSIS builds live in-repo for
+> contributors building locally; ship them publicly only after code
+> signing. See [`docs/DESKTOP_INSTALLER_STATUS.md`](docs/DESKTOP_INSTALLER_STATUS.md)
+> for the full reasoning.
+
+For contributors who want to build installers locally:
+
+```powershell
+# Produces dist/Ascendo-<version>-x64-setup.exe (NSIS) + .msi (WiX)
+pwsh .\bin\build-installer.ps1 -Edition basic
+```
+
+**SmartScreen reality on an unsigned build (today)**:
+
+| Signing | Recipient first-launch experience |
+|---------|------------------------------------|
+| **None** *(today's build)* | Blue "Windows protected your PC" screen → "More info" → "Run anyway". Works on every supported Windows; ugly on first launch. |
+| Standard OV/IV Authenticode cert ($100–300/yr) | Same blue screen at first, reputation accrues over ~3000 successful installs. |
+| **EV Authenticode** ($300–700/yr) | **No SmartScreen warning at all**. Single UAC prompt only. |
+| **Azure Trusted Signing** ($10/mo) | Same UX as EV, cheaper. Recommended path when re-introducing public installers. |
+
+Crucially, Windows never **hard-blocks** an unsigned installer the way
+macOS Gatekeeper does on Sequoia/Tahoe — the "Run anyway" escape hatch
+is always one click away. So an unsigned .msi published to GitHub
+Releases is *usable*, just ugly. The recommendation is still to ship
+the install.ps1 one-liner publicly until signing is in place.
+
+`bin/build-installer.ps1` accepts `-CertificatePath`,
+`-CertificatePassword`, `-TimestampUrl` parameters — signing is one
+config block away when a cert is available.
+
+## 12 · One-liner sanity check
 
 If anything seems off, run this first — exits 0 only when CLI + dashboard
 + all 5 phases × winget produce real sidecars and the SPA assets serve

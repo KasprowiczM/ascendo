@@ -79,13 +79,14 @@ reboot semantics).
 
 ## 2 · Open the dashboard
 
-Three equivalent paths — pick whichever you prefer:
+Four paths — pick one:
 
 | | Where | What it does |
 |-|-------|--------------|
-| **A** | `python3 -m ascendo dashboard` | Backend only; visit `http://127.0.0.1:8765` in your browser. |
-| **B** | `bash systemd/user/install-dashboard.sh` | Installs a `systemd --user` unit so the dashboard starts on every login. |
-| **C** | `ascendo-launch` (after `install-dashboard.sh`) | Opens the SPA in your default browser; `Ascendo - Unified Updates` and `Ascendo - Unified Updates (Desktop)` `.desktop` entries are also installed in your application menu. |
+| **A** *(recommended)* | `ascendo web start` | Detached background dashboard with pidfile tracking, **opens browser automatically**. Pair with `ascendo web stop`, `restart`, `status`. Idempotent. |
+| **B** | `python3 -m ascendo dashboard` | Backend in the foreground; visit `http://127.0.0.1:8765` in your browser. Useful for debugging. |
+| **C** | `bash systemd/user/install-dashboard.sh` | Installs a `systemd --user` unit so the dashboard starts on every login. |
+| **D** | `ascendo-launch` (after `install-dashboard.sh`) | Opens the SPA in your default browser; `.desktop` entries are also installed in your application menu. |
 
 The first time you launch any of these, the **Apps inventory** is
 populated by `adapters/ubuntu/scripts/inventory/list.sh` (≈ 5–15 s on
@@ -363,7 +364,41 @@ directly — `update-all.sh --snapshot` is fully functional.
    # (or `logs/runs/<uuid>/` in legacy mode)
 ```
 
-## 12 · One-liner sanity check
+## 12 · .deb packaging (good news: no signing tax)
+
+Unlike macOS DMGs and Windows MSI/EXE, **Ubuntu .deb files work without
+signing or notarization**. dpkg's signing concept is for apt
+*repositories* (the `Release` file signed by the maintainer's GPG key),
+not standalone .deb downloads. A user who downloads
+`ascendo_<version>_amd64.deb` from GitHub Releases and runs:
+
+```bash
+sudo apt install ./ascendo_0.7.0_amd64.deb
+```
+
+…gets a clean install with NO warning, override, or signing prompt.
+apt resolves dependencies (Python ≥3.11, git, curl, jq) against the
+user's package index automatically.
+
+For contributors who want to build the .deb locally:
+
+```bash
+bash packaging/build-deb.sh
+# Produces: dist/ascendo_<version>_amd64.deb
+```
+
+So Ubuntu is the **easiest** of the three OSes to ship publicly — no
+$99-$700/year signing tax. See
+[`docs/DESKTOP_INSTALLER_STATUS.md`](docs/DESKTOP_INSTALLER_STATUS.md)
+for the cross-platform comparison.
+
+Note: the current public-release path on Linux remains the
+`curl … install.sh \| bash` one-liner from §1 (same as macOS) for
+consistency with the cross-platform install experience. The .deb is
+useful when you want apt to manage dependencies for you, or when
+shipping into restricted environments without curl access.
+
+## 13 · One-liner sanity check
 
 If anything seems off, run this first:
 

@@ -39,27 +39,58 @@ dashboard reads it on startup and gates UI surfaces accordingly.
 Pick a row based on what you want. Re-running the same command updates
 in place — every script is idempotent.
 
+The **CLI + Web** path is the recommended install for everyone — the web
+dashboard is a thin browser UI driven by the same Python core the CLI
+uses (it imports `ascendo_<os>` directly), so installing the CLI gives
+you both for free. Pre-built native desktop installers (`.dmg` / `.msi` /
+`.deb` standalone bundles) are **dev-only** today; see "Desktop installer
+status" below.
+
 ### Basic edition (default — simplified UI for everyday use)
 
-| Profile | macOS / Linux | Windows |
-|---------|---------------|---------|
-| **CLI only** | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| ASCENDO_EDITION=basic ASCENDO_PROFILE=cli bash` | `$Env:ASCENDO_EDITION='basic'; $Env:ASCENDO_PROFILE='cli'; iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` |
-| **CLI + Web** | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| ASCENDO_EDITION=basic ASCENDO_PROFILE=web bash` | `$Env:ASCENDO_EDITION='basic'; $Env:ASCENDO_PROFILE='web'; iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` |
-| **CLI + Desktop** | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| ASCENDO_EDITION=basic ASCENDO_PROFILE=desktop bash` | `$Env:ASCENDO_EDITION='basic'; $Env:ASCENDO_PROFILE='desktop'; iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` |
-| **Full** *(CLI + Web + Desktop)* | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| ASCENDO_EDITION=basic ASCENDO_PROFILE=full bash` | `$Env:ASCENDO_EDITION='basic'; $Env:ASCENDO_PROFILE='full'; iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` |
+| Path | macOS / Linux | Windows |
+|------|---------------|---------|
+| **CLI + Web** *(recommended)* | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| ASCENDO_EDITION=basic ASCENDO_PROFILE=web bash` | `$Env:ASCENDO_EDITION='basic'; $Env:ASCENDO_PROFILE='web'; iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` |
+| **CLI only** *(headless / SSH)* | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| ASCENDO_EDITION=basic ASCENDO_PROFILE=cli bash` | `$Env:ASCENDO_EDITION='basic'; $Env:ASCENDO_PROFILE='cli'; iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` |
 
 ### Dev edition (full feature set — for maintainers + contributors)
 
-| Profile | macOS / Linux | Windows |
-|---------|---------------|---------|
-| **CLI only** | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| ASCENDO_EDITION=dev ASCENDO_PROFILE=cli bash` | `$Env:ASCENDO_EDITION='dev'; $Env:ASCENDO_PROFILE='cli'; iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` |
-| **Full** *(CLI + Web + Desktop)* | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| ASCENDO_EDITION=dev ASCENDO_PROFILE=full bash` | `$Env:ASCENDO_EDITION='dev'; $Env:ASCENDO_PROFILE='full'; iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` |
+| Path | macOS / Linux | Windows |
+|------|---------------|---------|
+| **CLI + Web** | `curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh \| ASCENDO_EDITION=dev ASCENDO_PROFILE=web bash` | `$Env:ASCENDO_EDITION='dev'; $Env:ASCENDO_PROFILE='web'; iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 \| iex` |
 
 Each installer auto-detects the OS, installs missing system deps
 (Python ≥3.11, git, curl/winget), clones the repo to a per-user dir,
 sets up a venv, pip-installs `core/` + the matching `adapters/<os>/`
 editable, drops an `ascendo` shim plus the helper scripts on PATH, and
 runs `ascendo doctor` as a self-test before declaring success.
+
+After install, start the web UI any time:
+
+```bash
+ascendo web start          # spawns dashboard in background AND opens your browser
+ascendo web stop           # graceful shutdown
+ascendo web status         # is it running? what port? healthy?
+ascendo web restart        # one-shot restart
+```
+
+### Desktop installer status (DMG / MSI / .deb)
+
+Native desktop installers exist in-repo (`bin/build-dmg.sh`,
+`bin/build-installer.ps1`, `packaging/build-deb.sh`) for development +
+internal testing, but **are not part of the public release surface
+yet**. Reasons per platform — full breakdown in
+[docs/DMG_DISTRIBUTION.md](docs/DMG_DISTRIBUTION.md) (macOS) +
+[WINDOWS_QUICKSTART.md](WINDOWS_QUICKSTART.md) §Desktop install
+(Windows) + [LINUX_QUICKSTART.md](LINUX_QUICKSTART.md) §.deb (Linux).
+
+If you're a contributor building locally:
+
+```bash
+bash bin/build-dmg.sh --edition=basic --profile=full   # macOS .dmg
+pwsh ./bin/build-installer.ps1 -Edition basic          # Windows .msi + .exe
+bash packaging/build-deb.sh                            # Ubuntu .deb
+```
 
 To **update** an existing install, re-run the same install one-liner
 or use the dropped helper:

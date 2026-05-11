@@ -148,7 +148,22 @@ The basic edition's `EditionGateMiddleware` returns HTTP 404 for `/sync/*`,
 nav entries, and the helper scripts in `~/.local/bin/dev/` are only
 symlinked if `edition=dev` at install time.
 
-### Build a clickable DMG (per-edition packaging)
+### Build a DMG locally (dev / testing only)
+
+> **DMG distribution is NOT part of the public release surface today.**
+> The public path on macOS is the `curl … install.sh \| bash` one-liner
+> from §1 above. macOS Gatekeeper hard-blocks unsigned downloaded apps
+> on Sequoia 15 and Tahoe 16 (no "Open Anyway" button in the dialog),
+> so a DMG you upload to GitHub Releases without an Apple Developer ID
+> + notarization just frustrates your recipients. See
+> [`docs/DESKTOP_INSTALLER_STATUS.md`](docs/DESKTOP_INSTALLER_STATUS.md)
+> for the cross-platform rationale and
+> [`docs/DMG_DISTRIBUTION.md`](docs/DMG_DISTRIBUTION.md) for the
+> sign-and-notarize playbook when you're ready to re-introduce DMG
+> releases.
+
+For contributors who want to build a DMG locally — for testing on your
+own Mac only:
 
 ```bash
 # Default — basic edition, "full" profile baked in:
@@ -161,23 +176,23 @@ bash bin/build-dmg.sh --edition=dev --profile=full
 ```
 
 Each DMG bakes a `.ascendo-edition` marker file shipped inside the
-`.app`'s `Resources/`. On first launch, `first-run-bootstrap-macos.sh`
-reads it via the priority chain above. Distribute the basic DMG to
-end users; the dev DMG to contributors.
+`.app`'s `Resources/`. On first launch on the SAME Mac it was built on
+the .app works fine; on another Mac without the signing chain it'll
+hit Gatekeeper. Use `xattr -dr com.apple.quarantine /Applications/Ascendo.app`
+as a workaround for hand-shared builds.
 
 > **`build-dmg.sh --help`** documents `--with-installer`,
 > `--with-create-dmg`, `--profile {quick,safe,full}`, and `--skip-cargo`.
 
 ## 2 · Open the dashboard
 
-Four equivalent paths — pick one:
+Three paths — pick one:
 
 | | Where | What it does |
 |-|-------|--------------|
-| **A** | **`ascendo web start`** | Detached background dashboard with pidfile tracking. Idempotent. Pair with `ascendo web stop`, `restart`, `status`, `open`. **Recommended for everyday use.** |
+| **A** *(recommended)* | **`ascendo web start`** | Detached background dashboard with pidfile tracking, **opens browser automatically**. Pair with `ascendo web stop`, `restart`, `status`. Idempotent. |
 | **B** | `python3 -m ascendo dashboard` | Backend in the foreground (Ctrl-C to stop); visit `http://127.0.0.1:8765` in your browser. Useful for debugging. |
-| **C** | `bash bin/launch-desktop-macos.sh` | Native Tauri 2.x window (WKWebView). The app in a real macOS window, not a browser tab. **Requires Rust + Node** — see prerequisites in the script header. |
-| **D** | (after `tauri build`) Double-click `Ascendo.app` | Production build with bundled icon. Lives in `ui/desktop-tauri/src-tauri/target/release/bundle/macos/`. |
+| **C** *(dev / testing only)* | `bash bin/launch-desktop-macos.sh` | Native Tauri 2.x window (WKWebView). Requires Rust + Node. Not for public distribution today (see Gatekeeper note in §1). |
 
 ### `ascendo web` lifecycle commands
 
