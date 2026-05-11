@@ -1,6 +1,26 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-09 (sesja 45) — **cross-platform parity +
+> Last updated: 2026-05-11 (sesja 54-55) — **Ubuntu adapter brought to
+> macOS feature parity + production-hardened end-to-end** on
+> mk-uP5520. UbuntuAdapter now declares all 5 IAdapter capabilities
+> (PACKAGE_MANAGEMENT | INVENTORY | SNAPSHOTS | SCHEDULING | ELEVATION),
+> 8 IPackageManager implementations (apt/snap/brew/npm/pip/flatpak/
+> drivers/**web**), 13-component health rollup. New `bin/validate-ubuntu.sh`
+> 23/23 PASS. **Eight live-fire bug fixes** in Sesja 55 closed: bash
+> heredoc-in-`$(...)`-with-`||` parse error silently skipping npm+pip
+> from inventory (40 items lost); python3-`-`-stdin collision with
+> data pipe; `require_sudo` clobbering `json_register_exit_trap` so
+> snap apply's sidecar never wrote and SPA showed phantom failures;
+> SPA overlay never matching synthetic check-sidecar IDs to inventory
+> clean names; SIGINT propagating through process group killing
+> in-flight apply; missing watchdog heartbeat between silent phase
+> transitions; `brew --cask --greedy` re-downloading every cask each
+> run (silent multi-minute "hang"); pip/plan.sh emitting `kind=check`
+> clobbering real check sidecar; missing non-interactive env defaults.
+> Live: 2579 inventory items across 5 categories with installed +
+> candidate populated. See HANDOFF.md Sesja 54 + 55.
+>
+> Previous milestone (sesja 45) — **cross-platform parity +
 > one-line install/update for all 3 OSes shipped as v0.5.2**. Brings
 > Windows + Ubuntu adapters up to functional parity with macOS and
 > ships true `curl|bash` (POSIX) + `iwr|iex` (Windows) one-liners for

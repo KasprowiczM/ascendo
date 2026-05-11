@@ -6,6 +6,117 @@
 
 ---
 
+## Sesja 55 (2026-05-11, late) — Ubuntu live-fire bug-fix run + inventory rebuild
+
+Continuation of Sesja 54. Operator drove the dashboard end-to-end on
+mk-uP5520 and surfaced eight real bugs across signal handling,
+visibility, sudo plumbing, inventory enumeration, and SPA overlay.
+Each fix backed by a reproducer; final state: 23/23 validate-ubuntu.sh,
+**2579 inventory items across 5 categories with installed + candidate
+versions populated** (was a few hundred with empty version columns).
+
+### Eight commits on `main`
+
+| Commit | What | Why it mattered |
+|--------|------|-----------------|
+| `a6a1d6f` | fix(validate-ubuntu): accept overall=partial as success | apt cleanup hits soft advisories on real hosts (held-back package, autoremove-with-deps); 'partial' is success-with-info, not failure |
+| `628216e` | fix(ubuntu): five hang-causing bugs in apply pipeline | stdin not closed → hang on prompts; missing `DEBIAN_FRONTEND=noninteractive` etc.; `brew --cask --greedy` re-downloaded everything every run; pip/plan.sh emitted `kind=check` (clobbered the real check sidecar); no bridge heartbeat between phases |
+| `cd827db` | fix(ubuntu): three signal/visibility fixes | Ctrl+C on dashboard SIGINT'd in-flight bash via shared process group → no sidecar; bridge subprocess now uses `start_new_session=True`; watchdog thread emits `>>> still running (Ns)` every 10s of silent work; bash JSON helper traps INT/TERM with `ASCENDO-INTERRUPTED` diagnostic |
+| `497b629` | fix(ubuntu): require_sudo no longer clobbers json_register_exit_trap | THE BIG ONE — `lib/common.sh::require_sudo` did `trap '...keepalive killer...' EXIT`, replacing the json EXIT trap. Snap apply ran fine (refreshed thunderbird visible in stream log) but sidecar was never written → bridge synthesised a failed sidecar from the missing-sidecar error. Now chains: reads existing trap body, prepends keepalive killer |
+| `32db6f1` | fix(ubuntu/inventory): npm/pip enumeration silently produced 0 items | TWO compounding bash bugs in `inventory/list.sh`: (a) heredoc inside `$(... \|\| true)` is a parse error; (b) `python3 - <<PY` collides with `printf \| python3` over stdin — python reads heredoc as script, then `json.load(sys.stdin)` gets EOF. Fix: `python3 -c '<inline>'` so stdin is free for the data pipe |
+| `3c4ca99` | fix(spa): check-overlay also indexes by trailing name segment | Legacy bash check.sh emits synthetic IDs (`snap:upgrade:firefox`) but inventory has clean names (`firefox`); overlay never matched, candidate column stayed empty in SPA after Quick Check. Now indexes by both compound ID and trailing segment |
+| `<this docs commit>` | docs(linux): LINUX_QUICKSTART addendum + new LINUX_TESTING.md | Per-OS testing guide mirrors WINDOWS_TESTING + MACOS_TESTING |
+| `<this docs commit>` | docs(plan+changelog+handoff): Ubuntu parity post-mortem | This entry |
+
+### How the bugs surfaced (chronological — useful for future debugging)
+
+1. **First run via dashboard** — operator hit Apply on full categories.
+   apt finished. snap finished (visible in stream log refreshing
+   thunderbird). brew started. Stream log went silent. Operator
+   waited a few seconds, hit Ctrl+C. Tangled uvicorn lifespan
+   traceback in terminal.
+2. **Diagnosis #1 — five hangs**. Stream log analysis showed phase
+   transitions had no visible activity, plus brew `--greedy` was
+   silently re-downloading auto-update casks. Fixed (`628216e`).
+3. **Second run** — operator pressed Ctrl+C again, npm apply died
+   without sidecar. Diagnosis: SIGINT propagated to bash subprocess
+   via shared process group; trap-INT/TERM in lib/json.sh missing.
+   Fixed (`cd827db`).
+4. **Third run** — actually completed in full (35 sidecars, REPORT.md
+   generated). But sidecar audit showed `apply__snap.json: status=failed`
+   — even though stream log proved snap apply ran cleanly. Root cause:
+   `require_sudo` clobbering json EXIT trap. Fixed (`497b629`).
+5. **Fourth verification — operator pulled** — inventory audit run.
+   DB showed 2476 apt + 47 brew + 16 snap items but **0 npm with
+   versions, 1 pip with empty installed**. Bash trace revealed
+   syntax error AND silent stdin collision. Fixed (`32db6f1`).
+6. **SPA still showed candidate=installed** for snap — because
+   inventory has `name=firefox` but check sidecar has
+   `name=snap:upgrade:firefox` and overlay never matched. Fixed (`3c4ca99`).
+
+### Live state on `mk-uP5520`
+
+```
+$ python3 -m ascendo doctor
+adapter: ubuntu (Ubuntu / Debian) tier=1
+capabilities: AdapterCapability.PACKAGE_MANAGEMENT|INVENTORY|SNAPSHOTS|SCHEDULING|ELEVATION
+
+$ sqlite3 ~/.ascendo/inventory.db \
+    "SELECT category, COUNT(*) AS n,
+            SUM(CASE WHEN installed != '' THEN 1 ELSE 0 END) AS with_ver
+       FROM inventory_items GROUP BY category;"
+apt|2476|2476
+brew_formula|47|47
+npm|4|4               ← was 0 before
+pip|36|36             ← was 0 before
+snap|16|16
+
+$ bash bin/validate-ubuntu.sh
+ALL CHECKS PASSED. (23/23)
+```
+
+### Test coverage
+
+- 143/143 Ubuntu adapter tests
+- 13/13 contract `test_legacy_compat` tests
+- 23/23 `validate-ubuntu.sh` end-to-end smoke
+
+### What's NOT done (parked for tomorrow)
+
+- **Real-Mac validation** of any cross-cutting fixes (unchanged for macOS)
+- **Real-Windows validation** of inventory enumeration parity (Windows has its own list path; not regressed but not re-confirmed)
+- **Update history pre-from versions** — `update_history` rows still
+  carry `from_version=""` for legacy bash apply items. Cosmetic; user
+  can correlate with REPORT.md
+- **Snap "configured" item naming** — snap check.sh emits
+  `snap:configured:firefox` for the per-snap presence-confirmation
+  loop. Inventory shows clean `firefox`. The new overlay tail-segment
+  fix bridges them at SPA layer, but the duplicate
+  `snap:configured:*` items still show up in /apps history; cleaner
+  fix would be to skip presence-confirmations from the `items[]` and
+  emit them as diagnostics only
+- **Web manager AppImage candidate detection** — `web` category check
+  returns 4 registered apps, all skipped because user has no AppImages
+  installed. Not a bug; nothing to do until user installs an AppImage
+
+### Forward state (post-Sesja 55)
+
+Ubuntu adapter is **production-ready for everyday use on this host**:
+- All 5 IAdapter capabilities declared end-to-end (PACKAGE_MANAGEMENT
+  | INVENTORY | SNAPSHOTS | SCHEDULING | ELEVATION)
+- 8 IPackageManager wrappers (apt, snap, brew, npm, pip, flatpak,
+  drivers, web)
+- Full 5-phase contract (check / plan / apply / verify / cleanup)
+  works end-to-end via dashboard AND CLI
+- 2579 packages enumerated with installed + candidate versions
+- Sidecars persist correctly through SIGINT/SIGTERM (won't lose state
+  if dashboard is killed mid-run)
+- Watchdog heartbeat keeps SPA showing live activity during silent
+  bash phases (e.g. brew bottle downloads)
+- REPORT.md auto-generated post-apply with no "macOS web apps" Mac-isms
+
+---
+
 ## Sesja 54 (2026-05-11) — Ubuntu adapter brought to macOS feature parity
 
 Worked entirely on `mk-uP5520` (Ubuntu 24.04, Python 3.14). Started from a

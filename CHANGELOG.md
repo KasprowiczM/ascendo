@@ -14,6 +14,103 @@ OSes, plugin signing + verification, plugin marketplace UX in dashboard.
 
 ---
 
+## [0.6.1] — 2026-05-11 — Ubuntu adapter parity + production-hardening
+
+Sesja 54 + 55. Brings Ubuntu adapter to full feature parity with macOS
+and hardens it against real-world failure modes uncovered during
+live-fire operator testing on Ubuntu 24.04.
+
+### Added
+
+- **`adapters/ubuntu/ascendo_ubuntu/managers/elevation.py`** —
+  `LinuxElevation(IElevation)` mirrors `MacElevation`. sudo password
+  cached in-memory, askpass helper at `adapters/ubuntu/lib/askpass_helper.sh`,
+  dashboard `/elevation/auth` + `/elevation/status` endpoints work
+  unchanged. 29 tests.
+- **`adapters/ubuntu/ascendo_ubuntu/snapshot.py`** —
+  `TimeshiftSnapshot(ISnapshot)`. Wraps `sudo -A timeshift --create
+  --scripted` + `--list`. Backend slug `"timeshift"`. Degrades to
+  "warn" health component when timeshift is missing. Restore
+  deliberately omitted (destructive).
+- **`adapters/ubuntu/ascendo_ubuntu/managers/scheduler.py`** —
+  `SystemdScheduler(IScheduler)`. Per-user systemd timers under
+  `~/.config/systemd/user/ascendo-<name>.{service,timer}`. DSL parser
+  identical to LaunchdScheduler (DAILY/WEEKLY/MONTHLY/HOURLY/MINUTE).
+  33 tests.
+- **`adapters/ubuntu/ascendo_ubuntu/managers/web.py`** — 8th
+  IPackageManager. Linux-flavored WebManager covering AppImage / GitHub
+  releases / release_feed / builtin handlers. Slimmer than macOS (no
+  Sparkle/keystone/squirrel — those are Mac-only frameworks). 17 tests.
+- **`bin/validate-ubuntu.sh`** — 10-stage / 23-check end-to-end smoke
+  harness mirroring `validate-macos.sh` and `validate-windows.ps1`.
+- **`LINUX_TESTING.md`** — operator-facing testing guide.
+- **Bridge improvements** in `adapters/ubuntu/ascendo_ubuntu/managers/_base.py`:
+  `start_new_session=True`, watchdog heartbeat thread (10s silence
+  trigger), `>>> starting` marker, auto-injected non-interactive env
+  (`DEBIAN_FRONTEND`, `NEEDRESTART_MODE`, etc.), `stdin=DEVNULL`.
+- **`lib/json.sh`** SIGINT/SIGTERM trap producing partial sidecar
+  with `ASCENDO-INTERRUPTED` diagnostic + canonical exit code (130/143).
+
+### Fixed
+
+- **`require_sudo` clobbered the json EXIT trap.** Snap apply ran
+  successfully (refreshed thunderbird visible in stream log) but the
+  sidecar was never written → bridge synthesised a failed sidecar
+  from "no sidecar produced" error → SPA showed phantom failure.
+  Now keepalive killer chains with whatever existing trap was
+  registered.
+- **Inventory `list.sh` silently skipped npm + pip categories.** Two
+  compounding bash bugs: heredoc inside `$(... || true)` is a parse
+  error; `python3 - <<'PY'` collides with `printf | python3 -` over
+  stdin. Fix: `python3 -c '<inline>'`. Live impact: enumeration
+  jumped 2539 → 2579 items (+40 npm/pip rows that were silently
+  dropped).
+- **SPA inventory overlay never matched check-sidecar items.** Legacy
+  bash check.sh emits items with synthetic compound IDs
+  (`snap:upgrade:firefox`) but inventory has clean names (`firefox`).
+  Now overlay also indexes by trailing colon-segment.
+- **`brew --cask --greedy` looked like a hang.** Re-downloaded every
+  cask whose version is "latest" or has `auto_updates=true` on every
+  apply, easily 10+ minutes per run. Default upgrade is now `--cask`
+  only; opt-in via `ASCENDO_BREW_GREEDY=1`.
+- **`scripts/pip/plan.sh` emitted `kind=check`** clobbering the real
+  check sidecar. Post-processes the sidecar to rewrite kind→plan.
+- **`legacy_compat` translator mapped exit_code=1 → status=failed.**
+  Per `docs/agents/contract.md`, exit 1 is "warn" (advisories only).
+  Three-way mapping: `{0,1 → success, 75 → skipped, else → failed}`.
+- **Legacy_compat synthesised a `uuid5` run.id** that mismatched the
+  orchestrator's run.id, so post-apply hooks (REPORT.md, update_history,
+  dashboard `/runs/{id}`) all 404'd. Bridge now overwrites
+  `sc.run.id` after `read_sidecar`.
+- **REPORT.md said "macOS web apps"** — fixed to `"Web apps
+  (AppImage / GitHub releases / Sparkle)"`.
+- **`validate-ubuntu.sh` was too strict** — accepted only `success`,
+  rejected `partial`. Real systems hit soft advisories. Now accepts
+  both.
+
+### Live test results on `mk-uP5520`
+
+```
+$ python3 -m ascendo doctor
+adapter: ubuntu (Ubuntu / Debian) tier=1
+capabilities: AdapterCapability.PACKAGE_MANAGEMENT|INVENTORY|SNAPSHOTS|SCHEDULING|ELEVATION
+
+$ bash bin/validate-ubuntu.sh
+ALL CHECKS PASSED. (23/23)
+
+$ python3 -m ascendo run -c apt,snap,brew,npm,pip,flatpak,web -p check,plan,apply,verify,cleanup
+overall: success (35 sidecars, 80 items)
+
+$ sqlite3 ~/.ascendo/inventory.db 'SELECT category, COUNT(*) FROM inventory_items GROUP BY category;'
+apt|2476  brew_formula|47  npm|4  pip|36  snap|16
+TOTAL: 2579 items, all with installed + candidate populated
+```
+
+143/143 ubuntu adapter tests + 13/13 contract `test_legacy_compat` +
+9/9 ubuntu_inventory tests green.
+
+---
+
 ## [0.6.0-rc1] — 2026-05-09 — Edition split + GUI-PATH fixes
 
 Sesja 51 + 52 + 53. Splits Ascendo into `basic` and `dev` editions from

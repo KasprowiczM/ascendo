@@ -1,11 +1,19 @@
 # Ascendo on Linux — Quickstart (operator)
 
 One-screen guide: install → open the dashboard → see what's installed →
-update apt / snap / flatpak / brew / npm / pip / drivers. Tested on
-Ubuntu 24.04 LTS (mk-uP5520, Dell Precision 5520) — bash 5.2, Python
-3.12, apt 2.7, snapd 2.66, flatpak 1.14, Linuxbrew 4.4. Compatible
-with Ubuntu 22.04+ and Debian 12+; Pop!_OS / Mint should work via the
-`ID_LIKE=ubuntu` ancestor match.
+update apt / snap / flatpak / brew / npm / pip / drivers / web. Tested
+on Ubuntu 24.04 LTS (mk-uP5520, Dell Precision 5520) — bash 5.2,
+Python 3.14, apt 2.8, snapd 2.75, flatpak 1.14, Linuxbrew 5.1.
+Compatible with Ubuntu 22.04+ and Debian 12+; Pop!_OS / Mint should
+work via the `ID_LIKE=ubuntu` ancestor match.
+
+> **As of v0.6.1, Ubuntu adapter is at full feature-parity with macOS.**
+> All 5 IAdapter capabilities declared (`PACKAGE_MANAGEMENT |
+> INVENTORY | SNAPSHOTS | SCHEDULING | ELEVATION`), 8 IPackageManager
+> implementations (apt / snap / brew / npm / pip / flatpak / drivers /
+> **web**), 13-component health rollup. End-to-end smoke
+> `bin/validate-ubuntu.sh` is 23/23 PASS. See
+> [`LINUX_TESTING.md`](LINUX_TESTING.md) for the full test matrix.
 
 For the deep architecture (legacy bash `update-all.sh` + Python
 `UbuntuAdapter` shim) and per-platform parity matrix see

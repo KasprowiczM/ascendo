@@ -2,18 +2,21 @@
 
 > **Single source of truth for cross-platform parity.** Honest audit of
 > what's implemented, partial, or missing on each of the three Tier-1
-> platforms (macOS, Windows, Linux/Ubuntu) as of v0.5.2 (Sesja 45,
-> 2026-05-09). Use this when planning roadmap work, when answering "is
-> X on Y supported yet?", or when triaging a bug report by platform.
+> platforms (macOS, Windows, Linux/Ubuntu) as of v0.6.1 (Sesja 54+55,
+> 2026-05-11). Use this when planning roadmap work, when answering
+> "is X on Y supported yet?", or when triaging a bug report by
+> platform.
 >
 > Markers: ✅ shipped & validated · 🟡 partial / shim / deferred · ❌
 > not implemented · N/A not applicable on this platform.
 >
 > When a row says ✅ on macOS, it means the operator has run it
 > end-to-end on real hardware (Mac.r12.home). When it says ✅ on
-> Windows, the same on DP5520WMK. When it says ✅ on Linux, **assume
-> static analysis only unless explicitly noted** — operator
-> validation on real Ubuntu hardware (mk-uP5520) is pending Sesja 46.
+> Windows, the same on DP5520WMK. **As of v0.6.1, ✅ on Linux now
+> means operator-validated end-to-end on mk-uP5520 (Ubuntu 24.04)** —
+> 23/23 `bin/validate-ubuntu.sh`, 35 sidecars × 5 phases × 7
+> categories, 2579 inventoried items, eight live-fire bug fixes
+> shipped post-validation.
 
 ---
 
@@ -86,30 +89,31 @@
 | Feature | macOS | Windows | Linux |
 |---------|:-----:|:-------:|:-----:|
 | Backend technology | launchd (per-user LaunchAgent) | Task Scheduler (`\Ascendo\<name>`) | systemd `--user` timer |
-| `IScheduler` Python impl | ✅ `LaunchdScheduler` (M5.5) | ✅ `WindowsScheduler` (M3.13) | ❌ **not wired in `UbuntuAdapter`** |
-| `python3 -m ascendo schedule` CLI | ✅ install / list / trigger / remove | ✅ install / remove / list / trigger | ❌ falls through to "not implemented" |
-| Direct bash script | N/A | N/A | ✅ `scripts/scheduler/install.sh` writes systemd timer directly |
-| DSL mirror (DAILY / WEEKLY / MONTHLY / HOURLY / MINUTE) | ✅ | ✅ | 🟡 raw `OnCalendar` only via bash flag |
+| `IScheduler` Python impl | ✅ `LaunchdScheduler` (M5.5) | ✅ `WindowsScheduler` (M3.13) | ✅ `SystemdScheduler` (Sesja 54, v0.6.1) |
+| `ascendo schedule` CLI | ✅ install / list / trigger / remove | ✅ install / remove / list / trigger | ✅ install / list / trigger / remove |
+| Direct bash script | N/A | N/A | ✅ `adapters/ubuntu/scripts/scheduler/scheduler.sh` (JSON-IPC) |
+| DSL mirror (DAILY / WEEKLY / MONTHLY / HOURLY / MINUTE) | ✅ | ✅ | ✅ — translates to `OnCalendar=` / `OnUnitActiveSec=` |
 
 ### A.6 — Snapshots (pre-apply rollback)
 
 | Feature | macOS | Windows | Linux |
 |---------|:-----:|:-------:|:-----:|
 | Backend | APFS local snapshots (Time Machine) | VSS (`Checkpoint-Computer`) | timeshift (preferred) / etckeeper (fallback) |
-| `ISnapshot` Python impl | ✅ `TimeMachineSnapshot` (read-only — list only) | ✅ `WindowsSnapshot` (create + list) | ❌ **not wired in `UbuntuAdapter`** |
-| Programmatic create | ❌ APFS auto-managed; Apple deprecated `tmutil snapshot` for user code | ✅ `Checkpoint-Computer` System Restore Point | 🟡 only via `update-all.sh --snapshot` (bash) |
-| List snapshots | ✅ `tmutil listlocalsnapshots /` | ✅ `Get-CimInstance Win32_ShadowCopy` | 🟡 via `bash scripts/snapshot/list.sh` |
-| Restore | ❌ only via Recovery / `tmutil restore` | 🟡 deferred (M3.X — `vssadmin revert` + UAC) | 🟡 timeshift GUI only |
-| Pre-apply hook (auto-snapshot before `apply`) | ❌ deferred — manual `tmutil localsnapshot` | ✅ `bin/run-tag-release.ps1` integration | ✅ `update-all.sh --snapshot` |
+| `ISnapshot` Python impl | ✅ `TimeMachineSnapshot` (read-only — list only) | ✅ `WindowsSnapshot` (create + list) | ✅ `TimeshiftSnapshot` (Sesja 54, v0.6.1) — create + list |
+| Programmatic create | ❌ APFS auto-managed; Apple deprecated `tmutil snapshot` for user code | ✅ `Checkpoint-Computer` System Restore Point | ✅ `sudo -A timeshift --create --scripted` |
+| List snapshots | ✅ `tmutil listlocalsnapshots /` | ✅ `Get-CimInstance Win32_ShadowCopy` | ✅ `timeshift --list` parser |
+| Restore | ❌ only via Recovery / `tmutil restore` | 🟡 deferred (M3.X — `vssadmin revert` + UAC) | ❌ deliberately omitted (destructive — use `sudo timeshift --restore` from recovery shell) |
+| Pre-apply hook (auto-snapshot before `apply`) | ❌ deferred — manual `tmutil localsnapshot` | ✅ `bin/run-tag-release.ps1` integration | ✅ `update-all.sh --snapshot` AND `ascendo snapshot create` |
 
 ### A.7 — Elevation (sudo / UAC)
 
 | Feature | macOS | Windows | Linux |
 |---------|:-----:|:-------:|:-----:|
-| `IElevation` Python impl | ✅ `MacElevation` | ✅ `WindowsElevation` | ❌ **not wired in `UbuntuAdapter`** |
-| Mechanism | sudo + `SUDO_ASKPASS` cache (in-memory) | UAC via `ShellExecuteW lpVerb=runas` | sudo + askpass helper (`$XDG_RUNTIME_DIR/ascendo/askpass-*.sh`) — **bash-side only** |
-| Touch ID / biometric | ✅ `pam_tid.so` honoured (Sesja 36) | N/A | ❌ |
-| Argv-only (no shell strings) | ✅ | ✅ T4 mitigation enforced | ✅ bash-side via `_ascendo_sudo` |
+| `IElevation` Python impl | ✅ `MacElevation` | ✅ `WindowsElevation` | ✅ `LinuxElevation` (Sesja 54, v0.6.1) |
+| Mechanism | sudo + `SUDO_ASKPASS` cache (in-memory) | UAC via `ShellExecuteW lpVerb=runas` | sudo + askpass helper at `adapters/ubuntu/lib/askpass_helper.sh`, password cached in-memory via `_ASCENDO_SUDO_PW` env |
+| Dashboard `/elevation/auth` + `/elevation/status` endpoints | ✅ | ✅ | ✅ — works unchanged with the macOS dashboard router |
+| Touch ID / biometric | ✅ `pam_tid.so` honoured (Sesja 36) | N/A | ❌ (TODO: pam_fprintd / Polkit `pkexec` follow-up) |
+| Argv-only (no shell strings) | ✅ | ✅ T4 mitigation enforced | ✅ Python-side via `LinuxElevation.run()` allowlist; bash-side via `_ascendo_sudo` |
 | Allow-list enforcement | ✅ | ✅ lowercase basename normalisation | 🟡 implicit via specific bash callsites |
 | Dashboard `/elevation/auth` round-trip | ✅ | ✅ | 🟡 unverified — may need shim wiring |
 
