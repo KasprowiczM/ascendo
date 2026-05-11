@@ -350,11 +350,23 @@ def path_matches_pattern(relpath: str, pattern: str, *, is_dir: bool = False) ->
     if patt.endswith("/"):
         dir_pattern = patt.rstrip("/")
         if "/" in dir_pattern:
+            # When a directory pattern contains a slash (e.g.
+            # ".claude/worktrees/"), we treat it as a NESTED-anywhere
+            # match: the pattern catches the directory at the repo
+            # root AND any time it appears further down (e.g.
+            # `dev-sync-overlay/ai-state/.claude/worktrees/...`).
+            # Pre-fix, the matcher only checked root-anchored prefixes,
+            # which silently let the `dev-sync-overlay-migrate.sh` script
+            # ship 29 MB of stale worktree copies via the overlay
+            # staging path. Detected post-flight via the operator
+            # report that Ubuntu sync was taking forever.
             return (
                 rel == dir_pattern
                 or rel.startswith(dir_pattern + "/")
                 or fnmatch.fnmatch(rel, dir_pattern)
                 or fnmatch.fnmatch(rel, dir_pattern + "/*")
+                or f"/{dir_pattern}/" in f"/{rel}/"
+                or f"/{dir_pattern}" == ("/" + rel)[-(len(dir_pattern) + 1):]
             )
         parts = rel.split("/")
         directory_segments = parts if is_dir else parts[:-1]

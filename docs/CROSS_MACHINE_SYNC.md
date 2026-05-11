@@ -200,13 +200,48 @@ desktop app — quit + reopen to refresh).
 | Lives on … | Examples |
 |------------|----------|
 | **GitHub (public source)** | All Python code under `core/`, `adapters/`, `plugins/`, `contrib/` · All bash + PowerShell scripts · All docs in `docs/` + top-level `*.md` (except HANDOFF/PLAN/CLAUDE/AGENTS/CODEX if pruned) · All tests · `.gitignore`, `.github/`, `CHANGELOG.md`, `RELEASE_NOTES.md` |
-| **Proton (private overlay)** | `.env.local` · `.dev_sync_config.json` · `.dev_sync_manifest.json` · `dev-sync-overlay/` private docs · `.codex.local/`, `.gemini/`, `.claude/` settings · per-machine logs (`dev_sync_logs/`, `logs/runs/`) · `APPS.md` (auto-generated) |
-| **NEITHER** *(local-only, regenerated)* | `__pycache__/` · `.pytest_cache/` · `node_modules/` · `target/` · `dist/` · `build/` · `bin-staging*/` · all `*.dmg`/`*.msi`/`*.exe`/`*.pkg`/`*.deb` |
+| **Proton (private overlay)** | `.env.local` · `.dev_sync_config.json` · `.dev_sync_manifest.json` · `dev-sync-overlay/` private docs (AI tool configs, dated handoffs, graphify outputs) · per-machine logs (`dev_sync_logs/`, `logs/runs/`) · `APPS.md` (auto-generated) |
+| **NEITHER** *(local-only, regenerated)* | `__pycache__/` · `.pytest_cache/` · `node_modules/` · `target/` · `dist/` · `build/` · `bin-staging*/` · all `*.dmg`/`*.msi`/`*.exe`/`*.pkg`/`*.deb` · `.claude/worktrees/` *(Claude Code agent worktrees — multi-GB per dispatch, ALWAYS reconstructible from the canonical branch on origin)* |
+
+> **Sync size expectation**: a clean overlay is ~88 files / ~1.5 MB.
+> If `bash dev-sync-export.sh --dry-run` reports more than a few
+> hundred files, something is wrong — most likely a stray
+> `.claude/worktrees/` subtree got copied INTO the overlay during a
+> past migration. The post-Sesja-56 dev-sync code prevents this from
+> happening again, but stale Proton-only files from earlier exports
+> can persist until pruned. To rebuild a clean overlay state on the
+> MacBook:
+>
+> ```bash
+> bash dev-sync-prune-excluded.sh --plan-out /tmp/plan.json   # plan
+> bash dev-sync-prune-excluded.sh --apply-plan /tmp/plan.json # quarantine
+> bash dev-sync-verify-full.sh                                # confirm PASS
+> bash dev-sync-purge-quarantine.sh --apply                   # delete quarantine
+> ```
 
 The cleanest validation that you've correctly partitioned: after a
 fresh clone + import, every script you'd run on the MacBook should
 work identically on Windows / Ubuntu — and `dev-sync-verify-full.sh`
 should report `PASS` immediately.
+
+### Why your Ubuntu import was slow (Sesja 56 root cause)
+
+If on Ubuntu the `dev-sync-import.sh` took forever, this is the fix:
+the overlay was previously bloated with ~2,000 stale Claude Code
+worktree files (29 MB) staged by an earlier `dev-sync-overlay-migrate.sh`
+run. rclone-over-network handles each file as a separate API call, so
+2,000+ tiny files dominated the wall time. After Sesja 56:
+
+1. `bin/dev-sync-overlay-migrate.sh` now skips `worktrees/` during the
+   staging copy (rsync `--exclude='worktrees/'` + scrub-as-fallback).
+2. `dev-sync/dev_sync_core.py`'s pattern matcher now catches
+   `.claude/worktrees/` at ANY depth, not just the repo root — defence
+   in depth.
+3. The 2,000 stale worktree copies were quarantined + purged from
+   Proton.
+
+Result: overlay is 88 files / 1.5 MB. Ubuntu import should now
+complete in single-digit seconds over a normal home connection.
 
 ---
 

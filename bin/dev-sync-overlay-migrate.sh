@@ -23,13 +23,39 @@ copy_if_exists() {
     fi
 }
 
+# Copy a directory while excluding `worktrees/` subtrees. Used for the
+# `.claude` copy so Claude Code agent worktrees (each potentially many
+# MB of duplicate checkout) never land in the overlay. Operator-reported
+# regression: the original `cp -a .claude` shipped ~29 MB of stale
+# worktree copies in the overlay, slowing Ubuntu rclone imports to a
+# crawl. See dev_sync_core.py HARD_EXCLUDE_PATTERNS for the runtime
+# defence-in-depth — this script is the FIRST line of defence, the
+# runtime filter is the second.
+copy_dir_excluding_worktrees() {
+    local src="$1" dst_dir="$2"
+    if [ ! -d "$src" ]; then return 0; fi
+    local name
+    name="$(basename "$src")"
+    printf '  copy: %s -> %s/  (excluding worktrees/)\n' "$src" "$dst_dir"
+    if command -v rsync >/dev/null 2>&1; then
+        rsync -a --delete --exclude 'worktrees/' "$src/" "$dst_dir/$name/"
+    else
+        # cp fallback when rsync isn't available — copy everything then
+        # remove the bad subtree. Pre-existing dst gets refreshed by
+        # removing it first so this stays idempotent like the original.
+        rm -rf "$dst_dir/$name"
+        cp -a "$src" "$dst_dir/"
+        rm -rf "$dst_dir/$name/worktrees"
+    fi
+}
+
 printf '== migrate AI instructions ==\n'
 copy_if_exists "$REPO_ROOT/CLAUDE.md"  "$OVERLAY/ai-instructions/"
 copy_if_exists "$REPO_ROOT/AGENTS.md"  "$OVERLAY/ai-instructions/"
 copy_if_exists "$REPO_ROOT/CODEX.md"   "$OVERLAY/ai-instructions/"
 
 printf '== migrate AI state ==\n'
-copy_if_exists "$REPO_ROOT/.claude"        "$OVERLAY/ai-state/"
+copy_dir_excluding_worktrees "$REPO_ROOT/.claude" "$OVERLAY/ai-state"
 copy_if_exists "$REPO_ROOT/.claudeignore"  "$OVERLAY/ai-state/"
 copy_if_exists "$REPO_ROOT/.codex"         "$OVERLAY/ai-state/"
 copy_if_exists "$REPO_ROOT/.codex.local"   "$OVERLAY/ai-state/"
@@ -37,6 +63,13 @@ copy_if_exists "$REPO_ROOT/.codexignore"   "$OVERLAY/ai-state/"
 copy_if_exists "$REPO_ROOT/.gemini"        "$OVERLAY/ai-state/"
 copy_if_exists "$REPO_ROOT/.geminiignore"  "$OVERLAY/ai-state/"
 copy_if_exists "$REPO_ROOT/.graphifyignore" "$OVERLAY/ai-state/"
+
+# Defence-in-depth: even if .claude got copied elsewhere by a future
+# edit, scrub any worktrees/ subtrees from the overlay before export.
+if find "$OVERLAY" -type d -name 'worktrees' -print -prune 2>/dev/null | grep -q .; then
+    printf '== scrub stray worktrees/ from overlay ==\n'
+    find "$OVERLAY" -type d -name 'worktrees' -print -exec rm -rf {} + 2>/dev/null || true
+fi
 
 printf '== migrate handoff docs ==\n'
 copy_if_exists "$REPO_ROOT/HANDOFF.md"             "$OVERLAY/handoff/"
