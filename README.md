@@ -74,11 +74,16 @@ the platform quickstarts below.
 
 ## Platforms
 
+> **Pre-1.0 release.** APIs and CLI flags may still change between
+> minor versions. macOS is the most mature; Windows + Linux are
+> functional and at parity for inventory + check + apply but have
+> fewer integrations wired (see the matrix below).
+
 | Platform | Status | Quickstart |
 |----------|--------|------------|
-| macOS (Apple Silicon + Intel) | ✅ feature-complete (v0.5.2) | [MACOS_QUICKSTART.md](MACOS_QUICKSTART.md) |
-| Windows 11 / 10 | ✅ feature-complete (v0.0.7) | [WINDOWS_QUICKSTART.md](WINDOWS_QUICKSTART.md) |
-| Ubuntu 22.04+ / Debian 12+ | 🟡 stable, parity in progress | [LINUX_QUICKSTART.md](LINUX_QUICKSTART.md) |
+| macOS (Apple Silicon + Intel) | ✅ feature-complete (v0.6.0-rc) — 12 health components, 6 package managers, Tier-A web auto-updates, Time Machine snapshots, launchd scheduler | [MACOS_QUICKSTART.md](MACOS_QUICKSTART.md) |
+| Windows 11 / 10 (build 17763+) | 🟡 functional (v0.5.x) — winget + msstore + ARP + PSWindowsUpdate + VSS + Task Scheduler + UAC. Parity with macOS still in progress (web auto-updates, Dell driver plugin shipped) | [WINDOWS_QUICKSTART.md](WINDOWS_QUICKSTART.md) |
+| Ubuntu 22.04+ / Debian 12+ | 🟡 functional (v0.5.x) — apt + snap + brew + npm + pip + flatpak inventory; legacy bash adapters bridged into Python orchestrator. Scheduler/snapshot/elevation Python wrappers pending | [LINUX_QUICKSTART.md](LINUX_QUICKSTART.md) |
 
 See [docs/PLATFORM_STATUS.md](docs/PLATFORM_STATUS.md) for the full
 per-feature matrix (which package managers, schedulers, snapshot

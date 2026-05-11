@@ -670,6 +670,26 @@ def dashboard(
     _setup_logging(verbose)
 
     if background:
+        # Probe whether a dashboard is already listening before spawning a
+        # second one. The OS would error our second uvicorn out with
+        # "Address already in use", but stderr is DEVNULL'd below so the
+        # user only sees "started in background (pid=...)" and silently
+        # gets a dead process. Worse, if NSSM or Tauri spawned the running
+        # dashboard, the user double-spawns without realising it.
+        try:
+            import socket
+            with socket.create_connection((host, port), timeout=0.5):
+                typer.secho(
+                    f"ascendo dashboard already listening on http://{host}:{port}/ — not re-spawning.",
+                    fg=typer.colors.YELLOW,
+                )
+                typer.secho(
+                    "tip: kill the existing process first, or use a different --port.",
+                    fg=typer.colors.YELLOW,
+                )
+                return
+        except (OSError, socket.timeout):  # nothing listening, safe to spawn
+            pass
         # Re-invoke ourselves in the foreground mode of this same command,
         # detached from the parent process group / session so the terminal
         # is free to exit. Cross-platform via stdlib only.

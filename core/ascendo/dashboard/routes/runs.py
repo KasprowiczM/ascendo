@@ -480,6 +480,32 @@ async def create_run_async(req: RunRequest, request: Request) -> dict:
     resolved_filter = _resolve_item_filter(
         req.item_filter, req.categories, resolved_phases, runs_dir,
     )
+
+    # Concurrent-apply guard: refuse a new apply if an apply is already
+    # running on any of the same categories. Two SPA tabs racing the same
+    # button, or a stale /runs/async from a network blip, used to spawn
+    # two worker threads — both writing sidecars to the same run dir AND
+    # both calling InventoryDB.bulk_upsert mid-flight. Tier-A apply paths
+    # also serialize-by-process (e.g. brew owns its own per-machine lock),
+    # but the dashboard layer should refuse upfront so the user sees a
+    # clear 409 instead of confusing half-state.
+    new_cats = [
+        c.value if hasattr(c, "value") else str(c) for c in (req.categories or ())
+    ]
+    new_phases = [
+        p.value if hasattr(p, "value") else str(p) for p in resolved_phases
+    ]
+    conflict = registry.conflicting_apply(new_cats, new_phases)
+    if conflict is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"apply already running for overlapping categories "
+                f"(run_id={conflict.run_id}, cats={list(conflict.categories)}). "
+                f"Wait for it to finish or stop it via POST /runs/active/stop."
+            ),
+        )
+
     state = await start_run_async(
         registry=registry,
         adapter=adapter,

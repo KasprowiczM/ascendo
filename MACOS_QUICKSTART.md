@@ -88,6 +88,53 @@ The script:
 
 **Skip the validate step:** `bash bin/install-dev-macos.sh --skip-validate`.
 
+### Editions: basic (default) vs dev
+
+Ascendo ships in two editions. The same code, different surfaces:
+
+| Edition | For | What's visible | Helper scripts |
+|---------|-----|----------------|----------------|
+| **`basic`** (default) | Everyday user | Overview · Categories · Run Center · History · Apps · Settings · Help · About | `ascendo_update`, `ascendo_doctor`, `ascendo_maintenance`, … |
+| **`dev`** | Maintainer / contributor | Everything basic shows + Sync · Hosts · Logs (raw events) · Git push · dev-sync overlay | basic set + `dev/` shims (`ascendo_sync`, `ascendo_push`, …) |
+
+Setting the edition (priority order, highest wins):
+
+1. **`ASCENDO_EDITION=basic|dev`** environment variable
+2. **`$ASCENDO_HOME/.ascendo-edition`** marker file (one line)
+3. **`basic`** default
+
+```bash
+# Switch the running install to dev:
+echo dev > ~/.local/share/ascendo/.ascendo-edition
+# Restart any dashboard for the change to take effect:
+pkill -f 'python.*-m ascendo dashboard' && nohup ascendo dashboard --background &
+```
+
+The basic edition's `EditionGateMiddleware` returns HTTP 404 for `/sync/*`,
+`/hosts*`, `/git/push*`, `/dev-sync*`, `/profiles/import*`. CSS hides the
+nav entries, and the helper scripts in `~/.local/bin/dev/` are only
+symlinked if `edition=dev` at install time.
+
+### Build a clickable DMG (per-edition packaging)
+
+```bash
+# Default — basic edition, "full" profile baked in:
+bash bin/build-dmg.sh
+# Produces: dist/Ascendo-Basic-0.6.0-arm64.dmg
+
+# Dev edition for maintainers:
+bash bin/build-dmg.sh --edition=dev --profile=full
+# Produces: dist/Ascendo-Dev-0.6.0-arm64.dmg
+```
+
+Each DMG bakes a `.ascendo-edition` marker file shipped inside the
+`.app`'s `Resources/`. On first launch, `first-run-bootstrap-macos.sh`
+reads it via the priority chain above. Distribute the basic DMG to
+end users; the dev DMG to contributors.
+
+> **`build-dmg.sh --help`** documents `--with-installer`,
+> `--with-create-dmg`, `--profile {quick,safe,full}`, and `--skip-cargo`.
+
 ## 2 · Open the dashboard
 
 Three equivalent paths — pick one:

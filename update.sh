@@ -180,10 +180,21 @@ if [ -d "$USER_SCRIPTS_DIR" ]; then
     [ "$LINKED_COUNT" -gt 0 ] && ok "Helper scripts: $LINKED_COUNT symlink(s) refreshed (edition=$EDITION)"
 fi
 
-# Restart running dashboard, if any
-if pgrep -f "ascendo dashboard" >/dev/null 2>&1; then
-    step "Restarting dashboard"
-    pkill -f "ascendo dashboard" 2>/dev/null || true
+# Restart running dashboard, if any.
+#
+# Be selective about which process we kill: a Tauri-spawned sidecar runs as
+# "<sidecar-path>/ascendo dashboard --host 127.0.0.1 --port <ephemeral>" and
+# its lifecycle is owned by the desktop app — killing it would orphan the
+# Ascendo.app window with a dead WebView. The standalone CLI dashboard
+# (what we WANT to restart so it picks up the new venv) runs as
+# "python -m ascendo dashboard" via the `ascendo` shim.
+#
+# We target argv prefix "python.*-m ascendo dashboard" specifically so the
+# Tauri sidecar (which runs a packaged executable, not "python -m") is
+# left alone.
+if pgrep -f "python.*-m ascendo dashboard" >/dev/null 2>&1; then
+    step "Restarting standalone dashboard (CLI shim only — Tauri sidecar untouched)"
+    pkill -f "python.*-m ascendo dashboard" 2>/dev/null || true
     sleep 1
     if [ -x "$HOME/.local/bin/ascendo" ]; then
         nohup "$HOME/.local/bin/ascendo" dashboard --background >/dev/null 2>&1 &
@@ -191,6 +202,11 @@ if pgrep -f "ascendo dashboard" >/dev/null 2>&1; then
     else
         warn "ascendo shim missing at ~/.local/bin/ascendo — start dashboard manually."
     fi
+elif pgrep -f "ascendo dashboard" >/dev/null 2>&1; then
+    # Likely a Tauri sidecar; leave it alone (it owns its own lifecycle and
+    # killing it would break the open desktop app). The user can quit
+    # Ascendo.app and reopen it to pick up the new code.
+    ok "Dashboard process detected but appears Tauri-managed — restart the desktop app to refresh."
 fi
 
 # Self-test

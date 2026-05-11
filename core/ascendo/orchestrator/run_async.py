@@ -43,7 +43,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from ..models.run import Phase, RunInfo
@@ -84,6 +84,12 @@ class RunState:
     report: RunReport | None = None
     error: str | None = None
     base_dir: Path | None = None
+    # Categories + phases this run requested. Used by RunRegistry.conflicts
+    # to refuse a concurrent /runs/async on the same (category, apply) pair.
+    # Stored as lowercase strings so the conflict check doesn't care whether
+    # the caller passed SourceType enums or raw strings.
+    categories: tuple[str, ...] = ()
+    phases: tuple[str, ...] = ()
     # Internal coordination — used by the SSE endpoint to wait efficiently.
     _completion_event: threading.Event = field(default_factory=threading.Event, repr=False)
 
@@ -101,12 +107,61 @@ class RunRegistry:
         self._states: OrderedDict[UUID, RunState] = OrderedDict()
         self._max_runs = max_runs
 
-    def register(self, run_id: UUID, *, base_dir: Path) -> RunState:
+    def register(
+        self,
+        run_id: UUID,
+        *,
+        base_dir: Path,
+        categories: Iterable[str] | None = None,
+        phases: Iterable[str] | None = None,
+    ) -> RunState:
         with self._lock:
-            state = RunState(run_id=run_id, base_dir=base_dir)
+            state = RunState(
+                run_id=run_id,
+                base_dir=base_dir,
+                categories=tuple(c.lower() for c in (categories or ())),
+                phases=tuple(p.lower() for p in (phases or ())),
+            )
             self._states[run_id] = state
             self._evict_if_needed_locked()
             return state
+
+    def conflicting_apply(
+        self,
+        categories: Iterable[str],
+        phases: Iterable[str],
+    ) -> RunState | None:
+        """Return any currently-running RunState whose categories overlap
+        AND whose phases include 'apply'. Used by /runs/async to refuse a
+        concurrent destructive run on the same source — winget/brew/etc.
+        own their own per-machine lock at the OS level, but firing two
+        applies simultaneously still produces user-visible breakage
+        (sidecars race, InventoryDB cleared mid-flight, etc.).
+
+        Read-only runs (check/plan/verify) are allowed to overlap; we only
+        gate when 'apply' is in the new phases or any running run's phases.
+        """
+        wanted_cats = {c.lower() for c in (categories or ())}
+        wanted_phases = {p.lower() for p in (phases or ())}
+        # The destructive flag is on EITHER side: a new check while an
+        # apply is running is fine; a new apply while a check is running
+        # is also fine (the apply just queues behind the OS lock). We only
+        # refuse when BOTH sides include apply on the same category.
+        new_is_apply = "apply" in wanted_phases
+        if not new_is_apply:
+            return None
+        with self._lock:
+            for st in self._states.values():
+                if st.status not in (RunStatus.PENDING, RunStatus.RUNNING):
+                    continue
+                if "apply" not in st.phases:
+                    continue
+                if wanted_cats & set(st.categories):
+                    return st
+                # Wildcard (empty categories = all): collide with anything.
+                if not wanted_cats or not st.categories:
+                    return st
+        return None
 
     def get(self, run_id: UUID) -> RunState | None:
         with self._lock:
@@ -233,7 +288,22 @@ async def start_run_async(
 
     Always returns synchronously — does not block on the worker.
     """
-    state = registry.register(run.id, base_dir=base_dir)
+    # Stringify categories + phases for the registry conflict check.
+    # SourceType / Phase are enums; their `.value` is the canonical string.
+    cat_strs = [
+        c.value if hasattr(c, "value") else str(c)
+        for c in (categories or ())
+    ]
+    phase_strs = [
+        p.value if hasattr(p, "value") else str(p)
+        for p in (phases or ())
+    ]
+    state = registry.register(
+        run.id,
+        base_dir=base_dir,
+        categories=cat_strs,
+        phases=phase_strs,
+    )
 
     # Pre-create the per-run dir + an empty stream log so the SSE endpoint
     # can start tailing immediately, even before the first manager boots.

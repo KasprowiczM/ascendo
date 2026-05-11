@@ -1642,7 +1642,9 @@ const ui = {
     ui._loaded.suggest = false; ui.loadSuggestions();
   },
 
-  async loadOverview() {
+  async loadOverview(opts) {
+    opts = opts || {};
+    const refresh = !!opts.refresh;
     try {
       const h = await api.get("/health");
       $("#hostbadge").textContent = h.repo_root || "";
@@ -1706,8 +1708,10 @@ const ui = {
         if (cardWrap) cardWrap.style.display = "none";
       }
     }
-    // Inventory charts (slow scan, runs after the rest paints)
-    ui.loadInventoryDashboard();
+    // Inventory charts (slow scan, runs after the rest paints).
+    // Forward {refresh: true} so post-apply repaint actually busts the
+    // backend cache + repaints the donut/bar charts with new totals.
+    ui.loadInventoryDashboard({ refresh });
     ui.loadHealth();
   },
 
@@ -2232,30 +2236,40 @@ const ui = {
     // ``plan`` are non-mutating, so we mark them ``dry_run`` to avoid sudo.
     $$("#cats-table button[data-cat-run]").forEach(b => b.addEventListener("click", async e => {
       e.stopPropagation();
-      const phase = b.dataset.phase || null;
-      const cat = b.dataset.only || null;
-      const isApply = phase === "apply" || phase === "" || phase === null;
-      const isReadOnly = phase === "check" || phase === "plan";
-      if (isApply) {
-        const ok = await confirmApply(cat || "all categories");
-        if (!ok) { ui.status(tr("apply.cancelled") || "apply cancelled"); return; }
-      }
-      // Backend (RunRequest, Pydantic v2, ``extra='forbid'``) requires
-      // ``categories: list[SourceType]`` and ``phases: list[Phase]``.
-      // Pre-monorepo SPA used singular ``only``/``phase`` strings — those
-      // now produce HTTP 422 ``extra_forbidden`` errors. Translate here.
-      const body = {
-        dry_run: isReadOnly,
-      };
-      if (cat) body.categories = [cat];
-      if (phase) body.phases = [phase];
+      // B4 debounce: disable the button until the run actually starts.
+      // Without this, a double-click (or a slow modal) can fire two
+      // /runs/async calls for the same category — bad behaviour, especially
+      // for apply where the user only typed ``apply`` once.
+      if (b.disabled) return;
+      b.disabled = true;
       try {
-        const r = await startRunWithSudo(body);
-        ui.show("run");
-        ui.attachStream(r.run_id);
-        $("#stop-btn").disabled = false;
-        ui.status(`run ${r.run_id} started - ${cat}/${phase || "all phases"}`);
-      } catch (err) { ui.status(String(err)); }
+        const phase = b.dataset.phase || null;
+        const cat = b.dataset.only || null;
+        const isApply = phase === "apply" || phase === "" || phase === null;
+        const isReadOnly = phase === "check" || phase === "plan";
+        if (isApply) {
+          const ok = await confirmApply(cat || "all categories");
+          if (!ok) { ui.status(tr("apply.cancelled") || "apply cancelled"); return; }
+        }
+        // Backend (RunRequest, Pydantic v2, ``extra='forbid'``) requires
+        // ``categories: list[SourceType]`` and ``phases: list[Phase]``.
+        // Pre-monorepo SPA used singular ``only``/``phase`` strings — those
+        // now produce HTTP 422 ``extra_forbidden`` errors. Translate here.
+        const body = {
+          dry_run: isReadOnly,
+        };
+        if (cat) body.categories = [cat];
+        if (phase) body.phases = [phase];
+        try {
+          const r = await startRunWithSudo(body);
+          ui.show("run");
+          ui.attachStream(r.run_id);
+          $("#stop-btn").disabled = false;
+          ui.status(`run ${r.run_id} started - ${cat}/${phase || "all phases"}`);
+        } catch (err) { ui.status(String(err)); }
+      } finally {
+        b.disabled = false;
+      }
     }));
   },
 
@@ -2820,36 +2834,40 @@ const ui = {
       // hitting Refresh. Apps + Categories + Overview are the most
       // common views to be staring at while a run is finishing.
       //
-      // Step 1: kick the server-side InventoryDB refresh so the
-      // SQLite cache is repopulated with post-apply versions BEFORE
-      // we re-fetch any view. Fire-and-forget — we don't await it
-      // because the next view-load will use frontendCache miss path
-      // which calls /inventory anyway, and the DB refresh races with
-      // it harmlessly.
-      try {
-        fetch("/inventory/db/refresh", { method: "POST" })
-          .catch(() => {/* endpoint may not exist on older backends */});
-      } catch {}
-      // Step 2: repaint the active view AND mark it loaded so a
-      // subsequent tab-switch back to it doesn't re-trigger the slow
-      // scan. Every view we re-fetch here also primes frontendCache,
-      // so the _loaded flag tells ui.show() "use the cache, don't
-      // refetch".
-      try {
-        const active = document.querySelector(".nav-link.active")?.dataset?.view
-                     || (window.ui && ui.activeView)
-                     || null;
-        if (active === "apps") {
-          ui.loadAppsView({ refresh: true });
-          ui._loaded.apps = true;
-        } else if (active === "categories") {
-          ui.loadCategoriesView({ refresh: true });
-          ui._loaded.categories = true;
-        } else if (active === "overview") {
-          ui.loadOverview({ refresh: true });
-          ui._loaded.overview = true;
-        }
-      } catch {}
+      // B3 fix: previously this was fire-and-forget which raced
+      // /inventory/db/refresh (10-30s full scan) against the immediate
+      // view repaint, so the SPA showed stale pre-apply versions until
+      // the next user click. We now await the refresh before
+      // re-fetching the view. The refresh writes back the latest
+      // sidecars (including post-apply verify sidecars per Sesja 53)
+      // into InventoryDB, then loadAppsView reads from the freshly
+      // populated DB.
+      //
+      // We don't block the SSE 'done' handler — refresh + repaint are
+      // wrapped in an async IIFE so the rest of the cleanup
+      // (invalidateCaches/checkRebootBanner/loadHealth above) is
+      // synchronous, but the user sees up-to-date versions when the
+      // network round-trip completes.
+      (async () => {
+        try {
+          await fetch("/inventory/db/refresh", { method: "POST" });
+        } catch { /* endpoint missing on legacy backends — fall through */ }
+        try {
+          const active = document.querySelector(".nav-link.active")?.dataset?.view
+                       || (window.ui && ui.activeView)
+                       || null;
+          if (active === "apps") {
+            await ui.loadAppsView({ refresh: true });
+            ui._loaded.apps = true;
+          } else if (active === "categories") {
+            await ui.loadCategoriesView({ refresh: true });
+            ui._loaded.categories = true;
+          } else if (active === "overview") {
+            await ui.loadOverview({ refresh: true });
+            ui._loaded.overview = true;
+          }
+        } catch {}
+      })();
     });
     es.addEventListener("log", e => { try { const m=JSON.parse(e.data); const ln=m.line||""; if (!handleMarker(ln)) { log.textContent += ln + "\n"; log.scrollTop=log.scrollHeight; appendStreamLine(ln); } } catch {} });
     es.addEventListener("log_line", e => {
@@ -2871,12 +2889,26 @@ const ui = {
     });
     es.onerror = () => {
       if (!usingLegacy) {
-        usingLegacy = true; try { es.close(); } catch {}
+        usingLegacy = true;
+        // Drop the failed EventSource from the active-streams list before
+        // pushing the fallback — otherwise repeated network blips during a
+        // long apply grow _ascendoActiveStreams indefinitely (each closure
+        // retains references to log/streamLog/handleMarker etc.). Only the
+        // most recent ES is the one that matters for new events.
+        const closedEs = es;
+        try { closedEs.close(); } catch {}
+        const arr = window._ascendoActiveStreams;
+        const idx = arr.indexOf(closedEs);
+        if (idx >= 0) arr.splice(idx, 1);
         es = new EventSource(`/runs/active/stream`);
-        window._ascendoActiveStreams.push(es);
+        arr.push(es);
         es.addEventListener("log", e => { try { const m=JSON.parse(e.data); const ln=m.line||""; if (!handleMarker(ln)) { log.textContent += ln + "\n"; log.scrollTop=log.scrollHeight; } } catch {} });
         es.addEventListener("done", e => { let m={}; try{m=JSON.parse(e.data);}catch{} log.textContent += `\n[done - exit ${m.exit_code}]\n`; es.close(); ui.invalidateCaches(); ui.checkRebootBanner(); ui.loadHealth(); });
-        es.onerror = () => { try { es.close(); } catch {} };
+        es.onerror = () => {
+          try { es.close(); } catch {}
+          const i = arr.indexOf(es);
+          if (i >= 0) arr.splice(i, 1);
+        };
       }
     };
   },

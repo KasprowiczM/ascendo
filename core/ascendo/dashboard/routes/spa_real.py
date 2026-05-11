@@ -112,6 +112,18 @@ def _classify(installed: str | None, candidate: str | None) -> str:
     return "ok"
 
 
+# Statuses we MUST preserve from the sidecar — _classify() doesn't know about
+# the Tier-B web flow (triggered = vendor agent will self-update on relaunch)
+# or the per-package skip flow. Overwriting these would make the SPA show
+# Brave/Chrome (keystone) as "outdated" forever, since installed != candidate
+# is the expected steady state.
+_SIDECAR_PRESERVED_STATUSES = frozenset({
+    "triggered", "triggered_pending", "triggered_confirmed",
+    "skipped", "skipped_running", "skipped_unavailable", "probe_unavailable",
+    "failed", "partial", "planned", "deferred",
+})
+
+
 # ── Inventory cache (per-app, thread-safe, TTL) ───────────────────────────
 
 
@@ -277,13 +289,18 @@ def _items_from_check_sidecar(runs_dir: Path, category: str) -> list[dict[str, A
         if marker in seen:
             continue
         seen.add(marker)
+        sidecar_status = rec.get("status")
+        if sidecar_status in _SIDECAR_PRESERVED_STATUSES:
+            row_status = sidecar_status
+        else:
+            row_status = _classify(rec.get("installed"), rec.get("candidate"))
         items.append(
             {
                 "name": str(key),
                 "installed": rec.get("installed"),
                 "candidate": rec.get("candidate"),
                 "source": category,
-                "status": _classify(rec.get("installed"), rec.get("candidate")),
+                "status": row_status,
                 "vendor": None,
             }
         )
@@ -473,8 +490,11 @@ def _enrich_items(items: list[dict[str, Any]], category: str, runs_dir: Path | N
             if hit.get("status"):
                 out["status"] = hit["status"]
         # Re-classify in case the overlay filled in versions after the
-        # initial "ok" classification.
-        if out.get("installed") or out.get("candidate"):
+        # initial "ok" classification — but NEVER clobber Tier-B sidecar
+        # statuses like "triggered" (keystone/squirrel/builtin self-update
+        # asynchronously; installed != candidate is the steady state).
+        current = out.get("status")
+        if current not in _SIDECAR_PRESERVED_STATUSES and (out.get("installed") or out.get("candidate")):
             out["status"] = _classify(out.get("installed"), out.get("candidate"))
         out["in_config"] = f"{category}:{name}" not in excluded
         enriched.append(out)
