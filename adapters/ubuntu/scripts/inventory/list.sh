@@ -235,21 +235,22 @@ NPM_COUNT=0
 if [ -n "$NPM_RESOLVED" ]; then
     NPM_OUT="$(_run_with_timeout "$NPM_RESOLVED" list -g --depth=0 --json 2>/dev/null || true)"
     if [ -n "$NPM_OUT" ]; then
-        # Parse JSON via python (always available where ascendo runs).
-        _parsed="$(printf '%s' "$NPM_OUT" | python3 - <<'PY' 2>/dev/null || true
+        # Parse JSON via python. Use -c (script as arg) so stdin is free
+        # for the data. The heredoc + dash form `python3 - <<'PY'` collides
+        # with `printf | python3` because both try to feed stdin: python's
+        # `-` reads the script from stdin via the heredoc, then
+        # `json.load(sys.stdin)` gets EOF and silently emits nothing.
+        _parsed="$(printf '%s' "$NPM_OUT" | python3 -c '
 import json, sys
 try:
-    data = json.load(sys.stdin)
+    data = json.loads(sys.stdin.read() or "{}")
 except Exception:
     sys.exit(0)
 deps = data.get("dependencies") or {}
 for name, info in deps.items():
-    ver = ""
-    if isinstance(info, dict):
-        ver = info.get("version") or ""
+    ver = info.get("version", "") if isinstance(info, dict) else ""
     print(f"{name}\t{ver}")
-PY
-)"
+' 2>/dev/null)" || _parsed=""
         while IFS=$'\t' read -r _name _ver; do
             [ -z "$_name" ] && continue
             _emit_item "npm:$_name" "$_name" "npm" "$_ver" "" "npm-global"
@@ -266,10 +267,11 @@ PIP_COUNT=0
 if [ -n "$PIP_RESOLVED" ]; then
     PIP_OUT="$(_run_with_timeout "$PIP_RESOLVED" list --format=json 2>/dev/null || true)"
     if [ -n "$PIP_OUT" ]; then
-        _parsed="$(printf '%s' "$PIP_OUT" | python3 - <<'PY' 2>/dev/null || true
+        # Same heredoc-vs-pipe fix as the npm block above.
+        _parsed="$(printf '%s' "$PIP_OUT" | python3 -c '
 import json, sys
 try:
-    data = json.load(sys.stdin)
+    data = json.loads(sys.stdin.read() or "[]")
 except Exception:
     sys.exit(0)
 if not isinstance(data, list):
@@ -281,8 +283,7 @@ for entry in data:
     ver = entry.get("version") or ""
     if name:
         print(f"{name}\t{ver}")
-PY
-)"
+' 2>/dev/null)" || _parsed=""
         while IFS=$'\t' read -r _name _ver; do
             [ -z "$_name" ] && continue
             _emit_item "pip:$_name" "$_name" "pip" "$_ver" "" "pypi"
