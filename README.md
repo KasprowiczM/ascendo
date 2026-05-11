@@ -176,6 +176,8 @@ the install one-liner with a different `ASCENDO_EDITION`.
 | Security folks | [SECURITY.md](SECURITY.md) |
 | Platform feature matrix | [docs/PLATFORM_STATUS.md](docs/PLATFORM_STATUS.md) |
 | Cross-platform contract | [docs/CROSS_PLATFORM.md](docs/CROSS_PLATFORM.md) |
+| Cross-machine sync (MacBook → Windows / Ubuntu) | [docs/CROSS_MACHINE_SYNC.md](docs/CROSS_MACHINE_SYNC.md) |
+| Desktop installer status | [docs/DESKTOP_INSTALLER_STATUS.md](docs/DESKTOP_INSTALLER_STATUS.md) |
 
 ## Architecture
 
