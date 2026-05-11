@@ -170,13 +170,39 @@ end users; the dev DMG to contributors.
 
 ## 2 · Open the dashboard
 
-Three equivalent paths — pick one:
+Four equivalent paths — pick one:
 
 | | Where | What it does |
 |-|-------|--------------|
-| **A** | `python3 -m ascendo dashboard` | Backend only; visit `http://127.0.0.1:8765` in your browser. |
-| **B** | `bash bin/launch-desktop-macos.sh` | Native Tauri 2.x window (WKWebView). The app in a real macOS window, not a browser tab. **Requires Rust + Node** — see prerequisites in the script header. |
-| **C** | (after `tauri build`) Double-click `Ascendo.app` | Production build with bundled icon. Lives in `ui/desktop-tauri/src-tauri/target/release/bundle/macos/`. |
+| **A** | **`ascendo web start`** | Detached background dashboard with pidfile tracking. Idempotent. Pair with `ascendo web stop`, `restart`, `status`, `open`. **Recommended for everyday use.** |
+| **B** | `python3 -m ascendo dashboard` | Backend in the foreground (Ctrl-C to stop); visit `http://127.0.0.1:8765` in your browser. Useful for debugging. |
+| **C** | `bash bin/launch-desktop-macos.sh` | Native Tauri 2.x window (WKWebView). The app in a real macOS window, not a browser tab. **Requires Rust + Node** — see prerequisites in the script header. |
+| **D** | (after `tauri build`) Double-click `Ascendo.app` | Production build with bundled icon. Lives in `ui/desktop-tauri/src-tauri/target/release/bundle/macos/`. |
+
+### `ascendo web` lifecycle commands
+
+```bash
+ascendo web start             # start dashboard in background; pidfile at ~/.ascendo/dashboard.pid
+ascendo web start --open      # also open in default browser
+ascendo web status            # human-readable: running pid=… http://127.0.0.1:8765/ started=…
+ascendo web status --json     # machine-readable; useful in scripts
+ascendo web stop              # graceful SIGTERM, waits up to 5s
+ascendo web stop --force      # escalates to kill -9 if SIGTERM doesn't take
+ascendo web restart           # stop + start in one call
+ascendo web open              # open running dashboard in default browser (refuses if not running)
+```
+
+Status output reads truth from BOTH the pidfile AND a live socket probe,
+so it correctly distinguishes:
+- `running` — your pidfile + port bound + /version returns 200
+- `stale pidfile` — pidfile present but process gone (auto-cleared by `stop`)
+- `bound by something else` — port 8765 in use but no pidfile (likely
+  Tauri-spawned sidecar from Ascendo.app)
+- `stopped` — nothing is running
+
+`ascendo web stop` ONLY kills the process tracked by its own pidfile. A
+Tauri-spawned dashboard sidecar is left alone — its lifecycle belongs
+to the desktop app.
 
 > **After `git pull`** — if the icon set changed (you'll see updates in
 > `ui/desktop-tauri/src-tauri/icons/`), you need to **rebuild the .app

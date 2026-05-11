@@ -359,33 +359,50 @@ const ui = {
   },
 
   async maybeShowWizard() {
-    // Two independent conditions can fire the wizard:
-    //   (a) the backend's onboarding.json says onboarded=false (fresh install,
-    //       or wizard skipped without saving), OR
-    //   (b) the user has never picked a language (localStorage.ui-locale
-    //       and ui-language both missing). This catches the case where a
-    //       previous install completed onboarding but the user wiped the
-    //       browser profile / cookies / opened the dashboard from a new
-    //       browser — the operator complaint that "language wizard is not
-    //       showing now during the first run" was exactly this.
+    // The wizard fires ON FIRST RUN ONLY. Source of truth: the backend's
+    // ``onboarding.json`` (~/.ascendo/onboarding.json) — once
+    // ``onboarded=true`` is persisted there, we NEVER re-show the
+    // wizard. The user changes any setting via the Settings menu.
+    //
+    // Earlier this also fired on missing ``localStorage.ui-locale`` /
+    // ``ui-language``, intending to catch "user wiped browser profile,
+    // never picked a language". But that meant clearing browser cookies
+    // re-showed the full 6-step wizard EVERY TIME — operator-reported
+    // annoyance. New behaviour:
+    //   1. Backend onboarded=false → show full wizard.
+    //   2. Backend onboarded=true but localStorage lang missing →
+    //      silently default to ``navigator.language`` (en if it starts
+    //      with "en", else pl) and persist. No popup. User can change
+    //      in Settings → UI Language at any time.
     let needsWizard = false;
-    let langPicked = false;
-    try {
-      langPicked = !!(localStorage.getItem("ui-locale")
-                   || localStorage.getItem("ui-language")
-                   || localStorage.getItem("ascendo_lang"));
-    } catch {}
     try {
       const s = await api.get("/onboarding/state");
       if (!s.onboarded) needsWizard = true;
     } catch {
-      // If the endpoint is unreachable on a fresh install, default to
-      // showing the wizard — better than silently swallowing the first run.
+      // Endpoint unreachable on a fresh install (e.g. very-first request
+      // racing app startup). Default to showing the wizard — better
+      // than swallowing the first-run flow.
       needsWizard = true;
     }
-    if (!langPicked) needsWizard = true;
-    if (!needsWizard) return;
-    ui.wizard.start();
+    if (needsWizard) {
+      ui.wizard.start();
+      return;
+    }
+    // Already onboarded — silently seed language preference if missing
+    // so subsequent navigations render in the user's browser locale.
+    try {
+      const have = localStorage.getItem("ui-locale")
+                || localStorage.getItem("ui-language")
+                || localStorage.getItem("ascendo_lang");
+      if (!have) {
+        const browserLang = (navigator.language || "en").toLowerCase();
+        const pick = browserLang.startsWith("pl") ? "pl" : "en";
+        localStorage.setItem("ui-locale", pick);
+        if (window.i18n && typeof window.i18n.setLocale === "function") {
+          try { window.i18n.setLocale(pick); } catch {}
+        }
+      }
+    } catch {}
   },
 
   // Step-router for the 6-step first-run wizard.
