@@ -1,0 +1,93 @@
+# =============================================================================
+# adapters/ubuntu/config/web_apps.toml — Linux web-app registry (shipped)
+# =============================================================================
+# This is the SHIPPED baseline registry of "web apps" that exist on Linux
+# OUTSIDE the apt / snap / flatpak / brew package managers — typically:
+#
+#   * AppImages downloaded from vendor sites or GitHub releases
+#   * binaries installed by user under /opt/ that aren't apt-owned
+#   * Electron apps installed via vendor's auto-updater
+#
+# Each entry is matched against discovered apps by `app_id` + optional
+# `discovery_hint`. Entries whose app is not currently installed are
+# silently skipped (no item emitted in check sidecar).
+#
+# User overrides live at ~/.config/ascendo/web_apps.toml — same schema,
+# user wins per app_id.
+#
+# Schema validated by adapters/ubuntu/ascendo_ubuntu/web_registry.py
+# =============================================================================
+
+schema = "ascendo-web-apps-linux/v1"
+
+# -----------------------------------------------------------------------------
+# obsidian — note-taking app, GitHub Releases AppImage
+# -----------------------------------------------------------------------------
+[[app]]
+app_id         = "obsidian"
+display_name   = "Obsidian"
+handler        = "github_release"
+discovery_hint = "Obsidian"
+
+  [app.github_release]
+  repo            = "obsidianmd/obsidian-releases"
+  asset_pattern   = "Obsidian-[0-9.]+\\.AppImage$"
+  prerelease      = false
+  strip_v_prefix  = true
+
+# -----------------------------------------------------------------------------
+# joplin — open-source note-taking, GitHub Releases AppImage
+# -----------------------------------------------------------------------------
+[[app]]
+app_id         = "joplin"
+display_name   = "Joplin"
+handler        = "github_release"
+discovery_hint = "Joplin"
+
+  [app.github_release]
+  repo            = "laurent22/joplin"
+  asset_pattern   = "Joplin-[0-9.]+\\.AppImage$"
+  prerelease      = false
+  strip_v_prefix  = true
+
+# -----------------------------------------------------------------------------
+# cursor — AI-first VS Code fork, vendor JSON feed
+# -----------------------------------------------------------------------------
+[[app]]
+app_id         = "cursor"
+display_name   = "Cursor"
+handler        = "release_feed"
+discovery_hint = "cursor"
+
+  [app.release_feed]
+  url            = "https://download.cursor.sh/api/update/linux-x64/stable/latest"
+  version_path   = "version"
+  download_path  = "url"
+  http_timeout_s = 8
+
+# -----------------------------------------------------------------------------
+# vscode-tarball — VS Code Insiders direct tarball (NOT the apt package)
+# Only matches when user installs the Linux .tar.gz outside apt.
+# -----------------------------------------------------------------------------
+[[app]]
+app_id         = "vscode-insiders-tarball"
+display_name   = "Visual Studio Code Insiders (tarball)"
+handler        = "release_feed"
+discovery_hint = "code-insiders"
+enabled        = false   # disabled by default — most users get vscode via apt
+
+  [app.release_feed]
+  url            = "https://update.code.visualstudio.com/api/update/linux-x64/insider/latest"
+  version_path   = "productVersion"
+  download_path  = "url"
+  http_timeout_s = 8
+
+# -----------------------------------------------------------------------------
+# discord — auto-updates itself; we just surface the registry entry.
+# -----------------------------------------------------------------------------
+[[app]]
+app_id         = "discord"
+display_name   = "Discord"
+handler        = "builtin"
+discovery_hint = "discord"
+notes          = "Discord auto-updates on launch; restart the app to pick up changes."

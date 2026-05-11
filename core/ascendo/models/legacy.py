@@ -93,6 +93,7 @@ _CATEGORY_TO_SOURCE_TYPE: dict[str, str] = {
     "flatpak": "flatpak",
     "drivers": "drivers",
     "inventory": "unknown",
+    "web": "web",
 }
 
 

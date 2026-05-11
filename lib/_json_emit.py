@@ -31,6 +31,7 @@ SCHEMA_ID = "ubuntu-aktualizacje/v1"
 VALID_KINDS = {"check", "plan", "apply", "verify", "cleanup"}
 _BUILTIN_CATEGORIES = {
     "apt", "snap", "brew", "npm", "pip", "flatpak", "drivers", "inventory",
+    "web",
 }
 _PLUGIN_CATEGORY_RE = re.compile(r"^plugin:[a-z0-9][a-z0-9_-]{0,40}$")
 VALID_LEVELS = {"info", "warn", "error"}

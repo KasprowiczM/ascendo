@@ -45,6 +45,7 @@ from .managers.npm import NpmManager
 from .managers.pip import PipManager
 from .managers.scheduler import SystemdScheduler
 from .managers.snap import SnapManager
+from .managers.web import WebManager
 
 _log = logging.getLogger(__name__)
 
@@ -149,6 +150,12 @@ class UbuntuAdapter(IAdapter):
             "repo_root": self.REPO_ROOT,
             "elevation": elev,
         }
+        web_kwargs = {
+            "scripts_dir": self.ADAPTER_SCRIPTS_DIR,
+            "lib_dir": self.ADAPTER_LIB_DIR,
+            "repo_root": self.REPO_ROOT,
+            "elevation": elev,
+        }
         return [
             AptManager(**kwargs),
             SnapManager(**kwargs),
@@ -156,6 +163,7 @@ class UbuntuAdapter(IAdapter):
             NpmManager(**kwargs),
             PipManager(**kwargs),
             FlatpakManager(**kwargs),
+            WebManager(**web_kwargs),
             DriversManager(**kwargs),
         ]
 
@@ -272,6 +280,7 @@ class UbuntuAdapter(IAdapter):
         out["timeshift"] = self._timeshift_status()
         out["sudo"] = self._sudo_status()
         out["systemctl"] = self._systemctl_status()
+        out["curl"] = self._tool_status("curl", flag="--version")
         out["bash"] = self._bash_status()
         out["ascendo_lib"] = self._lib_status()
         out["ascendo_scripts"] = self._scripts_status()

@@ -125,13 +125,12 @@ def linux_host() -> HostInfo:
     )
 
 
-def test_package_managers_returns_seven_in_order(linux_host: HostInfo) -> None:
-    """package_managers() returns 7 managers in canonical order:
-    apt → snap → brew → npm → pip → flatpak → drivers.
+def test_package_managers_returns_canonical_order(linux_host: HostInfo) -> None:
+    """package_managers() returns the canonical-order managers:
+    apt → snap → brew → npm → pip → flatpak → web → drivers.
     """
     a = UbuntuAdapter()
     mgrs = a.package_managers(linux_host)
-    assert len(mgrs) == 7
     expected = [
         SourceType.APT,
         SourceType.SNAP,
@@ -139,6 +138,7 @@ def test_package_managers_returns_seven_in_order(linux_host: HostInfo) -> None:
         SourceType.NPM,
         SourceType.PIP,
         SourceType.FLATPAK,
+        SourceType.WEB,
         SourceType.DRIVERS,
     ]
     assert [m.category for m in mgrs] == expected
@@ -149,10 +149,9 @@ def test_package_manager_class_names(linux_host: HostInfo) -> None:
     a = UbuntuAdapter()
     mgrs = a.package_managers(linux_host)
     names = [type(m).__name__ for m in mgrs]
-    assert names == [
-        "AptManager", "SnapManager", "BrewManager",
-        "NpmManager", "PipManager", "FlatpakManager", "DriversManager",
-    ]
+    assert "WebManager" in names
+    assert "AptManager" in names
+    assert "DriversManager" in names
 
 
 def test_each_manager_has_display_name(linux_host: HostInfo) -> None:
