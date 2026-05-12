@@ -1,6 +1,17 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-11 (sesja 54-55) — **Ubuntu adapter brought to
+> Last updated: 2026-05-12 (sesja 56) — **Linux production-readiness
+> pass shipped.** `ascendo web {start|stop|restart|status}` validated
+> live on mk-uP5520; edition-aware `.deb` installer (basic + dev)
+> ships from `packaging/build-deb.sh --edition=…`; defensive sidecar
+> salvage path in `_BaseManager._salvage_sidecar` covers the long
+> tail of "phase script died without firing its EXIT trap"; drivers
+> inventory row no longer falsely outdated; legacy
+> `ubuntu-aktualizacje-dashboard.service` retired on this host; stale
+> `claude/*` remote branches pruned (all merged to main). See
+> HANDOFF.md Sesja 56.
+>
+> Previous milestone (sesja 54-55) — **Ubuntu adapter brought to
 > macOS feature parity + production-hardened end-to-end** on
 > mk-uP5520. UbuntuAdapter now declares all 5 IAdapter capabilities
 > (PACKAGE_MANAGEMENT | INVENTORY | SNAPSHOTS | SCHEDULING | ELEVATION),

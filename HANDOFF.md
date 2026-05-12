@@ -6,6 +6,144 @@
 
 ---
 
+## Sesja 56 (2026-05-12) — Linux production-readiness pass + .deb editions
+
+Day-after operator session on `mk-uP5520` (Ubuntu 24.04, Python 3.14).
+User ask was comprehensive: "make sure linux works perfectly, build a
+.deb for basic + dev editions, make sure old Ubuntu_Aktualizacje doesn't
+clash with new Ascendo in `~/.ascendo`, add `ascendo web {start|stop|
+restart}` commands, ultra-review the whole adapter, eliminate stale
+branches without losing work". Single session, focused on shippability.
+
+### Findings
+
+- **`ascendo web start/stop/restart/status/open` already existed.** Wired
+  into `core/ascendo/cli/__init__.py` with pidfile tracking at
+  `~/.ascendo/dashboard.pid`. Cross-platform: POSIX `start_new_session`
+  + SIGTERM; Windows `CREATE_NEW_PROCESS_GROUP` + taskkill. Smoke-
+  tested live on this host: `start --no-open` → pid emitted, `curl
+  /version` returns `0.0.7/ubuntu/basic`, `stop` cleans up. No code
+  changes needed — task surfaced an already-shipped feature.
+- **Old `ubuntu-aktualizacje-dashboard.service` was still `enabled`**
+  (autostart on login). User had stopped it, but next reboot it would
+  have come back. Renamed `~/.config/systemd/user/ubuntu-aktualizacje-
+  dashboard.service` → `*.disabled-by-ascendo`, `systemctl --user
+  daemon-reload`, confirmed `is-enabled` now reports `not-found`.
+- **Old + new app state already separated.** Old uses
+  `~/.local/share/ubuntu-aktualizacje/` + `~/.config/ubuntu-aktualizacje/`;
+  new uses `~/.ascendo/`. No `.ascendo` config conflict — user's
+  concern unfounded but worth documenting in CHANGELOG.
+- **Snap apply sidecar miss from Sesja 55** ≠ active bug. Ultra-review
+  subagent (read-only Explore) confirmed the 4 bugs from Sesjas 54-55
+  are all fixed in HEAD; the failed `apply__snap.json` in run
+  `f02b4f0e` was a historical snapshot from BEFORE commit `497b629`
+  landed.
+- **Drivers row was falsely-outdated in inventory.** `scripts/drivers/
+  check.sh` line 20-21 wrote `from="${nv_pkg}" to="${nv_ver}"` — i.e.
+  package name vs version. SPA overlay reads `from→installed`,
+  `to→candidate`, so `installed=nvidia-driver-570` vs `candidate=570.
+  211.01-0ubuntu1.24.04.1` made the row paint outdated forever.
+
+### Shipped
+
+#### `_BaseManager._salvage_sidecar` (defense-in-depth)
+
+`adapters/ubuntu/ascendo_ubuntu/managers/_base.py`. The orchestrator
+now pre-creates a `JSON_BUFDIR` path and exports it in the child env;
+`lib/json.sh::json_init` honors it (was: unconditional `mktemp -d`).
+When the bash script exits without firing its `EXIT` trap (signal,
+parse error, kernel kill), Python checks if `meta.json` survived in
+the pre-allocated bufdir and runs `lib/_json_emit.py finalize`
+manually. Adds an explicit `ASCENDO-SALVAGED` diagnostic into the
+salvaged sidecar's `diags.jsonl` so it's visible in the SPA even
+before the operator looks at the log. Belt-and-suspenders on top of
+the trap-chain fix that landed in Sesja 55 — covers the long tail of
+ways a phase script can die silently.
+
+#### Drivers check `from=`/`to=` polarity fix
+
+`scripts/drivers/check.sh`. NVIDIA "present" item now writes the
+version into both `from=` and `to=`, package name moves to `details=
+package=nvidia-driver-570`. Inventory drivers row no longer paints
+outdated. Verified live: pre-fix DB had `drivers|1|1` (1 outdated);
+post-fix `drivers|1|0`.
+
+#### `packaging/build-deb.sh --edition=basic|dev`
+
+Adds an edition flag. Bakes `/opt/ascendo/.ascendo-edition` into the
+staged tree (read at boot by `app.state.edition`; priority is
+`ASCENDO_EDITION` env > marker file > default `basic`). Output
+filename includes edition so `dist/ascendo-basic_0.0.7_all.deb` and
+`dist/ascendo-dev_0.0.7_all.deb` coexist. Verified end-to-end:
+both .debs build (1.42 MB each), edition markers correct, 8
+`/usr/local/bin/ascendo_*` shims present (`ascendo_start_web`,
+`ascendo_stop_web`, `ascendo_doctor`, etc.).
+
+#### Repo hygiene
+
+- `.gitignore` now ignores `packaging/deb/opt/` + `packaging/deb/usr/`
+  (auto-generated stage trees from `build-deb.sh`). `DEBIAN/*`
+  templates stay tracked.
+- `packaging/deb/opt/ubuntu-aktualizacje/` (191 stale legacy files
+  from before the rebrand) `git rm --cached`'d.
+- `origin/claude/stupefied-noyce-c04d3c` and
+  `origin/claude/wizardly-cohen-59ca44` deleted from origin — both
+  verified ancestors of `main` via `git merge-base --is-ancestor`.
+  Only `main` remains on origin.
+
+### State on mk-uP5520 (live)
+
+```
+$ python3 -m ascendo doctor
+adapter: ubuntu (Ubuntu / Debian) tier=1
+capabilities: PACKAGE_MANAGEMENT|INVENTORY|SNAPSHOTS|SCHEDULING|ELEVATION
+  apt / brew / npm / pip / snap / flatpak / fwupd / bash / curl /
+  sudo / systemctl / ascendo_lib / ascendo_scripts  → all ok
+  timeshift                                          → degraded (not installed)
+
+$ python3 -m ascendo web start
+ascendo web started (pid=12021) on http://127.0.0.1:8765/
+
+$ curl -s http://127.0.0.1:8765/version
+{"ascendo":"0.0.7","adapter":"ubuntu","adapter_tier":1,"edition":"basic"}
+
+$ curl -s http://127.0.0.1:8765/inventory/summary | jq .totals
+{"ok": 2579, "outdated": 0, "missing": 0, "total": 2585}
+
+$ ls dist/
+ascendo-basic_0.0.7_all.deb   ascendo-dev_0.0.7_all.deb
+```
+
+### Forward state
+
+Ubuntu adapter is **production-ready for shipping** on this host:
+- 2579 packages enumerated correctly across 8 sources
+- 5-phase contract green via dashboard AND CLI
+- `ascendo web {start|stop|restart|status}` works
+- Both .deb editions build clean
+- Sidecar salvage path means even pathological script crashes
+  produce a useful sidecar
+- Drivers inventory row no longer false-outdated
+- One-liner installer (`install.sh`) and updater (`update.sh`) are
+  shipped + reviewed (no changes needed)
+- Onboarding endpoint works fresh + cached
+
+### What's parked
+
+- **Cross-platform commit hygiene**: macOS + Windows untouched this
+  session. Windows operator can `git pull origin main` to pick up
+  the salvage path (which is Ubuntu-adapter-only — `_base.py` lives
+  under `adapters/ubuntu/`) and the `.gitignore` cleanup. No Windows-
+  affecting changes shipped.
+- **Real-deb install test**: `sudo dpkg -i dist/ascendo-basic_0.0.7_all.deb`
+  not run this session (would replace the dev install). Trial install
+  on a sandbox VM is the next milestone before pushing the .deb to
+  GitHub Releases.
+- **Timeshift install**: still optional on this host. `bin/validate-
+  ubuntu.sh` accepts the degraded health component.
+
+---
+
 ## Sesja 55 (2026-05-11, late) — Ubuntu live-fire bug-fix run + inventory rebuild
 
 Continuation of Sesja 54. Operator drove the dashboard end-to-end on

@@ -17,8 +17,12 @@ if [[ "${HAS_NVIDIA:-0}" -eq 1 ]]; then
     print_step "scanning NVIDIA driver state"
     nv_pkg=$(dpkg -l 'nvidia-driver-*' 2>/dev/null | awk '/^ii/{print $2}' | head -1)
     nv_ver=$(dpkg -l 'nvidia-driver-*' 2>/dev/null | awk '/^ii/{print $3}' | head -1)
+    # SPA overlay maps from→installed, to→candidate; if they differ the
+    # row paints outdated. For an informational "present" item both
+    # must be the version. Package name moves to details. (Sesja 56)
     json_add_item id="drivers:nvidia:installed" action="present" \
-        from="${nv_pkg}" to="${nv_ver}" result="ok"
+        from="${nv_ver}" to="${nv_ver}" result="ok" \
+        details="package=${nv_pkg}"
     smi=""
     if has_cmd nvidia-smi && nvidia-smi >/dev/null 2>&1; then
         smi=$(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>/dev/null | head -1)

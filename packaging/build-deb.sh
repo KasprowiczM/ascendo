@@ -24,13 +24,20 @@ DIST="$REPO_ROOT/dist"
 
 DRY_RUN=0
 WITH_SYMLINKS=1
+EDITION="${ASCENDO_EDITION:-basic}"   # basic | dev
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --dry-run)      DRY_RUN=1 ;;
         --no-symlinks)  WITH_SYMLINKS=0 ;;
+        --edition=*)    EDITION="${1#*=}" ;;
+        --edition)      shift; EDITION="$1" ;;
+        --basic)        EDITION=basic ;;
+        --dev)          EDITION=dev ;;
         --help|-h)
             sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+            printf "\nEdition flags:\n  --edition=basic|dev    Bake edition marker into the .deb\n"
+            printf "                         (basic ships simplified UI; dev ships full feature set)\n"
             exit 0
             ;;
         *)
@@ -39,6 +46,11 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
+
+case "$EDITION" in
+    basic|dev) ;;
+    *) printf "build-deb.sh: --edition must be 'basic' or 'dev' (got: %s)\n" "$EDITION" >&2; exit 2 ;;
+esac
 
 step() { printf "\n==> %s\n" "$1"; }
 ok()   { printf "  [OK] %s\n"  "$1"; }
@@ -143,7 +155,16 @@ EOF
     fi
 fi
 
-# ── 6. Set DEBIAN/* perms ────────────────────────────────────────────────
+# ── 6a. Bake edition marker into the stage ──────────────────────────────
+# /opt/ascendo/.ascendo-edition is read by core/ascendo/dashboard/app.py +
+# CLI at boot (priority: ASCENDO_EDITION env > marker > default basic).
+if [ "$DRY_RUN" -eq 0 ]; then
+    step "Bake edition marker (.ascendo-edition = $EDITION)"
+    echo "$EDITION" > "$STAGE/.ascendo-edition"
+    ok "wrote $STAGE/.ascendo-edition"
+fi
+
+# ── 6b. Set DEBIAN/* perms ────────────────────────────────────────────────
 if [ "$DRY_RUN" -eq 0 ]; then
     chmod 0755 "$PKG_DIR/DEBIAN/postinst" \
                "$PKG_DIR/DEBIAN/prerm" \
@@ -151,7 +172,8 @@ if [ "$DRY_RUN" -eq 0 ]; then
 fi
 
 # ── 7. Build .deb ────────────────────────────────────────────────────────
-OUT="$DIST/${PKG_NAME}_${VERSION}_all.deb"
+# Edition appears in filename so basic + dev artefacts coexist in dist/.
+OUT="$DIST/${PKG_NAME}-${EDITION}_${VERSION}_all.deb"
 if [ "$DRY_RUN" -eq 1 ]; then
     step "Dry-run: skipping dpkg-deb --build"
     printf "  Would write: %s\n" "$OUT"
@@ -168,9 +190,11 @@ fi
 step "Build $OUT"
 ( cd "$PKG_DIR/.." && dpkg-deb --build --root-owner-group deb "$OUT" )
 
-# Clean up any older mismatched filenames so `ls dist/` is unambiguous.
-find "$DIST" -maxdepth 1 -name 'ascendo_*_all.deb' \
+# Clean up older same-edition + legacy artefacts. Other edition's .deb
+# stays so basic + dev both live in dist/ after two consecutive builds.
+find "$DIST" -maxdepth 1 -name "${PKG_NAME}-${EDITION}_*_all.deb" \
     ! -name "$(basename "$OUT")" -delete 2>/dev/null || true
+find "$DIST" -maxdepth 1 -name 'ascendo_*_all.deb' -delete 2>/dev/null || true
 find "$DIST" -maxdepth 1 -name 'ubuntu-aktualizacje_*_all.deb' -delete 2>/dev/null || true
 
 # SHA256 + summary

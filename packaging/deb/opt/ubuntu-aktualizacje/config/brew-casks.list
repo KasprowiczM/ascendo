@@ -1,9 +1,0 @@
-# =============================================================================
-# config/brew-casks.list — Homebrew casks to install and keep updated
-#
-# Format: <cask-name>  [# description]
-# Lines starting with # are comments. Blank lines are ignored.
-# =============================================================================
-
-# ── AI Coding Assistants ──────────────────────────────────────────────────────
-# Claude Code and Codex CLI are managed via npm for fastest release pickup.

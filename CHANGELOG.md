@@ -14,6 +14,59 @@ OSes, plugin signing + verification, plugin marketplace UX in dashboard.
 
 ---
 
+## [0.6.2] — 2026-05-12 — Linux production-readiness + .deb editions
+
+Sesja 56. Focuses on putting the Ubuntu adapter into shippable shape:
+edition-aware .deb installer (basic + dev), defensive sidecar salvage
+path so a bash script that dies mid-run still leaves a real sidecar
+behind, and the drivers row no longer appears as falsely outdated.
+
+### Added
+
+- `packaging/build-deb.sh --edition=basic|dev` flag — bakes the chosen
+  edition into `/opt/ascendo/.ascendo-edition` and labels the output
+  file as `ascendo-basic_<v>_all.deb` / `ascendo-dev_<v>_all.deb` so
+  both artefacts coexist in `dist/`.
+- `_BaseManager._salvage_sidecar()` in
+  `adapters/ubuntu/ascendo_ubuntu/managers/_base.py` — when a phase
+  script exits without firing its `EXIT` trap, the orchestrator now
+  finalizes from the pre-allocated `JSON_BUFDIR` instead of
+  synthesizing a `failed` stub. Adds an explicit `ASCENDO-SALVAGED`
+  diagnostic. Belt-and-suspenders defense against the class of bugs
+  that hit snap apply in Sesja 55.
+
+### Changed
+
+- `lib/json.sh::json_init` — honors a pre-set `JSON_BUFDIR` env var
+  (the orchestrator now passes one) instead of unconditionally
+  allocating a fresh `mktemp -d`. Lets Python recover partial state
+  post-mortem.
+- `scripts/drivers/check.sh` — NVIDIA "present" item now writes the
+  version into both `from=` and `to=` (was: package name → version,
+  which the SPA overlay read as `installed != candidate → outdated`).
+  Package name moves to `details=`. Inventory drivers row no longer
+  appears falsely outdated.
+- `.gitignore` — `packaging/deb/opt/` and `packaging/deb/usr/` now
+  ignored (auto-generated stage trees; `DEBIAN/*` templates stay
+  tracked).
+
+### Removed
+
+- Legacy `packaging/deb/opt/ubuntu-aktualizacje/` stage tree (191 stale
+  files from before the rebrand). The `build-deb.sh` clean-stage step
+  already wipes it on each build; this commit removes it from the
+  index too.
+
+### Operator notes
+
+- Old `ubuntu-aktualizacje-dashboard.service` systemd-user unit on
+  this host was renamed to `*.disabled-by-ascendo` so it can never
+  autostart again. Old + new app state are already separated
+  (`~/.local/share/ubuntu-aktualizacje/` vs `~/.ascendo/`) — no
+  config conflict to clean up.
+
+---
+
 ## [0.6.1] — 2026-05-11 — Ubuntu adapter parity + production-hardening
 
 Sesja 54 + 55. Brings Ubuntu adapter to full feature parity with macOS

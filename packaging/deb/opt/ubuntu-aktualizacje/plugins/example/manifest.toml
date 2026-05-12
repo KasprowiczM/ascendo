@@ -1,9 +1,0 @@
-# Example plugin manifest. Copy this directory and adapt.
-id            = "example"
-display_name  = "Example plugin"
-privilege     = "user"
-risk          = "low"
-manual_confirm = false
-phases        = ["check", "apply"]
-config_files  = []
-timeout_sec   = 300

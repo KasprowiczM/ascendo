@@ -26,6 +26,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Iterable, Mapping
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import ClassVar
 
@@ -152,6 +153,15 @@ class BashPhaseManager(IPackageManager):
             sidecar_path = cat_dir / f"{phase.value}.json"
             log_path = cat_dir / f"{phase.value}.log"
 
+            # Pre-create the JSON_BUFDIR ourselves so we can SALVAGE
+            # partial state if the bash script dies without firing its
+            # EXIT trap (Sesja 56). With JSON_BUFDIR exported in the
+            # child env, lib/json.sh::json_init honors it instead of
+            # allocating a fresh mktemp dir — meaning items.jsonl and
+            # diags.jsonl land somewhere we can find post-mortem.
+            bufdir = cat_dir / "_bufdir"
+            bufdir.mkdir(parents=True, exist_ok=True)
+
             argv = [bash, str(script_path)]
             env = self._build_env(
                 phase=phase,
@@ -160,6 +170,7 @@ class BashPhaseManager(IPackageManager):
                 sidecar_path=sidecar_path,
                 log_path=log_path,
             )
+            env["JSON_BUFDIR"] = str(bufdir)
             self._last_env_for_test = dict(env)
 
             _log.debug(
@@ -260,10 +271,30 @@ class BashPhaseManager(IPackageManager):
                 stop_heartbeat.set()
 
             if not sidecar_path.exists():
-                raise ManagerError(self._missing_sidecar_error(
-                    phase=phase, script_path=script_path,
-                    sidecar_path=sidecar_path, completed=completed,
-                ))
+                # Salvage path (Sesja 56): if the bash script died without
+                # firing its EXIT trap (signal, kernel kill, parse error),
+                # the JSON_BUFDIR we pre-allocated may still hold partial
+                # state. Run lib/_json_emit.py finalize manually to write
+                # a sidecar with whatever items + diagnostics survived.
+                if (bufdir / "meta.json").exists():
+                    salvaged = self._salvage_sidecar(
+                        bufdir=bufdir,
+                        sidecar_path=sidecar_path,
+                        exit_code=completed.returncode,
+                        phase=phase,
+                    )
+                    if salvaged:
+                        _log.warning(
+                            "%s %s: bash exited %d without finalizing; "
+                            "salvaged partial sidecar from %s",
+                            self.SCRIPT_DIR, phase.value,
+                            completed.returncode, bufdir,
+                        )
+                if not sidecar_path.exists():
+                    raise ManagerError(self._missing_sidecar_error(
+                        phase=phase, script_path=script_path,
+                        sidecar_path=sidecar_path, completed=completed,
+                    ))
             try:
                 sc = read_sidecar(sidecar_path)
             except (SidecarReadError, SidecarIOError) as exc:
@@ -362,6 +393,61 @@ class BashPhaseManager(IPackageManager):
                 if found:
                     return found
         raise ManagerError("no bash on PATH and /bin/bash missing")
+
+    def _salvage_sidecar(
+        self,
+        *,
+        bufdir: Path,
+        sidecar_path: Path,
+        exit_code: int,
+        phase: Phase,
+    ) -> bool:
+        """Finalize a partial bufdir into a real sidecar (Sesja 56).
+
+        Runs lib/_json_emit.py finalize against the surviving items.jsonl
+        + diags.jsonl + meta.json. Adds an explicit diagnostic so the
+        operator sees this was a salvage, not a clean run. Returns True
+        if a sidecar file was successfully written.
+        """
+        emit_py = self._scripts_dir.parent / "lib" / "_json_emit.py"
+        if not emit_py.is_file():
+            # Adapter-relative fallback: the script may be co-located
+            # with the legacy bash adapter (scripts/.. on Ubuntu).
+            emit_py = self._scripts_dir / "lib" / "_json_emit.py"
+        if not emit_py.is_file():
+            return False
+        # Inject a diagnostic announcing the salvage path so it's visible
+        # in the sidecar even before the operator inspects the log.
+        try:
+            diags_path = bufdir / "diags.jsonl"
+            with open(diags_path, "a", encoding="utf-8") as f:
+                f.write(
+                    '{"level":"warn","code":"ASCENDO-SALVAGED",'
+                    f'"message":"phase script exited {exit_code} '
+                    "without finalizing sidecar; partial state "
+                    'salvaged by orchestrator"}\n'
+                )
+        except OSError:
+            pass
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        try:
+            subprocess.run(  # noqa: S603 — argv list, not shell
+                [
+                    "python3", str(emit_py), "finalize",
+                    "--bufdir", str(bufdir),
+                    "--out", str(sidecar_path),
+                    "--exit-code", str(exit_code),
+                    "--ended-at", now,
+                ],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return sidecar_path.exists()
 
     def _missing_sidecar_error(
         self,

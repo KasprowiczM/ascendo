@@ -46,7 +46,16 @@ json_init() {
     fi
     JSON_KIND="$kind"
     JSON_CATEGORY="$category"
-    JSON_BUFDIR="$(mktemp -d -t ua-json-XXXXXX)"
+    # If the orchestrator pre-created a bufdir and exported it (passing
+    # `JSON_BUFDIR=/path` in the child env), honor it. This lets Python
+    # salvage partial state if the bash script dies mid-run without
+    # firing its EXIT trap — finalize manually from the surviving
+    # bufdir contents. Otherwise allocate a fresh temp dir as before.
+    if [[ -z "${JSON_BUFDIR:-}" ]]; then
+        JSON_BUFDIR="$(mktemp -d -t ua-json-XXXXXX)"
+    else
+        mkdir -p "${JSON_BUFDIR}"
+    fi
     JSON_FINALIZED=0
     local started_at; started_at="$(_json_now_utc)"
     local host; host="$(hostname 2>/dev/null || echo unknown)"
