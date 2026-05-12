@@ -29,6 +29,7 @@ from ascendo.utils.proc import no_window_kwargs
 
 from .inventory import WindowsInventory
 from .managers.arp import ArpManager
+from .managers.dell import DellDriverManager, _find_dcu_cli
 from .managers.elevation import WindowsElevation
 from .managers.msstore import MSStoreManager
 from .managers.npm import NpmManager
@@ -70,6 +71,16 @@ class WindowsAdapter(IAdapter):
     LIB_DIR: ClassVar[Path] = _resolve_resource_dir(
         "ASCENDO_WIN_LIB_DIR", "lib"
     )
+    # Plugin root for the Dell DCU plugin. Resolves to
+    # ``<repo-root>/plugins/dell-driver-update/`` in dev installs and
+    # ``$ProgramFiles\Ascendo\plugins\dell-driver-update\`` after MSI/
+    # NSIS install (the latter is preserved via the
+    # ``ASCENDO_WIN_DELL_PLUGIN_DIR`` env var; see
+    # ``_resolve_resource_dir`` callers).
+    DELL_PLUGIN_DIR: ClassVar[Path] = _resolve_resource_dir(
+        "ASCENDO_WIN_DELL_PLUGIN_DIR",
+        "../../plugins/dell-driver-update",
+    )
 
     def __init__(self) -> None:
         self._cached_host: HostInfo | None = None
@@ -107,6 +118,10 @@ class WindowsAdapter(IAdapter):
                 scripts_dir=self.SCRIPTS_DIR,
                 lib_dir=self.LIB_DIR,
                 config_dir=config_dir,
+            ),
+            DellDriverManager(
+                plugin_dir=self.DELL_PLUGIN_DIR,
+                lib_dir=self.LIB_DIR,
             ),
             ArpManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
             WindowsUpdateManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
@@ -161,8 +176,8 @@ class WindowsAdapter(IAdapter):
     def health_check(self) -> dict[str, str]:
         """Adapter self-test. Returns component->status_string for ``ascendo doctor``.
 
-        Components checked (9 total):
-            winget, pswindowsupdate, npm, pip, pwsh, ascendo_lib,
+        Components checked (10 total):
+            winget, pswindowsupdate, npm, pip, dcu, pwsh, ascendo_lib,
             ascendo_scripts, web_registry, inventory_db
         """
         out: dict[str, str] = {}
@@ -176,6 +191,7 @@ class WindowsAdapter(IAdapter):
         out["pswindowsupdate"] = self._pswindowsupdate_status()
         out["npm"] = self._npm_status()
         out["pip"] = self._pip_status()
+        out["dcu"] = self._dcu_status()
         out["pwsh"] = self._pwsh_status()
         out["ascendo_lib"] = self._lib_status()
         out["ascendo_scripts"] = self._scripts_status()
@@ -398,6 +414,30 @@ class WindowsAdapter(IAdapter):
             v = line[0] if line else ""
             return f"ok: {v} ({via})" if v else f"ok ({via})"
         return "unavailable: no python+pip on PATH"
+
+    def _dcu_status(self) -> str:
+        """Probe Dell Command Update (dcu-cli.exe).
+
+        Resolution order:
+          1. PATH (Get-Command equivalent via shutil.which)
+          2. ``C:\\Program Files\\Dell\\CommandUpdate\\dcu-cli.exe``
+          3. ``C:\\Program Files (x86)\\Dell\\CommandUpdate\\dcu-cli.exe``
+
+        Reports ``unavailable: not installed`` on non-Dell hosts so the
+        ``ascendo doctor`` row is informative rather than alarming.
+        Doesn't actually invoke dcu-cli (it requires elevation even for
+        ``/version``, and admin-prompts in a health check are
+        operator-hostile).
+        """
+        if platform.system() != "Windows":
+            return "unavailable: non-Windows host"
+        dcu = _find_dcu_cli()
+        if dcu is None:
+            return (
+                "unavailable: not installed (Dell Command Update missing; "
+                "install via Microsoft Store or winget install Dell.CommandUpdate)"
+            )
+        return f"ok: {dcu} (requires Administrator to invoke)"
 
     def _web_registry_status(self) -> str:
         """Validate the web_apps.toml registry is parseable + count apps.

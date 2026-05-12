@@ -108,11 +108,12 @@ The Categories tab shows one row per source:
 |--------|---------------------------|--------------------|
 | **winget** | `winget list` (winget-feed apps) | Things you installed via `winget install …` |
 | **msstore** | `winget list` (Microsoft Store entries + MSIX bundles) | Microsoft Store / pre-installed Windows apps |
-| **registry_arp** | `winget list` (Add-or-Remove-Programs detected) | Legacy MSI/EXE installers (Office, drivers, …) |
-| **windows_update** | `Get-WUList` via PSWindowsUpdate | OS patches (KB updates, defender defs, security rollups) |
 | **npm** | `npm list -g` + `npm view <name> version` | Node.js global CLIs you installed via `npm install -g` |
 | **pip** | `pip list` + PyPI JSON API | Python global CLIs in user-site (`--user` installs) |
 | **web** | Curated `web_apps.toml` + handlers | Third-party apps installed outside winget/msstore |
+| **plugin** (Dell DCU) | `dcu-cli /scan` (Dell hardware only) | Dell driver + BIOS updates via Dell Command Update |
+| **registry_arp** | `winget list` (Add-or-Remove-Programs detected) | Legacy MSI/EXE installers (Office, drivers, …) |
+| **windows_update** | `Get-WUList` via PSWindowsUpdate | OS patches (KB updates, defender defs, security rollups) |
 
 Click a row to expand it and see every package with installed/candidate
 version + status pill.
@@ -159,7 +160,7 @@ never logged).
 | **Windows 11 itself** | windows_update → apply | Downloads + stages KB patches; reboot required |
 | **npm/pip CLIs** | npm/pip → check / apply | No sudo needed; user-scope installs |
 | **Brave/Obsidian/OBS/Notion** | web → check | Real candidate-version probes; apply is currently Tier-B trigger-only (opens vendor page; full apply lands in v0.0.9 when Authenticode + UAC handling is wired) |
-| **Drivers via Dell Command Update** | (separate) `python -m ascendo run --category plugin --plugin dell-driver-update --phase apply` — must be Admin | Currently driven from CLI, not UI |
+| **Dell drivers + BIOS** | plugin → check / apply | Dell Command Update CLI. Needs Admin / UAC. Plugin lives at `plugins/dell-driver-update/`. |
 
 After every apply phase, the dashboard invalidates the inventory cache
 and a banner appears at the top if a reboot is required.
@@ -167,7 +168,7 @@ and a banner appears at the top if a reboot is required.
 ## 6 · From the CLI (no dashboard needed)
 
 ```powershell
-python -m ascendo doctor                                    # 9-component health snapshot
+python -m ascendo doctor                                    # 10-component health snapshot
 python -m ascendo run --category winget        --phase check    # 1 min
 python -m ascendo run --category msstore       --phase check
 python -m ascendo run --category windows_update --phase check    # ~5 min first time
@@ -175,6 +176,8 @@ python -m ascendo run --category windows_update --phase apply    # mutating; nee
 python -m ascendo run --category npm --phase check                          # node global CLIs
 python -m ascendo run --category pip --phase check                          # python global CLIs
 python -m ascendo run --category web --phase check                          # Brave / Obsidian / OBS / Notion
+python -m ascendo run --category plugin --phase check                       # Dell driver scan (Admin)
+python -m ascendo run --category plugin --phase apply                       # apply Dell driver + BIOS updates (Admin, slow)
 python -m ascendo build-inventory                                           # flush DB cache (cross-platform)
 python -m ascendo web start  /  web status  /  web stop  /  web restart    # dashboard lifecycle
 python -m ascendo runs list -n 5                            # last 5 runs
@@ -195,7 +198,7 @@ Exit codes the run command emits:
 
 ## 6.5 · Health diagnostics
 
-`ascendo doctor` now reports **9 components** on Windows:
+`ascendo doctor` now reports **10 components** on Windows:
 
 | Component         | What it probes |
 |-------------------|----------------|
@@ -203,6 +206,7 @@ Exit codes the run command emits:
 | `pswindowsupdate` | `Get-Module PSWindowsUpdate` |
 | `npm`             | `npm --version` |
 | `pip`             | `pip --version` |
+| `dcu`             | `dcu-cli.exe` on disk (Dell Command Update); `unavailable: not installed` is the normal state on non-Dell hardware |
 | `pwsh`            | PowerShell 5.1 / 7.x binary |
 | `ascendo_lib`     | Adapter PowerShell modules count |
 | `ascendo_scripts` | Per-category script tree present |
@@ -296,6 +300,7 @@ NSIS pre-uninstall hook — no manual cleanup needed. User data in
 | web check returns 0 outdated even though Brave/Obsidian are old | Apps not detected as installed | Registry uninstall key for that app doesn't match the registry TOML's `windows_uninstall_key`. Add an override at `~/.ascendo/web_apps.toml` |
 | `>>> still running (Ns)` lines pile up | Working as intended | Watchdog heartbeat to confirm the script hasn't hung during a long winget upgrade |
 | Run died and sidecar is missing | Salvage will reconstruct | New in v0.0.8: bufdir-based salvage rebuilds the sidecar from partial JSONL; look for `ASCENDO-SALVAGED` in messages[0] |
+| Dell plugin reports "no pending updates" but I know there are some | dcu-cli /scan needs Administrator elevation; non-elevated runs see exit -1 + 0 items by design | Run PowerShell as Administrator and re-run `python -m ascendo run --category plugin --phase check` |
 
 ## 10 · Where everything lives
 

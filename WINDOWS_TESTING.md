@@ -336,6 +336,26 @@ for read-only enumeration; pass `--verbose` for per-source trace.
 
 ---
 
+## 5h. Dell driver + BIOS updates via DCU
+
+Dell Precision / Latitude / OptiPlex boxes that have **Dell Command
+Update** installed get an extra `plugin` category. Ascendo wraps
+`dcu-cli.exe` via the `plugins/dell-driver-update/` plugin. CLI:
+
+    python -m ascendo run --category plugin --phase check   # Admin
+    python -m ascendo run --category plugin --phase apply   # Admin
+
+dcu-cli requires Administrator elevation for **every** subcommand
+(including `/scan`). Non-elevated runs report `items=0` and surface a
+"requires elevation" warn-level message. `ascendo doctor` reports the
+absolute path to dcu-cli.exe under the `dcu` component row.
+
+Install Dell Command Update via Microsoft Store (search "Dell Command
+Update") or `winget install Dell.CommandUpdate`. After install, restart
+the dashboard so `health_check()` picks up the new probe target.
+
+---
+
 ## 5g. Convenience wrappers under bin/
 
 Five PowerShell shims wrap the `python -m ascendo …` invocations with
@@ -369,6 +389,7 @@ architecture on real hardware:
 | 5 — `NpmManager` (Sesja 58) | `adapters/windows/ascendo_windows/managers/npm.py` | ✅ via `npm --phase check/plan/apply` |
 | 5 — `PipManager` (Sesja 58) | `adapters/windows/ascendo_windows/managers/pip.py` | ✅ via `pip --phase check/plan/apply` |
 | 5 — `WebManager` (Sesja 58) | `adapters/windows/ascendo_windows/managers/web.py` | ✅ via `web --phase check` (4 Tier-A probes live) |
+| 5 — `DellDriverManager` (post-Sesja 58) | `adapters/windows/ascendo_windows/managers/dell.py` | ✅ via `plugin --phase check` (Dell DCU; auto-skip on non-Dell hardware) |
 | 5 — Sidecar salvage (Sesja 58) | `_BaseWindowsManager._salvage_sidecar` mixin | ✅ via salvage stage in `validate-windows.ps1` |
 | 6 — Native scripts | `adapters/windows/{lib,scripts/winget/}` | ✅ via `run` (real winget) |
 | 6 — npm/pip PS scripts (Sesja 58) | `adapters/windows/scripts/{npm,pip}/*.ps1` | ✅ via npm + pip phases |

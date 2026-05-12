@@ -8,6 +8,36 @@
 
 ## Sesja 58 (2026-05-12) — Windows-parity push
 
+### Follow-up: Dell driver integration (2026-05-12 evening)
+
+Operator follow-up: the long-existing `plugins/dell-driver-update/`
+plugin (manifest + 5 PowerShell scripts shipped in M3.15) had never
+been wired into the Windows adapter. Added `DellDriverManager` Python
+wrapper at `adapters/windows/ascendo_windows/managers/dell.py` (~300
+LOC) inheriting `_BaseWindowsManager` + IPackageManager. Slotted into
+`WindowsAdapter.package_managers()` between WebManager and ArpManager
+— manager count 7 → 8. `health_check()` adds a `dcu` probe (component
+count 9 → 10) reporting the dcu-cli.exe location or
+`unavailable: not installed` on non-Dell hosts. `is_available(host)`
+gates the manager to Windows + dcu-cli on disk, so non-Dell boxes
+auto-skip cleanly. Stripped em-dash characters from `apply.ps1` for
+PS5.1 compatibility (mirror of the wider Sesja 58 fix). +16
+mock-based smoke tests in `test_dell_manager_smoke.py` + 1 updated
+assertion (manager count 7 → 8) in the WindowsUpdate smoke. 276 / 277
+Windows tests pass (1 skipped — dead-codepath assertion).
+
+Live verified on DP5520WMK (Dell Precision 5520, DCU v5.6.0.25 at the
+default location): `ascendo doctor` reports `dcu ok: C:\Program
+Files\Dell\CommandUpdate\dcu-cli.exe (requires Administrator to
+invoke)`, full `--phase check` run completes with 8 sidecars (winget
+221 / msstore 95 / npm 15 / pip 11 / web 0 / plugin 0 / registry_arp
+147 / windows_update 4 = 493 items total). Plugin returns `items=0` on
+non-elevated runs by design — dcu-cli /scan needs Administrator, and
+check.ps1 reports the elevation issue as a warn-level message rather
+than crashing.
+
+---
+
 Post-Sesja-57 the operator asked to bring Windows to feature parity
 with macOS + Ubuntu. Plan written to
 `docs/superpowers/specs/2026-05-12-windows-parity-design.md`. Five

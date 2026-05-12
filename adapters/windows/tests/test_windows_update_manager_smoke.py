@@ -299,9 +299,13 @@ def test_adapter_package_managers_includes_windows_update(
 
     Post-WebManager-v1 a seventh manager (WebManager) was added between
     PipManager and ArpManager. Bookends + ordering invariants remain.
+
+    Post-DellDriverManager (Sesja 58 follow-up): 8 managers total.
+    DellDriverManager sits between WebManager and ArpManager.
     """
     from ascendo_windows.managers.msstore import MSStoreManager
     from ascendo_windows.managers.arp import ArpManager
+    from ascendo_windows.managers.dell import DellDriverManager
     from ascendo_windows.managers.npm import NpmManager
     from ascendo_windows.managers.pip import PipManager
     from ascendo_windows.managers.web import WebManager
@@ -309,7 +313,7 @@ def test_adapter_package_managers_includes_windows_update(
     adapter = WindowsAdapter()
     managers = adapter.package_managers(windows_host)
 
-    assert len(managers) == 7
+    assert len(managers) == 8
     assert isinstance(managers[0], WingetManager)
     assert isinstance(managers[-1], WindowsUpdateManager)
     types_present = {type(m).__name__ for m in managers}
@@ -319,6 +323,7 @@ def test_adapter_package_managers_includes_windows_update(
         "NpmManager",
         "PipManager",
         "WebManager",
+        "DellDriverManager",
         "ArpManager",
         "WindowsUpdateManager",
     } <= types_present

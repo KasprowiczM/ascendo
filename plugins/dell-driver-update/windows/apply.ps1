@@ -189,7 +189,7 @@ try {
         if ($itemFilterArray.Count -eq 0) { $itemFilterArray = $null }
     }
 
-    # ── Dry-run path: scan only, emit 'planned' items, no mutation ─────
+    # -- Dry-run path: scan only, emit 'planned' items, no mutation -----
     if ($DryRun) {
         $ScanOut = Join-Path $RunDir 'dcu-apply-dryrun.xml'
         $rcDry = -1
@@ -222,7 +222,7 @@ try {
         exit 0
     }
 
-    # ── Real apply path ────────────────────────────────────────────────
+    # -- Real apply path ------------------------------------------------
     $ApplyOut = Join-Path $RunDir 'dcu-apply.log'
     $rc = -1
     try {
