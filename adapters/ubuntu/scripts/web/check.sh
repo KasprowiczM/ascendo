@@ -165,34 +165,37 @@ print(json.dumps(d))
     done <<< "$DISC_OUT"
 fi
 
-# Pass 2: registry-only entries (apps that are in the TOML but not on disk)
-# We probe them too — useful for apps the operator knows about but hasn't
-# installed yet. They get emitted as 'skipped' with no INSTALLED version.
-while IFS= read -r REG_APP_ID; do
-    [ -z "$REG_APP_ID" ] && continue
-    case " $EMITTED " in
-        *" $REG_APP_ID "*) continue ;;
-    esac
+# Pass 2 (registry-only / "not installed locally") was REMOVED in Sesja 56
+# per operator request: web inventory should only show apps actually
+# present on this system. Registry entries that don't match any
+# discovery row are silently skipped — operators discover the candidate
+# only AFTER installing the app, when discovery picks it up. Opt back in
+# by setting ASCENDO_WEB_INCLUDE_UNINSTALLED=1.
+if [ "${ASCENDO_WEB_INCLUDE_UNINSTALLED:-0}" = "1" ]; then
+    while IFS= read -r REG_APP_ID; do
+        [ -z "$REG_APP_ID" ] && continue
+        case " $EMITTED " in
+            *" $REG_APP_ID "*) continue ;;
+        esac
 
-    CFG=$(python3 "$REG_SHIM" "${_reg_args[@]}" --get-app "$REG_APP_ID" 2>/dev/null || true)
-    [ -z "$CFG" ] && continue
-    HANDLER=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("handler",""))')
+        CFG=$(python3 "$REG_SHIM" "${_reg_args[@]}" --get-app "$REG_APP_ID" 2>/dev/null || true)
+        [ -z "$CFG" ] && continue
+        HANDLER=$(printf '%s' "$CFG" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("handler",""))')
 
-    LATEST=$("${HANDLER}_check" "$REG_APP_ID" "$CFG" 2>/dev/null || true)
-    LATEST=$(printf '%s' "$LATEST" | tr -d '[:space:]')
+        LATEST=$("${HANDLER}_check" "$REG_APP_ID" "$CFG" 2>/dev/null || true)
+        LATEST=$(printf '%s' "$LATEST" | tr -d '[:space:]')
 
-    if [ -z "$LATEST" ] || [ "$LATEST" = "__GH_RATE_LIMITED__" ]; then
-        json_add_item id="web:${REG_APP_ID}" action=upgrade result=skipped \
-            details="not installed locally"
+        if [ -z "$LATEST" ] || [ "$LATEST" = "__GH_RATE_LIMITED__" ]; then
+            json_add_item id="web:${REG_APP_ID}" action=upgrade result=skipped \
+                details="not installed locally"
+        else
+            json_add_item id="web:${REG_APP_ID}" action=upgrade result=skipped \
+                to="$LATEST" details="not installed locally; latest=$LATEST"
+        fi
         json_count_warn
         COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
-    else
-        json_add_item id="web:${REG_APP_ID}" action=upgrade result=skipped \
-            to="$LATEST" details="not installed locally; latest=$LATEST"
-        json_count_warn
-        COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
-    fi
-done < <(python3 "$REG_SHIM" "${_reg_args[@]}" --list-app-ids 2>/dev/null)
+    done < <(python3 "$REG_SHIM" "${_reg_args[@]}" --list-app-ids 2>/dev/null)
+fi
 
 json_add_advisory "web: ${COUNT_PLANNED} outdated, ${COUNT_UTD} up_to_date, ${COUNT_SKIPPED} skipped"
 exit $EXIT_RC

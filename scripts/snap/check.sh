@@ -59,8 +59,12 @@ if [[ -f "$CONFIG_SNAP" ]]; then
         [[ -z "$line" ]] && continue
         pkg=$(echo "$line" | awk '{print $1}')
         if snap_installed "$pkg"; then
+            # SPA overlay reads from→installed, to→candidate. Pass the
+            # version to BOTH so the inventory row paints with cur set
+            # instead of cur=null. (Sesja 56)
+            _ver="$(snap_version "$pkg")"
             json_add_item id="snap:configured:${pkg}" action="present" \
-                to="$(snap_version "$pkg")" result="ok"
+                from="${_ver}" to="${_ver}" result="ok"
             json_count_ok
         else
             json_add_item id="snap:configured:${pkg}" action="present" result="failed"

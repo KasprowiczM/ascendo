@@ -3776,6 +3776,27 @@ $("#sudo-form").addEventListener("submit", async e => {
   }
 });
 $("#sudo-cancel").addEventListener("click", () => sudoMgr.close(false));
+
+// Belt-and-suspenders: explicit Enter-key handler on the password input.
+// Native form submit on Enter should already work (<button type="submit"> +
+// <form>), but in some browser/locale combinations the keystroke gets
+// swallowed when the modal is reopened (focus race after .hidden toggle).
+// This guarantees Enter ALWAYS submits the form. Sesja 56.
+$("#sudo-pass").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault();
+    // Trigger the submit handler via the form's requestSubmit() — that
+    // path runs the registered submit listener, where Enter's native
+    // form-submission would have led us anyway.
+    const form = $("#sudo-form");
+    if (form && typeof form.requestSubmit === "function") {
+      form.requestSubmit();
+    } else if (form) {
+      // Old browsers without requestSubmit: dispatch a synthetic event.
+      form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    }
+  }
+});
 // Refresh sudo indicator on load + every 30s
 sudoMgr.refreshIndicator();
 setInterval(() => sudoMgr.refreshIndicator(), 30000);
