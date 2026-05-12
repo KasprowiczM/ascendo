@@ -1,6 +1,19 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-12 (sesja 56) — **Linux production-readiness
+> Last updated: 2026-05-12 (sesja 57) — **Version polarity bug closed
+> across all 5 phases + new logos + `ascendo build-inventory` CLI.**
+> Operator's second audit revealed the `from=`/`to=` polarity issue
+> from Sesja 56 (drivers) was structural: every "present" item in
+> check/plan/apply/verify across snap/apt/brew/npm/pip/flatpak/drivers
+> emitted only `to=$ver`, leaving SPA inventory rows with
+> `installed=null`. Fixed in 13 call-sites across 9 scripts. Snap apply
+> confirmed working via dashboard async API after restart. Web check
+> Pass 2 gated behind `ASCENDO_WEB_INCLUDE_UNINSTALLED=1` so default
+> inventory excludes apps not present on this system. Auth modal
+> Enter-key handler added (belt-and-suspenders). Brand assets
+> (favicon + logos) synced to design system. See HANDOFF.md Sesja 57.
+>
+> Previous milestone (sesja 56) — **Linux production-readiness
 > pass shipped.** `ascendo web {start|stop|restart|status}` validated
 > live on mk-uP5520; edition-aware `.deb` installer (basic + dev)
 > ships from `packaging/build-deb.sh --edition=…`; defensive sidecar

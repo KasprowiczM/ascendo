@@ -17,11 +17,15 @@ CONFIG_FLATPAK="${SCRIPT_DIR}/config/flatpak-packages.list"
 EXIT_RC=0
 
 if [[ -f "$CONFIG_FLATPAK" ]]; then
-    installed=$(flatpak list --app --columns=application 2>/dev/null || true)
+    installed=$(flatpak list --app --columns=application,version 2>/dev/null || true)
     while IFS= read -r app_id; do
         [[ -z "$app_id" ]] && continue
-        if echo "$installed" | grep -q "^${app_id}$"; then
-            json_add_item id="flatpak:installed:${app_id}" action="present" result="ok"
+        ver=$(echo "$installed" | awk -v id="$app_id" '$1==id{print $2}')
+        if [[ -n "$ver" ]]; then
+            # Pass version into BOTH from= and to= so SPA inventory paints
+            # installed + candidate columns correctly. (Sesja 57)
+            json_add_item id="flatpak:installed:${app_id}" action="present" \
+                from="${ver}" to="${ver}" result="ok"
             json_count_ok
         else
             json_add_item id="flatpak:installed:${app_id}" action="present" result="failed"

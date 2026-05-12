@@ -38,8 +38,12 @@ except Exception:
 
 # Priority AI CLIs always force-installed @latest in apply
 for pkg in "@anthropic-ai/claude-code" "@google/gemini-cli" "@openai/codex"; do
+    # Sesja 57: include current version in from= so SPA inventory shows
+    # cur (else this plan row paints with installed=null). Resolves
+    # via npm_pkg_version when available; falls back to empty otherwise.
+    _cur=$(npm_pkg_version "$pkg" 2>/dev/null || true)
     json_add_item id="npm:force-latest:${pkg}" action="reinstall" \
-        to="latest" result="noop"
+        from="${_cur}" to="latest" result="noop"
     n=$((n + 1))
 done
 

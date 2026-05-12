@@ -24,7 +24,7 @@ if [[ -f "$CONFIG_FLATPAK" ]]; then
         if flatpak list --app --columns=application 2>/dev/null | grep -q "^${app_id}$"; then
             ver=$(flatpak list --app --columns=application,version 2>/dev/null | awk -v id="$app_id" '$1==id{print $2}')
             json_add_item id="flatpak:installed:${app_id}" action="present" \
-                to="${ver}" result="ok"
+                from="${ver}" to="${ver}" result="ok"
             json_count_ok
         else
             json_add_item id="flatpak:installed:${app_id}" action="present" result="failed"

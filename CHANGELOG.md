@@ -14,6 +14,62 @@ OSes, plugin signing + verification, plugin marketplace UX in dashboard.
 
 ---
 
+## [0.6.3] — 2026-05-12 — Version polarity across all phases + new logos + ascendo build-inventory
+
+Sesja 57. Operator audit on `mk-uP5520` surfaced three classes of bug
+and one missing CLI feature.
+
+### Fixed
+
+- **Version polarity across the 5-phase pipeline.** check / plan /
+  apply / verify scripts emitted "present" items with only `to=$ver`
+  set, leaving `from=` empty. The SPA overlay reads
+  `from→installed` + `to→candidate`, so the inventory row painted
+  `installed=null`. Across snap / apt / brew / npm / pip / flatpak /
+  drivers / npm-plan, the relevant `json_add_item` calls now pass
+  the version into BOTH `from=` and `to=`. After a fresh check+verify
+  pass: 6/6 snap items, 24/24 apt verify items, 4/4 npm verify items,
+  3/3 npm-plan force-latest items, 1/1 drivers item all carry
+  `current_version` AND `target_version`.
+- **Web check no longer surfaces uninstalled apps.** Pass 2 (registry-
+  only / "not installed locally") gated behind `ASCENDO_WEB_INCLUDE_
+  UNINSTALLED=1` env var. Default behaviour: discovery-only — only
+  apps actually on disk appear in the web category. Cursor, Discord,
+  and any other registry-listed-but-not-installed app drop out.
+- **Auth-modal Enter key.** Explicit `keydown` listener on
+  `#sudo-pass` calls `form.requestSubmit()` on Enter, so a focus-race
+  in some browser/locale combinations can't swallow the keystroke.
+  Native `<form>` + submit-button should already handle it; this is
+  belt-and-suspenders.
+- **Snap apply post-restart.** The "snap apply script produced no
+  sidecar" error class — already mitigated in Sesja 56 by the
+  `_BaseManager._salvage_sidecar` recovery path — is confirmed live
+  on this host after a dashboard restart. The old failing run pre-
+  dated the salvage fix; running uvicorn process needs to be
+  restarted (`ascendo web restart`) for the new Python to load.
+
+### Added
+
+- **`ascendo build-inventory`** top-level CLI command. Standalone
+  equivalent of the dashboard's Overview "Build inventory" button.
+  Idempotent; per-source summary; flushes to
+  `~/.ascendo/inventory.db`. Honours `ASCENDO_INVENTORY_DB` env;
+  `--no-db` skips DB flush; `--verbose` traces. Live on this host:
+  2588 packages across 6 sources.
+
+### Changed
+
+- **Brand assets** synced to the Ascendo design system. `app/frontend/
+  favicon.svg` (browser tab icon) was still the pre-Sesja-30 green→
+  blue gradient mark; replaced with the lime (`#C8FF4B`) bars on ink
+  (`#0B1020`) design. Same fix for `branding/icon.svg` +
+  `branding/logo.svg` (tooling source) and `app/frontend/assets/
+  logo-mark-light.svg` (added the paper-bg rect that was missing).
+  Tauri PNG/ICO regen via `bin/regenerate-icons.sh` requires
+  ImageMagick — re-run before the next desktop build.
+
+---
+
 ## [0.6.2] — 2026-05-12 — Linux production-readiness + .deb editions
 
 Sesja 56. Focuses on putting the Ubuntu adapter into shippable shape:

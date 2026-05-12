@@ -37,7 +37,7 @@ if [[ -f "$CONFIG_APT" ]]; then
         if apt_installed "$pkg"; then
             ver=$(apt_pkg_version "$pkg")
             json_add_item id="apt:installed:${pkg}" action="present" \
-                to="${ver}" result="ok"
+                from="${ver}" to="${ver}" result="ok"
             json_count_ok
         else
             json_add_item id="apt:installed:${pkg}" action="present" result="failed"

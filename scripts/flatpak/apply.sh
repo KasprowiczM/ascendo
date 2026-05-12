@@ -79,10 +79,14 @@ fi
 
 # ── 3. Install missing apps from config ──────────────────────────────────────
 if [[ -f "$CONFIG_FLATPAK" ]]; then
+    flatpak_listing=$(flatpak list --app --columns=application,version 2>/dev/null || true)
     while IFS= read -r app_id; do
         [[ -z "$app_id" ]] && continue
-        if flatpak list --app --columns=application 2>/dev/null | grep -q "^${app_id}$"; then
-            json_add_item id="flatpak:configured:${app_id}" action="present" result="ok"
+        _ver=$(echo "$flatpak_listing" | awk -v id="$app_id" '$1==id{print $2; exit}')
+        if [[ -n "$_ver" ]]; then
+            # Sesja 57: bidirectional from=/to= so SPA inventory paints.
+            json_add_item id="flatpak:configured:${app_id}" action="present" \
+                from="${_ver}" to="${_ver}" result="ok"
             json_count_ok
         else
             print_step "flatpak install ${app_id}"

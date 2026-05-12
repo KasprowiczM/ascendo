@@ -96,15 +96,19 @@ if [[ -f "$CONFIG_PIP" ]]; then
     user_names=$("$PY3" -m pip list --user --format=json 2>/dev/null | python3 -c "
 import json, sys
 try:
-    print('\n'.join(p['name'].lower() for p in json.loads(sys.stdin.read() or '[]')))
+    for p in json.loads(sys.stdin.read() or '[]'):
+        print(p['name'].lower() + '\t' + p.get('version',''))
 except Exception:
     pass
 ")
     while IFS= read -r pkg; do
         [[ -z "$pkg" ]] && continue
         base="${pkg%%==*}"
-        if echo "$user_names" | grep -qi "^${base}$"; then
-            json_add_item id="pip:configured:${base}" action="present" result="ok"
+        ver=$(printf '%s\n' "$user_names" | awk -v b="$base" 'BEGIN{IGNORECASE=1} $1==tolower(b){print $2; exit}')
+        if [[ -n "$ver" ]]; then
+            # Sesja 57: pass version into from= AND to= for SPA inventory.
+            json_add_item id="pip:configured:${base}" action="present" \
+                from="${ver}" to="${ver}" result="ok"
             json_count_ok
         else
             print_step "pip install --user ${pkg}"
@@ -155,12 +159,16 @@ else
 import json, sys
 try:
     d = json.loads(sys.stdin.read() or '{}')
-    print('1' if '$base' in d.get('venvs', {}) else '0')
+    v = d.get('venvs', {}).get('$base', {})
+    print(v.get('metadata',{}).get('main_package',{}).get('package_version') or '')
 except Exception:
-    print('0')
+    print('')
 ")
-            if [[ "$present" == "1" ]]; then
-                json_add_item id="pipx:configured:${base}" action="present" result="ok"
+            if [[ -n "$present" ]]; then
+                ver="$present"
+                # Sesja 57: bidirectional from=/to= so SPA inventory paints.
+                json_add_item id="pipx:configured:${base}" action="present" \
+                    from="${ver}" to="${ver}" result="ok"
                 json_count_ok
             else
                 print_step "pipx install ${pkg}"

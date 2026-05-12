@@ -22,7 +22,7 @@ if [[ -f "$CONFIG_NPM" ]]; then
         [[ -z "$pkg" ]] && continue
         if npm_pkg_installed "$pkg"; then
             ver=$(npm_pkg_version "$pkg")
-            json_add_item id="npm:installed:${pkg}" action="present" to="${ver}" result="ok"
+            json_add_item id="npm:installed:${pkg}" action="present" from="${ver}" to="${ver}" result="ok"
             json_count_ok
         else
             json_add_item id="npm:installed:${pkg}" action="present" result="failed"

@@ -75,7 +75,7 @@ if [[ -f "$CONFIG_NPM" ]]; then
         if npm_pkg_installed "$pkg"; then
             ver=$(npm_pkg_version "$pkg")
             json_add_item id="npm:configured:${pkg}" action="present" \
-                to="${ver}" result="ok"
+                from="${ver}" to="${ver}" result="ok"
             json_count_ok
         else
             print_step "npm install -g ${pkg}"

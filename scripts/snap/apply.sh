@@ -136,7 +136,7 @@ if [[ -f "$CONFIG_SNAP" ]]; then
         if snap_installed "$pkg"; then
             ver=$(snap_version "$pkg")
             json_add_item id="snap:configured:${pkg}" action="present" \
-                to="${ver}" result="ok"
+                from="${ver}" to="${ver}" result="ok"
             json_count_ok
         else
             print_step "snap install ${pkg} ${flags}"

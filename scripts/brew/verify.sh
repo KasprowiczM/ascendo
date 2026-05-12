@@ -23,7 +23,7 @@ if [[ -f "$CONFIG_F" ]]; then
         [[ -z "$f" ]] && continue
         if brew_formula_installed "$f"; then
             ver=$(brew_formula_version "$f")
-            json_add_item id="brew:formula:${f}" action="present" to="${ver}" result="ok"
+            json_add_item id="brew:formula:${f}" action="present" from="${ver}" to="${ver}" result="ok"
             json_count_ok
         else
             json_add_item id="brew:formula:${f}" action="present" result="failed"
@@ -38,7 +38,7 @@ if [[ -f "$CONFIG_C" ]]; then
         [[ -z "$c" ]] && continue
         if brew_cask_installed "$c"; then
             ver=$(brew_cask_version "$c")
-            json_add_item id="brew:cask:${c}" action="present" to="${ver}" result="ok"
+            json_add_item id="brew:cask:${c}" action="present" from="${ver}" to="${ver}" result="ok"
             json_count_ok
         else
             json_add_item id="brew:cask:${c}" action="present" result="failed"

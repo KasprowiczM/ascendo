@@ -27,15 +27,20 @@ if [[ -f "$CONFIG_PIP" ]]; then
     installed=$($PY3 -m pip list --user --format=json 2>/dev/null | python3 -c "
 import json, sys
 try:
-    print('\n'.join(p['name'].lower() for p in json.loads(sys.stdin.read() or '[]')))
+    for p in json.loads(sys.stdin.read() or '[]'):
+        print(p['name'].lower() + '\t' + p.get('version',''))
 except Exception:
     pass
 ")
     while IFS= read -r pkg; do
         [[ -z "$pkg" ]] && continue
         base="${pkg%%==*}"
-        if echo "$installed" | grep -qi "^${base}$"; then
-            json_add_item id="pip:installed:${base}" action="present" result="ok"
+        ver=$(printf '%s\n' "$installed" | awk -v b="$base" 'BEGIN{IGNORECASE=1} $1==tolower(b){print $2; exit}')
+        if [[ -n "$ver" ]]; then
+            # Sesja 57: pass installed version into both from= and to=
+            # so the inventory row shows cur and candidate correctly.
+            json_add_item id="pip:installed:${base}" action="present" \
+                from="${ver}" to="${ver}" result="ok"
             json_count_ok
         else
             json_add_item id="pip:installed:${base}" action="present" result="failed"
@@ -53,16 +58,19 @@ if [[ -n "$PIPX_BIN" && -f "$CONFIG_PIPX" ]]; then
     while IFS= read -r pkg; do
         [[ -z "$pkg" ]] && continue
         base="${pkg%%==*}"
-        ok=$(echo "$plist" | python3 -c "
+        ver=$(echo "$plist" | python3 -c "
 import json, sys
 try:
     d = json.loads(sys.stdin.read() or '{}')
-    print('1' if '$base' in d.get('venvs', {}) else '0')
+    v = d.get('venvs', {}).get('$base', {})
+    print(v.get('metadata',{}).get('main_package',{}).get('package_version') or '')
 except Exception:
-    print('0')
+    print('')
 ")
-        if [[ "$ok" == "1" ]]; then
-            json_add_item id="pipx:installed:${base}" action="present" result="ok"
+        if [[ -n "$ver" ]]; then
+            # Sesja 57: bidirectional from=/to= so SPA inventory paints.
+            json_add_item id="pipx:installed:${base}" action="present" \
+                from="${ver}" to="${ver}" result="ok"
             json_count_ok
         else
             json_add_item id="pipx:installed:${base}" action="present" result="failed"
