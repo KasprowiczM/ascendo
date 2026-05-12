@@ -194,6 +194,21 @@ class DellDriverManager(_BaseWindowsManager, IPackageManager):
             )
             raise ValueError(msg)
 
+        # Preflight: dcu-cli requires Administrator elevation for EVERY
+        # subcommand (including /scan). If the orchestrator is running
+        # under a non-elevated token, short-circuit with a `skipped`
+        # sidecar carrying a clear "needs Administrator" message rather
+        # than spawning dcu-cli only for it to exit 6.
+        #
+        # cleanup phase is exempt: it's a no-op in this plugin (DCU
+        # manages its own staging cache), so it has nothing to do that
+        # would need elevation. Let it run.
+        if (
+            not host.is_elevated
+            and phase is not Phase.CLEANUP
+        ):
+            return self._synthesize_needs_admin_sidecar(phase, run, host)
+
         script_path = self._plugin_dir / script_rel
         if not script_path.is_file():
             msg = (
@@ -281,6 +296,89 @@ class DellDriverManager(_BaseWindowsManager, IPackageManager):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _synthesize_needs_admin_sidecar(
+        self, phase: Phase, run: RunInfo, host: HostInfo
+    ) -> Sidecar:
+        """Build a `skipped` sidecar carrying a clear "needs Administrator"
+        message. Used when ``host.is_elevated`` is False and the phase
+        would require elevation.
+
+        Why ``skipped`` and not ``failed``: the orchestrator's
+        ``stop_on_failure`` heuristic aborts a run when every selected
+        manager reports ``failed`` for a phase. When the operator runs
+        ``ascendo run --category plugin --phase apply`` from a non-elevated
+        shell, there's only one manager (Dell), and a ``failed`` status
+        would abort the run with a confusing error. ``skipped`` is the
+        honest classification — Ascendo didn't fail, the OS refused to
+        let it try.
+        """
+        from datetime import datetime, timezone
+
+        from ascendo.models.result import Item, ItemSource, Message, Summary
+        from ascendo.models.sidecar import SidecarSchema, ToolInfo
+
+        now = datetime.now(timezone.utc)
+        verb = {
+            Phase.CHECK: "scan",
+            Phase.PLAN: "plan",
+            Phase.APPLY: "apply",
+            Phase.VERIFY: "verify",
+            Phase.CLEANUP: "cleanup",
+        }.get(phase, phase.value)
+        msg_text = (
+            f"dcu-cli {verb} requires Administrator elevation. "
+            "Re-run Ascendo from an elevated PowerShell "
+            "(right-click PowerShell -> 'Run as Administrator')."
+        )
+
+        item_source = ItemSource(type=SourceType.PLUGIN, feed="dell_command_update")
+        item = Item.model_validate(
+            {
+                "id": "dell:<needs-admin>",
+                "name": "Dell Command Update (Administrator required)",
+                "category": SourceType.PLUGIN,
+                "source": item_source.model_dump(mode="json"),
+                "status": "skipped",
+                "messages": [
+                    Message(level="warn", text=msg_text).model_dump(mode="json"),
+                ],
+            }
+        )
+
+        return Sidecar.model_validate(
+            {
+                "schema": SidecarSchema.V1_ASCENDO.value,
+                "run": run.model_dump(mode="json"),
+                "host": host.model_dump(mode="json"),
+                "tool": ToolInfo(
+                    name="dcu-cli",
+                    version="unknown",
+                ).model_dump(mode="json"),
+                "phase": phase.value,
+                "category": SourceType.PLUGIN.value,
+                "status": "skipped",
+                "started_at": now.isoformat().replace("+00:00", "Z"),
+                "finished_at": now.isoformat().replace("+00:00", "Z"),
+                "items": [item.model_dump(mode="json")],
+                "messages": [
+                    Message(level="warn", text=msg_text).model_dump(mode="json"),
+                ],
+                "summary": Summary(
+                    total=1,
+                    success=0,
+                    up_to_date=0,
+                    failed=0,
+                    skipped=1,
+                    planned=0,
+                    partial=0,
+                    triggered=0,
+                    duration_ms=0,
+                    exit_code=0,
+                ).model_dump(mode="json"),
+                "needs_reboot": False,
+            }
+        )
 
     def _resolve_pwsh(self) -> str | None:
         """Find pwsh executable. Cached after first lookup."""

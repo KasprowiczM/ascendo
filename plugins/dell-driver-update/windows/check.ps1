@@ -245,6 +245,19 @@ try {
     Add-SidecarMessage -Sidecar $sidecar -Level 'info' `
         -Text ("dcu-cli /scan exit={0}" -f $rc)
 
+    # Surface a clear "needs Administrator" warn when dcu-cli refused
+    # to run for elevation reasons. Affects both:
+    #   exit 6  = "Application requires elevated privileges"
+    #   exit -1 = process-spawn refused with "operation requires elevation"
+    # The user re-runs from an elevated PowerShell to get a real scan.
+    if ($rc -eq 6 -or $rc -eq -1) {
+        Add-SidecarMessage -Sidecar $sidecar -Level 'warn' `
+            -Text 'dcu-cli requires Administrator elevation -- re-run from an elevated PowerShell to scan for pending Dell driver / BIOS updates'
+    } elseif ($rc -eq 7) {
+        Add-SidecarMessage -Sidecar $sidecar -Level 'warn' `
+            -Text 'another Dell Command Update process is already running'
+    }
+
     # Parse + emit items.
     $updates = Get-DcuScanItems -ReportPath $ScanOut
     Write-Verbose ("Get-DcuScanItems returned {0} row(s)" -f $updates.Count)

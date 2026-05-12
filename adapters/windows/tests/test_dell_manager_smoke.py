@@ -254,6 +254,107 @@ def test_adapter_wires_dell_manager_in_position_6() -> None:
     ]
 
 
+def test_run_phase_apply_returns_skipped_when_not_elevated(
+    manager: DellDriverManager, run: RunInfo, host_windows: HostInfo
+) -> None:
+    """Bug from the first real Dell apply run: dcu-cli /applyUpdates returns
+    exit code 6 ("Application requires elevated privileges") when invoked
+    without Administrator. The plugin originally mapped all non-{0,1,5,500}
+    exit codes to ``failed``, which made ``--category plugin --phase apply``
+    on a non-elevated PowerShell abort the run with `! aborted after
+    phase apply`.
+
+    Fix: Python preflight short-circuits with a ``skipped`` sidecar before
+    even spawning dcu-cli when ``host.is_elevated == False`` and phase
+    is not cleanup. Validates that the user gets a clear "needs
+    Administrator" message instead of a confusing apply-failure.
+    """
+    # host_windows has is_elevated=False by default in this fixture.
+    assert host_windows.is_elevated is False
+
+    # Force is_available to return True so the manager attempts run_phase.
+    with patch(
+        "ascendo_windows.managers.dell._find_dcu_cli",
+        return_value=Path(r"C:\fake\dcu-cli.exe"),
+    ):
+        sc = manager.run_phase(Phase.APPLY, run, host_windows)
+
+    assert sc.status.value == "skipped"
+    assert sc.phase is Phase.APPLY
+    assert sc.category is SourceType.PLUGIN
+    assert len(sc.items) == 1
+    assert sc.items[0].id == "dell:<needs-admin>"
+    assert sc.items[0].status.value == "skipped"
+    # The clear "needs Administrator" warning surfaces on both the
+    # phase-level messages AND the item's messages.
+    phase_text = " ".join(m.text for m in sc.messages)
+    assert "Administrator" in phase_text
+    assert "elevated" in phase_text.lower()
+
+
+def test_run_phase_check_returns_skipped_when_not_elevated(
+    manager: DellDriverManager, run: RunInfo, host_windows: HostInfo
+) -> None:
+    """Same preflight applies to check / plan / verify (every dcu-cli
+    subcommand needs Administrator). Mirror of the apply test for the
+    check phase which is the most-exercised one.
+    """
+    with patch(
+        "ascendo_windows.managers.dell._find_dcu_cli",
+        return_value=Path(r"C:\fake\dcu-cli.exe"),
+    ):
+        sc = manager.run_phase(Phase.CHECK, run, host_windows)
+    assert sc.status.value == "skipped"
+    assert sc.items[0].id == "dell:<needs-admin>"
+
+
+def test_run_phase_cleanup_runs_even_when_not_elevated(
+    manager: DellDriverManager, run: RunInfo, host_windows: HostInfo
+) -> None:
+    """Cleanup phase doesn't need elevation (the plugin's cleanup.ps1 is a
+    no-op). Preflight must NOT short-circuit it -- the script should be
+    spawned normally.
+    """
+    # Patch _find_dcu_cli + _resolve_pwsh to ensure preflight is the only
+    # thing that could intercept. Then patch subprocess.run to simulate
+    # a clean cleanup invocation. If preflight short-circuited cleanup,
+    # subprocess.run would never be called -- this test asserts it IS.
+    fake_pwsh = r"C:\fake\pwsh.exe"
+    called: list[bool] = []
+
+    def fake_subprocess_run(*args, **kwargs):
+        called.append(True)
+        # Caller will then try to read the sidecar from the bufdir; we
+        # haven't created one, so a ManagerError "no sidecar" raise is
+        # expected and acceptable for this test's scope.
+        from unittest.mock import MagicMock
+        r = MagicMock()
+        r.returncode = 0
+        r.stdout = ""
+        r.stderr = ""
+        return r
+
+    with patch(
+        "ascendo_windows.managers.dell._find_dcu_cli",
+        return_value=Path(r"C:\fake\dcu-cli.exe"),
+    ), patch.object(
+        DellDriverManager, "_resolve_pwsh", return_value=fake_pwsh
+    ), patch(
+        "ascendo_windows.managers.dell.subprocess.run",
+        side_effect=fake_subprocess_run,
+    ):
+        # We expect ManagerError because subprocess.run won't actually
+        # write the sidecar -- but the IMPORTANT assertion is that
+        # subprocess.run was reached (i.e. preflight didn't short-circuit).
+        from ascendo.interfaces.package_manager import ManagerError
+        try:
+            manager.run_phase(Phase.CLEANUP, run, host_windows)
+        except ManagerError:
+            pass
+
+    assert called, "cleanup phase must NOT be short-circuited by the preflight"
+
+
 def test_adapter_health_check_reports_dcu() -> None:
     """`ascendo doctor` must include a `dcu` row in its output dict."""
     from ascendo_windows.adapter import WindowsAdapter

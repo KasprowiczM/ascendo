@@ -240,23 +240,42 @@ try {
         exit 1
     }
 
-    # Per-item result mapping:
+    # Per-item result mapping (full DCU CLI exit code table from Dell docs):
     #   0   -> success (no reboot)
-    #   500 -> success (no updates available)
     #   1   -> success + reboot required
     #   5   -> success + reboot pending
+    #   500 -> success (no updates available)
+    #   6   -> SKIPPED (needs Administrator elevation)  <-- non-elevated invocation
+    #   7   -> SKIPPED (process locked - another DCU instance is running)
+    #   3   -> SKIPPED (user-interrupted; SIGINT-equivalent)
     #   *   -> failed
+    # The orchestrator's stop_on_failure heuristic aborts the run only when
+    # ALL managers report 'failed' for a phase. Treating elevation issues
+    # as `skipped` (informational) rather than `failed` keeps the run
+    # going through subsequent phases / categories.
     $perItemStatus = switch ($rc) {
         0   { 'success' }
         1   { 'success' }
         5   { 'success' }
         500 { 'success' }
+        6   { 'skipped' }
+        7   { 'skipped' }
+        3   { 'skipped' }
         default { 'failed' }
     }
     $rebootRequired = ($rc -eq 1 -or $rc -eq 5)
+    $skipReason = switch ($rc) {
+        6 { 'dcu-cli requires Administrator elevation -- re-run from an elevated PowerShell' }
+        7 { 'another Dell Command Update process is already running' }
+        3 { 'dcu-cli /applyUpdates interrupted by user (Ctrl+C / kill)' }
+        default { '' }
+    }
 
     Add-SidecarMessage -Sidecar $sidecar -Level 'info' `
         -Text ("dcu-cli /applyUpdates exit={0} status={1} reboot_required={2}" -f $rc, $perItemStatus, $rebootRequired)
+    if ($skipReason) {
+        Add-SidecarMessage -Sidecar $sidecar -Level 'warn' -Text $skipReason
+    }
     if ($rebootRequired) {
         Add-SidecarMessage -Sidecar $sidecar -Level 'info' `
             -Text 'reboot required to complete driver installation'
