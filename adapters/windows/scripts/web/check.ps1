@@ -18,7 +18,7 @@
     v1 scope: check + plan probe real candidate versions for github_release
     and release_feed handlers; builtin entries always emit a `skipped` item
     with the vendor URL surfaced. Apply is Tier-B trigger-only across the
-    board — we do not download/install .exe on Windows yet (needs
+    board -- we do not download/install .exe on Windows yet (needs
     Authenticode + UAC + per-installer flag handling).
 
 .PARAMETER RunId
@@ -165,7 +165,7 @@ try {
             $installed = Get-WebInstalledVersion -UninstallKey $uninstallKey
         }
         if (-not $installed) {
-            # Not installed on this host — skip silently. (We don't emit a
+            # Not installed on this host -- skip silently. (We don't emit a
             # "missing" item; the operator hasn't asked us to install net-new
             # apps. Web detection is opt-in: install first via your usual
             # channel, then Ascendo tracks updates.)
@@ -194,7 +194,7 @@ try {
         # Classify + emit. Three explicit branches so the bidirectional
         # from=/to= invariant is readable + scanner-friendly: every
         # $itemArgs hashtable sets BOTH CurrentVersion and TargetVersion
-        # (TargetVersion == CurrentVersion when up_to_date or skipped —
+        # (TargetVersion == CurrentVersion when up_to_date or skipped --
         # the SPA overlay expects candidate to equal installed when the
         # row is "current" rather than reading candidate=None and painting
         # "candidate unknown").
@@ -249,9 +249,9 @@ try {
             $vendorUrl = ''
             try { $vendorUrl = [string]$appConfig.builtin.url } catch { $vendorUrl = '' }
             $msg = if ($vendorUrl) {
-                "{0}: builtin handler — vendor auto-updates internally or manual download at {1}" -f $slug, $vendorUrl
+                "{0}: builtin handler -- vendor auto-updates internally or manual download at {1}" -f $slug, $vendorUrl
             } else {
-                "{0}: builtin handler — no probe URL configured" -f $slug
+                "{0}: builtin handler -- no probe URL configured" -f $slug
             }
             Add-SidecarMessage -Sidecar $sidecar -Level 'info' -Text $msg
         } elseif ($status -eq 'skipped') {

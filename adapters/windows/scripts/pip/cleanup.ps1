@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    pip cleanup phase. No-op — `pip cache purge` would destroy cached
+    pip cleanup phase. No-op -- `pip cache purge` would destroy cached
     wheels the user might need for offline re-installs. Emit an empty
     success sidecar so the orchestrator's 5-phase contract is satisfied.
 #>

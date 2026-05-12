@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    npm cleanup phase. No-op for now — `npm cache clean --force` would
+    npm cleanup phase. No-op for now -- `npm cache clean --force` would
     destroy cached tarballs that the user might still need for offline
     re-installs. Emit an empty success sidecar so the orchestrator's
     5-phase contract is satisfied.

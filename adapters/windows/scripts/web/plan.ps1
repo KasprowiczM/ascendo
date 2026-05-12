@@ -6,7 +6,7 @@
 .DESCRIPTION
     Same probes as check.ps1 but the sidecar emits items ONLY for
     candidates strictly newer than installed (status='planned').
-    up_to_date / skipped (builtin) apps are not emitted — plan is
+    up_to_date / skipped (builtin) apps are not emitted -- plan is
     the apply-preview phase, not the inventory phase.
 
     v1 scope: probes are real (github_release + release_feed); apply

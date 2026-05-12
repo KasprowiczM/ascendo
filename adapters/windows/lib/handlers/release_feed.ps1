@@ -224,7 +224,6 @@ function Invoke-ReleaseFeedApply {
     }
 }
 
-Export-ModuleMember -Function @(
-    'Invoke-ReleaseFeedCheck',
-    'Invoke-ReleaseFeedApply'
-)
+# Functions are auto-exported when this file is dot-sourced or
+# loaded via Import-Module (PS5.1 errors on explicit Export-ModuleMember
+# from inside a transient .ps1 module -- Sesja 58 fix).

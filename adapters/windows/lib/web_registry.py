@@ -17,9 +17,20 @@ import sys
 import tomllib
 from pathlib import Path
 
-from pydantic import ValidationError
+# Self-bootstrap sys.path so this shim works whether or not the caller's
+# Python has the editable install. adapters/windows/ contains the
+# ``ascendo_windows`` package; core/ contains the ``ascendo`` core package.
+_HERE = Path(__file__).resolve()
+_ADAPTER_DIR = _HERE.parent.parent      # adapters/windows/
+_REPO_ROOT = _ADAPTER_DIR.parent.parent  # <repo-root>/
+for _p in (_ADAPTER_DIR, _REPO_ROOT / "core"):
+    _s = str(_p)
+    if _s not in sys.path:
+        sys.path.insert(0, _s)
 
-from ascendo_windows.web_registry import WebRegistryV2
+from pydantic import ValidationError  # noqa: E402
+
+from ascendo_windows.web_registry import WebRegistryV2  # noqa: E402
 
 
 def main() -> int:

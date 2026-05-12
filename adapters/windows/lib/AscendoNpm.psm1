@@ -175,7 +175,11 @@ function Get-AscendoNpmLatestVersion {
     # ``npm view <pkg> version`` prints just the version on one line.
     # If multi-line (warnings spill into stdout on some npm versions),
     # take the last non-empty line.
-    $lines = $trimmed -split "`r?`n" | Where-Object { $_.Trim() -ne '' }
+    # @(...) wrap forces an array even on single-line output so .Count
+    # works under Set-StrictMode -Version Latest (pipeline unwraps a
+    # single-element result to a scalar string otherwise; .Count on
+    # [string] is a PropertyNotFoundException in StrictMode).
+    $lines = @($trimmed -split "`r?`n" | Where-Object { $_.Trim() -ne '' })
     if ($lines.Count -eq 0) {
         $script:_NpmLatestCache[$PackageName] = $null
         return $null

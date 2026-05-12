@@ -1,4 +1,4 @@
-# bin/ascendo-web-status.ps1 — convenience wrapper for `ascendo web status`.
+# bin/ascendo-web-status.ps1 -- convenience wrapper for `ascendo web status`.
 # Resolves repo root + PYTHONPATH + python automatically so it works from any cwd.
 # Pass-through: any args after the script name go to the underlying ascendo command.
 #requires -Version 5.1

@@ -95,7 +95,7 @@ try {
         # Only verify items that apply considered (status in success/planned/etc.)
         $applyStatus = ''
         if ($it.PSObject.Properties['status']) { $applyStatus = [string]$it.status }
-        # Don't verify failed/skipped — they didn't change anything.
+        # Don't verify failed/skipped -- they didn't change anything.
         if ($applyStatus -in @('failed','skipped','up_to_date')) {
             # Pass-through for visibility.
             $passArgs = @{

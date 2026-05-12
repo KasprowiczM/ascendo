@@ -23,7 +23,7 @@ function Invoke-BuiltinCheck {
         [Parameter(Mandatory)] [string] $Slug,
         [Parameter(Mandatory)] [object] $Config
     )
-    # By design, builtin has no probe path — we can't know the candidate
+    # By design, builtin has no probe path -- we can't know the candidate
     # version without a real upstream feed. The caller (check.ps1) treats
     # $null as "skipped: manual_required" and emits a sidecar item that
     # surfaces the vendor URL to the operator.
@@ -57,7 +57,6 @@ function Invoke-BuiltinApply {
     }
 }
 
-Export-ModuleMember -Function @(
-    'Invoke-BuiltinCheck',
-    'Invoke-BuiltinApply'
-)
+# Functions are auto-exported when this file is dot-sourced or
+# loaded via Import-Module (PS5.1 errors on explicit Export-ModuleMember
+# from inside a transient .ps1 module -- Sesja 58 fix).

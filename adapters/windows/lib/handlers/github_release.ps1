@@ -167,7 +167,6 @@ function Invoke-GitHubReleaseApply {
     }
 }
 
-Export-ModuleMember -Function @(
-    'Invoke-GitHubReleaseCheck',
-    'Invoke-GitHubReleaseApply'
-)
+# Functions are auto-exported when this file is dot-sourced or
+# loaded via Import-Module (PS5.1 errors on explicit Export-ModuleMember
+# from inside a transient .ps1 module -- Sesja 58 fix).

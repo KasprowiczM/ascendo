@@ -33,7 +33,7 @@ function Get-WebInstalledVersion {
           HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\<key>
         and returns the first DisplayVersion value found. The MSI product
         ID form ({GUID}) and the human-readable installer name (Inno / NSIS)
-        are both supported — caller passes whichever shape matches the
+        are both supported -- caller passes whichever shape matches the
         target installer's registry footprint.
     .PARAMETER UninstallKey
         Exact name of the Uninstall registry sub-key (e.g. 'Discord',
@@ -120,13 +120,18 @@ function Invoke-WebRegistry {
         throw "web_apps.toml registry not found at $shipped"
     }
 
+    # Discovery order matters on Windows. `python` is often a Microsoft Store
+    # shim or an older 3.x install that lacks pydantic / ascendo_windows. The
+    # `py` launcher picks the highest-installed Python (where Ascendo lives).
+    # See web_registry.py: it also self-bootstraps sys.path so any 3.11+ with
+    # pydantic available will work.
     $python = $null
-    foreach ($cand in @('python', 'python3', 'py')) {
+    foreach ($cand in @('py', 'python3', 'python')) {
         $cmd = Get-Command -Name $cand -ErrorAction SilentlyContinue
         if ($null -ne $cmd) { $python = $cmd.Source; break }
     }
     if ($null -eq $python) {
-        throw 'no Python interpreter on PATH (looked for python, python3, py)'
+        throw 'no Python interpreter on PATH (looked for py, python3, python)'
     }
 
     $pyArgs = @($shim, '--shipped', $shipped)
@@ -160,8 +165,13 @@ function Invoke-WebRegistry {
         }
         'validate' {
             $pyArgs += '--validate'
-            & $python @pyArgs *> $null
-            return ($LASTEXITCODE -eq 0)
+            # Capture output so callers can see WHY validation failed
+            # (previously routed to *> $null, hiding ImportError / etc.).
+            $output = & $python @pyArgs 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                throw "web_registry.py --validate failed (exit $LASTEXITCODE): $output"
+            }
+            return $true
         }
     }
 }
@@ -180,7 +190,7 @@ function Compare-WebVersion {
         when both sides parse, otherwise lexicographically. Trailing missing
         components are treated as 0 (so '1.2' == '1.2.0'). Non-numeric
         suffixes (e.g. '1.2.3-rc1') are compared lexicographically after
-        the matching numeric prefix. This is "semver-lite" — sufficient for
+        the matching numeric prefix. This is "semver-lite" -- sufficient for
         the apps in our registry; we don't pretend to fully parse PEP 440
         or semver-2.0.
     .PARAMETER Installed

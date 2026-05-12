@@ -9,7 +9,7 @@
     a 'triggered' sidecar item.
 
     v1 scope: we do NOT download/run .exe installers from Ascendo on
-    Windows yet — that requires Authenticode signature verification +
+    Windows yet -- that requires Authenticode signature verification +
     UAC handoff + per-installer flag handling we'll add in a follow-up.
     Apply opens the page; the operator clicks through the vendor's own
     install flow.
@@ -127,7 +127,7 @@ try {
             $candidate = $null
         }
 
-        # builtin handler always triggers (no candidate version) — operator
+        # builtin handler always triggers (no candidate version) -- operator
         # explicitly opted in to the vendor's manual update flow. For
         # Tier-A handlers (github_release / release_feed), we only trigger
         # when candidate is strictly newer than installed.

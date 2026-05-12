@@ -3,7 +3,7 @@
     Web (third-party app) cleanup phase. No-op in v1.
 
 .DESCRIPTION
-    v1 apply is Tier-B trigger-only — Ascendo never downloads .exe files
+    v1 apply is Tier-B trigger-only -- Ascendo never downloads .exe files
     or stages installers in a cache directory. Cleanup is therefore a
     structural no-op: emit a sidecar with status=success, no items, and
     a single info message documenting that there's nothing to prune yet.

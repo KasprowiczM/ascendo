@@ -1,4 +1,4 @@
-# bin/ascendo-web-start.ps1 — convenience wrapper for `ascendo web start`.
+# bin/ascendo-web-start.ps1 -- convenience wrapper for `ascendo web start`.
 # Resolves repo root + PYTHONPATH + python automatically so it works from any cwd.
 # Pass-through: any args after the script name go to the underlying ascendo command.
 #requires -Version 5.1
