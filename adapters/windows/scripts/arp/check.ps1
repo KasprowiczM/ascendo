@@ -124,7 +124,13 @@ try {
             SourceFeed = $e.Hive
             Status     = 'up_to_date'
         }
-        if ($e.Version) { $itemArgs['CurrentVersion'] = $e.Version }
+        if ($e.Version) {
+            $itemArgs['CurrentVersion'] = $e.Version
+            # Bidirectional from=/to= for the SPA overlay: up_to_date items
+            # must echo installed back into TargetVersion. Otherwise the
+            # candidate column paints blank instead of matching installed.
+            $itemArgs['TargetVersion'] = $e.Version
+        }
         if ($e.Version -or $e.Publisher) {
             $ev = @{}
             if ($e.Version)   { $ev['registry_version'] = $e.Version }

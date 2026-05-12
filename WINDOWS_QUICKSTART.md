@@ -52,6 +52,14 @@ Re-running `install-dev.ps1` after a `git pull` is safe — it's idempotent
 and re-installs the editable Python packages so your dashboard always
 runs the latest code.
 
+Five package managers ship out of the box on Windows: **winget**,
+**msstore**, **npm globals**, **pip globals**, **MSI/registry ARP**.
+Plus **Windows Update** for OS patches. Plus a curated **WebManager**
+for ~10 third-party apps installed outside winget (Brave, Obsidian,
+OBS Studio, Notion, Discord, Slack, Zoom, Cursor, GitHub Desktop,
+Brave Nightly) — 4 with real candidate-version probes (`Tier-A`),
+6 with builtin "open vendor page" handoffs.
+
 ## 2 · Open the web dashboard
 
 Three paths — pick one:
@@ -66,6 +74,32 @@ The first time you launch any of these, the **Apps inventory** is
 populated by the `inventory/list.ps1` script — count is on the bottom of
 the Categories tab once the scan finishes (~10–20 s on a typical box).
 
+## 2.5 · Convenience wrappers (bin/)
+
+Five PowerShell wrappers under `bin/` make daily ops a single click away.
+They're thin shells over `python -m ascendo …` with auto-PYTHONPATH
+resolution so they work from any cwd. Pin to taskbar / Start Menu / use
+right-click → Run with PowerShell.
+
+| Script | Equivalent | Use case |
+|--------|------------|----------|
+| `bin\ascendo-web-start.ps1`   | `ascendo web start`   | Detached dashboard with pidfile tracking; opens browser |
+| `bin\ascendo-web-stop.ps1`    | `ascendo web stop`    | SIGTERM + cleanup pidfile |
+| `bin\ascendo-web-restart.ps1` | `ascendo web restart` | Stop + start cycle |
+| `bin\ascendo-web-status.ps1`  | `ascendo web status`  | Pid + URL + health snapshot |
+| `bin\build-inventory.ps1`     | `ascendo build-inventory` | One-shot enumeration across every package source on the box; flushes `~/.ascendo/inventory.db` so the SPA paints instantly |
+
+Sample output:
+
+```
+==> ascendo web start
+ascendo web started (pid=14328) on http://127.0.0.1:8765/
+```
+
+All five are idempotent: starting an already-running dashboard is a
+no-op (logs current pid); stopping a stopped one prints `not running`
+and exits 0.
+
 ## 3 · See what's installed (Categories tab)
 
 The Categories tab shows one row per source:
@@ -76,6 +110,9 @@ The Categories tab shows one row per source:
 | **msstore** | `winget list` (Microsoft Store entries + MSIX bundles) | Microsoft Store / pre-installed Windows apps |
 | **registry_arp** | `winget list` (Add-or-Remove-Programs detected) | Legacy MSI/EXE installers (Office, drivers, …) |
 | **windows_update** | `Get-WUList` via PSWindowsUpdate | OS patches (KB updates, defender defs, security rollups) |
+| **npm** | `npm list -g` + `npm view <name> version` | Node.js global CLIs you installed via `npm install -g` |
+| **pip** | `pip list` + PyPI JSON API | Python global CLIs in user-site (`--user` installs) |
+| **web** | Curated `web_apps.toml` + handlers | Third-party apps installed outside winget/msstore |
 
 Click a row to expand it and see every package with installed/candidate
 version + status pill.
@@ -120,6 +157,8 @@ never logged).
 | **winget feed apps** (Chrome, VSCode, …) | winget → apply | Idempotent; safe to re-run |
 | **Microsoft Store apps** | msstore → apply | Bound to the user's Store account |
 | **Windows 11 itself** | windows_update → apply | Downloads + stages KB patches; reboot required |
+| **npm/pip CLIs** | npm/pip → check / apply | No sudo needed; user-scope installs |
+| **Brave/Obsidian/OBS/Notion** | web → check | Real candidate-version probes; apply is currently Tier-B trigger-only (opens vendor page; full apply lands in v0.0.9 when Authenticode + UAC handling is wired) |
 | **Drivers via Dell Command Update** | (separate) `python -m ascendo run --category plugin --plugin dell-driver-update --phase apply` — must be Admin | Currently driven from CLI, not UI |
 
 After every apply phase, the dashboard invalidates the inventory cache
@@ -128,11 +167,16 @@ and a banner appears at the top if a reboot is required.
 ## 6 · From the CLI (no dashboard needed)
 
 ```powershell
-python -m ascendo doctor                                    # 5-component health snapshot
+python -m ascendo doctor                                    # 9-component health snapshot
 python -m ascendo run --category winget        --phase check    # 1 min
 python -m ascendo run --category msstore       --phase check
 python -m ascendo run --category windows_update --phase check    # ~5 min first time
 python -m ascendo run --category windows_update --phase apply    # mutating; needs Admin
+python -m ascendo run --category npm --phase check                          # node global CLIs
+python -m ascendo run --category pip --phase check                          # python global CLIs
+python -m ascendo run --category web --phase check                          # Brave / Obsidian / OBS / Notion
+python -m ascendo build-inventory                                           # flush DB cache (cross-platform)
+python -m ascendo web start  /  web status  /  web stop  /  web restart    # dashboard lifecycle
 python -m ascendo runs list -n 5                            # last 5 runs
 python -m ascendo runs json <run-id> --pretty | jq .summary
 python -m ascendo snapshot create -m "before manual upgrade"
@@ -148,6 +192,25 @@ Exit codes the run command emits:
 | `2`  | bad input (e.g. unknown category) |
 | `30` | hard failure during apply |
 | `75` | success, but **reboot required** |
+
+## 6.5 · Health diagnostics
+
+`ascendo doctor` now reports **9 components** on Windows:
+
+| Component         | What it probes |
+|-------------------|----------------|
+| `winget`          | `winget --version` |
+| `pswindowsupdate` | `Get-Module PSWindowsUpdate` |
+| `npm`             | `npm --version` |
+| `pip`             | `pip --version` |
+| `pwsh`            | PowerShell 5.1 / 7.x binary |
+| `ascendo_lib`     | Adapter PowerShell modules count |
+| `ascendo_scripts` | Per-category script tree present |
+| `web_registry`    | `web_apps.toml` parses + app count |
+| `inventory_db`    | `~/.ascendo/inventory.db` reachable + row count |
+
+Each row's status starts with one of `ok | degraded | unavailable |
+error` and includes a one-line hint.
 
 ## 7 · Update Windows 11 right now
 
@@ -229,6 +292,10 @@ NSIS pre-uninstall hook — no manual cleanup needed. User data in
 | Run Center shows nothing during a run | The run never started (probably the 422) — SSE stream had no data to render | Kick a fresh `winget → check` and watch the Run Center light up |
 | "no PowerShell binary on PATH" | pwsh.exe missing | `winget install --id Microsoft.PowerShell` |
 | `winget` says "v1.28" but `ascendo doctor` says it's missing | Per-user install on a different account | `winget install --id Microsoft.AppInstaller --scope machine` |
+| npm/pip category shows "unavailable" in doctor | Node / Python not on PATH | `winget install OpenJS.NodeJS.LTS` (npm) or `winget install Python.Python.3.12` (pip) |
+| web check returns 0 outdated even though Brave/Obsidian are old | Apps not detected as installed | Registry uninstall key for that app doesn't match the registry TOML's `windows_uninstall_key`. Add an override at `~/.ascendo/web_apps.toml` |
+| `>>> still running (Ns)` lines pile up | Working as intended | Watchdog heartbeat to confirm the script hasn't hung during a long winget upgrade |
+| Run died and sidecar is missing | Salvage will reconstruct | New in v0.0.8: bufdir-based salvage rebuilds the sidecar from partial JSONL; look for `ASCENDO-SALVAGED` in messages[0] |
 
 ## 10 · Where everything lives
 
@@ -295,11 +362,19 @@ the install.ps1 one-liner publicly until signing is in place.
 `-CertificatePassword`, `-TimestampUrl` parameters — signing is one
 config block away when a cert is available.
 
+The Windows MSI/NSIS build now also bundles the WebManager registry
+(`adapters/windows/config/web_apps.toml`) and the npm/pip global-CLI
+manifest files alongside the existing PowerShell adapter resources, so
+the new sources work out of the box for users installing from the
+installer.
+
 ## 12 · One-liner sanity check
 
 If anything seems off, run this first — exits 0 only when CLI + dashboard
 + all 5 phases × winget produce real sidecars and the SPA assets serve
-correctly:
+correctly. As of v0.0.8 the harness also covers stages for npm/pip
+managers, the web category check, `ascendo web start/stop` lifecycle,
+`build-inventory`, and the new sidecar salvage path:
 
 ```powershell
 .\bin\validate-windows.ps1            # ≈ 90 s; ALL CHECKS PASSED on green

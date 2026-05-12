@@ -6,6 +6,139 @@
 
 ---
 
+## Sesja 58 (2026-05-12) — Windows-parity push
+
+Post-Sesja-57 the operator asked to bring Windows to feature parity
+with macOS + Ubuntu. Plan written to
+`docs/superpowers/specs/2026-05-12-windows-parity-design.md`. Five
+waves dispatched in parallel via subagents (with controller-side
+integration + inline fixes per wave). Net result: Windows adapter goes
+from 4 → 7 IPackageManager implementations, 5 → 9 health-check
+components, and gains the first cross-cutting sidecar salvage layer
+for the Windows native-script pipeline. Test count went from 99
+baseline → **229 passing** with zero regressions.
+
+### Findings
+
+- All 4 Windows `check.ps1` scripts (winget/msstore/arp/windows_update)
+  + `inventory/list.ps1` carried the Sesja 57 `from=/to=` mirror bug:
+  "present" items emitted only `to=$ver`, leaving the SPA inventory
+  rows with `installed=null` (same structural issue as Linux Sesja 57).
+- **WebManager not implemented on Windows** (0 handlers vs. macOS 7).
+  Windows users had no surface for third-party apps installed outside
+  winget — Brave, Obsidian, OBS Studio etc. were invisible to Ascendo.
+- **No NpmManager / PipManager on Windows.** Operators couldn't
+  update Node / Python global CLIs through Ascendo; the SPA showed
+  Linux + macOS rows for them but the Windows column was empty.
+- **No sidecar salvage path on Windows.** Interrupted PS scripts
+  (Ctrl-C, UAC denied mid-stream, kernel kill) stranded run state —
+  no sidecar landed on disk, the dashboard's SSE done event never
+  fired, and the run looked frozen.
+- **No watchdog heartbeat** in the Windows `apply.ps1` pipeline:
+  long winget upgrades (>30 s of silent download) looked hung in the
+  SPA, indistinguishable from a real wedge.
+- `health_check()` at 5 components on Windows vs. macOS 12 — npm /
+  pip / web_registry / inventory_db all missing from the rollup.
+
+### Shipped
+
+**Wave A — quick wins** (parallel subagent + inline fix):
+- `bin/` web-service wrappers × 5 (`ascendo-web-start.ps1`,
+  `-stop`, `-restart`, `-status`, `build-inventory.ps1`) — ~36 LOC
+  each, thin shims over `python -m ascendo …` with auto-PYTHONPATH
+  resolution so they work from any cwd.
+- `from=/to=` bidirectional fix in winget + msstore + arp +
+  windows_update check.ps1 + inventory/list.ps1 — 5 PS files touched,
+  every "present" item now writes the installed version into BOTH
+  `from=` and `to=`. Regression test added.
+- `health_check()` expanded 5 → 9: new `npm`, `pip`,
+  `inventory_db`, `web_registry` probes. 6 new test cases.
+
+**Wave B — npm/pip + heartbeat** (parallel subagent):
+- `NpmManager` + `PipManager` Python classes mirroring the macOS shape
+  (`adapter.py` returns them in `package_managers()`).
+- 5-phase PowerShell contract × 2: `adapters/windows/scripts/npm/*.ps1`
+  + `adapters/windows/scripts/pip/*.ps1` (check / plan / apply / verify
+  / cleanup).
+- `lib/AscendoNpm.psm1` + `lib/AscendoPip.psm1` shared helpers:
+  binary discovery, `npm view <name> version` / PyPI JSON cache,
+  stderr-tail capture on failure, brew-pip self-skip rule.
+- Config manifests: `config/npm_global_clis.txt` (15 packages) +
+  `config/pip_global_clis.txt` (11 packages).
+- `Start-AscendoHeartbeat` / `Stop-AscendoHeartbeat` in
+  `AscendoJson.psm1`: background timer thread emits
+  `>>> still running (Ns)` to the SSE stream every 10 s of silent
+  work. Wired into 4 existing apply.ps1 with `try/finally` so the
+  heartbeat is always torn down on phase exit.
+- 35 new manager tests + 9 heartbeat tests.
+
+**Wave C — WebManager + salvage** (parallel subagent):
+- `WebManager` Python class + Pydantic `WebRegistryV2` schema +
+  3 handlers (`github_release`, `release_feed`, `builtin`) under
+  `adapters/windows/lib/handlers/`.
+- Curated `config/web_apps.toml` with 10 apps: 4 Tier-A real-candidate
+  probes (`brave`, `obsidian`, `notion`, `obs-studio`) + 6 Tier-B
+  builtin (`discord`, `slack`, `zoom`, `cursor`, `github-desktop`,
+  `brave-nightly`).
+- 2 URLs verified 404 during registry build and demoted to builtin
+  with evidence trail in `notes` (cursor windows `latest.yml`,
+  github-desktop redirect path — re-check annually).
+- Sidecar salvage via new `_BaseWindowsManager` mixin: bufdir-based
+  incremental JSONL writes (`%TEMP%\ascendo-bufdir-<run-id>`), salvage
+  reconstructs sidecar on crash with an explicit `ASCENDO-SALVAGED`
+  diagnostic so the SPA shows the recovery in `messages[0]`.
+- 42 web tests + 33 salvage tests.
+
+**Wave D — docs + validate** (controller-side):
+- `bin/validate-windows.ps1` extended with new stages: npm / pip / web
+  check, `ascendo web start/stop/restart/status` lifecycle round-trip,
+  `build-inventory` smoke, sidecar salvage smoke (kills a PS phase
+  mid-run, asserts `ASCENDO-SALVAGED` lands in the rebuilt sidecar).
+- `WINDOWS_QUICKSTART.md` + `WINDOWS_TESTING.md` updates (this commit).
+- `PLAN.md` Quick-win backlog updates (this commit).
+
+### State on Windows after Sesja 58
+
+```
+$ python -m ascendo doctor
+adapter: windows (Windows) tier=1
+capabilities: PACKAGE_MANAGEMENT|INVENTORY|SNAPSHOTS|SCHEDULING|ELEVATION
+  winget               ok: v1.x
+  pswindowsupdate      ok: module installed
+  npm                  ok: npm 11.x                            (NEW)
+  pip                  ok: pip 26.x                            (NEW)
+  pwsh                 ok: 7.6.x
+  ascendo_lib          ok: 8 module(s)
+  ascendo_scripts      ok
+  web_registry         ok: 10 apps registered                  (NEW — Tier-A 4, Tier-B 6)
+  inventory_db         ok: N rows                              (NEW)
+package_managers: winget, msstore, npm, pip, web, arp, windows_update  (7 total — was 4)
+```
+
+Test count: 99 baseline → **229 passing** (+130; zero regressions).
+
+### Forward state
+
+- **Full WebManager parity with macOS** — sparkle / keystone / omaha /
+  msupdate Windows-side analogs deferred (most don't apply: keystone +
+  msupdate are macOS-specific; sparkle has no Windows tradition; omaha
+  could land for Chrome/Brave/Edge but every one of those is also
+  available via winget/msstore so the priority is low).
+- **Auto-discovery of installed apps** from the registry (mirror of
+  macOS `_owned_by` + Info.plist walker) — deferred; the curated
+  `web_apps.toml` covers the high-value cases for now.
+- **Tier-A apply** with `.exe` download + Authenticode verification +
+  UAC handoff — v0.0.9. Current Tier-A apply is trigger-only (opens
+  vendor page) because shelling to a downloaded `.exe` from an
+  unelevated dashboard hits the same UAC + SmartScreen wall the
+  installer story does.
+- **Tauri shell rebuild + signed MSI** — M4 milestone, unchanged.
+- **Real-hardware validation on DP5520WMK** — operator runs
+  `bin/validate-windows.ps1` after `git pull` to confirm the 229 tests
+  + new Stage-N rows all green.
+
+---
+
 ## Sesja 57 (2026-05-12, afternoon) — Version polarity across all phases + UX polish
 
 Continuation of Sesja 56. Operator's second audit on `mk-uP5520`

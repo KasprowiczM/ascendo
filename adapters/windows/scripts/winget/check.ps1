@@ -89,7 +89,14 @@ param(
     # from external subprocesses. [switch] accepts the canonical pattern:
     # caller includes `-DryRun` to enable, omits it to disable.
     [Parameter()] [switch] $DryRun,
-    [Parameter()] [string] $ItemFilter = ''
+    [Parameter()] [string] $ItemFilter = '',
+
+    # Optional bufdir for sidecar-salvage (mirror of Ubuntu Sesja 56).
+    # When set, AscendoJson appends each item/message to JSONL files
+    # in this dir; the Python manager reconstructs a sidecar from
+    # them if this script dies before Save-Sidecar fires. When unset,
+    # the bufdir wiring is a no-op (backwards-compatible).
+    [Parameter()] [string] $BufDir = ''
 )
 
 Set-StrictMode -Version Latest
@@ -288,6 +295,11 @@ try {
     if ($null -ne $toolBinaryPath -and $toolBinaryPath -ne '') {
         $newSidecarArgs['ToolBinaryPath'] = $toolBinaryPath
     }
+    if ($BufDir) {
+        # Forward the bufdir to AscendoJson so items + messages mirror
+        # into JSONL files for Python-side salvage on crash.
+        $newSidecarArgs['BufDir'] = $BufDir
+    }
     $sidecar = New-Sidecar @newSidecarArgs
 
     # ── 2. Configure winget output encoding ────────────────────────────
@@ -427,6 +439,11 @@ try {
         }
         if ($null -ne $current) {
             $itemArgs['CurrentVersion'] = $current
+            # Bidirectional from=/to= for the SPA overlay: when an item is
+            # 'up_to_date', the candidate version equals the installed one.
+            # Without this, the SPA renders the row as "candidate unknown"
+            # instead of "up to date". Mirrors macOS brew/check.sh pattern.
+            $itemArgs['TargetVersion'] = $current
         }
 
         [void](Add-SidecarItem @itemArgs)

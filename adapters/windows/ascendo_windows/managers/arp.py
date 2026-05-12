@@ -39,6 +39,11 @@ class ArpManager(WingetManager):
         Phase.CLEANUP: "arp/cleanup.ps1",
     }
 
+    # arp phase scripts haven't been updated to accept ``-BufDir`` yet.
+    # Same rationale as MSStoreManager — the salvage path is wired
+    # Python-side but the script never writes to the bufdir.
+    BUFDIR_SUPPORTED_PHASES: ClassVar[frozenset[Phase]] = frozenset()
+
     @property
     def category(self) -> SourceType:
         return SourceType.REGISTRY_ARP

@@ -27,7 +27,7 @@ $script:SCHEMA_ID = 'ascendo/v1'
 $script:VALID_TRIGGERS    = @('cli','scheduler','dashboard','plugin','unknown')
 $script:VALID_PHASES      = @('check','plan','apply','verify','cleanup')
 $script:VALID_PHASE_STATUS= @('success','partial','failed','skipped')
-$script:VALID_ITEM_STATUS = @('success','up_to_date','failed','skipped','planned','partial')
+$script:VALID_ITEM_STATUS = @('success','up_to_date','failed','skipped','planned','partial','missing','triggered')
 $script:VALID_MSG_LEVELS  = @('debug','info','warn','error')
 $script:VALID_ELEVATION   = @('none','sudo','pkexec','doas','uac','launchd_root','unknown')
 $script:VALID_SOURCE_TYPE = @(
@@ -226,6 +226,44 @@ function Write-AscendoUtf8NoBom {
     [System.IO.File]::WriteAllText($Path, $Text, $utf8NoBom)
 }
 
+function Append-AscendoJsonLine {
+    <#
+    .SYNOPSIS
+        Append a single object as one JSONL line to a sidecar bufdir file.
+    .DESCRIPTION
+        Internal helper for the bufdir-salvage path (mirror of Ubuntu
+        adapter Sesja 56). Each call adds exactly one ConvertTo-Json
+        line (Depth=100) to the target file. Best-effort: failures are
+        silently swallowed so a flaky disk can't break the phase script.
+
+        Caller usually passes $Sidecar['_bufdir'] as the bufdir; this
+        helper handles the no-op case (empty / unset / nonexistent dir).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $BufDir,
+        [Parameter(Mandatory)] [string]    $FileName,
+        [Parameter(Mandatory)] [hashtable] $Payload
+    )
+
+    if (-not $BufDir) { return }
+    if (-not (Test-Path -LiteralPath $BufDir)) { return }
+
+    try {
+        $line = ($Payload | ConvertTo-Json -Depth 100 -Compress)
+        $path = Join-Path -Path $BufDir -ChildPath $FileName
+        # Append in UTF-8 NO BOM. .NET 4.5+ has AppendAllText which
+        # honours encoding; PS 5.1 + 7.x both inherit that.
+        $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+        [System.IO.File]::AppendAllText($path, ($line + "`n"), $utf8NoBom)
+    } catch {
+        # Bufdir failures must NEVER break the phase. The Python side
+        # will detect missing bufdir contents on salvage and proceed
+        # with whatever survived (or skip salvage entirely).
+        Write-Verbose ("Append-AscendoJsonLine: $_")
+    }
+}
+
 # -----------------------------------------------------------------------------
 # Public API
 # -----------------------------------------------------------------------------
@@ -260,6 +298,15 @@ function New-Sidecar {
         Optional absolute path to the tool binary.
     .PARAMETER Invocation
         Optional original command-line string for audit.
+    .PARAMETER BufDir
+        Optional absolute path pre-allocated by the Python manager for
+        sidecar salvage (mirror of Ubuntu adapter's Sesja 56 pattern).
+        When set, every Add-Sidecar* call appends a JSONL line to a
+        sibling file in this directory IN ADDITION to the in-memory
+        ArrayList, so the Python side can reconstruct a partial sidecar
+        if the script dies before Save-Sidecar fires. When unset, all
+        bufdir paths are no-ops (backwards-compatible with phase
+        scripts that haven't been updated yet).
     .OUTPUTS
         [Hashtable] - mutable state object passed to subsequent Add-* calls.
     #>
@@ -274,7 +321,8 @@ function New-Sidecar {
         [Parameter(Mandatory)] [string] $ToolName,
         [Parameter(Mandatory)] [string] $ToolVersion,
         [Parameter()]          [string] $ToolBinaryPath,
-        [Parameter()]          [string] $Invocation
+        [Parameter()]          [string] $Invocation,
+        [Parameter()]          [string] $BufDir
     )
 
     Test-AscendoEnumValue -Value $Trigger  -Allowed $script:VALID_TRIGGERS    -FieldName 'Trigger'
@@ -330,7 +378,53 @@ function New-Sidecar {
         'items'        = [System.Collections.ArrayList]::new()
         'summary'      = $null
         'messages'     = [System.Collections.ArrayList]::new()
+        # Salvage bufdir path (mirror of Ubuntu Sesja 56). Stashed on
+        # the sidecar object under a leading-underscore key so it
+        # survives all the way to Save-Sidecar but never lands in the
+        # emitted JSON (we strip it before ConvertTo-Json).
+        '_bufdir'      = $null
     }
+
+    if ($PSBoundParameters.ContainsKey('BufDir') -and $BufDir) {
+        try {
+            if (-not (Test-Path -LiteralPath $BufDir)) {
+                New-Item -ItemType Directory -Path $BufDir -Force | Out-Null
+            }
+
+            # Write meta.json with the stable identity block so the
+            # Python salvage path can reconstruct run/host/tool even if
+            # the script dies before adding a single item.
+            $metaPayload = [ordered]@{
+                'schema'      = $script:SCHEMA_ID
+                'run'         = $run
+                'host'        = $hostInfo
+                'tool'        = $tool
+                'phase'       = $Phase
+                'category'    = $Category
+                'started_at'  = $startedAt
+            }
+            $metaJson = $metaPayload | ConvertTo-Json -Depth 100
+            $metaPath = Join-Path -Path $BufDir -ChildPath 'meta.json'
+            Write-AscendoUtf8NoBom -Path $metaPath -Text $metaJson
+
+            # Pre-create empty JSONL files so subsequent Add-* helpers
+            # can blindly Add-Content without first checking existence.
+            foreach ($name in @('items.jsonl', 'messages.jsonl', 'diags.jsonl')) {
+                $jsonlPath = Join-Path -Path $BufDir -ChildPath $name
+                if (-not (Test-Path -LiteralPath $jsonlPath)) {
+                    Write-AscendoUtf8NoBom -Path $jsonlPath -Text ''
+                }
+            }
+
+            $sidecar['_bufdir'] = $BufDir
+        } catch {
+            # Best-effort: a bufdir IO failure must not abort the run.
+            # The Python side simply won't find anything to salvage if
+            # the script later crashes — degrading gracefully.
+            Write-Verbose ("New-Sidecar: bufdir setup failed for '$BufDir': $_")
+        }
+    }
+
     return $sidecar
 }
 
@@ -474,6 +568,17 @@ function Add-SidecarItem {
     }
 
     [void]$Sidecar['items'].Add($item)
+
+    # Bufdir mirror (Sesja 56 salvage path): append to items.jsonl so
+    # the Python side can rebuild the items list even if the script
+    # dies before Save-Sidecar fires. No-op when -BufDir wasn't passed
+    # to New-Sidecar.
+    $bufdir = $null
+    if ($Sidecar.Contains('_bufdir')) {
+        $bufdir = [string]$Sidecar['_bufdir']
+    }
+    Append-AscendoJsonLine -BufDir $bufdir -FileName 'items.jsonl' -Payload $item
+
     return $item
 }
 
@@ -513,6 +618,21 @@ function Add-SidecarMessage {
         'timestamp' = $(if ($PSBoundParameters.ContainsKey('Timestamp') -and $Timestamp) { $Timestamp } else { $null })
     }
     [void]$Sidecar['messages'].Add($entry)
+
+    # Bufdir mirror (Sesja 56 salvage path): append to messages.jsonl
+    # so the Python side can rebuild the phase-level messages list
+    # even if the script dies before Save-Sidecar fires. No-op when
+    # -BufDir wasn't passed to New-Sidecar.
+    $bufdir = $null
+    if ($Sidecar.Contains('_bufdir')) {
+        $bufdir = [string]$Sidecar['_bufdir']
+    }
+    $msgPayload = [ordered]@{
+        'level'     = $entry['level']
+        'text'      = $entry['text']
+        'timestamp' = $entry['timestamp']
+    }
+    Append-AscendoJsonLine -BufDir $bufdir -FileName 'messages.jsonl' -Payload $msgPayload
 }
 
 function Save-Sidecar {
@@ -599,7 +719,23 @@ function Save-Sidecar {
     $finalName = ('{0}__{1}.json' -f $phaseSlug, $catSlug)
     $finalPath = Join-Path -Path $runDir -ChildPath $finalName
 
-    $json = $Sidecar | ConvertTo-Json -Depth 100
+    # Strip the internal _bufdir key before serialising — it's a
+    # Python-side salvage breadcrumb, not part of the v1 contract.
+    $bufdirToCleanup = $null
+    $serialisable = $Sidecar
+    if ($Sidecar.Contains('_bufdir')) {
+        $bufdirToCleanup = [string]$Sidecar['_bufdir']
+        # Build a sibling ordered hashtable without the _bufdir key so
+        # ConvertTo-Json emits the canonical shape. ConvertTo-Json
+        # doesn't have a per-key exclude flag, so we copy in order.
+        $serialisable = [ordered]@{}
+        foreach ($k in $Sidecar.Keys) {
+            if ($k -eq '_bufdir') { continue }
+            $serialisable[$k] = $Sidecar[$k]
+        }
+    }
+
+    $json = $serialisable | ConvertTo-Json -Depth 100
 
     $tmpName = ('.{0}__{1}.{2}.tmp' -f $phaseSlug, $catSlug, [System.IO.Path]::GetRandomFileName())
     $tmpPath = Join-Path -Path $runDir -ChildPath $tmpName
@@ -611,6 +747,21 @@ function Save-Sidecar {
             Remove-Item -LiteralPath $tmpPath -Force -ErrorAction SilentlyContinue
         }
         throw
+    }
+
+    # Canonical sidecar landed on disk — remove the salvage bufdir
+    # since it's strictly redundant now. ASCENDO_KEEP_BUFDIR=1 keeps
+    # it for forensic debugging.
+    if ($bufdirToCleanup -and (Test-Path -LiteralPath $bufdirToCleanup)) {
+        $keep = $env:ASCENDO_KEEP_BUFDIR
+        if (-not ($keep -eq '1' -or $keep -eq 'true' -or $keep -eq 'True')) {
+            try {
+                Remove-Item -LiteralPath $bufdirToCleanup -Recurse -Force `
+                    -ErrorAction SilentlyContinue
+            } catch {
+                # Best-effort cleanup; Python side will mop up.
+            }
+        }
     }
 
     return (Get-Item -LiteralPath $finalPath)
@@ -681,6 +832,146 @@ function Write-AscendoStreamFile {
 }
 
 # -----------------------------------------------------------------------------
+# Watchdog heartbeat
+# -----------------------------------------------------------------------------
+#
+# Mirror of the Ubuntu adapter's Sesja 55 heartbeat (lib/json.sh +
+# lib/orchestrator.sh background process emitting `>>> still running (Ns)`
+# every 10s during silent phases). The dashboard's SSE log_line stream
+# forwards Console.Error.WriteLine output to the SPA's Run Center
+# terminal box, so this keeps the UI visibly alive during long-running
+# `winget upgrade`, `Install-WindowsUpdate`, or msi uninstall calls that
+# would otherwise produce zero output for minutes at a time.
+#
+# Implementation: PowerShell runspace (NOT a child process). Runspaces
+# share stdio with the parent so [Console]::Error.WriteLine lines flow
+# straight through to the captured SSE stream — a child pwsh.exe process
+# would have its own console handles and we'd lose the lines.
+
+function Start-AscendoHeartbeat {
+    <#
+    .SYNOPSIS
+        Start a background heartbeat that prints `>>> still running (Ns)` to
+        stderr at a fixed interval.
+
+    .DESCRIPTION
+        Spawns a PowerShell runspace (NOT a child process — runspaces share
+        stdio with the parent so the SSE stream picks up the lines). Returns
+        a token (PSCustomObject) you pass to Stop-AscendoHeartbeat. Safe to
+        call from any phase script before a long-running invocation. Pair
+        with Stop-AscendoHeartbeat in a try/finally so the runspace cannot
+        leak on exception.
+
+    .PARAMETER IntervalSeconds
+        Seconds between heartbeats. Default 10. Sleep is chunked internally
+        (200ms ticks) so Stop-AscendoHeartbeat returns promptly.
+
+    .PARAMETER Label
+        Optional context label, e.g. "winget upgrade (3 package(s))".
+        Appended to the heartbeat line so operators know what's running.
+
+    .EXAMPLE
+        $hb = Start-AscendoHeartbeat -IntervalSeconds 10 -Label "winget upgrade"
+        try {
+            foreach ($pkg in $candidates) { winget upgrade --id $pkg.Id }
+        } finally {
+            Stop-AscendoHeartbeat $hb
+        }
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [int]    $IntervalSeconds = 10,
+        [string] $Label = ''
+    )
+
+    if ($IntervalSeconds -lt 1) { $IntervalSeconds = 1 }
+
+    $stopFlag = [ref]$false
+    $start    = [datetime]::UtcNow
+
+    $script = {
+        param($intervalSeconds, $label, $start, $stopFlag)
+        while (-not $stopFlag.Value) {
+            $elapsed = [int]([datetime]::UtcNow - $start).TotalSeconds
+            if ($label) {
+                $msg = ">>> still running ${elapsed}s ($label)"
+            } else {
+                $msg = ">>> still running ${elapsed}s"
+            }
+            try { [Console]::Error.WriteLine($msg) } catch { }
+            # Sleep in 200ms chunks so Stop-AscendoHeartbeat returns
+            # promptly when StopFlag is flipped.
+            $remainingMs = $intervalSeconds * 1000
+            while ($remainingMs -gt 0 -and -not $stopFlag.Value) {
+                Start-Sleep -Milliseconds 200
+                $remainingMs -= 200
+            }
+        }
+    }
+
+    $rs = $null
+    $ps = $null
+    $handle = $null
+    try {
+        $rs = [runspacefactory]::CreateRunspace()
+        $rs.Open()
+        $ps = [powershell]::Create().
+            AddScript($script).
+            AddArgument($IntervalSeconds).
+            AddArgument($Label).
+            AddArgument($start).
+            AddArgument($stopFlag)
+        $ps.Runspace = $rs
+        $handle = $ps.BeginInvoke()
+    } catch {
+        # If we can't spin up the runspace, return a benign null-shaped
+        # token. Stop-AscendoHeartbeat is null-safe so callers don't need
+        # to special-case the failure.
+        try { if ($ps -ne $null) { $ps.Dispose() } } catch { }
+        try { if ($rs -ne $null) { $rs.Dispose() } } catch { }
+        return $null
+    }
+
+    return [pscustomobject]@{
+        Runspace   = $rs
+        PowerShell = $ps
+        Handle     = $handle
+        StopFlag   = $stopFlag
+        Label      = $Label
+        StartTime  = $start
+    }
+}
+
+function Stop-AscendoHeartbeat {
+    <#
+    .SYNOPSIS
+        Stop a heartbeat started by Start-AscendoHeartbeat. Safe to call
+        with $null (no-op) — callers can stop unconditionally inside
+        finally blocks without null-guarding.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$false, Position=0)]
+        $Heartbeat
+    )
+
+    if ($null -eq $Heartbeat) { return }
+
+    try { $Heartbeat.StopFlag.Value = $true } catch { }
+
+    # Give the runspace up to ~1s to drain (its loop wakes every 200ms).
+    try {
+        if ($Heartbeat.PowerShell -and $Heartbeat.Handle) {
+            [void]$Heartbeat.PowerShell.EndInvoke($Heartbeat.Handle)
+        }
+    } catch { }
+
+    try { if ($Heartbeat.PowerShell) { $Heartbeat.PowerShell.Dispose() } } catch { }
+    try { if ($Heartbeat.Runspace)   { $Heartbeat.Runspace.Dispose()   } } catch { }
+}
+
+# -----------------------------------------------------------------------------
 # Exports
 # -----------------------------------------------------------------------------
 
@@ -691,5 +982,7 @@ Export-ModuleMember -Function @(
     'Save-Sidecar',
     'Get-AscendoHostInfo',
     'Write-AscendoStreamLine',
-    'Write-AscendoStreamFile'
+    'Write-AscendoStreamFile',
+    'Start-AscendoHeartbeat',
+    'Stop-AscendoHeartbeat'
 )

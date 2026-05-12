@@ -41,10 +41,12 @@ from ascendo.orchestrator.sidecar_io import (
 )
 from ascendo.utils.proc import no_window_kwargs
 
+from ._base import _BaseWindowsManager
+
 _log = logging.getLogger(__name__)
 
 
-class WindowsUpdateManager(IPackageManager):
+class WindowsUpdateManager(_BaseWindowsManager, IPackageManager):
     """Windows Update per-source manager (PSWindowsUpdate).
 
     Args:

@@ -292,24 +292,33 @@ def test_adapter_package_managers_includes_windows_update(
 ) -> None:
     """WindowsAdapter.package_managers() must surface every manager.
 
-    Post-M3.15 the adapter declares 4 managers:
-    WingetManager, MSStoreManager, ArpManager, WindowsUpdateManager.
-    Order must remain deterministic: winget first, windows_update last
-    (tests downstream depend on the bookend pair).
+    Post-Wave-A5 the adapter declares 6 managers:
+    WingetManager, MSStoreManager, NpmManager, PipManager, ArpManager,
+    WindowsUpdateManager. Order must remain deterministic: winget first,
+    windows_update last (tests downstream depend on the bookend pair).
+
+    Post-WebManager-v1 a seventh manager (WebManager) was added between
+    PipManager and ArpManager. Bookends + ordering invariants remain.
     """
     from ascendo_windows.managers.msstore import MSStoreManager
     from ascendo_windows.managers.arp import ArpManager
+    from ascendo_windows.managers.npm import NpmManager
+    from ascendo_windows.managers.pip import PipManager
+    from ascendo_windows.managers.web import WebManager
 
     adapter = WindowsAdapter()
     managers = adapter.package_managers(windows_host)
 
-    assert len(managers) == 4
+    assert len(managers) == 7
     assert isinstance(managers[0], WingetManager)
     assert isinstance(managers[-1], WindowsUpdateManager)
     types_present = {type(m).__name__ for m in managers}
     assert {
         "WingetManager",
         "MSStoreManager",
+        "NpmManager",
+        "PipManager",
+        "WebManager",
         "ArpManager",
         "WindowsUpdateManager",
     } <= types_present

@@ -176,7 +176,13 @@ try {
             SourceFeed = 'msstore'
             Status     = 'up_to_date'
         }
-        if ($null -ne $current) { $itemArgs['CurrentVersion'] = $current }
+        if ($null -ne $current) {
+            $itemArgs['CurrentVersion'] = $current
+            # Bidirectional from=/to= for the SPA overlay: up_to_date items
+            # must echo installed back into TargetVersion so the SPA's
+            # candidate column matches installed instead of rendering blank.
+            $itemArgs['TargetVersion'] = $current
+        }
         [void](Add-SidecarItem @itemArgs)
     }
 

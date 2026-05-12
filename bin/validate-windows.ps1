@@ -12,7 +12,14 @@
 #   3. `python -m ascendo doctor` exits 0 with the Windows adapter healthy.
 #   4. `python -m ascendo run --category winget --phase check --runs-dir TEMP`
 #      runs end-to-end, produces a sidecar, exits 0/1 (not 2/3).
-#   5. Dashboard launches in background, /version + /health respond, then
+#   5. All 5 phases × winget (apply runs --dry-run; no real mutations).
+#   6. npm manager 5-phase smokes — skip-on-missing.        (Sesja 58)
+#   7. pip manager 5-phase smokes — skip-on-missing.        (Sesja 58)
+#   8. web manager check / plan / apply --dry-run.          (Sesja 58)
+#   9. `ascendo web {start,status,restart,stop}` lifecycle. (Sesja 56)
+#  10. `ascendo build-inventory` enumerates packages.       (Sesja 57)
+#  11. bin/ convenience wrappers exist + forward correctly. (Sesja 58)
+#  12. Dashboard launches in background, /version + /health respond, then
 #      stopped cleanly.
 #
 # Run as:
@@ -184,11 +191,251 @@ try {
         }
     }
 
-    # ── 5. dashboard smoke ─────────────────────────────────────────────────
+    # ── 6. npm manager (Sesja 58) ──────────────────────────────────────────
+    # Skip-on-missing: if npm isn't on PATH, doctor reports degraded but
+    # the script must NOT fail — the operator may not have Node.js
+    # installed and that's a legitimate state.
+    Write-Step "6. npm manager (Sesja 58)"
+
+    $npmDoctor = & python -m ascendo doctor 2>&1
+    $npmLine = ($npmDoctor | Select-String -Pattern '^\s*npm\s+' | Select-Object -First 1)
+    if ($npmLine -and $npmLine.Line -match '^\s*npm\s+ok') {
+        Test-Result "6.1 doctor: npm component" $true $npmLine.Line.Trim()
+    } elseif ($npmLine) {
+        Write-Host "  [SKIP] 6.1 npm $($npmLine.Line.Trim())" -ForegroundColor DarkGray
+    } else {
+        Write-Host "  [SKIP] 6.1 npm component not reported by doctor (adapter may not declare it)" -ForegroundColor DarkGray
+    }
+
+    $npmOnPath = $null -ne (Get-Command npm -ErrorAction SilentlyContinue)
+    if ($npmOnPath) {
+        # 6.2 npm check
+        $rid = [guid]::NewGuid().ToString()
+        $out = Join-Path $env:TEMP "ascendo-validate-npm-check-$rid"
+        New-Item -ItemType Directory -Force -Path $out | Out-Null
+        & python -B -m ascendo run --category npm --phase check --runs-dir $out 2>&1 | Out-Null
+        $npmCheckExit = $LASTEXITCODE
+        $npmCheckSidecar = Get-ChildItem -Path $out -Recurse -Filter 'check__npm.json' -ErrorAction SilentlyContinue | Select-Object -First 1
+        Test-Result "6.2 npm check produced sidecar" ($npmCheckExit -in @(0,1) -and $null -ne $npmCheckSidecar) "exit=$npmCheckExit  sidecar=$($null -ne $npmCheckSidecar)"
+
+        # 6.3 npm plan
+        $rid = [guid]::NewGuid().ToString()
+        $out = Join-Path $env:TEMP "ascendo-validate-npm-plan-$rid"
+        New-Item -ItemType Directory -Force -Path $out | Out-Null
+        & python -B -m ascendo run --category npm --phase plan --runs-dir $out 2>&1 | Out-Null
+        Test-Result "6.3 npm plan exit 0/1" ($LASTEXITCODE -in @(0,1)) "exit=$LASTEXITCODE"
+    } else {
+        Write-Host "  [SKIP] 6.2 / 6.3 — npm not on PATH (install Node.js if you want npm management)" -ForegroundColor DarkGray
+    }
+
+    # ── 7. pip manager (Sesja 58) ──────────────────────────────────────────
+    Write-Step "7. pip manager (Sesja 58)"
+
+    $pipDoctor = & python -m ascendo doctor 2>&1
+    $pipLine = ($pipDoctor | Select-String -Pattern '^\s*pip\s+' | Select-Object -First 1)
+    if ($pipLine -and $pipLine.Line -match '^\s*pip\s+ok') {
+        Test-Result "7.1 doctor: pip component" $true $pipLine.Line.Trim()
+    } elseif ($pipLine) {
+        Write-Host "  [SKIP] 7.1 pip $($pipLine.Line.Trim())" -ForegroundColor DarkGray
+    } else {
+        Write-Host "  [SKIP] 7.1 pip component not reported by doctor (adapter may not declare it)" -ForegroundColor DarkGray
+    }
+
+    # pip is virtually always present alongside Python, but probe defensively anyway.
+    $pipOnPath = ($null -ne (Get-Command pip -ErrorAction SilentlyContinue)) -or ($null -ne (Get-Command pip3 -ErrorAction SilentlyContinue))
+    if ($pipOnPath) {
+        # 7.2 pip check
+        $rid = [guid]::NewGuid().ToString()
+        $out = Join-Path $env:TEMP "ascendo-validate-pip-check-$rid"
+        New-Item -ItemType Directory -Force -Path $out | Out-Null
+        & python -B -m ascendo run --category pip --phase check --runs-dir $out 2>&1 | Out-Null
+        $pipCheckExit = $LASTEXITCODE
+        $pipCheckSidecar = Get-ChildItem -Path $out -Recurse -Filter 'check__pip.json' -ErrorAction SilentlyContinue | Select-Object -First 1
+        Test-Result "7.2 pip check produced sidecar" ($pipCheckExit -in @(0,1) -and $null -ne $pipCheckSidecar) "exit=$pipCheckExit  sidecar=$($null -ne $pipCheckSidecar)"
+
+        # 7.3 pip plan
+        $rid = [guid]::NewGuid().ToString()
+        $out = Join-Path $env:TEMP "ascendo-validate-pip-plan-$rid"
+        New-Item -ItemType Directory -Force -Path $out | Out-Null
+        & python -B -m ascendo run --category pip --phase plan --runs-dir $out 2>&1 | Out-Null
+        Test-Result "7.3 pip plan exit 0/1" ($LASTEXITCODE -in @(0,1)) "exit=$LASTEXITCODE"
+    } else {
+        Write-Host "  [SKIP] 7.2 / 7.3 — pip not on PATH" -ForegroundColor DarkGray
+    }
+
+    # ── 8. web manager (Sesja 58) ──────────────────────────────────────────
+    # Tier-A check is real (probes vendor endpoints for installed apps);
+    # apply is Tier-B (trigger-only by design for Sparkle / GH / built-in
+    # updaters). Success criterion: exit 0/1 + sidecar emitted.
+    Write-Step "8. web manager (Sesja 58)"
+
+    $webDoctor = & python -m ascendo doctor 2>&1
+    $webLine = ($webDoctor | Select-String -Pattern '^\s*web(_registry)?\s+' | Select-Object -First 1)
+    if ($webLine -and $webLine.Line -match '\bok\b') {
+        Test-Result "8.1 doctor: web/web_registry component" $true $webLine.Line.Trim()
+    } elseif ($webLine) {
+        Write-Host "  [SKIP] 8.1 web $($webLine.Line.Trim())" -ForegroundColor DarkGray
+    } else {
+        Write-Host "  [SKIP] 8.1 web component not reported by doctor (adapter may not declare it)" -ForegroundColor DarkGray
+    }
+
+    # 8.2 web check
+    $rid = [guid]::NewGuid().ToString()
+    $out = Join-Path $env:TEMP "ascendo-validate-web-check-$rid"
+    New-Item -ItemType Directory -Force -Path $out | Out-Null
+    & python -B -m ascendo run --category web --phase check --runs-dir $out 2>&1 | Out-Null
+    $webCheckExit = $LASTEXITCODE
+    $webCheckSidecar = Get-ChildItem -Path $out -Recurse -Filter 'check__web.json' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($webCheckExit -in @(0,1,2) -and ($null -ne $webCheckSidecar -or $webCheckExit -eq 2)) {
+        # Exit 2 = bad usage (e.g. web category not supported by this adapter) — skip cleanly
+        if ($webCheckExit -eq 2 -and $null -eq $webCheckSidecar) {
+            Write-Host "  [SKIP] 8.2 web check — category not supported by this adapter (exit=2)" -ForegroundColor DarkGray
+            Write-Host "  [SKIP] 8.3 / 8.4 — skipping further web phases" -ForegroundColor DarkGray
+        } else {
+            Test-Result "8.2 web check produced sidecar" ($null -ne $webCheckSidecar) "exit=$webCheckExit  sidecar=$($null -ne $webCheckSidecar)"
+
+            # 8.3 web plan
+            $rid = [guid]::NewGuid().ToString()
+            $out = Join-Path $env:TEMP "ascendo-validate-web-plan-$rid"
+            New-Item -ItemType Directory -Force -Path $out | Out-Null
+            & python -B -m ascendo run --category web --phase plan --runs-dir $out 2>&1 | Out-Null
+            Test-Result "8.3 web plan exit 0/1" ($LASTEXITCODE -in @(0,1)) "exit=$LASTEXITCODE"
+
+            # 8.4 web apply --dry-run (Tier-B is trigger-only by design)
+            $rid = [guid]::NewGuid().ToString()
+            $out = Join-Path $env:TEMP "ascendo-validate-web-apply-$rid"
+            New-Item -ItemType Directory -Force -Path $out | Out-Null
+            & python -B -m ascendo run --category web --phase apply --dry-run --runs-dir $out 2>&1 | Out-Null
+            $webApplyExit = $LASTEXITCODE
+            $webApplySidecar = Get-ChildItem -Path $out -Recurse -Filter 'apply__web.json' -ErrorAction SilentlyContinue | Select-Object -First 1
+            Test-Result "8.4 web apply --dry-run produced sidecar" ($webApplyExit -in @(0,1) -and $null -ne $webApplySidecar) "exit=$webApplyExit  sidecar=$($null -ne $webApplySidecar)"
+        }
+    } else {
+        Test-Result "8.2 web check produced sidecar" $false "exit=$webCheckExit  sidecar=$($null -ne $webCheckSidecar)"
+    }
+
+    # ── 9. ascendo web lifecycle (Sesja 56) ────────────────────────────────
+    # CLI-driven lifecycle (pidfile-tracked) — different surface from the
+    # dashboard tested in stage 12. Use a different port to avoid collisions.
+    Write-Step "9. ascendo web lifecycle (Sesja 56)"
+
+    $LifecyclePort = $DashboardPort + 100
+
+    # First, make sure no prior leftover is running on the lifecycle port.
+    & python -m ascendo web stop --force 2>&1 | Out-Null
+    Start-Sleep -Milliseconds 500
+
+    # 9.1 web start
+    & python -m ascendo web start --port $LifecyclePort --no-open 2>&1 | Out-Null
+    $startExit = $LASTEXITCODE
+    Start-Sleep -Seconds 2
+
+    # 9.2 web status — should report running
+    $statusOk = $false
+    $statusObj = $null
+    try {
+        $statusJson = & python -m ascendo web status --json 2>&1 | Out-String
+        $statusObj = $statusJson | ConvertFrom-Json
+        $statusOk = ($statusObj.pidfile_present -and $statusObj.pid_alive -and $statusObj.port_listening)
+    } catch {
+        $statusOk = $false
+    }
+    if ($statusOk) {
+        Test-Result "9.1+9.2 web start + status (running)" $true "pid=$($statusObj.pid) port=$($statusObj.port)"
+    } else {
+        Test-Result "9.1+9.2 web start + status (running)" $false "start_exit=$startExit  status=$(if ($statusObj) { $statusObj | ConvertTo-Json -Compress } else { 'no-output' })"
+    }
+
+    # 9.3 web restart
+    if ($statusOk) {
+        $oldPid = $statusObj.pid
+        & python -m ascendo web restart --port $LifecyclePort --no-open 2>&1 | Out-Null
+        Start-Sleep -Seconds 2
+        $statusObj2 = $null
+        try {
+            $statusObj2 = (& python -m ascendo web status --json 2>&1 | Out-String) | ConvertFrom-Json
+        } catch {}
+        $restartOk = ($null -ne $statusObj2) -and $statusObj2.port_listening -and ($statusObj2.pid -ne $oldPid)
+        if ($restartOk) {
+            Test-Result "9.3 web restart (new pid)" $true "old_pid=$oldPid  new_pid=$($statusObj2.pid)"
+        } else {
+            # restart that reuses pid is unusual but not a hard failure; warn only.
+            Write-Host "  [WARN] 9.3 web restart — pid did not change (old=$oldPid  new=$(if ($statusObj2) { $statusObj2.pid } else { 'n/a' }))" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "  [SKIP] 9.3 web restart — start did not succeed" -ForegroundColor DarkGray
+    }
+
+    # 9.4 web stop
+    & python -m ascendo web stop --force 2>&1 | Out-Null
+    Start-Sleep -Seconds 1
+    $stopOk = $false
+    try {
+        $statusObj3 = (& python -m ascendo web status --json 2>&1 | Out-String) | ConvertFrom-Json
+        $stopOk = (-not $statusObj3.pid_alive) -and (-not $statusObj3.port_listening)
+    } catch {
+        # status command may exit non-zero when no pidfile present — treat as stopped
+        $stopOk = $true
+    }
+    Test-Result "9.4 web stop" $stopOk "pid_alive/port_listening cleared"
+
+    # 9.5 web start idempotency — running 'start' twice on the same port
+    # should not error out (the second call should detect the existing
+    # process and report it cleanly).
+    & python -m ascendo web start --port $LifecyclePort --no-open 2>&1 | Out-Null
+    $firstStartExit = $LASTEXITCODE
+    Start-Sleep -Seconds 2
+    & python -m ascendo web start --port $LifecyclePort --no-open 2>&1 | Out-Null
+    $secondStartExit = $LASTEXITCODE
+    Test-Result "9.5 web start idempotency" (($firstStartExit -eq 0) -and ($secondStartExit -eq 0)) "first_exit=$firstStartExit  second_exit=$secondStartExit"
+
+    # Cleanup so we don't leak a background dashboard
+    & python -m ascendo web stop --force 2>&1 | Out-Null
+
+    # ── 10. ascendo build-inventory (Sesja 57) ─────────────────────────────
+    Write-Step "10. ascendo build-inventory (Sesja 57)"
+
+    $invOut = & python -m ascendo build-inventory --no-db 2>&1
+    $invExit = $LASTEXITCODE
+    $invText = ($invOut -join "`n")
+    $invOk = ($invExit -eq 0) -and ($invText -match 'scanned \d+ package')
+    if ($invOk) {
+        $matchInfo = ([regex]::Match($invText, 'scanned \d+ package\S*'))
+        Test-Result "10.1 build-inventory enumerates packages" $true $matchInfo.Value
+    } else {
+        Test-Result "10.1 build-inventory enumerates packages" $false "exit=$invExit  output_head=$(if ($invText.Length -gt 200) { $invText.Substring(0,200) + '...' } else { $invText })"
+    }
+
+    # ── 11. bin/ convenience wrappers (Sesja 58) ───────────────────────────
+    Write-Step "11. bin/ convenience wrappers (Sesja 58)"
+
+    $wrappers = @(
+        'ascendo-web-start.ps1',
+        'ascendo-web-stop.ps1',
+        'ascendo-web-restart.ps1',
+        'ascendo-web-status.ps1',
+        'build-inventory.ps1'
+    )
+    foreach ($wrapper in $wrappers) {
+        $wrapperPath = Join-Path $RepoRoot "bin\$wrapper"
+        if (-not (Test-Path $wrapperPath)) {
+            Test-Result "11.x $wrapper exists" $false "missing: $wrapperPath"
+            continue
+        }
+        $wrapperContent = Get-Content $wrapperPath -Raw -ErrorAction SilentlyContinue
+        $forwards = ($wrapperContent -match 'python\s+-m\s+ascendo') -or ($wrapperContent -match '\$python\s+-m\s+ascendo') -or ($wrapperContent -match '&\s+\$python\s+.*ascendo')
+        if ($forwards) {
+            Test-Result "11.x $wrapper forwards to python -m ascendo" $true ""
+        } else {
+            Test-Result "11.x $wrapper forwards to python -m ascendo" $false "wrapper exists but doesn't reference 'python -m ascendo'"
+        }
+    }
+
+    # ── 12. dashboard smoke ────────────────────────────────────────────────
     if ($SkipDashboard) {
         Write-Host "  [SKIP] dashboard checks (--SkipDashboard)" -ForegroundColor DarkGray
     } else {
-        Write-Step "ascendo dashboard smoke (start in background, hit /version + /health, stop)"
+        Write-Step "12. ascendo dashboard smoke (start in background, hit /version + /health, stop)"
         $dashJob = Start-Job -ScriptBlock {
             param($repoRoot, $port)
             Set-Location $repoRoot

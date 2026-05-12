@@ -1,6 +1,24 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-12 (sesja 57) — **Version polarity bug closed
+> Last updated: 2026-05-12 (sesja 58) — **Windows brought to feature
+> parity with macOS + Ubuntu.** Five-wave push lands: 5 `bin/`
+> web-service wrappers + bidirectional `from=/to=` fix across
+> winget/msstore/arp/windows_update/inventory check.ps1 +
+> `health_check()` expanded 5 → 9 components (npm, pip, web_registry,
+> inventory_db added); `NpmManager` + `PipManager` Python classes with
+> full 5-phase PS contracts + 15-npm + 11-pip config manifests;
+> watchdog heartbeat helpers (`Start-AscendoHeartbeat` /
+> `Stop-AscendoHeartbeat`) wired into 4 apply.ps1 via try/finally;
+> `WebManager` scaffold with Pydantic `WebRegistryV2` schema + 3
+> handlers (github_release, release_feed, builtin) + 10 curated apps
+> (4 Tier-A: brave/obsidian/notion/obs-studio; 6 Tier-B builtin); new
+> `_BaseWindowsManager._salvage_sidecar` mixin (bufdir-based JSONL
+> incremental writes + `ASCENDO-SALVAGED` recovery diagnostic). Tests
+> 99 baseline → **229 passing**, zero regressions. WindowsAdapter now
+> ships 7 IPackageManager implementations (was 4). See HANDOFF.md
+> Sesja 58.
+>
+> Previous milestone (sesja 57) — **Version polarity bug closed
 > across all 5 phases + new logos + `ascendo build-inventory` CLI.**
 > Operator's second audit revealed the `from=`/`to=` polarity issue
 > from Sesja 56 (drivers) was structural: every "present" item in
@@ -335,6 +353,42 @@ What's left before declaring v0.3.0:
 
 ---
 
+## What landed in 2026-05-12 (Sesja 58)
+
+Windows-parity push across five waves on the `claude/nifty-jones-1773b5`
+worktree:
+
+- **Wave A — quick wins.** 5 `bin/` web-service wrappers
+  (`ascendo-web-{start,stop,restart,status}.ps1` + `build-inventory.ps1`,
+  ~36 LOC each) + `from=/to=` bidirectional inventory fix in 5 PS files
+  (winget/msstore/arp/windows_update check.ps1 + inventory/list.ps1) +
+  `health_check()` expanded 5 → 9 components (added npm, pip,
+  inventory_db, web_registry).
+- **Wave B — npm/pip + heartbeat.** `NpmManager` + `PipManager` Python
+  classes + 5-phase PS contracts × 2 + lib/AscendoNpm.psm1 +
+  lib/AscendoPip.psm1 + config manifests (npm: 15 packages, pip: 11
+  packages). `Start-AscendoHeartbeat` / `Stop-AscendoHeartbeat` helpers
+  emit `>>> still running (Ns)` every 10 s of silent work; wired into
+  4 existing apply.ps1 with try/finally teardown.
+- **Wave C — WebManager + salvage.** WebManager Python class +
+  Pydantic `WebRegistryV2` schema + 3 handlers (github_release,
+  release_feed, builtin) + curated 10-app `config/web_apps.toml`
+  (4 Tier-A real-candidate probes: brave/obsidian/notion/obs-studio;
+  6 Tier-B builtin: discord/slack/zoom/cursor/github-desktop/
+  brave-nightly). New `_BaseWindowsManager._salvage_sidecar` mixin:
+  bufdir-based incremental JSONL writes, salvage reconstructs the
+  sidecar on crash with explicit `ASCENDO-SALVAGED` diagnostic.
+- **Wave D — docs + validate.** `bin/validate-windows.ps1` extended
+  with stages for npm / pip / web check, ascendo web lifecycle,
+  build-inventory, sidecar salvage. WINDOWS_QUICKSTART + WINDOWS_TESTING
+  + PLAN updates (this commit).
+
+Test count 99 baseline → **229 passing** (+130; zero regressions).
+WindowsAdapter `package_managers()` now returns 7 entries
+(winget / msstore / npm / pip / web / arp / windows_update) — was 4.
+
+---
+
 ## What landed in 2026-05-02 (post-Sesja 12)
 
 Six commits on `claude/windows-end-to-end-2026-05-02`:
@@ -535,6 +589,33 @@ Mirror `adapters/windows/` as `adapters/macos/`. Same patterns, OS-specific tool
 5. **Reboot detection in CLI** ✅ (2026-05-02) — done in `f97afe8`. `run`
    now scans messages for "Reboot required" and exits 75 when SUCCESS;
    stderr line "system reboot required to complete updates".
+6. **Windows health check expansion (5 → 9 components)** ✅ (2026-05-12,
+   Sesja 58) — added `npm`, `pip`, `web_registry`, `inventory_db` to
+   the rollup. Closes the cross-platform parity gap (macOS now has 12,
+   Ubuntu 13, Windows 9).
+7. **Windows bidirectional `from=/to=` inventory fix** ✅ (2026-05-12,
+   Sesja 58) — same structural fix as Linux Sesja 57 applied to 5 PS
+   files (winget/msstore/arp/windows_update check.ps1 +
+   inventory/list.ps1). SPA inventory rows now paint `installed=` +
+   `candidate=` correctly across every Windows category.
+8. **Watchdog heartbeat on Windows** ✅ (2026-05-12, Sesja 58) —
+   `Start-AscendoHeartbeat` / `Stop-AscendoHeartbeat` helpers in
+   `AscendoJson.psm1`; wired into 4 apply.ps1 via try/finally. Long
+   winget upgrades no longer look hung in the SPA.
+9. **Windows NpmManager + PipManager** ✅ (2026-05-12, Sesja 58) —
+   Windows operators can finally update Node + Python global CLIs
+   through Ascendo. 5-phase PS contracts × 2 + lib helpers + config
+   manifests (15 npm + 11 pip).
+10. **Windows WebManager scaffold** ✅ (2026-05-12, Sesja 58) — Pydantic
+    `WebRegistryV2` schema + 3 handlers (github_release, release_feed,
+    builtin) + 10-app curated TOML registry. 4 Tier-A real-candidate
+    probes live; full Tier-A apply with Authenticode + UAC handoff
+    parks for v0.0.9.
+11. **Sidecar salvage on Windows** ✅ (2026-05-12, Sesja 58) — new
+    `_BaseWindowsManager._salvage_sidecar` mixin; bufdir-based JSONL
+    writes survive Ctrl-C / UAC-denied / kernel kill; recovery
+    diagnostic `ASCENDO-SALVAGED` lands in messages[0] for SPA
+    visibility. Mirror of the Linux Sesja 56 mechanism.
 
 ---
 

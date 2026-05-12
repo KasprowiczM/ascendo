@@ -224,6 +224,12 @@ try {
 
     Write-AscendoStreamLine -Text ">>> Install-WindowsUpdateBatch starting (this may take several minutes)"
 
+    # Heartbeat matters most here — some KB installs run 10+ minutes
+    # with zero output while servicing stack processes the payload.
+    # Mirror of Ubuntu Sesja 55 heartbeat. See Start-AscendoHeartbeat
+    # in AscendoJson.psm1.
+    $hb = Start-AscendoHeartbeat -IntervalSeconds 10 -Label "Windows Update install"
+
     $results = @()
     try {
         if ($null -ne $filterArray) {
@@ -250,6 +256,8 @@ try {
             -Category 'windows_update' -SourceType 'windows_update' -Status 'failed' | Out-Null
         [void](Save-Sidecar -Sidecar $sidecar -OutputDir $OutputDir)
         exit 1
+    } finally {
+        Stop-AscendoHeartbeat $hb
     }
     $sw.Stop()
 

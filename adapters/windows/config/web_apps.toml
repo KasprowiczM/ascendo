@@ -1,0 +1,166 @@
+# adapters/windows/config/web_apps.toml
+# Schema: ascendo-web-apps-windows/v1
+#
+# Override registry for the Windows WebManager — third-party apps installed
+# outside winget / msstore (Discord, OBS, Notion, Brave, Obsidian, etc.).
+# User override at %LOCALAPPDATA%/Ascendo/web_apps.toml replaces shipped
+# entries with matching `slug`; new slugs append.
+#
+# Detection: the check.ps1 script scans HKLM:\SOFTWARE\Microsoft\Windows\
+# CurrentVersion\Uninstall\* and HKCU:\...\Uninstall\* for the per-app
+# `windows_uninstall_key` and reads its `DisplayVersion` value. Apps
+# without a matching registry key are considered "not installed on this
+# host" and produce no sidecar item.
+#
+# Tier-A: real candidate-version probe (handler=github_release|release_feed
+# with a verified URL). check.ps1 fetches the feed, compares to installed,
+# emits `planned` or `up_to_date`. Apply remains Tier-B trigger-only in v1
+# — we don't yet download/run .exe installers (needs Authenticode + UAC
+# + per-installer flag handling); apply emits `triggered` + opens the
+# vendor's release page.
+#
+# Tier-B: handler=builtin. No version probe (candidate=null); apply opens
+# the vendor URL so the operator can run the vendor's own update flow.
+# Used for apps that auto-update internally (Discord, Slack, Zoom) and
+# for apps whose update endpoints we haven't yet wired.
+#
+# URL verification (2026-05-12 from this worktree):
+#   brave     api.github.com/repos/brave/brave-browser/releases/latest -> 200 (Tier-A)
+#   obsidian  api.github.com/repos/obsidianmd/obsidian-releases/releases/latest -> 200 (Tier-A)
+#   notion    desktop-release.notion-static.com/latest.yml -> 200 yaml (Tier-A)
+#   obs-studio api.github.com/repos/obsproject/obs-studio/releases/latest -> 200 (Tier-A)
+#   cursor    download.todesktop.com/.../latest-win32.yml -> 404 (DEMOTED -> builtin)
+#   github-desktop central.github.com/deployments/desktop/.../win32-x64 -> 404 (DEMOTED -> builtin)
+
+schema = "ascendo-web-apps-windows/v1"
+
+# ═════════════════════════════ Browsers ═════════════════════════════
+
+[[app]]
+slug = "brave"
+display_name = "Brave Browser"
+handler = "release_feed"
+windows_uninstall_key = "BraveSoftware Brave-Browser"
+notes = """\
+Same pattern as macOS Brave: the GitHub release `name` field carries both \
+the Brave internal version and the Chromium milestone (e.g. \
+'Release v1.90.121 (Chromium 148.0.7778.96)'). The regex extracts both \
+and rewrites into chromium.brave_internal shape (148.1.90.121) matching \
+Brave's Windows DisplayVersion in HKLM. If the release-name format \
+changes the regex won't match and the handler falls back to the raw \
+`name` value (degraded but visible) per the macOS M5.7.4 contract. \
+Apply remains trigger-only — vendor's own keystone-equivalent updater \
+on Windows handles the actual install."""
+
+[app.release_feed]
+url = "https://api.github.com/repos/brave/brave-browser/releases/latest"
+version_path = "name"
+version_regex = ".*v([0-9.]+) \\(Chromium ([0-9]+)\\.[^)]*\\).*"
+version_replace = "\\2.1.\\1"
+http_timeout_s = 8
+
+[[app]]
+slug = "brave-nightly"
+display_name = "Brave Nightly"
+handler = "builtin"
+windows_uninstall_key = "BraveSoftware Brave-Browser-Nightly"
+notes = "Dev channel; vendor pushes its own updates. Builtin opens the download page so the operator can run the installer manually."
+
+[app.builtin]
+url = "https://brave.com/download-nightly/"
+
+# ═════════════════════════════ Notes / KB ═════════════════════════════
+
+[[app]]
+slug = "obsidian"
+display_name = "Obsidian"
+handler = "github_release"
+windows_uninstall_key = "Obsidian"
+notes = "GitHub releases at obsidianmd/obsidian-releases. Asset_pattern matches the canonical Obsidian-X.Y.Z.exe (NSIS-built installer). tag_name on the release is the bare version (e.g. `v1.12.7`); github_release.ps1 strips the leading `v` before comparing to DisplayVersion."
+
+[app.github_release]
+repo = "obsidianmd/obsidian-releases"
+asset_pattern = "^Obsidian-[0-9.]+\\.exe$"
+http_timeout_s = 8
+
+[[app]]
+slug = "notion"
+display_name = "Notion"
+handler = "release_feed"
+windows_uninstall_key = "Notion"
+notes = "Electron-builder publishes a YAML manifest at desktop-release.notion-static.com/latest.yml (the macOS adapter uses latest-mac.yml; this is the Windows shape). Verified live: version: 7.17.0. Uses format=text + version_regex to extract the version key from the raw body without pulling in a YAML parser."
+
+[app.release_feed]
+url = "https://desktop-release.notion-static.com/latest.yml"
+format = "text"
+version_regex = "^version:\\s*([0-9][0-9.]*)"
+version_replace = "\\1"
+http_timeout_s = 8
+
+# ═════════════════════════════ Chat / collab ═════════════════════════════
+
+[[app]]
+slug = "discord"
+display_name = "Discord"
+handler = "builtin"
+windows_uninstall_key = "Discord"
+notes = "Discord uses Squirrel.Windows and auto-updates on launch. Builtin opens the download page only if the operator wants to manually replace the install (rare)."
+
+[app.builtin]
+url = "https://discord.com/download"
+
+[[app]]
+slug = "slack"
+display_name = "Slack"
+handler = "builtin"
+windows_uninstall_key = "Slack"
+notes = "Slack auto-updates on launch (legacy Squirrel.Windows + new MSIX channels). Builtin link is for manual reinstall only."
+
+[app.builtin]
+url = "https://slack.com/downloads/windows"
+
+[[app]]
+slug = "zoom"
+display_name = "Zoom"
+handler = "builtin"
+windows_uninstall_key = "Zoom"
+notes = "Zoom pushes its own update infrastructure (msi + bootstrap exe). Builtin is the manual reinstall URL."
+
+[app.builtin]
+url = "https://zoom.us/download"
+
+# ═════════════════════════════ AV / streaming ═════════════════════════════
+
+[[app]]
+slug = "obs-studio"
+display_name = "OBS Studio"
+handler = "github_release"
+windows_uninstall_key = "OBS Studio"
+notes = "GitHub releases at obsproject/obs-studio. Asset_pattern matches the Windows x64 NSIS installer (e.g. OBS-Studio-32.1.2-Windows-x64-Installer.exe). tag_name is bare version (e.g. `32.1.2`); no leading `v`."
+
+[app.github_release]
+repo = "obsproject/obs-studio"
+asset_pattern = "^OBS-Studio-[0-9.]+-Windows-x64-Installer\\.exe$"
+http_timeout_s = 8
+
+# ═════════════════════════════ Dev tools (builtin fallback) ═════════════════════════════
+
+[[app]]
+slug = "cursor"
+display_name = "Cursor"
+handler = "builtin"
+windows_uninstall_key = "Cursor"
+notes = "URL verification (2026-05-12): https://download.todesktop.com/230313mzl4w4u92/latest-win32.yml returned HTTP 404 (the macOS latest-mac.yml works, but the Windows file path is not the simple win32 substitution we assumed). Demoted to builtin until we identify the Windows ToDesktop YAML path; the macOS adapter has a working entry that returned 200 for its latest-mac.yml, but the Windows path is unconfirmed. Vendor's own download page is the safe fallback."
+
+[app.builtin]
+url = "https://cursor.com/download"
+
+[[app]]
+slug = "github-desktop"
+display_name = "GitHub Desktop"
+handler = "builtin"
+windows_uninstall_key = "GitHubDesktop"
+notes = "URL verification (2026-05-12): https://central.github.com/deployments/desktop/desktop/latest/win32-x64 returned HTTP 404 (vendor seems to have rotated their public update endpoint). Demoted to builtin. Vendor's own download page is the safe fallback."
+
+[app.builtin]
+url = "https://desktop.github.com/"

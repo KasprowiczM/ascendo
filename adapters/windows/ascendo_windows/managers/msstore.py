@@ -46,6 +46,12 @@ class MSStoreManager(WingetManager):
         Phase.CLEANUP: "msstore/cleanup.ps1",
     }
 
+    # msstore phase scripts haven't been updated to accept ``-BufDir``
+    # yet (follow-up after WingetManager's check.ps1 proves the
+    # pattern). Empty set => the Python side still allocates a bufdir
+    # for the salvage path, but the script never writes to it.
+    BUFDIR_SUPPORTED_PHASES: ClassVar[frozenset[Phase]] = frozenset()
+
     @property
     def category(self) -> SourceType:
         return SourceType.MSSTORE

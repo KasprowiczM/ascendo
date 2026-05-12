@@ -8,6 +8,7 @@ import os
 import platform
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -30,8 +31,11 @@ from .inventory import WindowsInventory
 from .managers.arp import ArpManager
 from .managers.elevation import WindowsElevation
 from .managers.msstore import MSStoreManager
+from .managers.npm import NpmManager
+from .managers.pip import PipManager
 from .managers.scheduler import WindowsScheduler
 from .managers.snapshot import WindowsSnapshot
+from .managers.web import WebManager
 from .managers.winget import WingetManager
 from .managers.windows_update import WindowsUpdateManager
 
@@ -93,9 +97,17 @@ class WindowsAdapter(IAdapter):
         )
 
     def package_managers(self, host: HostInfo) -> list[IPackageManager]:
+        config_dir = self.SCRIPTS_DIR.parent / "config"
         return [
             WingetManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
             MSStoreManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
+            NpmManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
+            PipManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
+            WebManager(
+                scripts_dir=self.SCRIPTS_DIR,
+                lib_dir=self.LIB_DIR,
+                config_dir=config_dir,
+            ),
             ArpManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
             WindowsUpdateManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
         ]
@@ -147,6 +159,12 @@ class WindowsAdapter(IAdapter):
         return self._cached_host
 
     def health_check(self) -> dict[str, str]:
+        """Adapter self-test. Returns component->status_string for ``ascendo doctor``.
+
+        Components checked (9 total):
+            winget, pswindowsupdate, npm, pip, pwsh, ascendo_lib,
+            ascendo_scripts, web_registry, inventory_db
+        """
         out: dict[str, str] = {}
 
         winget_path = shutil.which("winget") or shutil.which("winget.exe")
@@ -156,9 +174,13 @@ class WindowsAdapter(IAdapter):
             out["winget"] = self._winget_status(winget_path)
 
         out["pswindowsupdate"] = self._pswindowsupdate_status()
+        out["npm"] = self._npm_status()
+        out["pip"] = self._pip_status()
         out["pwsh"] = self._pwsh_status()
         out["ascendo_lib"] = self._lib_status()
         out["ascendo_scripts"] = self._scripts_status()
+        out["web_registry"] = self._web_registry_status()
+        out["inventory_db"] = self._inventory_db_status()
 
         return out
 
@@ -313,6 +335,128 @@ class WindowsAdapter(IAdapter):
             "unavailable: PSWindowsUpdate module not installed "
             "(install via: Install-Module PSWindowsUpdate -Scope CurrentUser -Force)"
         )
+
+    def _npm_status(self) -> str:
+        """Probe npm via PATH; report version on success.
+
+        npm is required for the npm-globals package manager (parity with
+        macOS's NpmManager). On Windows, npm typically ships as
+        ``npm.cmd`` (wrapping ``node.exe``); ``shutil.which`` finds both.
+        """
+        npm_path = shutil.which("npm") or shutil.which("npm.cmd")
+        if npm_path is None:
+            return "unavailable: not on PATH (install Node.js to enable npm-globals updates)"
+        try:
+            res = subprocess.run(
+                [npm_path, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+                **no_window_kwargs(),
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"error: {exc}"
+        if res.returncode != 0:
+            return f"error: npm --version exited {res.returncode}"
+        version = (res.stdout or res.stderr or "").strip().splitlines()
+        v = version[0] if version else ""
+        return f"ok: npm {v}" if v else "ok"
+
+    def _pip_status(self) -> str:
+        """Probe pip via the Windows py launcher first, then python -m pip, then pip.
+
+        On Windows the canonical way to invoke the user's preferred Python
+        is the ``py`` launcher (ships with python.org installers). If it's
+        on PATH that's the most reliable indicator. Otherwise fall back
+        to ``python -m pip`` (matches the venv shim a manual install uses)
+        and finally bare ``pip``.
+        """
+        attempts: tuple[tuple[list[str], str], ...] = (
+            (["py", "-m", "pip", "--version"], "py launcher"),
+            (["python", "-m", "pip", "--version"], "python -m pip"),
+            (["pip", "--version"], "pip"),
+        )
+        for argv, via in attempts:
+            exe = shutil.which(argv[0])
+            if exe is None:
+                continue
+            try:
+                res = subprocess.run(
+                    [exe, *argv[1:]],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                    **no_window_kwargs(),
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                return f"error: {via} probe failed: {exc}"
+            if res.returncode != 0:
+                continue
+            line = (res.stdout or "").strip().splitlines()
+            v = line[0] if line else ""
+            return f"ok: {v} ({via})" if v else f"ok ({via})"
+        return "unavailable: no python+pip on PATH"
+
+    def _web_registry_status(self) -> str:
+        """Validate the web_apps.toml registry is parseable + count apps.
+
+        Loads via the Pydantic schema (web_registry.WebRegistryV2) so a
+        malformed sub-table or unknown handler surfaces as an explicit
+        ``error: validation failed at <loc>: <msg>`` rather than silently
+        passing the raw-TOML parse check.
+
+        Absent file is still reported as ``unavailable`` (informational —
+        e.g. minimal PyInstaller bundles may strip resources).
+        """
+        registry = self.SCRIPTS_DIR.parent / "config" / "web_apps.toml"
+        if not registry.is_file():
+            return (
+                "unavailable: web_apps.toml not shipped yet "
+                "(WebManager Tier-B baseline)"
+            )
+        try:
+            from .web_registry import WebRegistryV2
+        except ImportError as exc:
+            return f"error: web_registry import failed: {exc}"
+        try:
+            reg = WebRegistryV2.load(registry, None)
+        except Exception as exc:    # noqa: BLE001
+            return f"error: registry validation failed: {exc}"
+        active = reg.active_apps()
+        if not active:
+            return "degraded: registry is empty"
+        return f"ok: {len(active)} apps registered"
+
+    def _inventory_db_status(self) -> str:
+        """Probe the SQLite inventory cache; report row count if present.
+
+        Honours ``$ASCENDO_INVENTORY_DB`` (same env var the dashboard +
+        ``ascendo build-inventory`` CLI use); otherwise falls back to
+        ``~/.ascendo/inventory.db``. Informational only: absence means
+        the user hasn't run a check yet, which is not a failure.
+        """
+        override = os.environ.get("ASCENDO_INVENTORY_DB")
+        db_path = Path(override) if override else Path.home() / ".ascendo" / "inventory.db"
+        if not db_path.is_file():
+            return "unavailable: run `ascendo build-inventory` to populate"
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        except sqlite3.Error as exc:
+            return f"degraded: cannot open {db_path}: {exc}"
+        try:
+            cur = conn.execute("SELECT COUNT(*) FROM inventory_items")
+            row = cur.fetchone()
+            count = int(row[0]) if row else 0
+        except sqlite3.Error as exc:
+            return f"degraded: cannot query inventory_items: {exc}"
+        finally:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+        return f"ok: {count} rows cached"
 
     def _pwsh_status(self) -> str:
         for candidate, label, degraded in (

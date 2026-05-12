@@ -132,6 +132,16 @@ try {
             -Text ("apply enumeration failed: {0}" -f $_.Exception.Message)
     }
 
+    # Watchdog heartbeat — mirror Ubuntu Sesja 55 work. Skipped on
+    # dry-run (no real winget upgrade -> no silent window). See
+    # Start-AscendoHeartbeat in AscendoJson.psm1.
+    $hb = $null
+    try {
+        if (-not $DryRun) {
+            $hb = Start-AscendoHeartbeat -IntervalSeconds 10 `
+                -Label ("msstore upgrade ({0} package(s))" -f $upgradable.Count)
+        }
+
     foreach ($u in $upgradable) {
         if (-not $u.Id) { continue }
         if ($filterIds.Count -gt 0 -and ($filterIds -notcontains $u.Id)) { continue }
@@ -183,6 +193,9 @@ try {
         }
 
         [void](Add-SidecarItem @itemArgs)
+    }
+    } finally {
+        Stop-AscendoHeartbeat $hb
     }
 
     Add-SidecarMessage -Sidecar $sidecar -Level 'info' `

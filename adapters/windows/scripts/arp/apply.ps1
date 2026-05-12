@@ -77,6 +77,17 @@ try {
 
     $filterIds = @($ItemFilter -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 
+    # Watchdog heartbeat — MSI uninstallers can hang for minutes with no
+    # output (defrag, restore-point creation, prerequisite checks). The
+    # heartbeat surfaces `>>> still running Ns` so the SPA Run Center
+    # terminal doesn't look frozen. Skipped on dry-run.
+    $hb = $null
+    try {
+        if (-not $DryRun) {
+            $hb = Start-AscendoHeartbeat -IntervalSeconds 10 `
+                -Label ("arp uninstall ({0} package(s))" -f $filterIds.Count)
+        }
+
     foreach ($id in $filterIds) {
         $entry = Find-ArpEntry -TargetId $id
         if (-not $entry) {
@@ -171,6 +182,9 @@ try {
             } )
         }
         [void](Add-SidecarItem @okArgs)
+    }
+    } finally {
+        Stop-AscendoHeartbeat $hb
     }
 
     [void](Save-Sidecar -Sidecar $sidecar -OutputDir $OutputDir)

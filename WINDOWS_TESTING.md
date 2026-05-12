@@ -26,7 +26,7 @@ the CLI flow + reference docs.
 
 ---
 
-## TL;DR — six commands
+## TL;DR — seven commands
 
 ```powershell
 # 1. Clone (or pull) the repo
@@ -38,15 +38,21 @@ git pull                                                  # subsequent times
 # 2. One-shot install (core + Windows adapter + dashboard deps + auto-validate)
 .\bin\install-dev.ps1
 
-# 3. Read-only validation across all 5 phases + dashboard sync + async + SSE
+# 3. Flush inventory DB cache so the SPA paints instantly on first launch
+python -m ascendo build-inventory
+
+# 4. Read-only validation across all 5 phases + new managers + dashboard
 .\bin\validate-windows.ps1            # should print ALL CHECKS PASSED.
 
-# 4. (Optional) Real apply — actually upgrades packages winget reports
+# 5. (Optional) Real apply — actually upgrades packages winget reports
 .\bin\run-apply.ps1                   # interactive, asks for 'apply' confirmation
 
-# 5. Browser-visible dashboard
+# 6. Browser-visible dashboard
 python -m ascendo dashboard --port 8765
 # open http://127.0.0.1:8765/docs in a browser
+
+# 7. (Optional) Detached dashboard with pidfile + auto-open browser
+.\bin\ascendo-web-start.ps1
 ```
 
 That's it. The rest of this document is reference: prerequisites, what each
@@ -285,6 +291,69 @@ If a reboot is pending, the script prints a clearly-marked banner with
 
 ---
 
+## 5e. Apply updates via npm / pip / web (Sesja 58)
+
+Three new package managers landed in v0.0.8 to bring Windows parity
+with macOS + Ubuntu.
+
+**npm globals.** Run `python -m ascendo run --category npm --phase check`
+to enumerate the ~15 globals declared in
+`adapters/windows/config/npm_global_clis.txt` (claude-code, codex,
+gemini, typescript, eslint, prettier, etc.). Run `--phase plan` to see
+what's outdated, then `--phase apply` to update. No sudo / Admin needed
+— npm globals install to user-owned `%APPDATA%\npm`. Stderr-tail on
+failure surfaces the actual reason (EACCES, registry 404, etc.).
+
+**pip globals.** Same flow for pip globals declared in
+`adapters/windows/config/pip_global_clis.txt` (uv, ruff, mypy, pytest,
+black, etc.). `pip install --user --upgrade <name>` is the apply
+command; lives entirely in user-site. Self-skip rule for the `pip`
+package itself when installed via the system Python.
+
+**Web (Tier-A 4 + Tier-B 6).** WebManager v1 ships 10 curated apps in
+`adapters/windows/config/web_apps.toml`. 4 have real candidate-version
+probes (Brave + Obsidian + Notion + OBS Studio via `github_release` and
+`release_feed` handlers); 6 are Tier-B `builtin` (Discord, Slack, Zoom,
+Cursor, GitHub Desktop, Brave Nightly) where check reports the
+installed version but apply opens the vendor download page. Full
+download+install with Authenticode verification + UAC handoff lands in
+v0.0.9. Run `--phase check` to see which are outdated.
+
+---
+
+## 5f. Build inventory + cache
+
+```powershell
+python -m ascendo build-inventory
+```
+
+Outputs a per-source count + flushes everything to
+`~/.ascendo/inventory.db`. The SPA reads from this DB so subsequent
+Categories tab loads are instant (no live re-scan unless the cache is
+older than 24h or you click Refresh). Idempotent — safe to re-run any
+time. Honours `ASCENDO_INVENTORY_DB` env var override; pass `--no-db`
+for read-only enumeration; pass `--verbose` for per-source trace.
+
+---
+
+## 5g. Convenience wrappers under bin/
+
+Five PowerShell shims wrap the `python -m ascendo …` invocations with
+auto-PYTHONPATH resolution so they work from any cwd:
+
+```powershell
+.\bin\ascendo-web-start.ps1            # detached dashboard + open browser
+.\bin\ascendo-web-stop.ps1             # SIGTERM + cleanup pidfile
+.\bin\ascendo-web-restart.ps1          # stop + start cycle
+.\bin\ascendo-web-status.ps1           # pid + URL + health snapshot
+.\bin\build-inventory.ps1              # alias of `ascendo build-inventory`
+```
+
+Pin to taskbar / Start Menu / use right-click → Run with PowerShell for
+zero-CLI daily ops.
+
+---
+
 ## 6. What's been validated end-to-end
 
 After steps 1-5, you've exercised every single layer of the 6-layer
@@ -297,7 +366,14 @@ architecture on real hardware:
 | 3 — Backend HTTP | `core/ascendo/dashboard/` | ✅ via Swagger UI + validate |
 | 4 — Core domain | `core/ascendo/{models,interfaces,orchestrator,cli}/` | ✅ via CLI |
 | 5 — Adapter Python | `adapters/windows/ascendo_windows/` | ✅ via `doctor` + `run` |
+| 5 — `NpmManager` (Sesja 58) | `adapters/windows/ascendo_windows/managers/npm.py` | ✅ via `npm --phase check/plan/apply` |
+| 5 — `PipManager` (Sesja 58) | `adapters/windows/ascendo_windows/managers/pip.py` | ✅ via `pip --phase check/plan/apply` |
+| 5 — `WebManager` (Sesja 58) | `adapters/windows/ascendo_windows/managers/web.py` | ✅ via `web --phase check` (4 Tier-A probes live) |
+| 5 — Sidecar salvage (Sesja 58) | `_BaseWindowsManager._salvage_sidecar` mixin | ✅ via salvage stage in `validate-windows.ps1` |
 | 6 — Native scripts | `adapters/windows/{lib,scripts/winget/}` | ✅ via `run` (real winget) |
+| 6 — npm/pip PS scripts (Sesja 58) | `adapters/windows/scripts/{npm,pip}/*.ps1` | ✅ via npm + pip phases |
+| 6 — Web handlers (Sesja 58) | `adapters/windows/lib/handlers/{github_release,release_feed,builtin}.psm1` | ✅ via `web --phase check` |
+| bin/ wrappers (Sesja 58) | `bin/ascendo-web-{start,stop,restart,status}.ps1` + `build-inventory.ps1` | ✅ via lifecycle stage in validate |
 
 ---
 

@@ -47,10 +47,12 @@ from ascendo.orchestrator.sidecar_io import (
 )
 from ascendo.utils.proc import no_window_kwargs
 
+from ._base import _BaseWindowsManager
+
 _log = logging.getLogger(__name__)
 
 
-class WingetManager(IPackageManager):
+class WingetManager(_BaseWindowsManager, IPackageManager):
     """winget per-source manager.
 
     Args:
@@ -75,6 +77,12 @@ class WingetManager(IPackageManager):
         Phase.VERIFY: "winget/verify.ps1",
         Phase.CLEANUP: "winget/cleanup.ps1",
     }
+
+    # Per-phase opt-in for the ``-BufDir`` param. When a phase script
+    # has been updated to accept ``-BufDir`` (AscendoJson bufdir-aware),
+    # add its Phase here. Subclasses (msstore, arp) inherit the empty
+    # default and opt in their own scripts independently.
+    BUFDIR_SUPPORTED_PHASES: ClassVar[frozenset[Phase]] = frozenset({Phase.CHECK})
 
     DEFAULT_TIMEOUT_SEC: ClassVar[int] = 1800
 
@@ -172,12 +180,36 @@ class WingetManager(IPackageManager):
         with tempfile.TemporaryDirectory(prefix="ascendo-winget-") as tmp_str:
             output_dir = Path(tmp_str)
 
+            # Allocate a sidecar-salvage bufdir BEFORE spawning the
+            # script. The PowerShell side (AscendoJson.psm1) honours
+            # the ``-BufDir`` parameter by appending each item/message
+            # to JSONL files in this dir; if the script dies before
+            # Save-Sidecar fires we can reconstruct from the survivors.
+            bufdir = self._allocate_bufdir(
+                run_id=run.id,
+                phase=phase,
+                category=self.category.value,
+                base=output_dir,
+            )
+
+            # Only forward ``-BufDir`` to phase scripts that have been
+            # updated to accept the parameter. Older phase scripts
+            # reject unknown params with ParameterBindingException, so
+            # we gate by BUFDIR_SUPPORTED_PHASES. The bufdir itself is
+            # still allocated above for use by the Python-side salvage
+            # path; if the script writes nothing into it (because it
+            # doesn't know about the convention) the bufdir is empty
+            # and salvage skips with "no meta.json" — no harm done.
+            argv_bufdir: Path | None = (
+                bufdir if phase in type(self).BUFDIR_SUPPORTED_PHASES else None
+            )
             argv = self._build_argv(
                 pwsh=pwsh,
                 script_path=script_path,
                 run=run,
                 output_dir=output_dir,
                 item_filter=item_filter,
+                bufdir=argv_bufdir,
             )
 
             _log.debug(
@@ -227,9 +259,31 @@ class WingetManager(IPackageManager):
             )
 
             if not sidecar_path.exists():
-                # No sidecar produced - this is always a manager error,
-                # whether the script exited 0 or non-zero. A clean script
-                # MUST emit one on every code path.
+                # Salvage path: if the script died before its final
+                # Save-Sidecar but after writing meta.json to the
+                # bufdir, reconstruct whatever survived. ASCENDO-SALVAGED
+                # diagnostic is added to messages[0] so the SPA shows
+                # that we recovered partial state.
+                if (bufdir / "meta.json").exists():
+                    salvaged = self._salvage_sidecar(
+                        run_id=run.id,
+                        phase=phase,
+                        category=self.category.value,
+                        bufdir=bufdir,
+                        expected_sidecar_path=sidecar_path,
+                        exit_code=completed.returncode,
+                    )
+                    if salvaged is not None:
+                        _log.warning(
+                            "%s %s: script exited %d without finalizing; "
+                            "salvaged partial sidecar from %s",
+                            self.category.value, phase.value,
+                            completed.returncode, bufdir,
+                        )
+                        return salvaged
+                # No sidecar produced AND salvage failed — this is a
+                # manager error, whether the script exited 0 or non-zero.
+                # A clean script MUST emit one on every code path.
                 msg = self._format_missing_sidecar_error(
                     phase=phase,
                     script_path=script_path,
@@ -255,6 +309,14 @@ class WingetManager(IPackageManager):
                     completed.returncode,
                     sidecar.status.value,
                 )
+
+            # Save-Sidecar normally removes the bufdir on success, but
+            # if the PS side is an older AscendoJson without bufdir
+            # awareness the directory will linger inside the tempdir
+            # context manager and get cleaned up there. Best-effort
+            # explicit cleanup keeps things tidy when the tempdir
+            # itself outlives the run (custom output dirs in tests).
+            self._cleanup_bufdir(bufdir)
 
             return sidecar
 
@@ -341,6 +403,7 @@ class WingetManager(IPackageManager):
         run: RunInfo,
         output_dir: Path,
         item_filter: Iterable[str] | None,
+        bufdir: Path | None = None,
     ) -> list[str]:
         """Build the pwsh argv list for the script invocation.
 
@@ -395,6 +458,14 @@ class WingetManager(IPackageManager):
             cleaned = [s.strip() for s in item_filter if s and s.strip()]
             if cleaned:
                 argv.extend(["-ItemFilter", ",".join(cleaned)])
+        # ``-BufDir`` is gated upstream by BUFDIR_SUPPORTED_PHASES —
+        # we only get a non-None bufdir here when the caller has
+        # confirmed the target script declares the parameter. Older
+        # scripts that don't declare it would otherwise fail with
+        # PowerShell's ``ParameterBindingException: A parameter cannot
+        # be found that matches parameter name 'BufDir'``.
+        if bufdir is not None:
+            argv.extend(["-BufDir", str(bufdir)])
         return argv
 
     def _format_missing_sidecar_error(

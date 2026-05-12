@@ -444,6 +444,12 @@ try {
         }
         if ($null -ne $current) {
             $itemArgs['CurrentVersion'] = $current
+            # Bidirectional from=/to= for the SPA overlay: inventory items
+            # represent a present-installed package — the candidate version
+            # equals the installed one. Without TargetVersion the SPA
+            # paints the candidate column blank and overlay logic flips the
+            # row to "outdated/unknown" instead of "up_to_date".
+            $itemArgs['TargetVersion'] = $current
         }
 
         [void](Add-SidecarItem @itemArgs)

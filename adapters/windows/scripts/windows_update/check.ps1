@@ -334,7 +334,14 @@ try {
             SourceType     = 'windows_update'
             Status         = 'up_to_date'
         }
-        if ($iso) { $itemArgs['CurrentVersion'] = $iso }
+        if ($iso) {
+            $itemArgs['CurrentVersion'] = $iso
+            # Bidirectional from=/to= for the SPA overlay: installed KBs
+            # have no separate candidate version — echo the install date
+            # back into TargetVersion so the SPA paints the row as "up to
+            # date" instead of "candidate unknown".
+            $itemArgs['TargetVersion'] = $iso
+        }
         [void](Add-SidecarItem @itemArgs)
         $installedCount++
         $emittedKbs[$kb] = $true

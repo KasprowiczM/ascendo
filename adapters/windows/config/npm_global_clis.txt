@@ -1,0 +1,33 @@
+# Ascendo Windows -- npm global CLI manifest.
+#
+# Format: one package name per line. Lines starting with # are comments.
+# Inline trailing comments (after #) are stripped by Read-AscendoNpmManifest.
+#
+# To add a new tool: append a line, save, run `python -m ascendo run
+# --category npm --phase check`. The new row appears with status
+# planned/missing/up_to_date depending on local state.
+#
+# Note on Node itself: not tracked here. Node is installed/upgraded via
+# winget (Microsoft.NodeJS) on Windows; npm just rides along with it.
+# Bun is similarly best-installed via its own native installer on Windows.
+
+# Core npm tooling
+npm                          # npm itself (self-update)
+pnpm                         # Performant npm
+yarn                         # Yarn classic
+npx                          # npm package runner
+
+# AI / agent CLIs (parity with macOS)
+@anthropic-ai/claude-code    # Claude Code CLI
+@openai/codex                # OpenAI Codex CLI
+@google/gemini-cli           # Google Gemini CLI
+@qwen-code/qwen-code         # Qwen Code CLI
+opencode-ai                  # OpenCode CLI
+
+# Developer tooling
+typescript                   # TypeScript compiler (tsc)
+eslint                       # JavaScript linter
+prettier                     # Code formatter
+nodemon                      # Auto-restart Node server on file change
+serverless                   # Serverless framework
+vercel                       # Vercel CLI

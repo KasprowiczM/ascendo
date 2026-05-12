@@ -517,6 +517,18 @@ try {
     # ── 5. Apply loop ──────────────────────────────────────────────────
     $rebootRequired = $false
 
+    # Heartbeat keeps the SSE log stream visibly alive during long
+    # `winget upgrade` invocations (a 250 MB package can be silent for
+    # several minutes). Skipped on dry-run — no mutation = no silence.
+    # See Start-AscendoHeartbeat in AscendoJson.psm1 (mirror of
+    # Ubuntu Sesja 55 heartbeat work in lib/json.sh).
+    $hb = $null
+    try {
+        if (-not $DryRun) {
+            $hb = Start-AscendoHeartbeat -IntervalSeconds 10 `
+                -Label ("winget upgrade ({0} package(s))" -f $upgradable.Count)
+        }
+
     foreach ($pkg in $upgradable) {
         if (-not $pkg.Id) { continue }
 
@@ -859,6 +871,9 @@ try {
         if ($resolved)                { $itemArgs['ResolvedVersion'] = $resolved }
         if ($null -ne $rollback)      { $itemArgs['Rollback']        = $rollback }
         [void](Add-SidecarItem @itemArgs)
+    }
+    } finally {
+        Stop-AscendoHeartbeat $hb
     }
 
     # ── 6. Phase-level reboot message ──────────────────────────────────

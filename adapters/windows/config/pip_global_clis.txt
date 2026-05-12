@@ -1,0 +1,25 @@
+# Ascendo Windows -- pip / Python global CLI manifest.
+#
+# Format: one package name per line. Lines starting with # are comments.
+# Inline trailing comments (after #) are stripped by Read-AscendoPipManifest.
+#
+# To add a new tool: append a line, save, run `python -m ascendo run
+# --category pip --phase check`. The new row appears with status
+# planned/missing/up_to_date depending on local state.
+#
+# Note: pip, setuptools and wheel ship with every Python distribution
+# and are typically managed by the Python installer itself. They are
+# skipped on apply (Test-AscendoPipShouldSkip) to avoid the
+# "cannot uninstall, RECORD file not found" failure pattern.
+
+pip                # The Python package installer itself (skip on apply)
+pipx               # Run Python apps in isolated environments
+uv                 # Fast Python package manager (Astral)
+ruff               # Fast Python linter + formatter
+black              # The uncompromising Python code formatter
+isort              # Python import sorter
+mypy               # Static type checker
+pytest             # Python testing framework
+httpx              # Modern HTTP client
+poetry             # Python dependency manager
+virtualenv         # Virtual environment creator
