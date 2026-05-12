@@ -166,8 +166,11 @@ try {
         } else {
             $finalArgs['Status'] = 'failed'
             $tail = _Tail-Lines -Text $body
+            # Add-SidecarItem -Messages validator requires [hashtable]
+            # entries specifically (rejects [ordered] = OrderedDictionary).
+            # See adapters/windows/lib/AscendoJson.psm1:538.
             $finalArgs['Messages'] = @(
-                [ordered]@{
+                @{
                     'level' = 'error'
                     'text'  = if ($tail) { $tail } else { "pip install failed with exit $rc" }
                     'timestamp' = $null

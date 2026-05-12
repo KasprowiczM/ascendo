@@ -215,6 +215,54 @@ def test_ascendoweb_python_discovery_prefers_py_launcher() -> None:
     )
 
 
+def test_apply_scripts_pass_hashtable_not_ordered_dict_to_messages_param() -> None:
+    """Bug 6 (post-Sesja-58 follow-up): npm/apply.ps1 + pip/apply.ps1 built
+    the per-item ``-Messages`` argument array as ``[ordered]@{level=...;text=...}``
+    entries. AscendoJson.psm1 Add-SidecarItem -Messages requires plain
+    ``[hashtable]`` instances (its validator at line ~538 throws
+    "Each entry in -Messages must be a hashtable with 'level' and 'text'."
+    when handed an OrderedDictionary).
+
+    The bug only fires when npm/pip apply hits a per-package install failure
+    (rc != 0), so it was invisible until the first real safe-update run
+    against multiple packages where at least one couldn't install.
+
+    Regression check: scan every Windows ``apply.ps1`` for
+    ``$finalArgs['Messages']`` assignments and assert the value array
+    only contains ``@{...}`` entries, NOT ``[ordered]@{...}``.
+
+    Why this scan and not a full PS unit test: the bug is purely about
+    the OrderedDictionary-vs-Hashtable type distinction at the param-
+    binding boundary, and static text scanning catches it deterministically
+    without needing a running PowerShell.
+    """
+    apply_scripts = list(
+        (REPO_ROOT / "adapters" / "windows" / "scripts").glob("*/apply.ps1")
+    )
+    assert apply_scripts, "no apply.ps1 scripts found"
+
+    # Find every `$finalArgs['Messages'] = @(...)` or `$itemArgs['Messages'] = @(...)`
+    # block. Detect [ordered]@{ inside that array literal — it'd be the regression.
+    pattern = re.compile(
+        r"\$\w+\[['\"]Messages['\"]\]\s*=\s*@\((.*?)\)",
+        re.MULTILINE | re.DOTALL,
+    )
+    offenders: list[tuple[str, int]] = []
+    for script in apply_scripts:
+        text = script.read_text(encoding="utf-8")
+        for match in pattern.finditer(text):
+            block = match.group(1)
+            if "[ordered]" in block:
+                line_no = text[: match.start()].count("\n") + 1
+                offenders.append((str(script.relative_to(REPO_ROOT)), line_no))
+
+    assert not offenders, (
+        "Found [ordered]@{} inside -Messages assignment(s) — these will be "
+        "rejected by Add-SidecarItem's hashtable validator at apply-time:\n"
+        + "\n".join(f"  {path}:{line}" for path, line in offenders)
+    )
+
+
 def test_web_registry_shim_self_bootstraps_sys_path() -> None:
     """Bug 5: ``lib/web_registry.py`` imports ``from ascendo_windows....``
     which fails when the calling Python doesn't have the editable install.
