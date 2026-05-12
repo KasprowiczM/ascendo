@@ -1,22 +1,45 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-12 (sesja 58) — **Windows brought to feature
-> parity with macOS + Ubuntu.** Five-wave push lands: 5 `bin/`
-> web-service wrappers + bidirectional `from=/to=` fix across
-> winget/msstore/arp/windows_update/inventory check.ps1 +
-> `health_check()` expanded 5 → 9 components (npm, pip, web_registry,
-> inventory_db added); `NpmManager` + `PipManager` Python classes with
-> full 5-phase PS contracts + 15-npm + 11-pip config manifests;
-> watchdog heartbeat helpers (`Start-AscendoHeartbeat` /
-> `Stop-AscendoHeartbeat`) wired into 4 apply.ps1 via try/finally;
-> `WebManager` scaffold with Pydantic `WebRegistryV2` schema + 3
-> handlers (github_release, release_feed, builtin) + 10 curated apps
-> (4 Tier-A: brave/obsidian/notion/obs-studio; 6 Tier-B builtin); new
-> `_BaseWindowsManager._salvage_sidecar` mixin (bufdir-based JSONL
-> incremental writes + `ASCENDO-SALVAGED` recovery diagnostic). Tests
-> 99 baseline → **229 passing**, zero regressions. WindowsAdapter now
-> ships 7 IPackageManager implementations (was 4). See HANDOFF.md
-> Sesja 58.
+> Last updated: 2026-05-12 (sesja 58 + four follow-up commits) —
+> **Windows brought to feature parity with macOS + Ubuntu, then
+> hardened against the first real-hardware run.** Five-wave Sesja 58
+> push lands: 5 `bin/` web-service wrappers + bidirectional
+> `from=/to=` fix across winget/msstore/arp/windows_update/inventory
+> check.ps1 + `health_check()` expanded 5 → **10** components
+> (npm, pip, dcu, web_registry, inventory_db added); `NpmManager` +
+> `PipManager` Python classes with full 5-phase PS contracts +
+> 15-npm + 11-pip config manifests; watchdog heartbeat helpers
+> (`Start-AscendoHeartbeat` / `Stop-AscendoHeartbeat`) wired into 4
+> apply.ps1 via try/finally; `WebManager` scaffold with Pydantic
+> `WebRegistryV2` schema + 3 handlers (github_release, release_feed,
+> builtin) + 10 curated apps (4 Tier-A: brave/obsidian/notion/obs-studio;
+> 6 Tier-B builtin); new `_BaseWindowsManager._salvage_sidecar` mixin
+> (bufdir-based JSONL incremental writes + `ASCENDO-SALVAGED` recovery
+> diagnostic); **`DellDriverManager` wires the long-dormant M3.15
+> dell-driver-update plugin into the orchestrator** (manager count
+> 7 → 8 — winget, msstore, npm, pip, web, plugin, registry_arp,
+> windows_update).
+>
+> Operator-driven hardening (post-Sesja-58 follow-up commits):
+> - `7edb512` — 5 PS5.1 / Python-discovery issues that broke npm + web
+>   check on first run: `.Count` StrictMode bug, em-dashes in string
+>   literals, `Export-ModuleMember` in transient modules, Python order
+>   picking 3.13 without pydantic, missing `sys.path` bootstrap.
+> - `0d68e35` — `DellDriverManager` wired in (see above).
+> - `7415e25` — `npm/pip apply.ps1` passed `[ordered]@{...}` entries
+>   to `Add-SidecarItem -Messages`; the validator requires `[hashtable]`
+>   specifically. Visible only when a real per-package install failed.
+> - `5c3a549` — Dell apply on non-elevated PowerShell returned exit 6
+>   ("Application requires elevated privileges") which the plugin
+>   mapped to `failed`, triggering orchestrator abort. Plugin scripts
+>   now map exit codes 6/7/3 → `skipped`; Python preflight in
+>   `DellDriverManager.run_phase` short-circuits to `skipped` when
+>   `host.is_elevated == False` (cleanup phase exempted, no-op there).
+>
+> Tests: 99 baseline → **280 passing** (+181 across Sesja 58 + 4
+> follow-ups). 1 skipped (intentional dead-codepath assertion). Zero
+> regressions. WindowsAdapter ships 8 IPackageManager implementations.
+> See HANDOFF.md Sesja 58 + the post-Sesja-58 first-run-fixes section.
 >
 > Previous milestone (sesja 57) — **Version polarity bug closed
 > across all 5 phases + new logos + `ascendo build-inventory` CLI.**

@@ -8,6 +8,119 @@
 
 ## Sesja 58 (2026-05-12) — Windows-parity push
 
+### Follow-up: post-Sesja-58 first-run fixes (2026-05-12 evening)
+
+Operator ran the Sesja 58 build end-to-end on DP5520WMK and surfaced
+**four** real bugs in the new code that mock tests had missed.
+Closed via commits `7edb512`, `0d68e35`, `7415e25`, `5c3a549` on
+`claude/nifty-jones-1773b5`.
+
+**1. `7edb512` — npm + web check both failed on first safe-update run**
+Run `26d8f48e...` audit showed `check__npm.json status=failed` (`The
+property 'Count' cannot be found on this object`) and `check__web.json
+status=failed` (`produced no sidecar`). Five underlying causes:
+  - `AscendoNpm.psm1:178` — `$lines = $trimmed -split | Where-Object`
+    pipeline collapses to scalar on single-element output; `.Count`
+    fails under `Set-StrictMode -Version Latest`. Fix: wrap with
+    `@(...)` to force array.
+  - **Em-dash characters in PS string literals** broke PS 5.1 parsing
+    (CP1252 read of BOM-less .ps1 mis-decodes the U+2014 byte
+    sequence into a closing-quote, terminating the string early at
+    `scripts/web/check.ps1:252`). Stripped non-ASCII punctuation from
+    14 new PS files; replaced with ASCII per the project convention.
+  - `lib/handlers/*.ps1` had `Export-ModuleMember` calls. When
+    loaded via `Import-Module foo.ps1` (transient module), PS 5.1
+    raises "can only be called from inside a module". Fix: dropped
+    the explicit exports — functions in a transient .ps1 module are
+    auto-exported.
+  - `AscendoWeb.psm1` Python discovery order `('python', 'python3',
+    'py')` picked the bare `python` first, which on this box resolved
+    to Python 3.13.13 (no pydantic / ascendo_windows). Reordered to
+    `('py', 'python3', 'python')` so the launcher's highest-installed
+    Python wins.
+  - `lib/web_registry.py` imported `ascendo_windows.web_registry`
+    without bootstrapping `sys.path`. Added 6-line self-bootstrap so
+    the shim works under any Python ≥ 3.11 with pydantic available.
+
+Regression coverage: 32 static-analysis tests in
+`test_sesja58_fixes.py` covering all 5 fix classes. Test count
+229 → 261 (+32).
+
+**2. `0d68e35` — Dell driver plugin wired into orchestrator**
+The long-existing `plugins/dell-driver-update/` plugin (M3.15) had
+never been visible to `ascendo run`. Operator asked for it because
+the box is a Dell Precision 5520. Details in the "Dell driver
+integration" sub-section below.
+
+**3. `7415e25` — npm + pip apply `Messages` must be `[hashtable]`**
+Operator's first real apply run (`5d3b82b7...`) on the worktree got
+through 3 of 4 npm packages then crashed with `Phase failed: Each
+entry in -Messages must be a hashtable with 'level' and 'text'.`
+Root cause: `npm/apply.ps1` and `pip/apply.ps1` both built the
+per-item `-Messages` array using `[ordered]@{...}` entries.
+`Add-SidecarItem`'s validator at `AscendoJson.psm1:538` is
+`if (-not ($m -is [hashtable]))` and `[ordered]@{}` is
+`System.Collections.Specialized.OrderedDictionary`, NOT `[hashtable]`.
+Fix: 2-line change `[ordered]@{...}` → `@{...}` in both apply scripts.
+The other `[ordered]` usages in winget/windows_update apply scripts
+are for top-level sidecar payload construction (not inside
+`Add-SidecarItem -Messages`), so they're correct — `[ordered]` is
+the canonical PS idiom for stable JSON key ordering. +1 regression
+test. Test count 276 → 277.
+
+**4. `5c3a549` — Dell apply on non-elevated shell now `skipped` not `failed`**
+Operator ran `ascendo run --category plugin --phase apply` without
+Administrator. dcu-cli /applyUpdates returned exit 6 = "Application
+requires elevated privileges". Plugin's status mapping only knew
+about exit 0/1/5/500 → success; everything else → failed. With only
+one manager selected (`--category plugin`), the orchestrator's
+`stop_on_failure` heuristic aborted the run with `! aborted after
+phase apply`.
+
+Two-layer fix:
+  - Plugin scripts: `apply.ps1` extends the status mapping with
+    `6 → skipped` (needs Administrator), `7 → skipped` (process
+    locked), `3 → skipped` (Ctrl+C). `check.ps1` adds a clear warn
+    message when scan exits 6 or -1.
+  - Python preflight: `DellDriverManager.run_phase()` checks
+    `host.is_elevated` BEFORE spawning dcu-cli. If False AND phase
+    is not cleanup, short-circuits with a synthesized `skipped`
+    sidecar carrying a clear "needs Administrator" warn message.
+    Cleanup phase exempted — the plugin's cleanup.ps1 is a no-op
+    that doesn't need elevation.
+
+After the fix: `apply plugin skipped items=1 failed=0 success=0` /
+`overall: skipped`. No more abort. Operator path forward:
+right-click PowerShell → "Run as Administrator", re-run apply.
+
++3 regression tests. Test count 277 → 280.
+
+### State on DP5520WMK after the four follow-ups (live):
+
+```
+$ py -3.14 -m ascendo doctor
+adapter: windows (Windows) tier=1
+capabilities: PACKAGE_MANAGEMENT|INVENTORY|SNAPSHOTS|SCHEDULING|ELEVATION
+  winget               ok: v1.28.240
+  pswindowsupdate      ok: module installed
+  npm                  ok: npm 11.13.0
+  pip                  ok: pip 26.0.1 (py launcher)
+  dcu                  ok: C:\Program Files\Dell\CommandUpdate\dcu-cli.exe
+                          (requires Administrator to invoke)
+  pwsh                 ok: 7.6.1
+  ascendo_lib          ok: 7 module(s)
+  ascendo_scripts      ok
+  web_registry         ok: 10 apps registered
+  inventory_db         ok: 451 rows cached
+
+package_managers (8): winget, msstore, npm, pip, web, plugin,
+                       registry_arp, windows_update
+```
+
+Test count: 229 (Sesja 58 baseline) → **280** (+51 across 4 follow-up
+commits). 1 skipped (intentional dead-codepath assertion). Zero
+regressions in the broader suite.
+
 ### Follow-up: Dell driver integration (2026-05-12 evening)
 
 Operator follow-up: the long-existing `plugins/dell-driver-update/`
