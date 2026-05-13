@@ -421,12 +421,58 @@ def _latest_check_overlay(runs_dir: Path, category: str) -> dict[str, dict[str, 
     if not candidates:
         return {}
     candidates.sort(reverse=True)  # mtime DESC, then priority DESC
-    latest = candidates[0][2]
-    try:
-        data = _json.loads(latest.read_text(encoding="utf-8"))
-    except (OSError, _json.JSONDecodeError):
+
+    # Two-stage overlay:
+    #   1. Find the latest CHECK sidecar with non-empty items[] -- this
+    #      is the FULL enumeration. Manifests + installed packages are
+    #      authoritative here.
+    #   2. Overlay items from apply/verify sidecars on top (only for
+    #      packages that ALSO appear in the check base). apply/verify
+    #      carry the post-install truth (resolved_version) for the
+    #      handful of packages that the run actually touched.
+    #
+    # Why split: verify sidecars are typically a SUBSET (4 of 15 npm
+    # packages got applied -> verify has 4 rows). Picking verify alone
+    # hides the other 11. Picking the candidate with most items
+    # works for fresh runs but loses post-apply state.
+    #
+    # Operator observation on DP5520WMK 2026-05-13:
+    #   - check__npm.json has 15 items (manifest enumeration)
+    #   - apply__npm.json has 15 items (full manifest, some success)
+    #   - verify__npm.json has 0 items
+    # The earlier "pick latest non-empty by mtime" returned the apply
+    # row (15 items, but with post-install status). For inventory we
+    # want check's base + apply's resolved_version overlaid on top.
+    check_payload: dict[str, Any] | None = None
+    post_apply_payloads: list[dict[str, Any]] = []
+    for _mt, pri, path in candidates:
+        try:
+            payload = _json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, _json.JSONDecodeError):
+            continue
+        if not payload.get("items"):
+            continue
+        # phase_priority: verify=3, apply=2, check=1
+        if pri == 1:
+            if check_payload is None:
+                check_payload = payload
+        else:
+            post_apply_payloads.append(payload)
+
+    # Fall-back: no check sidecar found, but apply/verify has data
+    # (e.g. operator only ever ran "apply" via category-only invocation).
+    # Use the freshest apply/verify as the base.
+    if check_payload is None and post_apply_payloads:
+        check_payload = post_apply_payloads[0]
+        post_apply_payloads = post_apply_payloads[1:]
+    if check_payload is None:
         return {}
-    items = data.get("items") or []
+
+    items = check_payload.get("items") or []
+    # When the base sidecar is apply/verify (no check exists), success
+    # items expose ``resolved_version`` as the truth -- prefer it over
+    # the pre-install ``current_version``.
+    base_phase = (check_payload.get("phase") or "").lower()
     overlay: dict[str, dict[str, Any]] = {}
     for it in items:
         if not isinstance(it, dict):
@@ -434,9 +480,19 @@ def _latest_check_overlay(runs_dir: Path, category: str) -> dict[str, dict[str, 
         name = it.get("name") or it.get("id")
         if not name:
             continue
-        installed = (it.get("installed")
-                     or it.get("current_version")
-                     or it.get("currentVersion"))
+        status = it.get("status")
+        resolved = it.get("resolved_version") or it.get("resolvedVersion")
+        prefer_resolved = (
+            base_phase in ("apply", "verify")
+            and status in ("success", "triggered")
+            and resolved
+        )
+        if prefer_resolved:
+            installed = resolved
+        else:
+            installed = (it.get("installed")
+                         or it.get("current_version")
+                         or it.get("currentVersion"))
         candidate = (it.get("candidate")
                      or it.get("target_version")
                      or it.get("targetVersion"))
@@ -475,6 +531,43 @@ def _latest_check_overlay(runs_dir: Path, category: str) -> dict[str, dict[str, 
                 tail = s.rsplit(":", 1)[-1]
                 if tail and tail not in overlay:
                     overlay[tail] = record
+
+    # Post-apply overlay: walk newer apply/verify sidecars and, for items
+    # that are ALSO in the check base, update `installed` to reflect the
+    # resolved_version (post-install reality). This preserves the
+    # Sesja 53 fix (opencode-cli 1.14.43 -> 1.14.44 visible in SPA
+    # right after apply) without losing items that weren't touched.
+    #
+    # Iterates in mtime ASCENDING order so later passes win (post-apply
+    # = newer than apply = newer than older verify).
+    for payload in reversed(post_apply_payloads):
+        for it in (payload.get("items") or []):
+            if not isinstance(it, dict):
+                continue
+            it_name = it.get("name") or it.get("id")
+            if not it_name or str(it_name) not in overlay:
+                continue
+            raw_status = it.get("status")
+            # Only overlay when apply/verify reports a successful install.
+            # Failed/skipped items leave the check row unchanged.
+            if raw_status not in ("success", "triggered"):
+                continue
+            resolved = (
+                it.get("resolved_version")
+                or it.get("resolvedVersion")
+                or it.get("installed")
+                or it.get("current_version")
+            )
+            if not resolved:
+                continue
+            # Update every alias (name + id + tail) pointing at this row.
+            rec = overlay[str(it_name)]
+            rec["installed"] = resolved
+            # When the post-apply confirms the target, candidate matches.
+            target = it.get("target_version") or it.get("targetVersion")
+            if target:
+                rec["candidate"] = target
+            rec["status"] = "up_to_date"
     return overlay
 
 
@@ -527,13 +620,34 @@ def _build_buckets_live(
 ) -> dict[str, list[dict[str, Any]]]:
     """Compute the buckets via the live scan + check-sidecar overlay.
 
-    This is the legacy code path used as the "DB miss" fallback. It is
-    deliberately kept identical to the pre-DB behaviour so anything the
-    DB doesn't yet know about still surfaces in the SPA.
+    Pipeline:
+      1. IInventory.list_installed() -> raw packages (names + maybe versions).
+      2. Bucket by category.
+      3. ``_seed_buckets_from_sidecars`` REPLACES a bucket entirely when
+         the check sidecar carries strictly more items than inventory
+         found (npm, pip, web, plugin, windows_update categories where
+         IInventory is empty on Windows; brew formulae on macOS, etc.).
+      4. ``_enrich_items`` overlays per-item ``installed`` /
+         ``candidate`` / ``status`` from the latest check sidecar onto
+         every bucket -- including the IInventory-derived ones where
+         winget reported Version='Unknown'. Without this last step,
+         the build-inventory CLI flushed rows with ``installed=None``
+         even for categories where check sidecars on disk had the
+         answer (operator observation on DP5520WMK 2026-05-13).
     """
     packages = cache.get(lambda: _load_packages(adapter))
     buckets = _bucket(packages)
-    return _seed_buckets_from_sidecars(buckets, adapter, runs_dir)
+    buckets = _seed_buckets_from_sidecars(buckets, adapter, runs_dir)
+
+    # Step 4: per-item overlay. Without this, the build-inventory CLI
+    # writes installed=None / candidate=None for every winget+msstore
+    # row (IInventory got them from `winget list` which reports
+    # Version=Unknown for many ARP/MSIX entries; the check sidecar
+    # next to them has the real DisplayVersion via the registry
+    # fallback path in inventory/list.ps1 + msstore/check.ps1).
+    for cat in list(buckets.keys()):
+        buckets[cat] = _enrich_items(buckets[cat], cat, runs_dir, excluded=set())
+    return buckets
 
 
 def _flatten_buckets_for_db(
