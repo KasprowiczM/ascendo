@@ -6,7 +6,7 @@ Cross-platform unified-updates orchestrator. macOS · Windows · Linux. Open sou
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Made for: Windows | Linux | macOS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux%20%7C%20macOS-blue)](docs/PLATFORM_STATUS.md)
-[![Tests: 841 / 848 green](https://img.shields.io/badge/tests-841%2F848%20green-brightgreen)](#tests)
+[![Tests: 477 green](https://img.shields.io/badge/tests-477%20green-brightgreen)](#tests)
 
 ---
 

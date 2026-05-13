@@ -197,13 +197,26 @@ the top of the dashboard. Reboot on your own schedule.
 The schedule DSL is the same on every OS — Ascendo translates it to
 launchd / Task Scheduler / systemd timers under the hood.
 
-**Settings → Scheduler** → click **+ New schedule**, fill in:
+**Sesja 67 added a dedicated Schedule tab** in the sidebar (between
+Hosts and Settings). Click **Schedule** to:
 
-- **Name** — short slug, e.g. `nightly`
-- **Calendar** — see table below
+- See every active schedule in a table (Name / When / Profile / Enabled / Actions)
+- Add or replace a schedule via the form below the table
+- **Run now** any schedule once on demand (handy for verifying the
+  expression works without waiting for the next slot)
+- **Edit** by clicking Edit — the row's fields prepopulate the form;
+  submit with the same name to replace in place
+- **Delete** a schedule with a confirm prompt
+
+Fill in the **Add or replace a schedule** form with:
+
+- **Name** — short slug, e.g. `nightly` (letters / digits / `_` / `-` only)
+- **Expression** — see table below
 - **Profile** — `quick` / `safe` / `full`
+- **Enabled** — toggle (uncheck to keep the entry but pause it)
+- **Description** — optional free-text note
 
-| Calendar form          | Runs at                       |
+| Expression form        | Runs at                       |
 |------------------------|-------------------------------|
 | `DAILY 03:30`          | every day at 03:30            |
 | `WEEKLY MONDAY 06:00`  | every Monday at 06:00         |
@@ -276,17 +289,35 @@ ascendo runs json <run-id> --pretty | jq .      # machine-readable
 
 ## 9. Suggestions
 
-The **Suggestions** tab gives you an opinionated recommendation engine:
+The **Suggestions** tab gives you an opinionated recommendation engine.
 
-- **Preset library** — rule-based "if X then Y" suggestions
-  (e.g. "Brave is on x86_64 but you're on arm64 — reinstall via the
-  arm64 DMG"). Click any to schedule it directly.
-- **AI mode** *(optional)* — wire your own provider key in **Settings →
-  AI providers**, pick a model, and ask free-form questions like
-  "what should I update this week?". Supported providers include
-  Anthropic, OpenAI, OpenRouter, Ollama, Google Gemini, and LM Studio.
-  Credentials are stored locally in `~/.config/ascendo/ai.json` with
-  the API key redacted at rest.
+**Sesja 67 made the AI integration first-class.** The `/suggestions/library`
+endpoint now PREPENDS 1-3 AI-generated cards on top of the rule-based
+library whenever an LLM provider is configured — no second click
+required.
+
+How it works:
+
+- **Rule-based library** (always on) — deterministic "if X then Y"
+  suggestions (e.g. "VSCode is outdated 1.119.1 → 1.120.0; click to
+  schedule a web check"). Sorted by severity. Click any card's
+  primary button to fire the linked action via `/runs/async`.
+- **AI mode** (opt-in) — wire your own provider key in **Settings →
+  AI providers**, pick a model, click **Save**. The next time you
+  open Suggestions, Ascendo sends a compact inventory snapshot to
+  the LLM with a strict JSON schema and merges 1-3 AI cards on top.
+  Supported providers: **Anthropic** · **OpenAI** · **OpenRouter** ·
+  **Ollama** (local) · **Google Gemini** · **LM Studio** (local).
+- **Graceful fallback** — if the configured provider is offline,
+  rate-limited, or returns malformed JSON, Ascendo silently falls
+  back to rule-based cards. You see the rule-based library and a
+  small `ai: error` hint in the panel header, never a 500.
+- **Security** — action payloads from the LLM are sanitised: only
+  `run_async` actions with known payload keys (`profile`, `phases`,
+  `categories`) survive. The LLM cannot inject arbitrary shell
+  commands or arbitrary endpoint calls. Credentials are stored
+  locally in `~/.config/ascendo/ai.json` with the API key redacted
+  in any UI echo.
 
 ---
 

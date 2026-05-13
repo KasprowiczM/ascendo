@@ -374,6 +374,69 @@ zero-CLI daily ops.
 
 ---
 
+## 5h. Schedule recurring runs via the new Schedule tab (Sesja 67)
+
+The SPA gained a dedicated **Schedule** tab in the sidebar (between
+Hosts and Settings). It drives Windows Task Scheduler via the
+adapter's `IScheduler` implementation.
+
+```powershell
+# Smoke-test the backend without the UI:
+curl http://127.0.0.1:8765/scheduler/list
+
+# Install a daily safe schedule via the API:
+curl -X POST http://127.0.0.1:8765/scheduler/install `
+     -H "Content-Type: application/json" `
+     -d '{"name":"ascendo-daily","expression":"DAILY 03:00","profile":"safe","enabled":true}'
+
+# Verify in Task Scheduler GUI: Task Scheduler Library → \Ascendo\ → ascendo-daily
+
+# Trigger once now:
+curl -X POST http://127.0.0.1:8765/scheduler/trigger `
+     -H "Content-Type: application/json" `
+     -d '{"name":"ascendo-daily"}'
+
+# Remove:
+curl -X POST http://127.0.0.1:8765/scheduler/remove `
+     -H "Content-Type: application/json" `
+     -d '{"name":"ascendo-daily"}'
+```
+
+Expression DSL: `DAILY HH:MM` · `WEEKLY DAY HH:MM` · `MONTHLY HH:MM`
+· `HOURLY HH:MM` · `MINUTE N`. Submitting an existing name UPDATES
+the schedule in place (no duplicate task IDs in Task Scheduler).
+
+---
+
+## 5i. Suggestions AI integration (Sesja 67)
+
+The `/suggestions/library` endpoint now optionally calls a configured
+LLM to augment the rule-based cards. To enable:
+
+1. Open Settings → AI providers → pick a provider (anthropic /
+   openai / openrouter / ollama / google / lm_studio).
+2. Paste API key (or leave blank for ollama / lm_studio local servers).
+3. Click **Test connection** — model list appears.
+4. Pick a model → **Save**.
+5. Open Suggestions tab. Cards now load with 1-3 AI-generated rows
+   ON TOP of the rule-based ones.
+
+Smoke-test the AI path without the UI:
+
+```powershell
+# After configuring a provider in Settings → AI:
+curl http://127.0.0.1:8765/suggestions/library | jq '.ai, .ai_generated_count, .count'
+# Expected: {"provider":"anthropic","model":"claude-3-5-sonnet-...","ok":true,"count":N}
+#           ai_generated_count: 1..3
+#           total cards count
+```
+
+If the provider is offline or rate-limited, Ascendo silently falls
+back to rule-based cards (no 500, no panic) — the `ai.ok=false`
+flag in the response tells the SPA to show a small "AI off" hint.
+
+---
+
 ## 6. What's been validated end-to-end
 
 After steps 1-5, you've exercised every single layer of the 6-layer
@@ -391,6 +454,9 @@ architecture on real hardware:
 | 5 — `WebManager` (Sesja 58) | `adapters/windows/ascendo_windows/managers/web.py` | ✅ via `web --phase check` (4 Tier-A probes live) |
 | 5 — `DellDriverManager` (post-Sesja 58) | `adapters/windows/ascendo_windows/managers/dell.py` | ✅ via `plugin --phase check` (Dell DCU; auto-skip on non-Dell hardware) |
 | 5 — Sidecar salvage (Sesja 58) | `_BaseWindowsManager._salvage_sidecar` mixin | ✅ via salvage stage in `validate-windows.ps1` |
+| 3 — Schedule tab (Sesja 67) | `core/ascendo/dashboard/routes/scheduler_real.py` | ✅ via `GET/POST /scheduler/{list,install,remove,trigger}` |
+| 3 — Suggestions AI (Sesja 67) | `core/ascendo/dashboard/routes/ai.py` `call_provider_inference()` + `routes/suggestions.py` augment | ✅ via 6 providers (anthropic / openai / openrouter / ollama / google / lm_studio) |
+| 4 — Inventory dedup (Sesja 67) | `core/ascendo/dashboard/inventory_db.py` v2 schema | ✅ multi-arch packages now keep separate rows; PK widened to `(category, name, item_id)` |
 | 6 — Native scripts | `adapters/windows/{lib,scripts/winget/}` | ✅ via `run` (real winget) |
 | 6 — npm/pip PS scripts (Sesja 58) | `adapters/windows/scripts/{npm,pip}/*.ps1` | ✅ via npm + pip phases |
 | 6 — Web handlers (Sesja 58) | `adapters/windows/lib/handlers/{github_release,release_feed,builtin}.psm1` | ✅ via `web --phase check` |
