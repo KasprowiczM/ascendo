@@ -167,7 +167,14 @@ try {
 
     # Locate apply sidecar.
     $runIdNorm = ([Guid]::Parse($RunId)).ToString()
-    $applyPath = Join-Path (Join-Path $OutputDir $runIdNorm) 'apply__windows_update.json'
+    # Sibling-sidecar lookup with canonical-run-dir fallback.
+    $applyPath = Find-AscendoSiblingSidecar `
+        -OutputDir $OutputDir `
+        -RunId     $runIdNorm `
+        -Filename  'apply__windows_update.json'
+    if (-not $applyPath) {
+        $applyPath = Join-Path (Join-Path $OutputDir $runIdNorm) 'apply__windows_update.json'
+    }
     $applySidecar = Read-ApplySidecar -ApplyPath $applyPath
 
     if ($null -eq $applySidecar) {

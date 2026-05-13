@@ -399,6 +399,15 @@ try {
             DurationMs = $perItemMs
             Messages   = $messages
         }
+        # ResolvedVersion: for successfully-installed Windows updates,
+        # mark the post-install "version" as the KB id itself (Windows
+        # KBs don't carry a SemVer-shaped version; the KB number IS
+        # the identifier). Without ResolvedVersion the orchestrator's
+        # post-run inventory flush won't tell the SPA "this KB has
+        # landed" -- it'll keep showing the row as "planned".
+        if ($itemStatus -eq 'success' -and $kb) {
+            $itemArgs['ResolvedVersion'] = $kb
+        }
         # HResult can come back as scalar Int32 (the common case) OR as
         # Object[] when PSWindowsUpdate aggregates results from multiple
         # operation stages (Search/Download/Install). The naive

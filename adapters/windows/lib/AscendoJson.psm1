@@ -991,6 +991,85 @@ function Stop-AscendoHeartbeat {
 }
 
 # -----------------------------------------------------------------------------
+# Find-AscendoSiblingSidecar
+# -----------------------------------------------------------------------------
+function Find-AscendoSiblingSidecar {
+    <#
+    .SYNOPSIS
+        Locate a sibling sidecar for the same run + category, trying the
+        current OutputDir first then the canonical ``~/.ascendo/runs/``
+        location. Returns the resolved path or $null.
+
+    .DESCRIPTION
+        Every phase manager spawns its child script with its own
+        per-phase TemporaryDirectory as ``OutputDir`` (see the M3 MVP
+        comment in WindowsManager.run_phase). Sidecars get written
+        there, then the Python side copies them to the canonical
+        ``$env:USERPROFILE\.ascendo\runs\<run-id>\`` location after
+        the script exits.
+
+        This means a verify.ps1 launched in a FRESH per-phase tempdir
+        cannot see the apply sidecar at
+        ``$OutputDir\<RunId>\apply__<cat>.json`` -- the apply phase
+        wrote that file in a DIFFERENT tempdir minutes ago and the
+        canonical copy lives elsewhere.
+
+        Operator observation on DP5520WMK (run 91769201, 2026-05-13):
+        every verify phase for winget / npm / pip / windows_update /
+        web reported "No apply sidecar found; verify is a no-op"
+        despite the apply phase having emitted a real sidecar.
+
+        This helper:
+          1. Tries ``$OutputDir/<RunId>/<filename>`` first (the
+             per-phase tempdir convention).
+          2. Falls back to
+             ``$env:USERPROFILE/.ascendo/runs/<RunId>/<filename>``
+             (the canonical orchestrator run dir).
+          3. Honours ``$env:ASCENDO_RUNS_DIR`` for callers that
+             override the default location.
+          4. Returns the resolved absolute path as a string, or
+             $null when neither exists.
+
+    .PARAMETER OutputDir
+        The current phase's OutputDir (per-phase tempdir).
+    .PARAMETER RunId
+        The run UUID string.
+    .PARAMETER Filename
+        Sidecar filename (e.g. ``apply__winget.json``).
+    .OUTPUTS
+        [string] absolute path or $null.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] [string] $OutputDir,
+        [Parameter(Mandatory)] [string] $RunId,
+        [Parameter(Mandatory)] [string] $Filename
+    )
+
+    # Stage 1: per-phase tempdir (the typical layout when verify
+    # runs in the SAME script as apply, e.g. from a smoke test).
+    $primary = Join-Path (Join-Path $OutputDir $RunId) $Filename
+    if (Test-Path -LiteralPath $primary) {
+        return [string]$primary
+    }
+
+    # Stage 2: canonical run dir under $env:ASCENDO_RUNS_DIR or
+    # $env:USERPROFILE/.ascendo/runs/.
+    $base = if ($env:ASCENDO_RUNS_DIR) {
+        $env:ASCENDO_RUNS_DIR
+    } else {
+        Join-Path $env:USERPROFILE '.ascendo\runs'
+    }
+    if (-not $base) { return $null }
+    $fallback = Join-Path (Join-Path $base $RunId) $Filename
+    if (Test-Path -LiteralPath $fallback) {
+        return [string]$fallback
+    }
+    return $null
+}
+
+# -----------------------------------------------------------------------------
 # Exports
 # -----------------------------------------------------------------------------
 
@@ -1003,5 +1082,6 @@ Export-ModuleMember -Function @(
     'Write-AscendoStreamLine',
     'Write-AscendoStreamFile',
     'Start-AscendoHeartbeat',
-    'Stop-AscendoHeartbeat'
+    'Stop-AscendoHeartbeat',
+    'Find-AscendoSiblingSidecar'
 )

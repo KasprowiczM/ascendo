@@ -326,7 +326,18 @@ try {
     #    cases hex digits. New-Sidecar already validated $RunId, so we can
     #    safely reproduce the same normalisation here.
     $runIdNorm = ([Guid]::Parse($RunId)).ToString()
-    $applyPath = Join-Path (Join-Path $OutputDir $runIdNorm) 'apply__winget.json'
+    # Sibling-sidecar lookup: per-phase tempdir first, fall back to
+    # the canonical ``~/.ascendo/runs/<RunId>/``. Each phase script
+    # runs in its own tempdir, so the apply sidecar isn't co-located
+    # by default; without the fallback verify becomes a permanent
+    # no-op (operator observation, DP5520WMK run 91769201).
+    $applyPath = Find-AscendoSiblingSidecar `
+        -OutputDir $OutputDir `
+        -RunId     $runIdNorm `
+        -Filename  'apply__winget.json'
+    if (-not $applyPath) {
+        $applyPath = Join-Path (Join-Path $OutputDir $runIdNorm) 'apply__winget.json'
+    }
     $applySidecar = Read-ApplySidecar -ApplyPath $applyPath
 
     if ($null -eq $applySidecar) {

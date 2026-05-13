@@ -61,8 +61,16 @@ try {
     }
     $sidecar = New-Sidecar @newSidecarArgs
 
-    # Load sibling apply sidecar if present.
-    $applySidecarPath = Join-Path (Join-Path $OutputDir $RunId) 'apply__web.json'
+    # Load sibling apply sidecar if present. Sibling-sidecar lookup
+    # with canonical-run-dir fallback (each phase script runs in its
+    # own tempdir so apply's sidecar isn't co-located by default).
+    $applySidecarPath = Find-AscendoSiblingSidecar `
+        -OutputDir $OutputDir `
+        -RunId     $RunId `
+        -Filename  'apply__web.json'
+    if (-not $applySidecarPath) {
+        $applySidecarPath = Join-Path (Join-Path $OutputDir $RunId) 'apply__web.json'
+    }
     $priorInstalled = @{}      # slug -> prior installed_version (string)
     $priorTarget    = @{}      # slug -> apply.target_version (string) -- preserves
                                #         the candidate version reported by check

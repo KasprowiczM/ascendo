@@ -67,12 +67,19 @@ try {
     } else {
         $runIdNorm = $RunId
     }
-    $applySidecarPath = Join-Path (Join-Path $OutputDir $runIdNorm) 'apply__npm.json'
+    # Sibling-sidecar lookup with canonical-run-dir fallback (each
+    # phase script runs in its own tempdir; apply's sidecar isn't
+    # co-located by default).
+    $applySidecarPath = Find-AscendoSiblingSidecar `
+        -OutputDir $OutputDir `
+        -RunId     $runIdNorm `
+        -Filename  'apply__npm.json'
 
-    if (-not (Test-Path -LiteralPath $applySidecarPath)) {
+    if (-not $applySidecarPath) {
         # Soft no-op: verify ran without a prior apply (e.g. check-only flow).
+        $primaryPath = Join-Path (Join-Path $OutputDir $runIdNorm) 'apply__npm.json'
         Add-SidecarMessage -Sidecar $sidecar -Level 'info' `
-            -Text "No apply sidecar found at $applySidecarPath; verify is a no-op."
+            -Text "No apply sidecar found at $primaryPath; verify is a no-op."
         [void](Save-Sidecar -Sidecar $sidecar -OutputDir $OutputDir)
         exit 0
     }

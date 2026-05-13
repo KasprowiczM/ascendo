@@ -297,6 +297,24 @@ try {
                     -Text ("{0}: installer succeeded; reboot required (exit 3010)" -f $slug)
             }
 
+            # Tier-A install result mapping:
+            #   - CurrentVersion stays at the pre-install reading so
+            #     the audit trail records what was installed BEFORE
+            #     the apply ran.
+            #   - TargetVersion is what we tried to install (or the
+            #     readback when known).
+            #   - ResolvedVersion is the POST-INSTALL DisplayVersion
+            #     readback (only meaningful on success). The
+            #     orchestrator's post-run inventory flush reads
+            #     resolved_version when status=success to update the
+            #     `installed` column in inventory.db. Without this,
+            #     the SPA's Categories tab keeps showing the old
+            #     version even after a successful upgrade
+            #     (DP5520WMK observation, run 91769201, 2026-05-13:
+            #     OpenCode upgraded 1.14.33 -> 1.14.48 successfully
+            #     via Tier-A, but inventory.db kept showing 1.14.33
+            #     because resolved_version was never set in apply
+            #     sidecar items).
             $itemArgs = @{
                 Sidecar        = $sidecar
                 Id             = "web:$slug"
@@ -307,6 +325,11 @@ try {
                 CurrentVersion = $installed
                 TargetVersion  = $reportedTarget
                 ExitCode       = $reportedExit
+            }
+            if ($finalStatus -eq 'success' -and
+                $result.PSObject.Properties['InstalledVersion'] -and
+                $result.InstalledVersion) {
+                $itemArgs['ResolvedVersion'] = [string]$result.InstalledVersion
             }
             [void](Add-SidecarItem @itemArgs)
 

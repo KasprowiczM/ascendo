@@ -56,11 +56,16 @@ try {
     } else {
         $runIdNorm = $RunId
     }
-    $applySidecarPath = Join-Path (Join-Path $OutputDir $runIdNorm) 'apply__pip.json'
+    # Sibling-sidecar lookup with canonical-run-dir fallback.
+    $applySidecarPath = Find-AscendoSiblingSidecar `
+        -OutputDir $OutputDir `
+        -RunId     $runIdNorm `
+        -Filename  'apply__pip.json'
 
-    if (-not (Test-Path -LiteralPath $applySidecarPath)) {
+    if (-not $applySidecarPath) {
+        $primaryPath = Join-Path (Join-Path $OutputDir $runIdNorm) 'apply__pip.json'
         Add-SidecarMessage -Sidecar $sidecar -Level 'info' `
-            -Text "No apply sidecar found at $applySidecarPath; verify is a no-op."
+            -Text "No apply sidecar found at $primaryPath; verify is a no-op."
         [void](Save-Sidecar -Sidecar $sidecar -OutputDir $OutputDir)
         exit 0
     }
