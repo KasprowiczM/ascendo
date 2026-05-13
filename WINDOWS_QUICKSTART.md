@@ -159,7 +159,9 @@ never logged).
 | **Microsoft Store apps** | msstore → apply | Bound to the user's Store account |
 | **Windows 11 itself** | windows_update → apply | Downloads + stages KB patches; reboot required |
 | **npm/pip CLIs** | npm/pip → check / apply | No sudo needed; user-scope installs |
-| **Brave/Obsidian/OBS/Notion** | web → check | Real candidate-version probes; apply is currently Tier-B trigger-only (opens vendor page; full apply lands in v0.0.9 when Authenticode + UAC handling is wired) |
+| **VS Code / KeePassXC / Notepad++ / AutoHotkey / GitHub CLI / OpenCode** | web → apply | **Full Tier-A silent install** (Sesja 61): downloads installer, Authenticode-verifies the signing publisher, kills running process, runs silent install (`/qn` MSI or `/VERYSILENT` Inno or `/S` NSIS), reads new DisplayVersion from registry. No browser, no clicks. |
+| **Brave / Obsidian / OBS / Notion / Discord / Slack / Zoom / Cursor / GitHubDesktop / BraveNightly** | web → check | Real candidate-version probes (Tier-A check, Tier-B apply); when outdated, apply opens the vendor download page so you run the installer manually. Full silent install pending per-app validation. |
+| **Proton Mail / Proton Drive / rclone / Tuta Mail** | web → check | Real candidate-version probe; apply currently Tier-B trigger-only. Promotion to Tier-A silent install pending validation. |
 | **Dell drivers + BIOS** | plugin → check / apply | Dell Command Update CLI. Needs Admin / UAC. Plugin lives at `plugins/dell-driver-update/`. |
 
 After every apply phase, the dashboard invalidates the inventory cache

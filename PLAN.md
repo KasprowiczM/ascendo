@@ -1,6 +1,38 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-13 (sesja 59) — **Windows apply-hang fixed +
+> Last updated: 2026-05-13 (sesja 61) — **Web Tier-A silent install +
+> JSON walker dotted-numeric + verify candidate preservation.** Sesja 61
+> closes the operator's "vscode has not been updated" report:
+> (1) JSON walker accepts `Releases.0.Version` alongside
+> `Releases[0].Version` for macOS parity; (2) `ConvertFrom-Json
+> -AsHashtable` gated on PS6+ so case-colliding keys (Proton Drive's
+> `Sha512CheckSum` vs `Sha512Checksum`) don't trip the parser;
+> (3) `verify.ps1` preserves the candidate version when apply was
+> Tier-B triggered but the operator hasn't actually run the installer
+> yet (no more `up_to_date 1.119.1` masking outdated state);
+> (4) six curated entries promoted to Tier-A silent install with full
+> `silent_args` / `installer_kind` / `kill_processes` /
+> `expected_publisher` contract — vscode-user, keepassxc, notepadpp,
+> autohotkey, github-cli, opencode; (5) opencode `asset_pattern`
+> corrected to the real `opencode-desktop-win-x64.exe`. Plus
+> `kill_processes` Pydantic pattern relaxed for `notepad++`. Test
+> count 379 → **414** Windows + 324 contract (+19 new tests).
+> See HANDOFF.md Sesja 61.
+>
+> Previous milestone (sesja 60) — **Curated registry expanded 10 → 20
+> + `Get-WebInstalledVersion` DisplayName fallback.** Operator's first
+> live test of Sesja 59 showed `web: 108 items, 0 outdated` because
+> the shipped registry only covered Brave/Obsidian/Notion/etc. — none
+> installed on DP5520WMK. Sesja 60 added 10 entries for common dev
+> tools (keepassxc, notepadpp, autohotkey, rclone, github-cli,
+> opencode, tuta-mail, vscode-user, proton-mail, proton-drive) and
+> made `Get-WebInstalledVersion` fall back to a DisplayName scan when
+> the exact registry subkey doesn't match (so curated entries can use
+> friendly display names instead of guessing GUIDs). Plus relaxed
+> `windows_uninstall_key` Pydantic pattern to accept real Windows
+> DisplayName punctuation (`Notepad++ (64-bit x64)`).
+>
+> Previous milestone (sesja 59) — **Windows apply-hang fixed +
 > Tier-A web apply + registry auto-discovery shipped.** Three Sesja 59
 > commits land on `claude/friendly-banzai-aee757`: (1) windows_update
 > apply.ps1 pre-checks pending via `Get-PendingWindowsUpdates` before

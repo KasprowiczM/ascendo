@@ -6,6 +6,193 @@
 
 ---
 
+## Sesja 61 (2026-05-13, evening) — Web Tier-A silent install + JSON walker dotted-numeric + verify candidate preservation
+
+Day-after-Sesja-60 follow-up triggered by the operator's report:
+"check the last full update run, vscode has not been updated, check
+everything again". Run `6149fbba` (2026-05-13 09:48 UTC) had reported
+vscode-user as `status=triggered` (Tier-B = vendor URL opened, no
+actual install) plus three slugs (`proton-mail`, `proton-drive`,
+`opencode`) as `status=skipped` ("probe returned empty").
+
+### Five distinct bugs fixed in one commit (`9b7b1a7`)
+
+**1. release_feed JSON walker rejected `Releases.0.Version` syntax.**
+The walker split on `.` then looked for `[N]` brackets in each
+segment. Pure-numeric segments fell through to the object-property
+lookup branch and returned null. Mac adapter parity uses the dotted
+form; Sesja 60 had used `Releases[0].Version` which works but is
+inconsistent with the macOS handler. Fix: when a segment matches
+`^\d+$` AND the current value is enumerable, use it as an array index.
+
+**2. PowerShell 7's `ConvertFrom-Json` rejected case-colliding keys.**
+The Proton Drive feed contains both `Sha512CheckSum` and
+`Sha512Checksum` keys across different release entries (typo on
+vendor's side). PS 7 hard-fails with "Please use the -AsHashTable
+switch instead". Fix: when `$PSVersionTable.PSVersion.Major -ge 6`,
+use `ConvertFrom-Json -AsHashtable`. The `_RF-WalkJsonPath` already
+branches on `IDictionary` so hashtable output flows through
+transparently. PS 5.1 doesn't have the switch and doesn't trigger the
+strictness either, so the fallback path remains.
+
+**3. verify.ps1 erased the outdated signal on triggered-without-install.**
+Previous logic emitted `status=up_to_date, target=installed` for
+every row regardless of apply outcome. After a Tier-B trigger (vendor
+URL opened) but before the operator actually ran the installer,
+verify wrongly reset the candidate to `installed`, hiding the
+outdated state from the SPA. New matrix:
+
+| apply.status | installed-vs-prior | verify.status | target     |
+|--------------|-------------------|---------------|------------|
+| failed       | (any)             | failed        | priorCand  |
+| success      | changed           | success       | installed  |
+| success      | unchanged         | failed        | priorCand  |
+| triggered    | changed           | success       | installed  |
+| triggered    | unchanged         | skipped       | priorCand  |
+
+The vscode-user row will now keep showing `1.119.1 → 1.120.0` until
+the upgrade actually lands (or until a future check phase confirms
+both versions match).
+
+**4. Six curated entries promoted to Tier-A silent install.** Each
+entry now has `tier_a_apply = true` + the complete silent-install
+field set (`silent_args`, `installer_kind`, `kill_processes`,
+`expected_publisher`):
+
+| Slug         | Kind     | Silent args                                                                | Publisher              |
+|--------------|----------|-----------------------------------------------------------------------------|------------------------|
+| vscode-user  | Inno EXE | `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /MERGETASKS=!runcode`             | Microsoft Corporation  |
+| keepassxc    | MSI      | `/qn /norestart`                                                            | KeePassXC              |
+| notepadpp    | NSIS EXE | `/S`                                                                        | Notepad++              |
+| autohotkey   | NSIS EXE | `/S`                                                                        | AutoHotkey Foundation  |
+| github-cli   | MSI      | `/qn /norestart`                                                            | GitHub                 |
+| opencode     | Squirrel | `--silent`                                                                  | Anomaly                |
+
+The vscode-user `release_feed` table also gains `download_path = "url"`
+so the Tier-A path resolves the installer location from the same
+JSON the version probe reads. opencode's `asset_pattern` was
+corrected from the wrong `opencode-desktop-win32-x64.zip` to the
+actually-shipped `opencode-desktop-win-x64.exe` (verified via the
+GitHub API 2026-05-13).
+
+**5. `kill_processes` Pydantic pattern relaxed to allow `+` chars.**
+Original `^[\w.\- ]+$` rejected `notepad++` (the only common process
+name with punctuation). The relaxed pattern still forbids shell-
+meaningful chars (backtick, `$`, `;`, `&`, `|`, redirects); T4 is
+still mitigated at the elevation interface, not here.
+
+### Live verification
+
+Forced the worktree's check.ps1 to run (bypassing the editable
+install pointing at the primary checkout):
+
+```
+proton-mail  -> Releases[0].Version=1.13.0 (up_to_date with installed)
+proton-drive -> Releases[0].Version=1.13.5 (-AsHashtable parses despite
+                                            case collision)
+vscode-user  -> 1.120.0 == installed       (up_to_date; operator already
+                                            upgraded between runs)
+```
+
+### Tests
+
+- **+19 regression tests:**
+  - `test_release_feed_walker.py` (12): dotted-numeric form,
+    `-AsHashtable` guard, IDictionary branch, Proton path, Tier-A
+    contract for the 6 enabled apps, kill_processes pattern,
+    vscode download_path
+  - `test_web_registry_tier_a.py` (updated): allow Tier-A entries
+    when the silent-install contract is complete; reject incomplete
+    Tier-A entries
+
+- **Windows adapter suite: 414 passed**, 1 skipped (intentional)
+- **Contract suite: 324 passed**, 5 pre-existing failures unchanged
+
+### Operator-visible result after merge to main
+
+After `git pull` + `ascendo web restart`:
+
+1. Run `ascendo run --category web --phase check` — the 9 curated
+   apps probe their feeds; outdated apps emit `status=planned` with
+   real candidate versions. Proton entries no longer skip.
+2. Run `ascendo run --category web --phase apply` — for Tier-A apps
+   the run downloads the installer, verifies Authenticode against the
+   expected publisher, kills running processes, runs silent install,
+   reads the new DisplayVersion. For Tier-B apps (Brave, Notion,
+   Obsidian, OBS, etc. — not yet promoted) the apply opens the
+   vendor download page so the operator can install manually.
+3. Run `ascendo run --category web --phase verify` — confirms the
+   post-install version. Preserves the candidate for trigger-only
+   rows where the operator hasn't run the manual installer yet.
+
+### Carry-forward limitations
+
+- **GitHub API rate limit (60/hour unauthenticated).** When the
+  worktree hammered the API during validation, github_release probes
+  fell back to `status=skipped`. Long-term fix: read
+  `GITHUB_TOKEN` env var when available (5000/hour) — separate work.
+- **Other Tier-A entries still pending.** Brave, Notion, Obsidian,
+  OBS Studio still default to Tier-B trigger-only until similarly
+  verified silent-install flags are added. The shape is there
+  (Sesja 59 schema); just needs per-app validation.
+
+---
+
+## Sesja 60 (2026-05-13, afternoon) — Web curated registry expansion + DisplayName fallback
+
+Operator screenshot after Sesja 59 showed the Categories tab with all
+8 sources populated correctly, but `web: 108 items, 0 outdated`. Root
+cause: the shipped curated registry had only 10 apps (Brave, Obsidian,
+Notion, OBS, Discord, Slack, Zoom, Cursor, GitHub Desktop, Brave
+Nightly) — none of which were installed on DP5520WMK. So 0 curated
+matches → plan/apply emit 0 items.
+
+### Four-part fix
+
+1. **`Get-WebInstalledVersion` DisplayName fallback.** When the exact
+   registry subkey doesn't exist, the function now builds a cache of
+   `{DisplayName → DisplayVersion}` from every Uninstall subkey
+   across the three roots and looks up by name. Curated entries can
+   now use a friendly registry DisplayName (`KeePassXC`, `Notepad++
+   (64-bit x64)`) instead of guessing the exact subkey (which is
+   often a GUID or version-suffixed and varies per machine).
+
+2. **Pattern relaxed** for `windows_uninstall_key` to allow real
+   Windows DisplayName punctuation (`+`, `(`, `)`, etc.) while still
+   rejecting shell-meaningful chars.
+
+3. **10 new curated Tier-A entries** for common developer apps:
+   keepassxc, notepadpp, autohotkey, rclone, github-cli, opencode,
+   tuta-mail, vscode-user, proton-mail, proton-drive. Each uses
+   `handler = github_release` or `release_feed` (real candidate
+   probe) but stayed Tier-B trigger-only for apply (until Sesja 61
+   enabled silent install on six of them).
+
+4. **`apply.ps1` clear messaging** when 0 curated apps match the
+   host: top-level info message explaining what happened and how the
+   operator can add custom entries.
+
+### End-to-end verification on DP5520WMK
+
+```
+check__web.json:  108 items
+   1 PLANNED: vscode-user 1.119.1 -> 1.120.0  (real outdated detected!)
+   5 up_to_date: KeePassXC, Notepad++, AutoHotkey, rclone, GitHub CLI
+   3 skipped: opencode, proton-mail, proton-drive (handler probes
+              failed; fixed in Sesja 61)
+   99 web:auto:* awareness-only
+
+inventory.db: web 108 total, 1 outdated
+```
+
+### Tests
+
+- 35 new regression tests in `test_web_registry_expanded.py`
+- Windows: 402 passed
+- Contract: 324 passed
+
+---
+
 ## Sesja 59 (2026-05-13) — Windows apply-hang fix + Tier-A web apply + registry auto-discovery
 
 Day-after-Sesja-58 follow-up triggered by the operator's report:
