@@ -1,6 +1,27 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-13 (sesja 61) — **Web Tier-A silent install +
+> Last updated: 2026-05-13 (sesja 62) — **Post-apply ResolvedVersion
+> + verify sibling-sidecar lookup.** Audit of run `91769201`
+> (operator's full update at 12:36 UTC, 3 real upgrades + 598
+> up_to_date + 0 failures) surfaced two latent bugs that broke the
+> post-apply reconciliation chain: (1) `apply.ps1` Tier-A success
+> branch never set `ResolvedVersion`, so the orchestrator's post-run
+> inventory flush couldn't update `inventory.db` from the pre-install
+> value (OpenCode upgraded to 1.14.48 in reality but the DB kept
+> showing 1.14.33 as outdated); (2) every verify phase reported
+> "No apply sidecar found; verify is a no-op" because each phase
+> script runs in its own `tempfile.TemporaryDirectory` — apply's
+> sidecar lives in the canonical `~/.ascendo/runs/<run-id>/`, not the
+> verify-phase tempdir. Sesja 62 ships a new `Find-AscendoSiblingSidecar`
+> helper that falls back to the canonical run dir (with
+> `ASCENDO_RUNS_DIR` env-var override), wires it into all 5 verify
+> scripts, and adds `ResolvedVersion` plumbing to web Tier-A apply
+> + windows_update apply. End-to-end audit on operator's machine:
+> CLI + Web dashboard + Tier-A install all functional. Test count
+> 414 → **424** Windows + 324 contract (+10 new). See HANDOFF.md
+> Sesja 62.
+>
+> Previous milestone (sesja 61) — **Web Tier-A silent install +
 > JSON walker dotted-numeric + verify candidate preservation.** Sesja 61
 > closes the operator's "vscode has not been updated" report:
 > (1) JSON walker accepts `Releases.0.Version` alongside

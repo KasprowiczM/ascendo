@@ -6,6 +6,135 @@
 
 ---
 
+## Sesja 62 (2026-05-13, late) — Post-apply ResolvedVersion + verify sibling-sidecar lookup
+
+Operator request: "check last run, check what was successfuly applied,
+what is still not working, i would like to wrap it up and have finally
+web app that really works, both cli + web. check everything, do code
+review. fix all bugs."
+
+### Audit of run `91769201` (2026-05-13 12:36 UTC)
+
+End-to-end results were strong:
+
+```
+==== APPLY ====
+  winget         success      total=1 success=1  (IMG to ISO via winget upgrade)
+  web            success      total=9 success=1  (OpenCode 1.14.33->1.14.48 via Tier-A)
+  windows_update success      total=1 success=1  (KB2267602 Defender)
+  msstore        success      <empty>
+  npm            success      14 up_to_date
+  pip            success      10 up_to_date + 1 skipped (pip self-skip rule)
+  plugin         skipped      1 skipped (Dell needs Admin, current shell wasn't)
+  registry_arp   success      <empty>
+```
+
+REPORT.md: **"3 upgraded, 598 already up-to-date, 2 deferred. Failed: (none)."**
+
+Three real installs end-to-end:
+- IMG to ISO (winget) — 21 s
+- KB2267602 (windows_update) — 54 s
+- **OpenCode 1.14.33 → 1.14.48 (web Tier-A silent install)** — the
+  first end-to-end proof of Sesja 61's Tier-A pipeline
+
+### Two latent bugs uncovered during the audit
+
+**1. apply Tier-A didn't set ResolvedVersion → inventory.db stayed stale.**
+`web/apply.ps1`'s Tier-A success branch set `CurrentVersion` to the
+pre-install reading and `TargetVersion` to the post-install readback,
+but never set `ResolvedVersion`. The orchestrator's post-run inventory
+flush (`run_async._flush_run_to_inventory_db`) reads
+`resolved_version` when `status=success` to update the `installed`
+column. Without it, the row stays at the pre-install value forever.
+
+Visible symptom on DP5520WMK: after OpenCode upgraded to 1.14.48,
+`inventory.db` continued listing it as `outdated 1.14.33 → 1.14.48`.
+`windows_update/apply.ps1` had the same gap for installed KBs.
+
+**2. verify phases were silently no-ops on every category.**
+Each verify.ps1 looked for the sibling apply sidecar at
+`<OutputDir>/<RunId>/apply__<cat>.json`. Each phase script runs in its
+OWN `tempfile.TemporaryDirectory` (per-phase `ascendo-<cat>-XXX/`), so
+apply's sidecar is NOT co-located in verify's tempdir — it lives in
+the canonical `~/.ascendo/runs/<RunId>/`. Every verify reported
+"No apply sidecar found; verify is a no-op" despite real apply
+sidecars existing.
+
+### Fixes shipped in commit `c7685b5`
+
+**A.** `AscendoJson.psm1` gains `Find-AscendoSiblingSidecar(OutputDir,
+RunId, Filename)`:
+- Tries `<OutputDir>/<RunId>/<filename>` first (per-phase tempdir)
+- Falls back to `$env:ASCENDO_RUNS_DIR/<RunId>/<filename>` if set
+- Final fallback to `$env:USERPROFILE/.ascendo/runs/<RunId>/<filename>`
+- Returns the resolved absolute path or `$null`
+
+**B.** Five verify scripts (winget, npm, pip, windows_update, web)
+use the helper, with the per-phase tempdir kept only for the
+"no sidecar found at <path>" log message when both locations miss.
+
+**C.** `web/apply.ps1` Tier-A success branch now sets
+`ResolvedVersion = result.InstalledVersion`. Defensive
+`PSObject.Properties` check so a future result-shape change can't
+crash the row.
+
+**D.** `windows_update/apply.ps1` sets `ResolvedVersion = $kb` on
+success (the KB id IS the canonical version marker; Windows updates
+don't carry a SemVer-shaped version).
+
+### Live verification
+
+```
+> Find-AscendoSiblingSidecar -OutputDir 'C:\nonexistent' -RunId 91769201-... -Filename apply__web.json
+C:\Users\MK\.ascendo\runs\91769201-.../apply__web.json
+```
+
+The helper correctly resolves through to the canonical-run-dir
+fallback. After merge to main + dashboard restart, the next apply
+run that upgrades anything via Tier-A will write `resolved_version`
+into the apply sidecar; the post-run flush will pick it up; the
+inventory.db row will update to the new version + status=up_to_date.
+Categories tab on the SPA will reflect the post-install reality.
+
+### Tests
+
+- **+10 regression tests** in `test_sibling_sidecar_lookup.py`
+  covering helper definition + export + signature + fallback,
+  each verify script using the helper, web Tier-A
+  `ResolvedVersion = InstalledVersion`, windows_update
+  `ResolvedVersion = $kb`.
+- Windows adapter: **424 passed** (+10), 1 intentional skip
+- Contract: **324 passed**, 5 pre-existing failures unchanged
+
+### CLI + dashboard health (operator validation)
+
+`ascendo web status`: running on pid 10208
+`ascendo doctor`: all 10 components ok (winget, pwsh, npm, pip,
+pswindowsupdate, dcu, ascendo_lib, ascendo_scripts, web_registry
+[20 apps], inventory_db [584 rows])
+`GET /version`: `{"ascendo":"0.0.7","adapter":"windows","edition":"basic"}`
+`GET /inventory/summary`: 584 total, 572 ok, 2 outdated, 0 missing.
+
+The 2 outdated rows are the stale OpenCode + VS Code entries from
+pre-Sesja-62 state; the next apply run after merge clears them.
+
+### Carry-forward limitations
+
+- **Same app appears in multiple categories**: OpenCode currently
+  shows up under `web`, `registry_arp`, and `winget` (the
+  installer creates ARP entries, and winget detects them too).
+  This is UX confusion, not a functional bug. Cross-category dedup
+  is a separate UX project.
+- **Dell Command Update needs Administrator**: `plugin` category
+  correctly skips on non-elevated shells with a clear message; for
+  driver updates the operator must launch Ascendo from an elevated
+  PowerShell.
+- **pip self-skip rule**: pip's `pip` package is in the skip-list
+  (Sesja 58, intentional — pip self-upgrade is unreliable on
+  Windows). Use `python -m pip install -U pip` directly if needed.
+
+---
+
 ## Sesja 61 (2026-05-13, evening) — Web Tier-A silent install + JSON walker dotted-numeric + verify candidate preservation
 
 Day-after-Sesja-60 follow-up triggered by the operator's report:
