@@ -2,17 +2,17 @@
 
 The synchronous ``run_phases`` is fine for short read-only phases (check,
 plan, verify, cleanup). The ``apply`` phase, however, can take 10+ minutes
-when many packages need upgrading — blocking an HTTP request for that long
+when many packages need upgrading -- blocking an HTTP request for that long
 is unacceptable.
 
 This module provides:
 
-- :class:`RunState` — a single-run lifecycle record (running/completed/failed
+- :class:`RunState` -- a single-run lifecycle record (running/completed/failed
   + timestamps + report-when-done).
-- :class:`RunRegistry` — in-memory map ``{run_id: RunState}``. Lives on
+- :class:`RunRegistry` -- in-memory map ``{run_id: RunState}``. Lives on
   ``app.state.run_registry``. Bounded LRU eviction keeps the map small for
   long-running dashboards.
-- :func:`start_run_async` — kicks off ``run_phases`` in a worker thread,
+- :func:`start_run_async` -- kicks off ``run_phases`` in a worker thread,
   returns the ``run_id`` immediately. Subsequent calls to
   ``RunRegistry.get(run_id)`` reflect progress.
 
@@ -26,7 +26,7 @@ keeps the FastAPI event loop responsive while ``run_phases`` is mostly
 blocked on subprocess I/O.
 
 **Failure semantics.** A crash inside the worker thread (NOT a sidecar
-failure — those are recorded normally) sets ``state=failed`` with the
+failure -- those are recorded normally) sets ``state=failed`` with the
 exception captured in ``state.error``. The orchestrator's
 ``_safe_run_phase`` already catches ``ManagerError`` so worker-thread
 failures are rare (typically OSError on disk full).
@@ -70,7 +70,7 @@ class RunStatus(str, Enum):
     PENDING = "pending"     # registered, worker not yet started
     RUNNING = "running"     # worker thread is in run_phases
     COMPLETED = "completed"  # run_phases returned a report
-    FAILED = "failed"       # worker thread raised (rare — most failures are inside report.sidecars)
+    FAILED = "failed"       # worker thread raised (rare -- most failures are inside report.sidecars)
 
 
 @dataclass
@@ -90,7 +90,7 @@ class RunState:
     # the caller passed SourceType enums or raw strings.
     categories: tuple[str, ...] = ()
     phases: tuple[str, ...] = ()
-    # Internal coordination — used by the SSE endpoint to wait efficiently.
+    # Internal coordination -- used by the SSE endpoint to wait efficiently.
     _completion_event: threading.Event = field(default_factory=threading.Event, repr=False)
 
 
@@ -133,7 +133,7 @@ class RunRegistry:
     ) -> RunState | None:
         """Return any currently-running RunState whose categories overlap
         AND whose phases include 'apply'. Used by /runs/async to refuse a
-        concurrent destructive run on the same source — winget/brew/etc.
+        concurrent destructive run on the same source -- winget/brew/etc.
         own their own per-machine lock at the OS level, but firing two
         applies simultaneously still produces user-visible breakage
         (sidecars race, InventoryDB cleared mid-flight, etc.).
@@ -191,15 +191,67 @@ class RunRegistry:
 # ── Public entry point ──────────────────────────────────────────────────────
 
 
+# Phase priority for post-run inventory flush. Higher = more authoritative.
+# When the same (category, name) appears in multiple sidecars in a single
+# run, the row from the highest-priority phase wins. Order rationale:
+#   verify (5)  -- re-scans the post-apply state; reflects current reality
+#   apply  (4)  -- just touched the package; resolved_version is the truth
+#   check  (3)  -- read-only snapshot taken BEFORE apply
+#   plan   (2)  -- subset of check (only items that would change)
+#   cleanup(1)  -- emits infra/no-op items, not real packages
+#
+# Bug fixed 2026-05-13: previously sidecars were processed in filename-
+# sorted order (apply, check, cleanup, plan, verify), causing the older
+# check row's status='planned' to overwrite the apply row's status=
+# 'success' -- operator on DP5520WMK saw inventory still listing
+# @anthropic-ai/claude-code as "planned 2.1.139 -> 2.1.140" even after
+# the apply phase upgraded it to 2.1.140.
+_PHASE_PRIORITY: dict[str, int] = {
+    "verify": 5,
+    "apply": 4,
+    "check": 3,
+    "plan": 2,
+    "cleanup": 1,
+}
+
+# Apply / verify emit status strings from a different taxonomy than check.
+# Normalise so the inventory_db has a single consistent vocabulary that
+# the SPA can paint without per-phase status logic.
+_INVENTORY_STATUS_MAP: dict[str, str] = {
+    # check/plan vocabulary -- passes through unchanged
+    "up_to_date":  "up_to_date",
+    "planned":     "planned",
+    "missing":     "missing",
+    "skipped":     "skipped",
+    # apply/verify vocabulary -- fold into the check vocabulary
+    "success":     "up_to_date",   # apply succeeded => package is at target
+    "failed":      "outdated",     # apply failed => target NOT installed yet
+    "partial":     "outdated",
+    "triggered":   "up_to_date",   # async-update kicked; treat as current
+}
+
+
+def _phase_of(sc: Any) -> str:
+    """Extract the phase string ('check'/'apply'/...) from a Sidecar."""
+    phase = getattr(sc, "phase", None)
+    if phase is None:
+        return ""
+    return phase.value if hasattr(phase, "value") else str(phase)
+
+
 def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
     """Walk the just-finished run's sidecars + bulk-upsert their items.
 
-    This is the "update inventory DB after each run" step. After every
-    apply / verify / check phase finishes, the freshly-written sidecars
-    in ``run_dir`` carry the most up-to-date installed + candidate
-    versions for every package the managers touched. We funnel them
-    into the persistent inventory DB so the next dashboard navigation
-    reflects what just changed without paying for a fresh scan.
+    Resolves duplicates across phases by phase priority: verify > apply >
+    check > plan > cleanup. For apply success items the *installed*
+    column is taken from ``resolved_version`` (the post-apply state),
+    not ``current_version`` (the pre-apply state). Apply/verify status
+    strings are normalised to the check vocabulary so the SPA paints
+    consistently regardless of which phase last touched the row.
+
+    Cleanup-phase rows that carry no version info (infrastructure
+    actions like ``winget.source-reset``) are filtered out so they
+    don't pollute the Apps/Categories view.
 
     Failures are swallowed (best-effort): a flaky disk should not poison
     the run state. Returns the count of rows flushed (0 on failure or
@@ -211,39 +263,69 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
         from .sidecar_io import list_run_sidecars, read_sidecar
     except Exception:  # noqa: BLE001
         return 0
-    rows: list[dict[str, Any]] = []
+
+    # Key by (category, name); value carries the row + the priority of
+    # the phase that produced it. Higher-priority phases overwrite.
+    best: dict[tuple[str, str], tuple[int, dict[str, Any]]] = {}
+
     for sidecar_path in list_run_sidecars(run_dir):
         try:
             sc = read_sidecar(sidecar_path)
-        except Exception:  # noqa: BLE001 — corrupt sidecars shouldn't block the flush
+        except Exception:  # noqa: BLE001 -- corrupt sidecars shouldn't block the flush
             continue
         category = (
             sc.category.value if hasattr(sc.category, "value") else str(sc.category)
         )
+        phase = _phase_of(sc)
+        priority = _PHASE_PRIORITY.get(phase, 0)
+
         for item in (sc.items or []):
             name = getattr(item, "name", None) or getattr(item, "id", None)
             if not name:
                 continue
-            installed = (
-                getattr(item, "current_version", None)
-                or getattr(item, "resolved_version", None)
-            )
-            candidate = getattr(item, "target_version", None)
+
+            current = getattr(item, "current_version", None)
+            target = getattr(item, "target_version", None)
+            resolved = getattr(item, "resolved_version", None)
+
             status_obj = getattr(item, "status", None)
-            status = (
+            raw_status = (
                 status_obj.value if hasattr(status_obj, "value") else str(status_obj)
             ) if status_obj else "unknown"
-            rows.append(
-                {
-                    "category": category,
-                    "name": str(name),
-                    "installed": installed,
-                    "candidate": candidate,
-                    "status": status,
-                    "source_type": category,
-                    "vendor": getattr(item, "vendor", None),
-                },
-            )
+
+            # Apply success: installed version is now `resolved_version`
+            # (the version we just landed), not the stale `current_version`
+            # reading from before the install.
+            if phase in ("apply", "verify") and raw_status == "success" and resolved:
+                installed = resolved
+            else:
+                installed = current or resolved
+
+            candidate = target
+
+            # Filter cleanup infra rows: no version info AND came from
+            # cleanup phase. Real apps almost always have at least one
+            # version present in at least one phase's sidecar.
+            if phase == "cleanup" and not installed and not candidate:
+                continue
+
+            status = _INVENTORY_STATUS_MAP.get(raw_status, raw_status)
+
+            row = {
+                "category": category,
+                "name": str(name),
+                "installed": installed,
+                "candidate": candidate,
+                "status": status,
+                "source_type": category,
+                "vendor": getattr(item, "vendor", None),
+            }
+            key = (category, str(name))
+            existing = best.get(key)
+            if existing is None or priority >= existing[0]:
+                best[key] = (priority, row)
+
+    rows = [r for _, r in best.values()]
     if not rows:
         return 0
     # IMPORTANT: post-run flush is UPSERT-ONLY. The previous implementation
@@ -255,13 +337,13 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
     #      registry-driven + auto-classified Tier-A/B apps with vendor
     #      probes).
     #   3. Post-run flush: clear_category("web") nukes 316 rows, then
-    #      bulk_upsert writes 37 — losing 279 visible apps.
+    #      bulk_upsert writes 37 -- losing 279 visible apps.
     #
     # Apply / verify sidecars are even smaller subsets (only items that
     # got touched), so clearing on those is catastrophic too.
     #
     # The full live-scan paths (POST /inventory/db/refresh, /inventory
-    # cold start) still do clear+write per category — they're the only
+    # cold start) still do clear+write per category -- they're the only
     # source authoritative for the FULL set. Post-run sidecars only carry
     # the items each phase saw; we upsert those and leave the rest alone.
     try:
@@ -298,7 +380,7 @@ async def start_run_async(
     3. ``COMPLETED`` → run_phases returned; state.report set
     4. ``FAILED`` → worker raised; state.error set
 
-    Always returns synchronously — does not block on the worker.
+    Always returns synchronously -- does not block on the worker.
     """
     # Stringify categories + phases for the registry conflict check.
     # SourceType / Phase are enums; their `.value` is the canonical string.
@@ -326,7 +408,7 @@ async def start_run_async(
         stream_log_path.touch(exist_ok=True)
     except OSError:
         # If we can't touch it (read-only disk?), the SSE endpoint just
-        # won't see log_line events — non-fatal.
+        # won't see log_line events -- non-fatal.
         pass
 
     def _worker() -> None:
