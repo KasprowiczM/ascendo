@@ -1,6 +1,29 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-13 (sesja 65) — **Web/winget dedup + operator
+> Last updated: 2026-05-13 (sesja 66) — **Inventory + apply-mark
+> consistency + SPA polish.** Operator regression report: VSCode
+> manually upgraded to 1.120.0 but `ascendo build-inventory` still
+> reported web row as `installed=1.119.1 outdated`; IMG to ISO got
+> re-applied every full run despite Sesja 63's apply-mark already
+> persisting the target. Two surgical fixes shipped:
+> (1) `_latest_check_overlay` in `core/ascendo/dashboard/routes/spa_real.py`
+> now only walks apply/verify payloads from the SAME RUN as the chosen
+> check baseline — an OLD `triggered` apply from a previous run can no
+> longer override a newer check's `up_to_date` because the post-apply
+> overlay skips up_to_date statuses;
+> (2) `plan.ps1` + `apply.ps1` for winget now both consult
+> `Get-AscendoApplyMark` — plan skips marked packages, apply emits
+> `up_to_date` without invoking winget. Plus i18n cleanup
+> (`app/frontend/i18n.js`: corrupted Polish help/about/history/settings
+> sections trimmed, 2187 → 2041 lines; EN + PL Windows manager Help
+> block added covering all 8 managers + Sesja 63-65 mechanisms) and
+> SPA polish (History tab now renders a 📄 link per row opening
+> `/runs/{id}/report`). Test count 448 → **453 passing** Windows
+> (+5 apply-mark regression tests) + 3 new contract tests in
+> `tests/contract/test_overlay_same_run_only.py`. Zero regressions.
+> See HANDOFF.md Sesja 66.
+>
+> Previous milestone (sesja 65) — **Web/winget dedup + operator
 > coverage report.** Operator request: *"make sure Ascendo really takes
 > care of all updates on windows fully, silently, perfectly, with no
 > errors. give me report which apps are fully covered… which are still

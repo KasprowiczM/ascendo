@@ -572,6 +572,42 @@ try {
             $sourceFeed = [string]$pkg.Source
         }
 
+        # 5a-bis. Sesja 66: honour Sesja 63's apply-mark in apply too.
+        # Without this, an Unknown-version package whose mark.target ==
+        # Available gets re-applied every full run (winget list still
+        # says Unknown post-install; without the mark check, plan + apply
+        # treat the package as outdated forever). check.ps1 already
+        # consults the mark and reports up_to_date; mirror that here so
+        # the orchestrator does not re-install a package that's already
+        # at the marked version. Emit as 'up_to_date' so the run summary
+        # is honest about what actually happened (zero work performed).
+        if ([string]::IsNullOrWhiteSpace($current) -or $current -eq 'Unknown') {
+            try {
+                $mark = Get-AscendoApplyMark -Id ([string]$pkg.Id)
+            } catch { $mark = $null }
+            if ($null -ne $mark -and $mark.target -and $mark.target -eq $target) {
+                $skipArgs = @{
+                    Sidecar        = $sidecar
+                    Id             = [string]$pkg.Id
+                    Name           = [string]$pkg.Name
+                    Category       = 'winget'
+                    SourceType     = 'winget'
+                    Status         = 'up_to_date'
+                    CurrentVersion = [string]$mark.target
+                    TargetVersion  = $target
+                    Messages       = @(
+                        @{
+                            level = 'info'
+                            text  = ("Already at marked version {0} (applied {1}); skipping re-install." -f $mark.target, $mark.appliedAt)
+                        }
+                    )
+                }
+                if ($sourceFeed) { $skipArgs['SourceFeed'] = $sourceFeed }
+                [void](Add-SidecarItem @skipArgs)
+                continue
+            }
+        }
+
         # 5b. Skip-list check
         if (Test-PackageSkipped -PackageId $pkg.Id) {
             $skipArgs = @{

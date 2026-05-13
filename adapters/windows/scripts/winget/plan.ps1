@@ -368,6 +368,24 @@ try {
 
         $target = [string]$pkg.Available
 
+        # Sesja 66: honour Sesja 63's apply-mark in plan too. Without
+        # this, packages whose DisplayVersion winget reports as Unknown
+        # (SoftSea.IMGtoISO is the canonical example) get planned for
+        # upgrade every run -- even right after a successful apply --
+        # because the post-install winget list still says Version=Unknown.
+        # check.ps1 already consults the mark; plan must too, otherwise
+        # the operator sees a planned upgrade in the dashboard but check
+        # says up_to_date (inconsistent UI + the full run re-applies).
+        if ([string]::IsNullOrWhiteSpace($current) -or $current -eq 'Unknown') {
+            try {
+                $mark = Get-AscendoApplyMark -Id ([string]$pkg.Id)
+            } catch { $mark = $null }
+            if ($null -ne $mark -and $mark.target -and $mark.target -eq $target) {
+                Write-Verbose ("Plan: skipping {0} (apply-mark target={1} matches Available)" -f $pkg.Id, $mark.target)
+                continue
+            }
+        }
+
         # Build rollback recipe inline. Plan does not import AscendoWingetActions
         # (which the apply phase will own); duplicating this small recipe is
         # cheaper than introducing a cross-phase dependency for one string.

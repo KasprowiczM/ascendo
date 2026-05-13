@@ -2435,6 +2435,21 @@ const ui = {
         <td>${phaseSummary}</td>
         <td>${r.needs_reboot ? "yes" : "-"}</td>
         <td><a href="#logs" data-run="${r.id}">${r.id}</a></td>`;
+      // Sesja 66: link to /runs/{id}/report (human-readable REPORT.md).
+      // Audit found endpoint exists at runs.py:458 but UI never linked it.
+      // Use DOM methods (not innerHTML) so the run id can't introduce XSS.
+      const lastCell = tr.lastElementChild;
+      if (lastCell) {
+        lastCell.appendChild(document.createTextNode(" "));
+        const reportA = document.createElement("a");
+        reportA.href = "/runs/" + encodeURIComponent(r.id) + "/report";
+        reportA.target = "_blank";
+        reportA.rel = "noopener";
+        reportA.className = "dim history-report-link";
+        reportA.title = i18n.t("history.view_report", "View report");
+        reportA.textContent = "\u{1F4C4}";  // 📄 page icon
+        lastCell.appendChild(reportA);
+      }
       tb.appendChild(tr);
     }
     $$("a[data-run]").forEach(a => a.addEventListener("click", e => {

@@ -303,6 +303,9 @@ NSIS pre-uninstall hook — no manual cleanup needed. User data in
 | `>>> still running (Ns)` lines pile up | Working as intended | Watchdog heartbeat to confirm the script hasn't hung during a long winget upgrade |
 | Run died and sidecar is missing | Salvage will reconstruct | New in v0.0.8: bufdir-based salvage rebuilds the sidecar from partial JSONL; look for `ASCENDO-SALVAGED` in messages[0] |
 | Dell plugin reports "no pending updates" but I know there are some | dcu-cli /scan needs Administrator elevation; non-elevated runs see exit -1 + 0 items by design | Run PowerShell as Administrator and re-run `python -m ascendo run --category plugin --phase check` |
+| An app shows `outdated` in Apps/Categories despite being manually upgraded | (Sesja 66 fixed) stale post-apply overlay from a previous `triggered` run | `git pull` + restart dashboard. The `_latest_check_overlay` now only walks same-run apply/verify so an old `triggered` no longer pins the row at the pre-upgrade version |
+| `winget list Version=Unknown` package gets re-applied every full run | (Sesja 66 fixed) plan + apply didn't honour Sesja 63's apply-mark | `git pull` so plan.ps1 + apply.ps1 consult `Get-AscendoApplyMark`. Once a successful apply records the target, subsequent runs short-circuit to `up_to_date` |
+| History tab doesn't show a way to read the per-run summary | (Sesja 66 added) — each row now has a 📄 link | Click 📄 in the rightmost column to open `REPORT.md` in a new tab |
 
 ## 10 · Where everything lives
 

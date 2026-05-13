@@ -444,7 +444,9 @@ def _latest_check_overlay(runs_dir: Path, category: str) -> dict[str, dict[str, 
     # row (15 items, but with post-install status). For inventory we
     # want check's base + apply's resolved_version overlaid on top.
     check_payload: dict[str, Any] | None = None
+    check_run_dir: Path | None = None
     post_apply_payloads: list[dict[str, Any]] = []
+    fallback_post_apply: list[tuple[dict[str, Any], Path]] = []
     for _mt, pri, path in candidates:
         try:
             payload = _json.loads(path.read_text(encoding="utf-8"))
@@ -456,15 +458,37 @@ def _latest_check_overlay(runs_dir: Path, category: str) -> dict[str, dict[str, 
         if pri == 1:
             if check_payload is None:
                 check_payload = payload
+                check_run_dir = path.parent
         else:
-            post_apply_payloads.append(payload)
+            # Sesja 66 bug fix: only consider apply/verify sidecars from
+            # the SAME run as the chosen check baseline. Without this gate
+            # an OLD ``triggered`` apply from a previous run sticks because
+            # later runs that report ``up_to_date`` do not overlay (the
+            # overlay block below skips non-success/non-triggered).
+            #
+            # Concrete failure on DP5520WMK 2026-05-13: VSCode 1.119.1
+            # was triggered at 11:51 (run 6149fbba). Three subsequent
+            # full runs (12:02, 14:36, 17:07) all reported up_to_date
+            # 1.120.0 -- but post-apply overlay walked ALL runs and the
+            # 11:51 triggered status overrode every later up_to_date
+            # signal, leaving inventory.db stuck at installed=1.119.1.
+            #
+            # Filtering to same-run-as-check captures the intent: the
+            # overlay reflects POST-APPLY truth for the run that
+            # established the baseline. Older runs' state is already
+            # subsumed by the freshest check.
+            fallback_post_apply.append((payload, path.parent))
 
     # Fall-back: no check sidecar found, but apply/verify has data
     # (e.g. operator only ever ran "apply" via category-only invocation).
     # Use the freshest apply/verify as the base.
-    if check_payload is None and post_apply_payloads:
-        check_payload = post_apply_payloads[0]
-        post_apply_payloads = post_apply_payloads[1:]
+    if check_payload is None and fallback_post_apply:
+        check_payload, check_run_dir = fallback_post_apply[0]
+        post_apply_payloads = [p for p, _d in fallback_post_apply[1:]]
+    elif check_payload is not None and check_run_dir is not None:
+        post_apply_payloads = [
+            p for p, d in fallback_post_apply if d == check_run_dir
+        ]
     if check_payload is None:
         return {}
 

@@ -6,6 +6,162 @@
 
 ---
 
+## Sesja 66 (2026-05-13, near midnight) — Inventory + apply-mark consistency + SPA polish
+
+Operator regression report on DP5520WMK after Sesja 65: *"check last
+full update run log, fix errors, i have an impression, that building
+inventory is not properly checking really installed versions of apps
+on machine. i have updated vscode manually and after build inventory,
+ascendo was trying to update it, reported older version. img to iso
+is still updating, during run it couldn't check actual version again.
+make sure all the options in web app are properly translated…"*
+
+### The two real bugs
+
+**Bug A — VSCode stuck at 1.119.1.** Operator upgraded VSCode manually
+to 1.120.0. `ascendo build-inventory` correctly read DisplayVersion=
+1.120.0 from the registry, but the inventory.db `web` row stayed at
+`installed=1.119.1, candidate=1.120.0, outdated`. Every subsequent
+run kept asking to upgrade VSCode.
+
+Root cause traced to `_latest_check_overlay` in
+`core/ascendo/dashboard/routes/spa_real.py`. The two-stage overlay
+picks the freshest check sidecar as the base (17:07, current=1.120.0
+up_to_date), then walks `post_apply_payloads` to overlay any
+`success`/`triggered` apply/verify items on top. BUG: it walked
+post-apply payloads from **ALL** prior runs, not just the same run
+as the check baseline. So an OLD apply from 11:51 (run 6149fbba)
+that had `status=triggered` `current=1.119.1` overlaid onto the
+fresh check baseline. Every later run reported `status=up_to_date`
+which the post-apply overlay SKIPS (only success+triggered overlay,
+not up_to_date), so the stale 1.119.1 stuck forever.
+
+**Bug B — IMG to ISO re-upgraded every full run.** Sesja 63 added an
+apply-mark mechanism: when `winget list Version=Unknown` BOTH before
+and after a successful upgrade, persist the target version to
+`~/.ascendo/state/winget_apply_marks.json` so the next check can
+report `up_to_date` instead of `planned`. Operator confirmed
+check__winget.json correctly flipped IMG to ISO to up_to_date with
+cur='1.0' tgt='1.0'. But plan__winget.json kept reporting it as
+`planned` and apply__winget.json kept re-running the upgrade.
+
+Root cause: only `check.ps1` consulted `Get-AscendoApplyMark`. Plan
+and apply scripts iterated the upgradable list independently and
+classified the package as needing upgrade. Result: every full run
+silently re-applied IMG to ISO (operationally harmless because winget
+no-ops when the version matches, but the sidecar reported
+`status=success` as if work happened).
+
+### Shipped this session
+
+One commit on `claude/nostalgic-wilbur-0d51a2`:
+
+**Bug fixes:**
+
+1. `core/ascendo/dashboard/routes/spa_real.py`: in `_latest_check_overlay`,
+   track `check_run_dir` alongside `check_payload`, and filter
+   `post_apply_payloads` to only payloads from the SAME RUN as the
+   check baseline. An OLD apply from a previous run can no longer
+   override a newer check.
+2. `adapters/windows/scripts/winget/plan.ps1`: after computing
+   `$current` and `$target`, when current is Unknown/blank check
+   `Get-AscendoApplyMark`. If `mark.target == Available`, `continue`
+   (skip emission). Mirror of the Sesja 63 check.ps1 logic.
+3. `adapters/windows/scripts/winget/apply.ps1`: same mark check
+   inserted BEFORE the skip-list check. For a marked package, emit
+   `status=up_to_date` with `current_version=mark.target` and skip
+   the winget upgrade invocation entirely. Honest about no work
+   performed.
+
+**Tests:**
+
+- `tests/contract/test_overlay_same_run_only.py` (+3): pins the
+  exact bug (stale triggered from old run does not override newer
+  check), the intended same-run post-apply behaviour (Sesja 53
+  fix preserved), and an additional symmetric coverage test.
+- `adapters/windows/tests/test_winget_apply_mark_in_plan_and_apply.py`
+  (+5): static-analysis tests that plan + apply consult
+  Get-AscendoApplyMark, apply's mark check appears BEFORE the
+  skip-list check, and the synthesized up_to_date item carries
+  CurrentVersion from $mark.target.
+
+**i18n cleanup (Polish):**
+
+`app/frontend/i18n.js` had 4 corrupted sections in the PL locale
+(help / about / history / settings) with 3-4× duplicated EN+PL
+entries from a previous bad merge. Surgically removed: lines
+1828-2069 trimmed; file size 2187 → 2041 lines. Both EN and PL
+now share a `windows: {…}` Help block documenting all 8 managers
+(winget, msstore, npm, pip, web, plugin, registry_arp,
+windows_update) plus the Sesja 63-65 mechanisms (apply-mark,
+fake-success detection, Tier-A silent install, web/winget dedup).
+
+**SPA polish:**
+
+- History tab now renders a 📄 "View report" link per row, opening
+  `/runs/{id}/report` in a new tab. The endpoint existed at
+  `core/ascendo/dashboard/routes/runs.py:458` but the SPA never
+  surfaced it. DOM-safe link construction (createElement +
+  textContent) to satisfy XSS-prevention hooks. EN + PL i18n keys
+  `history.report` + `history.view_report`.
+
+### Live verification
+
+```
+overlay before fix:
+  'Microsoft Visual Studio Code (User)' -> installed='1.119.1' candidate='1.120.0' status='up_to_date'
+
+overlay after fix:
+  'Microsoft Visual Studio Code (User)' -> installed='1.120.0' candidate='1.120.0' status='up_to_date'
+```
+
+```
+$ winget list --id SoftSea.IMGtoISO
+Name        Id                Version  Source
+IMG to ISO  SoftSea.IMGtoISO  Unknown  winget
+
+$ cat ~/.ascendo/state/winget_apply_marks.json
+{"SoftSea.IMGtoISO": {"target": "1.0", "appliedAt": "2026-05-13T15:09:22Z"}}
+
+After Sesja 66:
+  check.ps1  -> IMG to ISO status=up_to_date cur=1.0 tgt=1.0 (Sesja 63)
+  plan.ps1   -> IMG to ISO not emitted (Sesja 66 new)
+  apply.ps1  -> IMG to ISO status=up_to_date cur=1.0 tgt=1.0 (Sesja 66 new, no winget call)
+```
+
+### State after Sesja 66
+
+- Test count: 448 (Sesja 65) → **453 passing** on Windows
+  (+5 apply-mark regression tests), 1 skipped, zero regressions.
+- +3 contract tests in `tests/contract/test_overlay_same_run_only.py`.
+- `app/frontend/i18n.js`: 2187 → 2041 lines (Polish corruption
+  removed); EN + PL parity preserved.
+- History tab now exposes per-run REPORT.md links.
+
+### Operator verification path
+
+```powershell
+# After git pull on the worktree:
+ascendo web restart
+python -m ascendo build-inventory --verbose
+
+# Web vscode-user row should now show installed=1.120.0 up_to_date.
+
+# Full update:
+python -m ascendo run --profile full
+
+# IMG to ISO sidecars across phases:
+#   check: status=up_to_date cur='1.0' tgt='1.0' (Sesja 63)
+#   plan:  IMG to ISO NOT in items[] (skipped via apply-mark)
+#   apply: status=up_to_date with marker text (no winget upgrade ran)
+#   verify: status=up_to_date
+
+# History tab now shows a 📄 link next to each run id; clicking it
+# opens REPORT.md in a new tab.
+```
+
+---
+
 ## Sesja 65 (2026-05-13, late night) — Web/winget dedup + coverage report
 
 Operator request, verbatim: *"so far project in

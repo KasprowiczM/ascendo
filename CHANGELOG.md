@@ -14,6 +14,56 @@ OSes, plugin signing + verification, plugin marketplace UX in dashboard.
 
 ---
 
+## [0.6.6] — 2026-05-13 — Inventory + apply-mark consistency + SPA polish (Sesja 66)
+
+Sesja 66. Operator regression report on `DP5520WMK`: VSCode 1.119.1 →
+1.120.0 was upgraded manually, but `ascendo build-inventory` still
+reported the web row as `installed=1.119.1, candidate=1.120.0, outdated`
+even after the latest full update run had `check__web.json` correctly
+showing 1.120.0. Plus IMG to ISO was being re-applied on every full
+run despite Sesja 63's apply-mark already persisting the target.
+
+### Fixed
+
+- **Post-apply overlay no longer leaks across runs.** `_latest_check_overlay`
+  in `core/ascendo/dashboard/routes/spa_real.py` was walking apply/verify
+  sidecars from ALL prior runs in `post_apply_payloads`. An OLD
+  `triggered` apply from a previous run (e.g. VSCode 1.119.1 triggered
+  at 11:51) would stick because every newer run's `up_to_date` status
+  is skipped by the overlay (only `success`/`triggered` overlay). Fixed
+  to only consider apply/verify payloads from the SAME RUN as the chosen
+  check baseline. +3 regression tests in `tests/contract/test_overlay_same_run_only.py`.
+- **plan.ps1 + apply.ps1 now honour Sesja 63's apply-mark.** Previously
+  only `check.ps1` consulted `Get-AscendoApplyMark`. For packages whose
+  `winget list Version=Unknown` BOTH before and after a successful
+  upgrade (SoftSea.IMGtoISO is the canonical example), check correctly
+  reported `up_to_date` but plan classified them as `planned` and apply
+  re-ran the upgrade. Plan now skips marked packages; apply emits
+  `status=up_to_date` without invoking winget. +5 regression tests in
+  `adapters/windows/tests/test_winget_apply_mark_in_plan_and_apply.py`.
+- **i18n cleanup.** Polish help / about / history / settings sections
+  in `app/frontend/i18n.js` had 3-4× duplicated entries from a previous
+  bad merge — fixed surgically (lines 1828-2069 trimmed; file went from
+  2187 → 2041 lines). Both EN + PL now have a `windows: {…}` Help block
+  describing all 8 managers (winget, msstore, npm, pip, web, plugin,
+  registry_arp, windows_update) and the Sesja 63-65 mechanisms (apply-
+  mark, fake-success detection, Tier-A silent install, web/winget dedup).
+
+### Added
+
+- **History → REPORT.md link.** Every row in the History tab now has a
+  📄 link opening `/runs/{id}/report` in a new tab. The endpoint at
+  `core/ascendo/dashboard/routes/runs.py:458` was already implemented
+  but the SPA never surfaced it. EN + PL i18n keys `history.report` +
+  `history.view_report`.
+
+### Test count
+
+448 (Sesja 65) → **453 passing** on Windows (+5 apply-mark regression
+tests). +3 contract tests for the overlay fix. Zero regressions.
+
+---
+
 ## [0.6.3] — 2026-05-12 — Version polarity across all phases + new logos + ascendo build-inventory
 
 Sesja 57. Operator audit on `mk-uP5520` surfaced three classes of bug
