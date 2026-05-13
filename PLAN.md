@@ -1,6 +1,25 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-12 (sesja 58 + four follow-up commits) —
+> Last updated: 2026-05-13 (sesja 59) — **Windows apply-hang fixed +
+> Tier-A web apply + registry auto-discovery shipped.** Three Sesja 59
+> commits land on `claude/friendly-banzai-aee757`: (1) windows_update
+> apply.ps1 pre-checks pending via `Get-PendingWindowsUpdates` before
+> `Install-WindowsUpdateBatch`, short-circuiting in seconds when 0
+> pending — fixes the operator-reported "updates not applying, app
+> stops at certain point" bug observed on run e5f0e0f1; plus heartbeat
+> now mirrors `>>> still running Ns` to `$env:ASCENDO_STREAM_LOG` so
+> the SPA Run Center shows liveness during long installs. (2) Tier-A
+> web apply on github_release + release_feed handlers — opt-in via
+> `tier_a_apply = true` on the app entry; downloads + Authenticode
+> verifies + kills running processes + runs silent install + reads
+> version back from registry. (3) Registry-based auto-discovery —
+> `AscendoWebDiscovery.psm1` walks ARP roots, classifies ownership
+> via winget/msstore/curated/arp layers, filters out Microsoft system
+> components + Inno bundles, surfaces every web-installed app in the
+> SPA's Categories tab as `web:auto:<slug>` items. Test count 280 →
+> **344** (+64 across 5 new test files). See HANDOFF.md Sesja 59.
+>
+> Previous milestone (sesja 58 + four follow-up commits) —
 > **Windows brought to feature parity with macOS + Ubuntu, then
 > hardened against the first real-hardware run.** Five-wave Sesja 58
 > push lands: 5 `bin/` web-service wrappers + bidirectional

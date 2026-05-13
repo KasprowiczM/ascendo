@@ -6,6 +6,195 @@
 
 ---
 
+## Sesja 59 (2026-05-13) — Windows apply-hang fix + Tier-A web apply + registry auto-discovery
+
+Day-after-Sesja-58 follow-up triggered by the operator's report:
+"updates are not applying, app stop at certain point" plus "implement
+missing items on windows, not yet finished in handoff".
+
+### The bug: windows_update apply wedges on 0-pending hosts
+
+Investigation of run `e5f0e0f1` (2026-05-12 22:31-22:36 on DP5520WMK)
+showed the orchestrator getting through winget/msstore/npm/pip/web/
+registry_arp apply, then stopping cold inside `windows_update/apply.ps1`.
+The check phase had already reported 4 KBs all `up_to_date` (0 pending).
+But `apply.ps1` unconditionally called PSWindowsUpdate's
+`Install-WindowsUpdate` through `Install-WindowsUpdateBatch`, which
+wedged inside the Windows Update Agent COM search even with nothing to
+install. The operator killed the dashboard, no `apply__windows_update.json`
+landed, and the orchestrator never progressed to subsequent categories.
+
+Compounding factor: the heartbeat helper wrote `>>> still running Ns`
+to `[Console]::Error` only. `subprocess.run(capture_output=True)` in
+the Python manager captured stderr into memory and threw it away. The
+SPA Run Center showed zero liveness for the whole hang, so the operator
+had no signal except "nothing is happening".
+
+### Shipped this session
+
+Three Sesja-59 commits land on `claude/friendly-banzai-aee757`:
+
+**1. `<hash1>` — fix(windows): windows_update apply fast-path pre-check
++ heartbeat -> ASCENDO_STREAM_LOG**
+
+Two surgical changes that close the hang root cause:
+
+- `adapters/windows/scripts/windows_update/apply.ps1`: in the real-run
+  branch, scan via `Get-PendingWindowsUpdates` (same read-only call
+  `check.ps1` uses) BEFORE calling `Install-WindowsUpdateBatch`. Apply
+  `-ItemFilter` to the pending set. If 0 remain, emit success sidecar
+  with `items=[]` and exit 0 — `Install-WindowsUpdate` never runs in
+  the no-op case. The new pre-check is wrapped in its own short-lived
+  heartbeat ("Windows Update pre-check scan") so even the read-only
+  scan shows liveness, then immediately torn down before the real
+  install heartbeat fires.
+- `adapters/windows/lib/AscendoJson.psm1` — `Start-AscendoHeartbeat`
+  captures `$env:ASCENDO_STREAM_LOG` at start-time and passes it into
+  the runspace via `.AddArgument`. The tick loop now appends each
+  heartbeat to the stream-log file (when set) in addition to
+  `[Console]::Error.WriteLine`. The dashboard's SSE consumer that
+  tails the stream log now sees every `>>> still running Ns` in
+  real time. Backwards compatible — when `$env:ASCENDO_STREAM_LOG`
+  isn't set, the file-append branch no-ops.
+
+Plus 12 static-analysis regression tests in
+`test_windows_update_apply_fastpath.py` (7) and
+`test_heartbeat_stream_log.py` (5) that pin the new behaviour against
+the .ps1 / .psm1 source so a refactor can't silently regress.
+
+**2. `<hash2>` — feat(windows/web): Tier-A apply with download +
+Authenticode verify + UAC handoff**
+
+Closes the "Tier-A apply trigger-only" gap called out in Sesja 58's
+forward state. The github_release and release_feed handlers now have
+two apply modes:
+
+- **Tier-B (default)** — `Invoke-GitHubReleaseApply` /
+  `Invoke-ReleaseFeedApply`: opens the vendor's download page in the
+  default browser (unchanged behaviour).
+- **Tier-A (opt-in via `tier_a_apply = true` on the app entry)** —
+  `Invoke-GitHubReleaseApplyReal` / `Invoke-ReleaseFeedApplyReal`:
+  resolves the asset URL via the existing check-side probe, downloads
+  to `%TEMP%\ascendo-web-download\<slug>-<version>.<ext>`, verifies
+  Authenticode signature (status + signer subject when
+  `expected_publisher` is set), kills configured running processes
+  via `Stop-PackageProcesses`, runs the installer with configurable
+  silent args (default `/S` for NSIS, `/qn /norestart` for MSI), reads
+  the installed version back from the Uninstall registry, and returns
+  a result hashtable with success/installed-version/exit-code/error.
+
+New Pydantic fields on both `GitHubReleaseConfig` + `ReleaseFeedConfig`:
+- `expected_publisher: str | None`
+- `silent_args: list[str] | None`
+- `installer_kind: Literal["exe", "msi"] | None`
+- `kill_processes: list[str] | None`
+- `display_name_pattern: str | None`
+
+New `WebAppV1.tier_a_apply: bool = False` field. Cross-field validators
+reject `tier_a_apply=true` for builtin handler (Tier-B only) and
+require `windows_uninstall_key` (or `display_name_pattern`) so the
+post-install readback can find the version.
+
+Dispatcher in `scripts/web/apply.ps1` picks Tier-A vs Tier-B based on
+the per-app flag. UAC-cancelled installer maps to `status=skipped`
+(not failed) so a single user "No" doesn't fail the whole apply phase.
+
+19 new schema tests in `test_web_registry_tier_a.py` + 17 dispatch
+tests in `test_tier_a_web_apply.py`.
+
+**3. `<hash3>` — feat(windows/web): registry-based auto-discovery**
+
+Closes the "auto-discovery from registry (mirror of macOS `_owned_by` +
+Info.plist walker)" gap from Sesja 58's forward state. New module
+`adapters/windows/lib/AscendoWebDiscovery.psm1` (~450 LOC) walks the
+three ARP registry roots (HKLM, HKLM\WOW6432Node, HKCU), classifies
+each entry via three layers, and emits one PSCustomObject per app:
+
+- **Layer 1 ownership**: winget + msstore (cached per process, fetched
+  once via `Get-WingetInstalled`); MSIX `Source=msstore`, other rows
+  match by lowercased PackageId.
+- **Layer 2 ownership**: curated `web_apps.toml` — index by lowercased
+  display_name AND by lowercased windows_uninstall_key; either index
+  hit marks the row as `Source=curated`.
+- **Layer 3 ownership**: anything not classified by 1 or 2 is
+  `Source=arp`.
+
+Eligibility filtering excludes Microsoft system components
+(Windows / Visual C++ Redistributable / .NET / Edge / WebView2 / KB /
+Security Update / Update / Hotfix), Inno Setup update bundles
+(`{GUID}_isN` for N >= 2), ARP plumbing (SystemComponent=1,
+ParentKeyName set, ReleaseType in update/patch/hotfix family), and
+caller-supplied patterns via `-ExcludePatterns` /
+`$env:ASCENDO_WEB_INELIGIBLE_PATTERNS`. `-IncludeIneligible` /
+`-IncludeOwned` switches let `validate-windows.ps1` audits see the
+full list.
+
+`scripts/web/check.ps1` now imports the discovery module (silently if
+missing) and, after iterating the curated registry, calls
+`Invoke-AscendoWebDiscovery`, dedupes against the curated emissions,
+and emits one `status=up_to_date` item per net-new eligible app with
+`id = web:auto:<slug>` and an `evidence.note` pointing operators at
+the curated path for Tier-A promotion. Gated behind
+`$env:ASCENDO_WEB_SKIP_DISCOVERY=1` (e.g. for offline air-gapped
+boxes).
+
+15 new tests in `test_web_discovery.py`.
+
+### State after Sesja 59
+
+**Test count:** 280 (Sesja 58) → **344 passing** (+64 across 5 new
+test files; 1 skipped intentionally).
+
+**WindowsAdapter capabilities unchanged** —
+`PACKAGE_MANAGEMENT | INVENTORY | SNAPSHOTS | SCHEDULING | ELEVATION`.
+
+**WebManager surface enlarged**:
+- Tier-A apply real on github_release + release_feed handlers (opt-in
+  per app)
+- Auto-discovery surfaces every web-installed app in the SPA's
+  Categories tab even when not in the curated registry
+
+### Known limitations / forward state
+
+- **Tier-A apply requires the operator to opt in per-app** by setting
+  `tier_a_apply = true` in `web_apps.toml`. None of the shipped 10
+  curated entries flip this on yet — that's a follow-up that pairs
+  with Authenticode-signed installer signing for our own MSI/NSIS
+  artifacts (so we don't ship a flaw asking users to trust unsigned
+  third-party binaries).
+- **Auto-discovered apps emit Handler='builtin'** — Windows has no
+  Sparkle/Keystone-equivalent fingerprint in the registry. Promoting
+  a discovered app to Tier-A still requires the operator to add the
+  curated entry with the right github_release/release_feed handler.
+- **No candidate-version probe for auto-discovered apps.** They emit
+  `status=up_to_date` with `from==to==DisplayVersion`. The point is
+  presence in the SPA, not outdated-detection.
+- **Windows MSI/NSIS installer signing** still deferred — see
+  WINDOWS_QUICKSTART §11 for the SmartScreen reality on unsigned
+  builds. Same scope as M4.
+- **Tauri shell** unchanged this session.
+
+### Operator verification
+
+```powershell
+# After git pull, restart any running dashboard so the new code loads:
+ascendo web restart
+
+# Re-run the failing apply scenario from May 12 (0 pending updates):
+python -m ascendo run --category windows_update --phase apply
+
+# Expected: completes in < 20s (was: hung indefinitely)
+# Expected sidecar: status=success, items=[], message="No pending
+# Windows updates; nothing to install."
+
+# Verify SPA shows heartbeat during a long install (when there ARE pending):
+ascendo web start
+# Trigger Full update on Categories; observe ">>> still running Ns
+# (Windows Update install (N updates))" lines streaming to Run Center.
+```
+
+---
+
 ## Sesja 58 (2026-05-12) — Windows-parity push
 
 ### Follow-up: post-Sesja-58 first-run fixes (2026-05-12 evening)

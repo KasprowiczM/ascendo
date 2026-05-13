@@ -76,6 +76,12 @@ Import-Module (Join-Path $LibDir 'AscendoWeb.psm1')  -Force -DisableNameChecking
 Import-Module (Join-Path $LibDir 'handlers/github_release.ps1') -Force -DisableNameChecking
 Import-Module (Join-Path $LibDir 'handlers/release_feed.ps1')   -Force -DisableNameChecking
 Import-Module (Join-Path $LibDir 'handlers/builtin.ps1')        -Force -DisableNameChecking
+# Registry-based auto-discovery (skipped when ASCENDO_WEB_SKIP_DISCOVERY=1).
+# AscendoWinget is loaded lazily so discovery's ownership probe works when
+# winget is on PATH; absence degrades to "no winget/msstore ownership" rather
+# than failing.
+Import-Module (Join-Path $LibDir 'AscendoWinget.psm1')        -Force -DisableNameChecking -ErrorAction SilentlyContinue
+Import-Module (Join-Path $LibDir 'AscendoWebDiscovery.psm1')  -Force -DisableNameChecking
 
 # -----------------------------------------------------------------------------
 # Main
@@ -132,6 +138,11 @@ try {
         Add-SidecarMessage -Sidecar $sidecar -Level 'warn' `
             -Text ("Failed to list registered web apps: {0}" -f $_.Exception.Message)
     }
+
+    # Track curated emissions so discovery doesn't double-emit them. Both
+    # slug and uninstall-key map are tracked (discovery joins on either).
+    $emittedSlugs = @{}
+    $emittedBundleIds = @{}
 
     foreach ($slug in $slugs) {
         if ($null -ne $itemFilterArray -and ($itemFilterArray -notcontains $slug)) {
@@ -257,6 +268,96 @@ try {
         } elseif ($status -eq 'skipped') {
             Add-SidecarMessage -Sidecar $sidecar -Level 'warn' `
                 -Text ("{0}: {1} probe returned empty (rate-limit / 404 / regex no-match?)" -f $slug, $handler)
+        }
+
+        # Record this slug + uninstall-key so auto-discovery does not
+        # double-emit the same app under a registry-derived slug.
+        $emittedSlugs[$slug.ToLowerInvariant()] = $true
+        if ($uninstallKey) {
+            $emittedBundleIds[$uninstallKey.Trim().ToLowerInvariant()] = $true
+        }
+    }
+
+    # -- Registry auto-discovery -------------------------------------------
+    #
+    # Walk the three Add/Remove Programs registry hives via
+    # Invoke-AscendoWebDiscovery, then emit one info-level sidecar item per
+    # eligible app that the curated registry has not covered. Skipped when
+    # ASCENDO_WEB_SKIP_DISCOVERY=1 (test hook).
+    #
+    # Discovered apps are surfaced as status=up_to_date (from==to==installed)
+    # so the SPA paints them in the inventory but does not flag them as
+    # outdated. We don't have a candidate-version probe yet for auto-
+    # discovered apps -- that requires the operator to promote them to the
+    # curated web_apps.toml with a real handler (github_release /
+    # release_feed). The sidecar message on each item points at that path.
+    if (-not $env:ASCENDO_WEB_SKIP_DISCOVERY) {
+        $discovered = @()
+        try {
+            $discovered = @(Invoke-AscendoWebDiscovery -ConfigDir $ConfigDir -LibDir $LibDir)
+        } catch {
+            Add-SidecarMessage -Sidecar $sidecar -Level 'warn' `
+                -Text ("web auto-discovery failed: {0}" -f $_.Exception.Message)
+            $discovered = @()
+        }
+
+        $discEmitted = 0
+        foreach ($d in $discovered) {
+            # Defense in depth: only emit eligible rows even if a future
+            # change to Invoke-AscendoWebDiscovery starts returning owned
+            # or ineligible by default.
+            if ($d.Eligibility -ne 'eligible') { continue }
+
+            $dSlug = [string]$d.Slug
+            $dKey = [string]$d.BundleId
+            if (-not $dSlug) { continue }
+
+            # Respect the item filter applied to the curated loop.
+            if ($null -ne $itemFilterArray) {
+                $autoId = "web:auto:$dSlug"
+                if (($itemFilterArray -notcontains $dSlug) -and
+                    ($itemFilterArray -notcontains $autoId)) {
+                    continue
+                }
+            }
+
+            # Skip if the curated loop already covered this app.
+            if ($emittedSlugs.ContainsKey($dSlug.ToLowerInvariant())) { continue }
+            if ($dKey -and $emittedBundleIds.ContainsKey($dKey.Trim().ToLowerInvariant())) { continue }
+
+            $installedVer = [string]$d.Version
+            if ([string]::IsNullOrWhiteSpace($installedVer)) {
+                $installedVer = 'unknown'
+            }
+
+            $evidence = @{}
+            $evidence['note'] = 'auto_discovered_via_registry'
+            if ($d.Publisher) {
+                $evidence['note'] = ("auto_discovered_via_registry; publisher: {0}" -f $d.Publisher)
+            }
+            if ($d.Version) {
+                $evidence['registry_version'] = [string]$d.Version
+            }
+
+            $autoArgs = @{
+                Sidecar         = $sidecar
+                Id              = "web:auto:$dSlug"
+                Name            = [string]$d.DisplayName
+                Category        = 'web'
+                SourceType      = 'web'
+                Status          = 'up_to_date'
+                CurrentVersion  = $installedVer
+                TargetVersion   = $installedVer
+                Evidence        = $evidence
+            }
+            if ($d.Hive) { $autoArgs['SourceFeed'] = [string]$d.Hive }
+            [void](Add-SidecarItem @autoArgs)
+            $discEmitted += 1
+        }
+
+        if ($discEmitted -gt 0) {
+            Add-SidecarMessage -Sidecar $sidecar -Level 'info' `
+                -Text ("web auto-discovery surfaced {0} app(s); promote to curated web_apps.toml for real candidate detection" -f $discEmitted)
         }
     }
 
