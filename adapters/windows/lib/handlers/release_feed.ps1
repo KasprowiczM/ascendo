@@ -36,6 +36,19 @@ function _RF-WalkJsonPath {
     .SYNOPSIS
         Walk a dotted JSON path (with [N] index syntax) through a parsed
         object. Returns $null on any missing segment.
+
+    .DESCRIPTION
+        Accepts both bracket and dotted-numeric forms for array indices:
+
+          Releases[0].Version    classic JSONPath-ish form
+          Releases.0.Version     dotted-numeric (parity with the macOS
+                                 release_feed handler, which TOML
+                                 operators frequently use)
+
+        A purely-numeric segment is interpreted as an array index when
+        the current value is enumerable. Otherwise it's treated as an
+        object property name (so paths into a real ``"0":`` field still
+        work).
     #>
     param(
         [Parameter(Mandatory)] $Parsed,
@@ -46,7 +59,24 @@ function _RF-WalkJsonPath {
     # Split on '.' first, then expand [N] suffixes.
     foreach ($segment in $Path.Split('.')) {
         if ($null -eq $current) { return $null }
-        # A segment may be "foo", "foo[0]", or "[0]".
+
+        # Dotted-numeric form: the whole segment is just digits and the
+        # current value looks like an array -> use as array index.
+        if ($segment -match '^\d+$') {
+            $isEnumerable = ($current -is [System.Collections.IEnumerable]) -and `
+                            (-not ($current -is [string])) -and `
+                            (-not ($current -is [System.Collections.IDictionary]))
+            if ($isEnumerable) {
+                $arr = @($current)
+                $idx = [int]$segment
+                if ($idx -ge $arr.Count) { return $null }
+                $current = $arr[$idx]
+                continue
+            }
+            # Else fall through to property-name lookup (TOML key '0').
+        }
+
+        # A segment may be "foo", "foo[0]", "foo[0][1]", or "[0]".
         $name = $segment
         $indices = @()
         $m = [System.Text.RegularExpressions.Regex]::Matches(
@@ -177,12 +207,24 @@ function Invoke-ReleaseFeedCheck {
         return _RF-ApplyRegexTransform -Raw $body -Pattern $pattern -Replacement $replace
     }
 
-    # JSON path
+    # JSON path. Use -AsHashtable on PS 6+ to avoid the
+    # "JSON keys with different casing" failure mode -- Proton Drive's
+    # version.json contains BOTH ``Sha512CheckSum`` and
+    # ``Sha512Checksum`` across different release entries, and the
+    # default ConvertFrom-Json on PS 7 hard-fails with
+    # "Please use the -AsHashTable switch instead". -AsHashtable
+    # accepts the case difference (and our _RF-WalkJsonPath handles
+    # IDictionary uniformly with PSCustomObject so the rest of the
+    # pipeline is unchanged).
     $parsed = $null
     try {
-        $parsed = $body | ConvertFrom-Json
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            $parsed = $body | ConvertFrom-Json -AsHashtable
+        } else {
+            $parsed = $body | ConvertFrom-Json
+        }
     } catch {
-        Write-Verbose "$Slug : release_feed body is not valid JSON"
+        Write-Verbose "$Slug : release_feed body is not valid JSON: $_"
         return $null
     }
 
@@ -288,8 +330,17 @@ function _RF_ResolveDownloadUrl {
     }
     if (-not $body) { return $null }
 
+    # Same -AsHashtable rationale as the check path: handles JSON
+    # feeds with case-colliding keys (e.g. Proton Drive's mix of
+    # ``Sha512CheckSum`` and ``Sha512Checksum``).
     $parsed = $null
-    try { $parsed = $body | ConvertFrom-Json } catch { return $null }
+    try {
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            $parsed = $body | ConvertFrom-Json -AsHashtable
+        } else {
+            $parsed = $body | ConvertFrom-Json
+        }
+    } catch { return $null }
     if ($null -eq $parsed) { return $null }
 
     $raw = _RF-WalkJsonPath -Parsed $parsed -Path $downloadPath

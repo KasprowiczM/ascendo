@@ -302,13 +302,37 @@ def test_tier_a_apply_round_trips_through_toml(tmp_path) -> None:
 
 def test_existing_shipped_registry_still_parses() -> None:
     """The shipped registry must continue to parse after the schema
-    additions -- catches accidental required-field promotions."""
+    additions -- catches accidental required-field promotions.
+
+    Tier-A entries are allowed when the entry carries a complete
+    silent-install contract (silent_args, installer_kind,
+    kill_processes, expected_publisher). Sesja 61 enabled Tier-A
+    apply on six well-known installers (vscode-user, keepassxc,
+    notepadpp, autohotkey, github-cli, opencode); each must have
+    every required field set so the apply path doesn't fall through
+    to Tier-B trigger-only.
+    """
     from pathlib import Path as _P
     shipped = _P(__file__).resolve().parents[1] / "config" / "web_apps.toml"
     reg = WebRegistryV2.load(shipped, None)
-    # Existing rows must default to Tier-B (operators haven't opted in).
     for app in reg.apps:
-        assert app.tier_a_apply is False, (
-            f"slug={app.slug}: shipped registry must default to Tier-B "
-            f"(tier_a_apply=False); got tier_a_apply={app.tier_a_apply}"
+        if not app.tier_a_apply:
+            continue
+        # Tier-A is opt-in. When opted in, the contract requires the
+        # full silent-install field set so apply can run unattended.
+        assert app.handler in ("github_release", "release_feed"), (
+            f"slug={app.slug}: Tier-A apply only supported on "
+            f"github_release / release_feed handlers; handler="
+            f"{app.handler!r} cannot be Tier-A."
         )
+        sub = app.github_release or app.release_feed
+        assert sub is not None
+        for field_name in ("silent_args", "installer_kind",
+                           "kill_processes", "expected_publisher"):
+            value = getattr(sub, field_name, None)
+            assert value, (
+                f"slug={app.slug}: tier_a_apply=true but {field_name} "
+                f"is missing. Tier-A apply needs all four fields so "
+                f"the install can run unattended + survive Authenticode "
+                f"verification."
+            )

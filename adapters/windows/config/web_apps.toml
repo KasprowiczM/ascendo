@@ -183,37 +183,52 @@ url = "https://desktop.github.com/"
 slug = "keepassxc"
 display_name = "KeePassXC"
 handler = "github_release"
+tier_a_apply = true
 windows_uninstall_key = "KeePassXC"
-notes = "GitHub releases at keepassxreboot/keepassxc. Tag name is bare version like `2.7.12`; asset is the Windows x64 NSIS installer."
+notes = "GitHub releases at keepassxreboot/keepassxc. Tag name is bare version like `2.7.12`; asset is the Windows x64 MSI installer. Tier-A apply: MSI silent install via `/qn /norestart`. Expected Authenticode publisher: KeePassXC Team."
 
 [app.github_release]
 repo = "keepassxreboot/keepassxc"
 asset_pattern = "^KeePassXC-[0-9.]+-Win64\\.msi$"
 http_timeout_s = 8
+expected_publisher = "KeePassXC"
+silent_args = ["/qn", "/norestart"]
+installer_kind = "msi"
+kill_processes = ["KeePassXC"]
 
 [[app]]
 slug = "notepadpp"
 display_name = "Notepad++ (64-bit x64)"
 handler = "github_release"
+tier_a_apply = true
 windows_uninstall_key = "Notepad++ (64-bit x64)"
-notes = "GitHub releases at notepad-plus-plus/notepad-plus-plus. Tags are like `v8.9.5`; the github_release handler strips leading `v` automatically. The DisplayName in HKLM includes the variant suffix (`64-bit x64`)."
+notes = "GitHub releases at notepad-plus-plus/notepad-plus-plus. Tags are like `v8.9.5`; the github_release handler strips leading `v` automatically. Tier-A apply: NSIS silent install via `/S`. Kills running notepad++.exe."
 
 [app.github_release]
 repo = "notepad-plus-plus/notepad-plus-plus"
 asset_pattern = "^npp\\.[0-9.]+\\.Installer\\.x64\\.exe$"
 http_timeout_s = 8
+expected_publisher = "Notepad++"
+silent_args = ["/S"]
+installer_kind = "exe"
+kill_processes = ["notepad++"]
 
 [[app]]
 slug = "autohotkey"
 display_name = "AutoHotkey"
 handler = "github_release"
+tier_a_apply = true
 windows_uninstall_key = "AutoHotkey"
-notes = "GitHub releases at AutoHotkey/AutoHotkey. v2.x branch. Tags are like `v2.0.26`. Installer is a self-extracting EXE."
+notes = "GitHub releases at AutoHotkey/AutoHotkey. v2.x branch. Tags are like `v2.0.26`. Tier-A apply: self-extracting installer with `/S` silent flag (Inno-style)."
 
 [app.github_release]
 repo = "AutoHotkey/AutoHotkey"
 asset_pattern = "^AutoHotkey_[0-9.]+_setup\\.exe$"
 http_timeout_s = 8
+expected_publisher = "AutoHotkey Foundation"
+silent_args = ["/S"]
+installer_kind = "exe"
+kill_processes = ["AutoHotkey", "AutoHotkeyU64", "AutoHotkey64"]
 
 [[app]]
 slug = "rclone"
@@ -231,25 +246,35 @@ http_timeout_s = 8
 slug = "github-cli"
 display_name = "GitHub CLI"
 handler = "github_release"
+tier_a_apply = true
 windows_uninstall_key = "GitHub CLI"
-notes = "GitHub releases at cli/cli. Tags like `v2.92.0`. Windows MSI installer."
+notes = "GitHub releases at cli/cli. Tags like `v2.92.0`. Windows MSI installer. Tier-A apply: MSI silent via `/qn /norestart`."
 
 [app.github_release]
 repo = "cli/cli"
 asset_pattern = "^gh_[0-9.]+_windows_amd64\\.msi$"
 http_timeout_s = 8
+expected_publisher = "GitHub"
+silent_args = ["/qn", "/norestart"]
+installer_kind = "msi"
+kill_processes = ["gh"]
 
 [[app]]
 slug = "opencode"
 display_name = "OpenCode"
 handler = "github_release"
+tier_a_apply = true
 windows_uninstall_key = "OpenCode"
-notes = "GitHub releases at anomalyco/opencode (per macOS adapter Sesja 40 finding; sst/opencode is a different fork). The Windows DisplayName is just `OpenCode` even though the installer creates a versioned ARP subkey like `OpenCode 1.14.48`. DisplayName matching handles both."
+notes = "GitHub releases at anomalyco/opencode (per macOS adapter Sesja 40 finding; sst/opencode is a different fork). The Windows DisplayName is just `OpenCode` even though the installer creates a versioned ARP subkey like `OpenCode 1.14.48`. DisplayName matching handles both. Actual asset (verified via GitHub API 2026-05-13): opencode-desktop-win-x64.exe (Squirrel.Windows installer)."
 
 [app.github_release]
 repo = "anomalyco/opencode"
-asset_pattern = "^opencode-desktop-win32-x64\\.zip$"
+asset_pattern = "^opencode-desktop-win-x64\\.exe$"
 http_timeout_s = 8
+expected_publisher = "Anomaly"
+silent_args = ["--silent"]
+installer_kind = "exe"
+kill_processes = ["opencode", "OpenCode"]
 
 [[app]]
 slug = "tuta-mail"
@@ -267,13 +292,25 @@ http_timeout_s = 8
 slug = "vscode-user"
 display_name = "Microsoft Visual Studio Code (User)"
 handler = "release_feed"
+tier_a_apply = true
 windows_uninstall_key = "Microsoft Visual Studio Code (User)"
-notes = "VS Code update channel (user install). Stable. The vendor JSON returns `productVersion` like `1.119.1` matching the DisplayVersion exactly."
+notes = """\
+VS Code update channel (user install). Stable. The vendor JSON returns \
+`productVersion` like `1.119.1` matching the DisplayVersion exactly. \
+The same JSON also has `url` pointing at the .exe installer (Inno \
+Setup), which Tier-A apply downloads. Silent flags per VS Code docs: \
+`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /MERGETASKS=!runcode`. The \
+last flag prevents `Code.exe` from auto-launching post-install."""
 
 [app.release_feed]
 url = "https://update.code.visualstudio.com/api/update/win32-x64-user/stable/latest"
 version_path = "productVersion"
+download_path = "url"
 http_timeout_s = 8
+expected_publisher = "Microsoft Corporation"
+silent_args = ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/MERGETASKS=!runcode"]
+installer_kind = "exe"
+kill_processes = ["Code"]
 
 [[app]]
 slug = "proton-mail"
@@ -284,7 +321,7 @@ notes = "Proton publishes a version.json at proton.me/download/mail/windows/vers
 
 [app.release_feed]
 url = "https://proton.me/download/mail/windows/version.json"
-version_path = "Releases.0.Version"
+version_path = "Releases[0].Version"
 http_timeout_s = 8
 
 [[app]]
@@ -296,5 +333,5 @@ notes = "Proton Drive parallel of Proton Mail. Same version.json shape at proton
 
 [app.release_feed]
 url = "https://proton.me/download/drive/windows/version.json"
-version_path = "Releases.0.Version"
+version_path = "Releases[0].Version"
 http_timeout_s = 8

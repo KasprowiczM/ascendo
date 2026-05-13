@@ -92,8 +92,15 @@ class GitHubReleaseConfig(BaseModel):
     silent_args: Optional[list[Annotated[str, Field(
         min_length=1, max_length=128)]]] = None
     installer_kind: Optional[Literal["exe", "msi"]] = None
+    # Process basenames vary widely (npp uses `notepad++`, others embed
+    # version numbers, etc.). The pattern accepts the safe punctuation
+    # Windows process names actually use (``+``, parentheses, dot,
+    # hyphen, underscore, plus, space) while rejecting shell-
+    # meaningful chars (backtick, ``$``, ``;``, ``&``, ``|``,
+    # redirects, path separators, newline).
     kill_processes: Optional[list[Annotated[str, Field(
-        min_length=1, max_length=128, pattern=r"^[\w.\- ]+$")]]] = None
+        min_length=1, max_length=128,
+        pattern=r"^[^`$;&|<>\"'\\/\r\n\t\x00-\x1f]+$")]]] = None
     display_name_pattern: Optional[Annotated[str, Field(
         min_length=1, max_length=256)]] = None
 
@@ -164,8 +171,15 @@ class ReleaseFeedConfig(BaseModel):
     silent_args: Optional[list[Annotated[str, Field(
         min_length=1, max_length=128)]]] = None
     installer_kind: Optional[Literal["exe", "msi"]] = None
+    # Process basenames vary widely (npp uses `notepad++`, others embed
+    # version numbers, etc.). The pattern accepts the safe punctuation
+    # Windows process names actually use (``+``, parentheses, dot,
+    # hyphen, underscore, plus, space) while rejecting shell-
+    # meaningful chars (backtick, ``$``, ``;``, ``&``, ``|``,
+    # redirects, path separators, newline).
     kill_processes: Optional[list[Annotated[str, Field(
-        min_length=1, max_length=128, pattern=r"^[\w.\- ]+$")]]] = None
+        min_length=1, max_length=128,
+        pattern=r"^[^`$;&|<>\"'\\/\r\n\t\x00-\x1f]+$")]]] = None
     display_name_pattern: Optional[Annotated[str, Field(
         min_length=1, max_length=256)]] = None
 

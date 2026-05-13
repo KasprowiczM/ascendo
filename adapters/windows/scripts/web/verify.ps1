@@ -64,6 +64,11 @@ try {
     # Load sibling apply sidecar if present.
     $applySidecarPath = Join-Path (Join-Path $OutputDir $RunId) 'apply__web.json'
     $priorInstalled = @{}      # slug -> prior installed_version (string)
+    $priorTarget    = @{}      # slug -> apply.target_version (string) -- preserves
+                               #         the candidate version reported by check
+                               #         so verify can keep the "outdated" signal
+                               #         when apply was Tier-B triggered but the
+                               #         operator never actually ran the installer.
     $applyStatus = @{}         # slug -> apply status (string)
     if (Test-Path -LiteralPath $applySidecarPath) {
         try {
@@ -78,6 +83,10 @@ try {
                     $curProp = $it.PSObject.Properties['current_version']
                     if ($null -ne $curProp -and $curProp.Value) {
                         $priorInstalled[$slug] = [string]$curProp.Value
+                    }
+                    $tgtProp = $it.PSObject.Properties['target_version']
+                    if ($null -ne $tgtProp -and $tgtProp.Value) {
+                        $priorTarget[$slug] = [string]$tgtProp.Value
                     }
                     $stProp = $it.PSObject.Properties['status']
                     if ($null -ne $stProp -and $stProp.Value) {
@@ -139,14 +148,54 @@ try {
         if (-not $installed) { continue }
 
         $prior = if ($priorInstalled.ContainsKey($slug)) { $priorInstalled[$slug] } else { $null }
+        $priorCand = if ($priorTarget.ContainsKey($slug)) { $priorTarget[$slug] } else { $null }
         $applyResult = if ($applyStatus.ContainsKey($slug)) { $applyStatus[$slug] } else { $null }
 
+        # Decide the verify status + target version.
+        #
+        # The matrix:
+        #
+        #   apply.status | installed-vs-prior | verify.status | verify.target
+        #   --------------+--------------------+----------------+------------------
+        #   failed       | (any)              | failed         | installed (no candidate cleared)
+        #   success      | changed            | success        | installed
+        #   success      | unchanged          | failed         | priorCand (install lied)
+        #   triggered    | changed            | success        | installed
+        #   triggered    | unchanged          | skipped        | priorCand (apply opened
+        #                                                       vendor page; operator
+        #                                                       hasn't run installer yet
+        #                                                       -- we MUST preserve the
+        #                                                       candidate so the row
+        #                                                       keeps showing as outdated)
+        #   up_to_date   | unchanged          | up_to_date     | installed
+        #   (no row)     | (any)              | up_to_date     | installed
+        #
+        # Operator observation on DP5520WMK 2026-05-13 (run 6149fbba):
+        # apply triggered vscode-user (Tier-B URL open), installed
+        # didn't change, verify flipped to up_to_date with
+        # candidate=installed -- erasing the outdated signal. This
+        # block restores the candidate so the SPA keeps painting
+        # "1.119.1 -> 1.120.0" until the operator actually upgrades
+        # (or until a future check phase reads the feed and confirms
+        # both versions match).
+        $changed = ($prior -and $installed -ne $prior)
         $status = 'up_to_date'
+        $reportedTarget = $installed
         if ($applyResult -eq 'failed') {
             $status = 'failed'
-        } elseif ($prior -and $installed -ne $prior) {
-            # Operator actually upgraded.
+            if ($priorCand -and -not $changed) { $reportedTarget = $priorCand }
+        } elseif ($applyResult -eq 'success' -and $changed) {
             $status = 'success'
+        } elseif ($applyResult -eq 'success' -and -not $changed) {
+            $status = 'failed'
+            if ($priorCand) { $reportedTarget = $priorCand }
+            Add-SidecarMessage -Sidecar $sidecar -Level 'warn' `
+                -Text ("{0}: apply reported success but DisplayVersion is still {1}; check post-install state" -f $slug, $installed)
+        } elseif ($applyResult -eq 'triggered' -and $changed) {
+            $status = 'success'
+        } elseif ($applyResult -eq 'triggered' -and -not $changed) {
+            $status = 'skipped'
+            if ($priorCand) { $reportedTarget = $priorCand }
         }
 
         $itemArgs = @{
@@ -157,7 +206,7 @@ try {
             SourceType     = 'web'
             Status         = $status
             CurrentVersion = $installed
-            TargetVersion  = $installed   # post-apply: installed is the new candidate-equivalent
+            TargetVersion  = $reportedTarget
         }
         [void](Add-SidecarItem @itemArgs)
     }
