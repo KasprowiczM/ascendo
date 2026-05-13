@@ -617,7 +617,17 @@ function Invoke-AscendoWebDiscovery {
         }
     }
 
-    return ,$results.ToArray()
+    # DO NOT use ``return ,$results.ToArray()`` here. The comma operator
+    # wraps the array in a 1-element outer array; combined with the typical
+    # caller idiom ``@(Invoke-AscendoWebDiscovery ...)`` PowerShell sees a
+    # single-element array containing the N PSCustomObjects (and then
+    # ``$d[0]`` is the inner array, member-access maps over every element
+    # via space-joined strings, etc.). Bug observed on DP5520WMK
+    # 2026-05-13: web check sidecar collapsed ~90 apps into one row with
+    # name = "AutoHotkey CCleaner Dell ...". Return the array via standard
+    # PowerShell enumeration; ``@()`` wrappers at the call site collect
+    # the N items correctly.
+    return $results.ToArray()
 }
 
 

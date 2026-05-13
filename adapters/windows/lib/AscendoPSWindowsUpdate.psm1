@@ -118,7 +118,10 @@ function Expand-WUAggregatedRow {
         }
         $expanded.Add([pscustomobject]$fields) | Out-Null
     }
-    return ,$expanded.ToArray()
+    # See WebDiscovery note: avoid ``return ,$arr.ToArray()`` -- the comma
+    # collapses @() callers into a 1-element outer array containing the
+    # inner array, then property access fans-out to space-joined strings.
+    return $expanded.ToArray()
 }
 
 function Get-WUKBId {
@@ -325,7 +328,8 @@ function Get-PendingWindowsUpdates {
         })
     }
 
-    return ,$rows.ToArray()
+    # Plain enumeration; see Expand-WUAggregatedRow note above.
+    return $rows.ToArray()
 }
 
 function Install-WindowsUpdateBatch {
@@ -528,7 +532,14 @@ function Install-WindowsUpdateBatch {
         })
     }
 
-    return ,$rows.ToArray()
+    # Plain enumeration; ``return ,$arr.ToArray()`` is the root cause of
+    # the Sesja 59 "Installed Installed -> failed" sidecar bug
+    # (apply.ps1 does ``$results = @(Install-WindowsUpdateBatch ...)``
+    # which collapses to 1 outer element containing the N rows, then
+    # member-access space-joins ``$r.KB`` and ``$r.Result`` across all
+    # rows). Expand-WUAggregatedRow + regex normalisation in commit
+    # 57a675a fix one symptom layer; this fixes the root.
+    return $rows.ToArray()
 }
 
 function Get-WUInstallStderr {
