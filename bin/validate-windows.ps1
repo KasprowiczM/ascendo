@@ -466,13 +466,19 @@ try {
                     -Method Post -Body $body -ContentType 'application/json'
                 Test-Result "POST /runs/async returns run_id" ($async.run_id -match '^[0-9a-f-]{36}$') "run_id=$($async.run_id)"
 
-                # Poll up to 90s. A 'check' run across all 4 Windows package
-                # sources (winget+msstore+registry_arp+windows_update) is
-                # IO-bound and can take 20-60s on a healthy machine — the
-                # original 10s window only worked when winget was warm.
+                # Poll up to 240s. A 'check' run across all 8 Windows
+                # package sources (winget + msstore + npm + pip + web +
+                # plugin + registry_arp + windows_update -- Sesja 58
+                # expanded from 4 to 8) is IO-bound and can take 60-150s
+                # on a healthy machine. Web check also runs the Sesja-59
+                # registry auto-discovery which walks the three ARP
+                # roots and classifies against winget/msstore/curated
+                # lists (adds ~5-15s). Combined with windows_update
+                # pre-scan (Sesja 59 fast-path: ~5-15s when 0 pending)
+                # the realistic ceiling is ~3 minutes.
                 $pollOk = $false
                 $elapsedMs = 0
-                for ($i = 0; $i -lt 360; $i++) {
+                for ($i = 0; $i -lt 960; $i++) {
                     Start-Sleep -Milliseconds 250
                     $elapsedMs += 250
                     try {
