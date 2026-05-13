@@ -8,7 +8,7 @@
 #   Get-AscendoNpmInstalledVersion -PackageName <n>  reads from cached npm list
 #   Get-AscendoNpmLatestVersion   -PackageName <n>  npm view <name> version
 #   Read-AscendoNpmManifest       -Path <p>          parse manifest -> string[]
-#   Test-AscendoNpmShouldSkip     -PackageName <n>   skip-list check (currently stub)
+#   Test-AscendoNpmShouldSkip     -PackageName <n>   skip-list check (npx is bundled with npm)
 # =============================================================================
 
 Set-StrictMode -Version Latest
@@ -238,20 +238,34 @@ function Read-AscendoNpmManifest {
 function Test-AscendoNpmShouldSkip {
     <#
     .SYNOPSIS
-        Should this package be skipped on apply? (currently always false).
+        Return $true for packages that should be skipped during apply.
 
     .DESCRIPTION
-        Hook for future skip rules (e.g. ``npm`` self-update issues on
-        certain Node versions). Today this is a stub returning $false
-        for every package. Calling code is written defensively so adding
-        skip rules later is a one-line change here.
+        Skip-list: npx. Since npm 7 (2020), ``npx`` is a CLI bundled
+        with npm itself -- installing/upgrading npm creates the
+        ``npx.cmd`` shim. The legacy standalone ``npx@10.x`` package on
+        the registry hasn't been maintained since bundling landed;
+        ``npm install -g npx`` fails with ``EEXIST: file already
+        exists`` because the shim is already present (operator
+        observation on DP5520WMK, run a925b9f5, 2026-05-13).
+
+        Defense-in-depth alongside removing ``npx`` from the shipped
+        manifest: catches user-added or future-re-added entries.
+
+        Mirrors the macOS adapter's ascendo_npm.sh skip-rule intent
+        (same bundling realities apply on macOS) and the parallel
+        Test-AscendoPipShouldSkip rule for pip/setuptools/wheel.
+
+        Case-insensitive match.
     #>
     [CmdletBinding()]
     [OutputType([bool])]
     param(
         [Parameter(Mandatory)] [string] $PackageName
     )
-    return $false
+    if (-not $PackageName) { return $false }
+    $lc = $PackageName.ToLowerInvariant()
+    return ($lc -eq 'npx')
 }
 
 # -----------------------------------------------------------------------------

@@ -10,12 +10,19 @@
 # Note on Node itself: not tracked here. Node is installed/upgraded via
 # winget (Microsoft.NodeJS) on Windows; npm just rides along with it.
 # Bun is similarly best-installed via its own native installer on Windows.
+#
+# Note on npx: not tracked here either. Since npm 7 (2020) `npx` is a
+# CLI bundled with npm -- npm installs the `npx.cmd` shim itself when it
+# installs/upgrades. The legacy standalone `npx@10.x` package on the
+# registry is a stub that hasn't been updated since the bundling
+# landed; `npm install -g npx` fails with EEXIST because the shim is
+# already there. (Defense-in-depth: Test-AscendoNpmShouldSkip also
+# rejects `npx` so a future re-addition can't reintroduce the error.)
 
 # Core npm tooling
 npm                          # npm itself (self-update)
 pnpm                         # Performant npm
 yarn                         # Yarn classic
-npx                          # npm package runner
 
 # AI / agent CLIs (parity with macOS)
 @anthropic-ai/claude-code    # Claude Code CLI
