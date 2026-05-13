@@ -164,3 +164,137 @@ notes = "URL verification (2026-05-12): https://central.github.com/deployments/d
 
 [app.builtin]
 url = "https://desktop.github.com/"
+
+# =====================================================================
+# Sesja 60 (2026-05-13): expand registry to cover apps commonly found
+# on Windows operator machines. All entries below use
+# ``windows_uninstall_key`` matched against the registry DisplayName
+# via the Get-WebInstalledVersion fallback (so we don't need to know
+# the exact registry subkey on every machine -- the DisplayName is
+# stable across installs).
+#
+# All entries below are Tier-A check (real candidate-version probe)
+# but Tier-B apply (no ``tier_a_apply = true`` -- apply opens the
+# vendor's release page; full silent-install Tier-A apply needs
+# Authenticode + UAC per-app handling, deferred).
+# =====================================================================
+
+[[app]]
+slug = "keepassxc"
+display_name = "KeePassXC"
+handler = "github_release"
+windows_uninstall_key = "KeePassXC"
+notes = "GitHub releases at keepassxreboot/keepassxc. Tag name is bare version like `2.7.12`; asset is the Windows x64 NSIS installer."
+
+[app.github_release]
+repo = "keepassxreboot/keepassxc"
+asset_pattern = "^KeePassXC-[0-9.]+-Win64\\.msi$"
+http_timeout_s = 8
+
+[[app]]
+slug = "notepadpp"
+display_name = "Notepad++ (64-bit x64)"
+handler = "github_release"
+windows_uninstall_key = "Notepad++ (64-bit x64)"
+notes = "GitHub releases at notepad-plus-plus/notepad-plus-plus. Tags are like `v8.9.5`; the github_release handler strips leading `v` automatically. The DisplayName in HKLM includes the variant suffix (`64-bit x64`)."
+
+[app.github_release]
+repo = "notepad-plus-plus/notepad-plus-plus"
+asset_pattern = "^npp\\.[0-9.]+\\.Installer\\.x64\\.exe$"
+http_timeout_s = 8
+
+[[app]]
+slug = "autohotkey"
+display_name = "AutoHotkey"
+handler = "github_release"
+windows_uninstall_key = "AutoHotkey"
+notes = "GitHub releases at AutoHotkey/AutoHotkey. v2.x branch. Tags are like `v2.0.26`. Installer is a self-extracting EXE."
+
+[app.github_release]
+repo = "AutoHotkey/AutoHotkey"
+asset_pattern = "^AutoHotkey_[0-9.]+_setup\\.exe$"
+http_timeout_s = 8
+
+[[app]]
+slug = "rclone"
+display_name = "Rclone"
+handler = "github_release"
+windows_uninstall_key = "Rclone"
+notes = "GitHub releases at rclone/rclone. Tags like `v1.74.1`; Windows x64 zip asset (not an installer)."
+
+[app.github_release]
+repo = "rclone/rclone"
+asset_pattern = "^rclone-v[0-9.]+-windows-amd64\\.zip$"
+http_timeout_s = 8
+
+[[app]]
+slug = "github-cli"
+display_name = "GitHub CLI"
+handler = "github_release"
+windows_uninstall_key = "GitHub CLI"
+notes = "GitHub releases at cli/cli. Tags like `v2.92.0`. Windows MSI installer."
+
+[app.github_release]
+repo = "cli/cli"
+asset_pattern = "^gh_[0-9.]+_windows_amd64\\.msi$"
+http_timeout_s = 8
+
+[[app]]
+slug = "opencode"
+display_name = "OpenCode"
+handler = "github_release"
+windows_uninstall_key = "OpenCode"
+notes = "GitHub releases at anomalyco/opencode (per macOS adapter Sesja 40 finding; sst/opencode is a different fork). The Windows DisplayName is just `OpenCode` even though the installer creates a versioned ARP subkey like `OpenCode 1.14.48`. DisplayName matching handles both."
+
+[app.github_release]
+repo = "anomalyco/opencode"
+asset_pattern = "^opencode-desktop-win32-x64\\.zip$"
+http_timeout_s = 8
+
+[[app]]
+slug = "tuta-mail"
+display_name = "Tuta Mail"
+handler = "github_release"
+windows_uninstall_key = "Tuta Mail"
+notes = "GitHub releases at tutao/tutanota (rebranded to Tuta; repo name unchanged). Installer name includes the version (e.g. `tuta-desktop-348.260506.0.exe`). Note: the operator's machine showed the version embedded in the DisplayName (`Tuta Mail 348.260506.0`); the discovery DisplayName lookup matches case-insensitive prefix so the bare `Tuta Mail` key here will also match."
+
+[app.github_release]
+repo = "tutao/tutanota"
+asset_pattern = "^tuta-desktop-[0-9.]+\\.exe$"
+http_timeout_s = 8
+
+[[app]]
+slug = "vscode-user"
+display_name = "Microsoft Visual Studio Code (User)"
+handler = "release_feed"
+windows_uninstall_key = "Microsoft Visual Studio Code (User)"
+notes = "VS Code update channel (user install). Stable. The vendor JSON returns `productVersion` like `1.119.1` matching the DisplayVersion exactly."
+
+[app.release_feed]
+url = "https://update.code.visualstudio.com/api/update/win32-x64-user/stable/latest"
+version_path = "productVersion"
+http_timeout_s = 8
+
+[[app]]
+slug = "proton-mail"
+display_name = "Proton Mail"
+handler = "release_feed"
+windows_uninstall_key = "Proton Mail"
+notes = "Proton publishes a version.json at proton.me/download/mail/windows/version.json. Returns `Releases[0].Version` like `1.13.0` matching DisplayVersion."
+
+[app.release_feed]
+url = "https://proton.me/download/mail/windows/version.json"
+version_path = "Releases.0.Version"
+http_timeout_s = 8
+
+[[app]]
+slug = "proton-drive"
+display_name = "Proton Drive"
+handler = "release_feed"
+windows_uninstall_key = "Proton Drive"
+notes = "Proton Drive parallel of Proton Mail. Same version.json shape at proton.me/download/drive/windows/version.json."
+
+[app.release_feed]
+url = "https://proton.me/download/drive/windows/version.json"
+version_path = "Releases.0.Version"
+http_timeout_s = 8

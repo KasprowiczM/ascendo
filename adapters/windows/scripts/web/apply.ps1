@@ -352,6 +352,21 @@ try {
         [void](Add-SidecarItem @itemArgs)
     }
 
+    # Surface a clear top-level message when the apply did nothing.
+    # Without this, the operator sees an empty items[] and no
+    # explanation -- the most common confusion-point per operator
+    # observation on DP5520WMK 2026-05-13 ("nothing got updated in
+    # the web category"). The reality on a typical Windows machine:
+    # the OS-level inventory has ~100 ARP entries that auto-discovery
+    # surfaces as web:auto:* rows for awareness, but apply only
+    # iterates the curated registry (~20 apps in v1). If none of
+    # those installed on this host, apply emits 0 items.
+    $emittedCount = @($sidecar['items']).Count
+    if ($emittedCount -eq 0) {
+        Add-SidecarMessage -Sidecar $sidecar -Level 'info' `
+            -Text ("Web apply emitted 0 items: none of the {0} curated web apps in web_apps.toml are installed on this host. To track updates for auto-discovered apps (web:auto:*), add a curated entry to web_apps.toml with a handler (github_release / release_feed) for that app's vendor feed." -f $slugs.Count)
+    }
+
     [void](Save-Sidecar -Sidecar $sidecar -OutputDir $OutputDir)
     exit 0
 

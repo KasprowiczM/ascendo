@@ -257,8 +257,19 @@ class WebAppV1(BaseModel):
                                 min_length=1, max_length=64)]
     display_name: Annotated[str, Field(min_length=1, max_length=128)]
     handler: Literal["github_release", "release_feed", "builtin"]
+    # The pattern intentionally allows the punctuation that appears in
+    # real Windows registry DisplayNames -- ``Notepad++ (64-bit x64)``,
+    # ``Mozilla Firefox (x64 en-US)``, ``Visual Studio Build Tools 2022``,
+    # ``Microsoft 365``, etc. The Get-WebInstalledVersion helper uses
+    # this string as a registry sub-key name OR matches it case-
+    # insensitively against ``DisplayName`` values; neither path
+    # evaluates the string in a shell context (T4 mitigation lives at
+    # the elevation interface, not here). Forbidden chars are the ones
+    # that ARE shell-meaningful (backtick, ``$``, ``;``, ``&``, ``|``,
+    # ``<``, ``>``, ``"``, ``'``, newline, control chars) plus path
+    # separators.
     windows_uninstall_key: Optional[Annotated[str, Field(
-        min_length=1, max_length=256, pattern=r"^[\w.\-\{\} ]+$"
+        min_length=1, max_length=256, pattern=r"^[^`$;&|<>\"'\\/\r\n\t\x00-\x1f]+$"
     )]] = None
     enabled: bool = True
     notes: Optional[str] = None

@@ -25,22 +25,33 @@ function Get-WebInstalledVersion {
     <#
     .SYNOPSIS
         Look up the installed version of a Windows app by Uninstall-registry
-        key name. Returns $null when not installed on this host.
+        key name, with a DisplayName-based fallback. Returns $null when not
+        installed on this host.
     .DESCRIPTION
-        Scans both:
-          HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\<key>
-          HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\<key>
-          HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\<key>
-        and returns the first DisplayVersion value found. The MSI product
-        ID form ({GUID}) and the human-readable installer name (Inno / NSIS)
-        are both supported -- caller passes whichever shape matches the
-        target installer's registry footprint.
+        Resolution strategy (first hit wins):
+
+          1. EXACT subkey: ``HKLM\...\Uninstall\<UninstallKey>`` or its
+             WOW6432Node / HKCU equivalents. Used when ``UninstallKey``
+             is a real registry subkey name (MSI ``{GUID}``, Inno/NSIS
+             installer slug, etc.).
+
+          2. DisplayName scan fallback: when no exact-subkey hit, walk
+             every Uninstall subkey across the three roots and match
+             ``DisplayName`` case-insensitively against the value
+             passed as ``UninstallKey``. This lets curated entries use
+             a friendly display name (e.g. ``"AutoHotkey"``) instead
+             of the actual subkey (which is often a localised string
+             or random GUID and varies per machine).
+
+        DisplayName fallback is cached per-process so repeat probes in
+        the same script invocation are O(1) after the first hit.
     .PARAMETER UninstallKey
-        Exact name of the Uninstall registry sub-key (e.g. 'Discord',
-        'OBS Studio', '{12345678-1234-...}').
+        Either an EXACT Uninstall-registry subkey name (e.g.
+        ``'Discord'``, ``'{12345678-1234-...}'``) OR a DisplayName
+        string matched against ``DisplayName`` registry values.
     .OUTPUTS
-        [string] - the DisplayVersion value, or $null if the key is absent
-                   or has no DisplayVersion.
+        [string] - DisplayVersion of the first matching key, or $null
+                   when no exact-key nor DisplayName match is found.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -58,6 +69,7 @@ function Get-WebInstalledVersion {
         'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
     )
 
+    # Stage 1: exact subkey lookup (the original fast path).
     foreach ($root in $roots) {
         $path = Join-Path $root $UninstallKey
         if (-not (Test-Path -LiteralPath $path)) { continue }
@@ -67,10 +79,60 @@ function Get-WebInstalledVersion {
             continue
         }
         if ($null -eq $props) { continue }
-        # PSObject.Properties safe access (StrictMode + missing prop = no throw).
         $versionProp = $props.PSObject.Properties['DisplayVersion']
         if ($null -ne $versionProp -and $versionProp.Value) {
             return [string]$versionProp.Value
+        }
+    }
+
+    # Stage 2: DisplayName-based fallback. Build a one-shot cache of
+    # ``{lowercased DisplayName: DisplayVersion}`` from every Uninstall
+    # subkey, then index in. Cached per-process so successive curated
+    # probes in the same script run amortize the scan cost.
+    if (-not (Test-Path variable:script:_AscendoWebDisplayNameCache)) {
+        $script:_AscendoWebDisplayNameCache = $null
+    }
+    if ($null -eq $script:_AscendoWebDisplayNameCache) {
+        $cache = @{}
+        foreach ($root in $roots) {
+            if (-not (Test-Path -LiteralPath $root)) { continue }
+            try {
+                $children = Get-ChildItem -Path $root -ErrorAction SilentlyContinue
+            } catch {
+                continue
+            }
+            foreach ($key in $children) {
+                try {
+                    $p = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue
+                } catch { continue }
+                if ($null -eq $p) { continue }
+                $dnProp = $p.PSObject.Properties['DisplayName']
+                if (-not $dnProp -or [string]::IsNullOrWhiteSpace([string]$dnProp.Value)) {
+                    continue
+                }
+                $dnLow = ([string]$dnProp.Value).Trim().ToLowerInvariant()
+                if ([string]::IsNullOrWhiteSpace($dnLow)) { continue }
+                $vProp = $p.PSObject.Properties['DisplayVersion']
+                $ver = ''
+                if ($vProp -and -not [string]::IsNullOrWhiteSpace([string]$vProp.Value)) {
+                    $ver = [string]$vProp.Value
+                }
+                # First write wins; the typical case is one DisplayName
+                # per app. When a name collides (rare; usually different
+                # editions), the first hit is the most-likely match.
+                if (-not $cache.ContainsKey($dnLow)) {
+                    $cache[$dnLow] = $ver
+                }
+            }
+        }
+        $script:_AscendoWebDisplayNameCache = $cache
+    }
+
+    $needle = $UninstallKey.Trim().ToLowerInvariant()
+    if ($script:_AscendoWebDisplayNameCache.ContainsKey($needle)) {
+        $v = $script:_AscendoWebDisplayNameCache[$needle]
+        if (-not [string]::IsNullOrWhiteSpace($v)) {
+            return $v
         }
     }
     return $null
