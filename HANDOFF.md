@@ -6,6 +6,223 @@
 
 ---
 
+## Sesja 67 (2026-05-14) — Inventory dedup + Suggestions AI + Schedule tab + Help/About refresh
+
+Operator request (verbatim, post-Sesja-66): *"check why inventory
+changes after each run, quick check, safe update, full dry run and
+full update, check last run logs for all these steps, fix errors,
+analyze the entire app … update help menu, there are still a lot of
+outdated stuff there. update about menu. implement fully working
+suggestions, make sure everything works reliably, updates are applied,
+inventory is updated, every click in web app works, displays current
+information, the entire logic works perfectly, use subagents, go".*
+
+### The four deliverables
+
+1. **Inventory drift root-cause + fix**
+2. **Suggestions AI integration (the previously-deferred deliverable)**
+3. **Schedule tab (the previously-deferred deliverable)**
+4. **Help + About content refresh**
+
+### 1. Inventory drift — duplicate-name collapse
+
+Analysis across last 8 runs showed check sidecars consistently emit
+the same counts (msstore=95, registry_arp=147, web=37, winget=221).
+But inventory.db only persisted **78** msstore + **146** arp rows.
+
+Root cause: pre-v2 `inventory_items` schema PK was `(category, name)`.
+17 msstore + 14 winget + 3 arp packages share a DisplayName across
+architectures (Microsoft .Net Native Framework Package 1.x — x86 vs
+x64 vs arm64; Microsoft Visual C++ 2008 Redistributable — 9 entries;
+Comet — two ARP rows; etc.). The bulk upsert silently merged them
+on the (cat, name) key.
+
+**Fix:** schema migration to v2 with PK `(category, name, item_id)`:
+
+```sql
+PRIMARY KEY (category, name, item_id)
+```
+
+`item_id` is sourced from the sidecar `Item.id` field (winget Id,
+MSIX path, ARP registry GUID), defaulting to `''` for legacy callers.
+Pre-v2 DBs are dropped during migration — the dashboard's next
+live-scan or post-run flush repopulates within seconds (operator sees
+a flicker, never a gap).
+
+Verified live on DP5520WMK after migration + fresh flush of run
+`81e0d12c`:
+
+```
+Before:                          After:
+  msstore       78  rows             msstore     85  rows  (+7 architectures)
+  registry_arp 146  rows             registry_arp 146 rows
+  winget       221  rows             winget      221 rows  (preserved 9-row VC++)
+  web           37  rows             web          37 rows
+```
+
+The msstore +7 came from MSIX-based packages with name collisions
+that were previously dropped (Net Native Framework 1.2 / 1.3 / 1.7 /
+2.1 / 2.2 / 1.6 / etc. — 7 of the 10 truly-duplicated keys; the
+remaining 3 collapsed within-batch because the sidecar emits the
+same id twice for them, a smaller bug in the check.ps1 script).
+
+Files changed:
+- `core/ascendo/dashboard/inventory_db.py` — schema + migration +
+  bulk_upsert + query updated to carry `item_id`
+- `core/ascendo/orchestrator/run_async.py` — `_flush_run_to_inventory_db`
+  uses `(category, name, item_id)` dedup key
+- `core/ascendo/dashboard/routes/spa_real.py` — `_flatten_buckets_for_db`
+  passes `item_id`; `_buckets_from_db` round-trips it
+
++7 regression tests in `tests/contract/test_inventory_db_item_id.py`:
+schema shape, duplicate-name persistence, in-place upsert,
+empty-item_id legacy behaviour, v1→v2 migration drops legacy data,
+`id` field accepted as alias for `item_id`, query exposes item_id.
+
+### 2. Suggestions AI integration
+
+The `/suggestions/library` endpoint now optionally calls a configured
+LLM provider to augment the rule-based cards.
+
+`core/ascendo/dashboard/routes/ai.py` gained `call_provider_inference()`
+— unified inference caller for 6 providers (anthropic / openai /
+openrouter / ollama / google / lm_studio). Each provider's chat /
+completion endpoint is wired with the right payload shape and 8s
+default timeout.
+
+`core/ascendo/dashboard/routes/suggestions.py` gained:
+- `_AI_SYSTEM_PROMPT` — strict JSON-array contract
+- `_ai_snapshot_for_prompt(apps)` — compact inventory digest
+- `_parse_ai_cards(text)` — tolerant parser (strips code fences,
+  recovers embedded arrays, caps at 3 cards, sanitises action
+  payloads to known keys only — security T4 mitigation)
+- `_maybe_augment_with_ai(cards, apps)` — orchestration with
+  graceful fallback to rule-based on any failure
+
+The endpoint signature gained an `ai` field carrying meta about the
+AI call (provider / model / ok / error / count) so the SPA can show
+a small "AI off" / "AI error" hint.
+
++14 regression tests in `tests/contract/test_suggestions_ai.py`:
+parser handles clean JSON / code fences / prose-wrapped JSON /
+garbage; caps at 3 cards; rejects invalid severity; sanitises action
+payloads (rejects `exec`/`steal`/non-run_async types); truncates
+long fields; snapshot includes totals + outdated samples; augment
+no-provider returns unchanged; cloud-provider-no-API-key reports
+error; provider failure falls back transparently; provider success
+prepends cards on top.
+
+### 3. Schedule tab
+
+Replaces the previous `/scheduler/install` + `/scheduler/remove`
+stubs in `routes/spa_stubs.py` with a dedicated real-backed router.
+
+`core/ascendo/dashboard/routes/scheduler_real.py` (~150 LOC) wraps
+the adapter's `IScheduler` implementation (`WindowsScheduler` on
+Windows, `LaunchdScheduler` on macOS, `SystemdScheduler` on Ubuntu):
+
+- `GET  /scheduler/list`     — list installed schedules
+- `POST /scheduler/install`  — install or replace a schedule
+- `POST /scheduler/remove`   — uninstall by name
+- `POST /scheduler/trigger`  — run once now (for verification)
+
+SPA: new `#view-schedule` section in `index.html` with:
+- Active-schedules table (name / when / profile / enabled / actions)
+- Add-or-replace form (name / expression / profile / enabled / desc)
+- Per-row Run-now / Edit / Delete buttons
+
+JS: `ui.loadSchedule()` + `scheduleSubmit` + `scheduleRemove` +
+`scheduleTrigger` + `scheduleEdit` in `app/frontend/app.js`.
+DOM-safe construction (createElement + textContent for everything
+that comes from the backend).
+
+i18n: 40+ new keys for `nav.schedule` + `schedule.*` (EN + PL).
+
+### 4. Help + About refresh
+
+**Help — Windows article:**
+- Managers reference table now includes 4 missing rows: `npm`, `pip`,
+  `web` (with Tier-A coverage), `plugin` (Dell DCU).
+- 4 new troubleshooting rows for Sesjas 66-67 (stale overlay,
+  apply-mark, inventory drift, history → REPORT link).
+- New section **"12 · Recent additions (Sesja 58-67)"** wired to
+  the existing `help.windows.*` i18n keys (Sesja 66 added the keys
+  but the static HTML never referenced them — they were orphaned).
+- New section **"13 · Operator tooling (Sesja 58-67)"** documenting
+  ascendo web lifecycle, build-inventory, run-tag-release,
+  install-service, validate-windows harness, watchdog heartbeat,
+  Suggestions AI integration, Schedule tab.
+
+i18n: +16 new keys for `help.windows.{web_lifecycle, build_inventory,
+tag_release, install_service, validate_harness, watchdog,
+suggestions_ai, schedule_tab}` × {_h, _p} × {EN, PL}.
+
+**About — new "Recent highlights" panel:**
+- 9 Sesja entries (58-67) with title + 1-line description.
+- GitHub repo + Releases & downloads links.
+- Spans full grid width above the existing release notes details.
+
+i18n: +22 new keys for `about.highlights*` + `about.h_sesja{58..67}_{t,d}`
++ `about.github_link` + `about.releases_link` (EN + PL).
+
+### State after Sesja 67
+
+| Test count        | Sesja 66 | Sesja 67 |
+|-------------------|---------:|---------:|
+| Windows adapter   |      453 |      453 |
+| Sesja 67 contract |        — |  **+24** |
+| Grand total       |      453 |  **477** |
+
+Zero regressions. The single pre-existing test_inventory_db
+file-descriptor leak test was already POSIX-only (uses `resource`).
+
+i18n: `app/frontend/i18n.js` grew from 2041 (Sesja 66) to ~2300
+lines, all in real translatable content — no duplication. Both EN
+and PL stay in parity through the schedule + help + about additions.
+
+### Operator verification
+
+```powershell
+# After git pull on the worktree (or main once merged):
+ascendo web restart
+
+# 1. Inventory schema auto-migrates on first dashboard launch;
+#    next /inventory/refresh or full check repopulates within seconds.
+python -m ascendo build-inventory --verbose
+# Expected: msstore=85 (was 78), winget keeps 9 separate VC++ 2008 rows
+
+# 2. Schedule tab in sidebar — Click + add a daily safe run:
+#    Name:      ascendo-daily
+#    Expression: DAILY 03:00
+#    Profile:    safe
+#    Enabled:    yes
+#    -> Save schedule
+
+# 3. Suggestions tab — Settings → AI → configure provider + model.
+#    Then Suggestions tab shows 1-3 AI cards on top of rule-based cards.
+#    If the LLM is offline, Ascendo falls back to rule-based silently.
+
+# 4. About tab — scroll to "Recent highlights" for the Sesja 58-67
+#    capability tour with GitHub + Releases links.
+
+# 5. Help tab — scroll to "12. Recent additions" and "13. Operator
+#    tooling" for the 8 new operator-facing capability summaries.
+```
+
+### Deferred / future scope
+
+- **Inventory `item_id` UX**: the SPA's Apps view still groups by
+  `name` only. Surfacing item_id (architecture badge?) when multiple
+  rows share a name is a v0.8 polish task.
+- **Schedule tab calendar picker**: current input is a string
+  textfield; a proper UI for cron-like expressions would reduce typos.
+- **Sidecar source-script dedup**: 10 msstore items are still
+  collapsed within a single check sidecar batch because check.ps1
+  emits the same id twice. Investigating that requires a separate
+  audit of the msstore enumeration script.
+
+---
+
 ## Sesja 66 (2026-05-13, near midnight) — Inventory + apply-mark consistency + SPA polish
 
 Operator regression report on DP5520WMK after Sesja 65: *"check last

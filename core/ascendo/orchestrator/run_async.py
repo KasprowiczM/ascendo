@@ -280,7 +280,8 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
         priority = _PHASE_PRIORITY.get(phase, 0)
 
         for item in (sc.items or []):
-            name = getattr(item, "name", None) or getattr(item, "id", None)
+            item_id_raw = getattr(item, "id", None)
+            name = getattr(item, "name", None) or item_id_raw
             if not name:
                 continue
 
@@ -311,16 +312,24 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
 
             status = _INVENTORY_STATUS_MAP.get(raw_status, raw_status)
 
+            # Sesja 67: include item_id so packages sharing a DisplayName
+            # (different MSIX architectures, VC++ side-by-side installs,
+            # ARP entries with identical Name but distinct registry GUIDs)
+            # land in separate inventory_items rows instead of silently
+            # collapsing. Empty when name == id, falls back to ''.
+            item_id = str(item_id_raw) if (item_id_raw and item_id_raw != name) else ""
+
             row = {
                 "category": category,
                 "name": str(name),
+                "item_id": item_id,
                 "installed": installed,
                 "candidate": candidate,
                 "status": status,
                 "source_type": category,
                 "vendor": getattr(item, "vendor", None),
             }
-            key = (category, str(name))
+            key = (category, str(name), item_id)
             existing = best.get(key)
             if existing is None or priority >= existing[0]:
                 best[key] = (priority, row)

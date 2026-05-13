@@ -30,6 +30,7 @@ from .routes.elevation import router as elevation_router
 from .routes.health import router as health_router
 from .routes.onboarding import router as onboarding_router
 from .routes.runs import router as runs_router
+from .routes.scheduler_real import router as scheduler_real_router
 from .routes.service import router as service_router
 from .routes.spa_real import InventoryCache
 from .routes.spa_real import router as spa_real_router
@@ -301,6 +302,11 @@ def create_app(
     # BEFORE spa_stubs so the real handler wins over the legacy
     # /suggestions stub returning ``[]``.
     app.include_router(suggestions_router, prefix="")
+    # Schedule tab backend (Sesja 67). Wraps the adapter's IScheduler
+    # implementation; replaces the /scheduler/install + /scheduler/remove
+    # stubs that returned ``{ok:true, stub:true}``. MUST be BEFORE
+    # spa_stubs so the real handlers win.
+    app.include_router(scheduler_real_router, prefix="")
     # Legacy SPA stubs -- transient placeholders for endpoints the
     # Ubuntu_Aktualizacje SPA expects but the new core hasn't ported yet.
     # Delete the matching stub from routes/spa_stubs.py when each real

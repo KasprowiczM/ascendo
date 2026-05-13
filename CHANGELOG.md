@@ -14,6 +14,60 @@ OSes, plugin signing + verification, plugin marketplace UX in dashboard.
 
 ---
 
+## [0.6.7] — 2026-05-14 — Inventory dedup + Suggestions AI + Schedule tab + Help/About (Sesja 67)
+
+Sesja 67. Operator: *"check why inventory changes after each run …
+implement fully working suggestions … every click in web app works".*
+Four deliverables.
+
+### Added
+
+- **Schedule tab** (previously-deferred): new
+  `core/ascendo/dashboard/routes/scheduler_real.py` with
+  `GET /scheduler/list` + `POST /scheduler/{install,remove,trigger}`
+  driving the adapter's `IScheduler` implementation. SPA gets a
+  dedicated `#view-schedule` with list table + add-or-replace form +
+  per-row Run-now / Edit / Delete. Replaces the previous
+  `{ok: true, stub: true}` stubs.
+- **Suggestions AI integration** (previously-deferred): new
+  `call_provider_inference()` in `routes/ai.py` covers 6 providers
+  (anthropic / openai / openrouter / ollama / google / lm_studio).
+  `/suggestions/library` now prepends 1-3 AI-generated cards on top
+  of rule-based with strict JSON parsing + action-payload sanitisation.
+  Failures fall back to rule-based transparently.
+- **About: Recent highlights panel** — Sesjas 58-67 capability tour
+  with GitHub + Releases & downloads links.
+- **Help: "12. Recent additions" + "13. Operator tooling"** sections
+  wired to the Sesja 66 `help.windows.*` i18n keys that had been
+  orphaned + 16 new keys (EN + PL) for ascendo web lifecycle /
+  build-inventory / run-tag-release / install-service / validate
+  harness / watchdog / Suggestions AI / Schedule tab.
+
+### Fixed
+
+- **Inventory drift across runs.** Pre-v2 `inventory_items` PK was
+  `(category, name)` which silently collapsed 17 msstore + 14 winget
+  + 3 ARP packages sharing DisplayNames across architectures (MSIX
+  x86/x64/arm64; Microsoft Visual C++ 2008 Redistributable's 9
+  parallel installs; Comet's two ARP rows; etc.). Schema migrated to
+  v2 with PK `(category, name, item_id)`; bulk_upsert + query +
+  flush callers all updated. Live verified on DP5520WMK: msstore
+  78 → 85 rows, winget keeps 9 separate VC++ 2008 architecture
+  entries. Pre-v2 DBs drop legacy data on first open; next live-scan
+  or post-run flush repopulates within seconds. +7 regression tests
+  in `tests/contract/test_inventory_db_item_id.py`.
+- **Help managers reference table** was missing rows for npm / pip /
+  web / plugin — added with Sesja 58-65 context (Tier-A silent
+  install, fake-success detection, apply-mark, dedup).
+
+### Test count
+
+453 (Sesja 66) → **477 passing** Windows + contract (+24 new:
+7 inventory_db item_id + 3 overlay + 14 suggestions_ai).
+Zero regressions.
+
+---
+
 ## [0.6.6] — 2026-05-13 — Inventory + apply-mark consistency + SPA polish (Sesja 66)
 
 Sesja 66. Operator regression report on `DP5520WMK`: VSCode 1.119.1 →

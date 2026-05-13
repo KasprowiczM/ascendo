@@ -1,6 +1,42 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-13 (sesja 66) — **Inventory + apply-mark
+> Last updated: 2026-05-14 (sesja 67) — **Inventory dedup + Suggestions
+> AI + Schedule tab + Help/About refresh.** Operator: *"check why
+> inventory changes after each run … implement fully working
+> suggestions … every click in web app works … use subagents"*. Four
+> deliverables shipped:
+> (1) **Inventory dedup** — schema migration to v2 (PK now
+> `(category, name, item_id)`) so multi-arch packages no longer
+> collapse. Pre-v2 the DB silently dropped 17 msstore + 14 winget +
+> 3 ARP packages sharing DisplayNames. msstore went from 78 → 85
+> rows on DP5520WMK; winget's 9 separate VC++ 2008 architecture rows
+> are now preserved. Migration drops legacy data; next live-scan or
+> post-run flush repopulates within seconds.
+> (2) **Suggestions AI** (previously-deferred deliverable) — new
+> `call_provider_inference()` in `routes/ai.py` covers 6 providers
+> (anthropic/openai/openrouter/ollama/google/lm_studio). `/suggestions/library`
+> prepends 1-3 AI-generated cards on top of rule-based, with strict
+> JSON parsing + payload sanitisation. Failures fall back to
+> rule-based transparently.
+> (3) **Schedule tab** (previously-deferred deliverable) — new
+> `routes/scheduler_real.py` wraps adapter's `IScheduler` with
+> `/scheduler/{list,install,remove,trigger}`. SPA: new `#view-schedule`
+> with list table + add-or-replace form + per-row Run-now / Edit /
+> Delete actions. Replaces the previous `{ok: true, stub: true}`
+> stubs in `spa_stubs.py`.
+> (4) **Help + About refresh** — Help managers table now includes
+> `npm`/`pip`/`web`/`plugin` rows (were missing); new sections "12.
+> Recent additions" + "13. Operator tooling" wire the Sesja 66 i18n
+> keys that had been orphaned, plus 16 new keys (EN+PL) documenting
+> ascendo web lifecycle / build-inventory / run-tag-release /
+> install-service / validate harness / watchdog / Suggestions AI /
+> Schedule tab. About gained a "Recent highlights" panel covering
+> Sesjas 58-67 with GitHub + Releases links.
+> Test count 453 (Sesja 66) → **477 passing** Windows + contract
+> (+24: 7 inventory_db + 3 overlay + 14 suggestions_ai). Zero
+> regressions. See HANDOFF.md Sesja 67.
+>
+> Previous milestone (sesja 66) — **Inventory + apply-mark
 > consistency + SPA polish.** Operator regression report: VSCode
 > manually upgraded to 1.120.0 but `ascendo build-inventory` still
 > reported web row as `installed=1.119.1 outdated`; IMG to ISO got

@@ -306,6 +306,9 @@ NSIS pre-uninstall hook — no manual cleanup needed. User data in
 | An app shows `outdated` in Apps/Categories despite being manually upgraded | (Sesja 66 fixed) stale post-apply overlay from a previous `triggered` run | `git pull` + restart dashboard. The `_latest_check_overlay` now only walks same-run apply/verify so an old `triggered` no longer pins the row at the pre-upgrade version |
 | `winget list Version=Unknown` package gets re-applied every full run | (Sesja 66 fixed) plan + apply didn't honour Sesja 63's apply-mark | `git pull` so plan.ps1 + apply.ps1 consult `Get-AscendoApplyMark`. Once a successful apply records the target, subsequent runs short-circuit to `up_to_date` |
 | History tab doesn't show a way to read the per-run summary | (Sesja 66 added) — each row now has a 📄 link | Click 📄 in the rightmost column to open `REPORT.md` in a new tab |
+| Categories tab shows fewer apps than `winget list` / MSStore | (Sesja 67 fixed) pre-v2 DB PK collapsed multi-arch packages sharing a DisplayName | `git pull` + `ascendo web restart`. Schema auto-migrates; next `build-inventory` repopulates with all distinct items (msstore +7, winget keeps 9 separate VC++ 2008 architecture rows) |
+| Suggestions tab is empty / has no AI cards | AI provider not configured | Settings → AI → pick provider (anthropic / openai / openrouter / ollama / google / lm_studio) + paste key + pick model. Suggestions reload prepends AI cards on top of rule-based ones. AI failures fall back to rule-based transparently. |
+| Want recurring `ascendo run` (e.g. weekly safe update) | (Sesja 67 added) Schedule tab in sidebar | Click **Schedule** → fill `Name` + `Expression` (e.g. `DAILY 03:00`) + `Profile` → Save. Drives Windows Task Scheduler via the adapter. |
 
 ## 10 · Where everything lives
 

@@ -249,6 +249,168 @@ def _provider_not_implemented(name: str) -> dict[str, Any]:
     }
 
 
+# ── Inference helpers (Sesja 67) ─────────────────────────────────────────
+
+
+def _http_post_json(
+    url: str,
+    body: dict[str, Any],
+    *,
+    headers: dict[str, str] | None = None,
+    timeout: float = _TIMEOUT_SEC,
+) -> dict[str, Any]:
+    """POST JSON and parse JSON response.
+
+    Raises ``urllib.error.URLError`` / ``json.JSONDecodeError`` on
+    failure — caller catches and returns ``{ok: false, error}``.
+    """
+    data = json.dumps(body).encode("utf-8")
+    h = {"Content-Type": "application/json", "Accept": "application/json"}
+    h.update(headers or {})
+    req = urllib_request.Request(url, data=data, headers=h, method="POST")  # noqa: S310
+    with urllib_request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        raw = resp.read()
+    return json.loads(raw.decode("utf-8"))
+
+
+def call_provider_inference(
+    *,
+    provider: str,
+    model: str,
+    api_key: str,
+    base_url: str | None,
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int = 1200,
+    timeout: float = 8.0,
+) -> dict[str, Any]:
+    """Generate text via the configured provider.
+
+    Returns ``{ok: bool, content?: str, error?: str}``. Every supported
+    provider is wired (anthropic / openai / openrouter / ollama / google
+    / lm_studio); unknown providers return a not-implemented error.
+
+    Network failures, bad keys, malformed responses all return
+    ``{ok: false, error: <human-readable>}`` rather than raising.
+    Caller decides whether to surface to the user or silently fall back.
+    """
+    try:
+        if provider == "anthropic":
+            base = (base_url or _DEFAULT_BASE_URLS["anthropic"]).rstrip("/")
+            payload = _http_post_json(
+                f"{base}/v1/messages",
+                {
+                    "model": model,
+                    "max_tokens": max_tokens,
+                    "system": system_prompt,
+                    "messages": [{"role": "user", "content": user_prompt}],
+                },
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                },
+                timeout=timeout,
+            )
+            # Response shape: {"content": [{"type": "text", "text": "..."}]}
+            blocks = payload.get("content") or []
+            text = "".join(
+                b.get("text", "") for b in blocks
+                if isinstance(b, dict) and b.get("type") == "text"
+            )
+            return {"ok": True, "content": text}
+
+        if provider in ("openai", "openrouter", "lm_studio"):
+            base = (base_url or _DEFAULT_BASE_URLS[provider]).rstrip("/")
+            url = f"{base}/chat/completions"
+            headers: dict[str, str] = {}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            elif provider == "lm_studio":
+                headers["Authorization"] = "Bearer not-needed"
+            payload = _http_post_json(
+                url,
+                {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user",   "content": user_prompt},
+                    ],
+                    "max_tokens": max_tokens,
+                    "temperature": 0.4,
+                },
+                headers=headers,
+                timeout=timeout,
+            )
+            choices = payload.get("choices") or []
+            text = ""
+            if choices and isinstance(choices[0], dict):
+                msg = choices[0].get("message") or {}
+                text = msg.get("content") or ""
+            return {"ok": True, "content": text}
+
+        if provider == "ollama":
+            base = (base_url or _DEFAULT_BASE_URLS["ollama"]).rstrip("/")
+            payload = _http_post_json(
+                f"{base}/api/chat",
+                {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user",   "content": user_prompt},
+                    ],
+                    "stream": False,
+                    "options": {"temperature": 0.4},
+                },
+                timeout=timeout,
+            )
+            msg = payload.get("message") or {}
+            return {"ok": True, "content": msg.get("content") or ""}
+
+        if provider == "google":
+            if not api_key:
+                return {"ok": False, "error": "Google Gemini requires an API key"}
+            base = (base_url or _DEFAULT_BASE_URLS["google"]).rstrip("/")
+            url = (
+                f"{base}/models/{urllib.parse.quote(model)}:generateContent"
+                f"?key={urllib.parse.quote(api_key, safe='')}"
+            )
+            payload = _http_post_json(
+                url,
+                {
+                    "contents": [{"parts": [{"text": user_prompt}]}],
+                    "systemInstruction": {"parts": [{"text": system_prompt}]},
+                    "generationConfig": {
+                        "temperature": 0.4,
+                        "maxOutputTokens": max_tokens,
+                    },
+                },
+                timeout=timeout,
+            )
+            cands = payload.get("candidates") or []
+            text = ""
+            if cands and isinstance(cands[0], dict):
+                parts = (cands[0].get("content") or {}).get("parts") or []
+                text = "".join(
+                    p.get("text", "") for p in parts if isinstance(p, dict)
+                )
+            return {"ok": True, "content": text}
+
+        return _provider_not_implemented(provider)
+    except urllib_error.HTTPError as exc:
+        body = ""
+        try:
+            body = exc.read().decode("utf-8", errors="replace")[:200]
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": False, "error": f"HTTP {exc.code}: {body or exc.reason}"}
+    except urllib_error.URLError as exc:
+        return {"ok": False, "error": f"network error: {exc.reason}"}
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        return {"ok": False, "error": f"malformed response: {exc}"}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
 _PROVIDER_DRIVERS = {
     "anthropic":  _provider_anthropic,
     "openai":     _provider_openai,

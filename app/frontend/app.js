@@ -315,6 +315,7 @@ const ui = {
     if (view === "sync"       && !ui._loaded.sync)       { ui._loaded.sync = true;       ui.loadSync(); }
     if (view === "settings"   && !ui._loaded.settings)   { ui._loaded.settings = true;   ui.loadSettings(); }
     if (view === "hosts"      && !ui._loaded.hosts)      { ui._loaded.hosts = true;      ui.loadHosts(); }
+    if (view === "schedule"   && !ui._loaded.schedule)   { ui._loaded.schedule = true;   ui.loadSchedule(); }
     if (view === "apps"       && !ui._loaded.apps)       { ui._loaded.apps = true;       ui.loadApps(); }
     if (view === "suggest"    && !ui._loaded.suggest)    { ui._loaded.suggest = true;    ui.loadSuggestions(); }
     if (view === "logs"       && !ui._loaded.logs)       { ui._loaded.logs = true;       ui.loadLogsList(); }
@@ -2601,6 +2602,182 @@ const ui = {
       }
     } catch (e) {
       tb.innerHTML = `<tr><td colspan="7" class="badge fail">${e}</td></tr>`;
+    }
+  },
+
+  // Schedule (Sesja 67) — drives the adapter's IScheduler via
+  // /scheduler/list /scheduler/install /scheduler/remove /scheduler/trigger.
+  async loadSchedule() {
+    const empty = document.getElementById("schedule-list-empty");
+    const table = document.getElementById("schedule-table");
+    const tbody = table ? table.querySelector("tbody") : null;
+    const setStatus = (txt, cls) => {
+      const el = document.getElementById("schedule-form-status");
+      if (!el) return;
+      el.textContent = txt || "";
+      el.className = cls || "dim";
+    };
+    if (!table || !tbody || !empty) return;
+
+    setStatus(i18n.t("schedule.loading", "Loading…"), "dim");
+    let resp;
+    try {
+      resp = await api.get("/scheduler/list");
+    } catch (e) {
+      setStatus(i18n.t("schedule.unavailable",
+        "Scheduling not available on this adapter."), "warn");
+      table.style.display = "none";
+      empty.style.display = "";
+      return;
+    }
+    setStatus("", "dim");
+
+    const items = (resp && resp.ok && Array.isArray(resp.items)) ? resp.items : [];
+    tbody.innerHTML = "";
+    if (!items.length) {
+      table.style.display = "none";
+      empty.style.display = "";
+    } else {
+      table.style.display = "";
+      empty.style.display = "none";
+      for (const it of items) {
+        const tr = document.createElement("tr");
+        // Use DOM-safe construction; schedule names are user-typed and
+        // could otherwise carry HTML when echoed by a misbehaving backend.
+        const cells = [
+          it.name || "",
+          it.expression || "",
+          it.profile || "",
+          it.enabled ? (i18n.t("schedule.yes", "yes")) : (i18n.t("schedule.no", "no")),
+        ];
+        for (const c of cells) {
+          const td = document.createElement("td");
+          td.textContent = c;
+          tr.appendChild(td);
+        }
+        const actTd = document.createElement("td");
+        const trigBtn = document.createElement("button");
+        trigBtn.type = "button";
+        trigBtn.className = "secondary";
+        trigBtn.style.fontSize = "0.78rem";
+        trigBtn.textContent = i18n.t("schedule.trigger_now", "Run now");
+        trigBtn.addEventListener("click", () => ui.scheduleTrigger(it.name));
+        const delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.className = "secondary";
+        delBtn.style.fontSize = "0.78rem";
+        delBtn.style.marginLeft = "0.3rem";
+        delBtn.textContent = i18n.t("schedule.delete", "Delete");
+        delBtn.addEventListener("click", () => ui.scheduleRemove(it.name));
+        const editBtn = document.createElement("button");
+        editBtn.type = "button";
+        editBtn.className = "secondary";
+        editBtn.style.fontSize = "0.78rem";
+        editBtn.style.marginLeft = "0.3rem";
+        editBtn.textContent = i18n.t("schedule.edit", "Edit");
+        editBtn.addEventListener("click", () => ui.scheduleEdit(it));
+        actTd.appendChild(trigBtn);
+        actTd.appendChild(editBtn);
+        actTd.appendChild(delBtn);
+        tr.appendChild(actTd);
+        tbody.appendChild(tr);
+      }
+    }
+
+    // Wire form + refresh button once.
+    if (!ui._scheduleWired) {
+      ui._scheduleWired = true;
+      const form = document.getElementById("schedule-form");
+      if (form) form.addEventListener("submit", ui.scheduleSubmit);
+      const refresh = document.getElementById("schedule-refresh-btn");
+      if (refresh) refresh.addEventListener("click", () => {
+        ui._loaded.schedule = false;
+        ui.loadSchedule();
+      });
+    }
+  },
+
+  scheduleEdit(it) {
+    const $n = document.getElementById("schedule-f-name");
+    const $e = document.getElementById("schedule-f-expr");
+    const $p = document.getElementById("schedule-f-profile");
+    const $en = document.getElementById("schedule-f-enabled");
+    const $d = document.getElementById("schedule-f-desc");
+    if ($n) $n.value = it.name || "";
+    if ($e) $e.value = it.expression || "";
+    if ($p) $p.value = it.profile || "safe";
+    if ($en) $en.checked = !!it.enabled;
+    if ($d) $d.value = it.description || "";
+    if ($n) $n.scrollIntoView({behavior: "smooth", block: "center"});
+  },
+
+  async scheduleSubmit(ev) {
+    ev.preventDefault();
+    const setStatus = (txt, cls) => {
+      const el = document.getElementById("schedule-form-status");
+      if (!el) return;
+      el.textContent = txt;
+      el.className = cls || "dim";
+    };
+    const body = {
+      name:        (document.getElementById("schedule-f-name") || {}).value || "",
+      expression:  (document.getElementById("schedule-f-expr") || {}).value || "",
+      profile:     (document.getElementById("schedule-f-profile") || {}).value || "safe",
+      enabled:    !!(document.getElementById("schedule-f-enabled") || {}).checked,
+      description: (document.getElementById("schedule-f-desc") || {}).value || null,
+    };
+    if (!body.name.trim() || !body.expression.trim()) {
+      setStatus(i18n.t("schedule.err_required", "Name and expression are required."), "fail");
+      return;
+    }
+    setStatus(i18n.t("schedule.saving", "Saving…"), "dim");
+    try {
+      const r = await api.post("/scheduler/install", body);
+      if (!r || r.ok === false) {
+        setStatus((r && r.error) || i18n.t("schedule.err_save",
+          "Save failed."), "fail");
+        return;
+      }
+      setStatus(i18n.t("schedule.saved", "Saved."), "ok");
+      ui._loaded.schedule = false;
+      ui.loadSchedule();
+    } catch (e) {
+      setStatus(String(e).slice(0, 200), "fail");
+    }
+  },
+
+  async scheduleRemove(name) {
+    if (!name) return;
+    const msg = i18n.t("schedule.confirm_delete",
+      "Delete schedule {name}?").replace("{name}", name);
+    if (!confirm(msg)) return;
+    try {
+      const r = await api.post("/scheduler/remove", {name});
+      if (!r || r.ok === false) {
+        alert((r && r.error) || i18n.t("schedule.err_delete",
+          "Delete failed."));
+        return;
+      }
+      ui._loaded.schedule = false;
+      ui.loadSchedule();
+    } catch (e) {
+      alert(String(e).slice(0, 200));
+    }
+  },
+
+  async scheduleTrigger(name) {
+    if (!name) return;
+    try {
+      const r = await api.post("/scheduler/trigger", {name});
+      if (!r || r.ok === false) {
+        alert((r && r.error) || i18n.t("schedule.err_trigger",
+          "Trigger failed."));
+        return;
+      }
+      alert(i18n.t("schedule.triggered",
+        "Triggered '{name}' once.").replace("{name}", name));
+    } catch (e) {
+      alert(String(e).slice(0, 200));
     }
   },
 

@@ -78,6 +78,7 @@
       <a href="#apps"       data-view="apps"       data-icon="apps"       class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.apps">Apps</span></a>
       <a href="#suggest"    data-view="suggest"    data-icon="suggest"    class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.suggest">Suggestions</span></a>
       <a href="#hosts"      data-view="hosts"      data-icon="hosts"      class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.hosts">Hosts</span></a>
+      <a href="#schedule"   data-view="schedule"   data-icon="schedule"   class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.schedule">Schedule</span></a>
       <a href="#settings"   data-view="settings"   data-icon="settings"   class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.settings">Settings</span></a>
       <a href="#help"       data-view="help"       data-icon="help"       class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.help">Help</span></a>
       <a href="#about"      data-view="about"      data-icon="about"      class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.about">About</span></a>
@@ -792,6 +793,82 @@
       </table>
     </section>
 
+    <!-- Schedule (Sesja 67) -->
+    <section id="view-schedule" class="view hidden">
+      <h2 data-i18n="schedule.title">Schedule</h2>
+      <section class="tab-help card" style="margin-bottom:1rem">
+        <p data-i18n="schedule.help_summary"></p>
+        <details style="margin-top:0.5rem">
+          <summary data-i18n="schedule.help_details_label"></summary>
+          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
+            <li><b data-i18n="schedule.help_li1_b"></b> <span data-i18n="schedule.help_li1_t"></span></li>
+            <li><b data-i18n="schedule.help_li2_b"></b> <span data-i18n="schedule.help_li2_t"></span></li>
+            <li><b data-i18n="schedule.help_li3_b"></b> <span data-i18n="schedule.help_li3_t"></span></li>
+            <li><b data-i18n="schedule.help_li4_b"></b> <span data-i18n="schedule.help_li4_t"></span></li>
+          </ul>
+        </details>
+      </section>
+
+      <div class="card" style="margin-bottom:1rem">
+        <h3 data-i18n="schedule.list_title">Active schedules</h3>
+        <p id="schedule-list-empty" class="dim" data-i18n="schedule.list_empty"
+           style="margin:0.5rem 0">No schedules yet — use the form below to create one.</p>
+        <table id="schedule-table" style="width:100%;margin-top:0.5rem;display:none">
+          <thead><tr>
+            <th data-i18n="schedule.col_name">Name</th>
+            <th data-i18n="schedule.col_expr">When</th>
+            <th data-i18n="schedule.col_profile">Profile</th>
+            <th data-i18n="schedule.col_enabled">Enabled</th>
+            <th data-i18n="schedule.col_act">Actions</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+        <button id="schedule-refresh-btn" class="btn" type="button" style="margin-top:0.5rem"
+                data-i18n="schedule.refresh">Refresh</button>
+      </div>
+
+      <div class="card">
+        <h3 data-i18n="schedule.add_title">Add or replace a schedule</h3>
+        <p class="dim" data-i18n="schedule.add_hint" style="margin:0.3rem 0 1rem">
+          Submitting an existing name updates the schedule in place.
+        </p>
+        <form id="schedule-form" style="display:grid;gap:0.6rem;grid-template-columns:1fr 1fr">
+          <label style="grid-column:1/-1">
+            <span data-i18n="schedule.f_name">Name</span><br>
+            <input id="schedule-f-name" name="name" required maxlength="80"
+                   pattern="[A-Za-z0-9_-]+"
+                   placeholder="ascendo-daily" style="width:100%">
+          </label>
+          <label>
+            <span data-i18n="schedule.f_expr">Expression</span><br>
+            <input id="schedule-f-expr" name="expression" required maxlength="200"
+                   placeholder="DAILY 03:00" style="width:100%">
+            <small class="dim" data-i18n="schedule.f_expr_hint">DAILY HH:MM, WEEKLY DAY HH:MM, MONTHLY HH:MM, HOURLY HH:MM, MINUTE N</small>
+          </label>
+          <label>
+            <span data-i18n="schedule.f_profile">Profile</span><br>
+            <select id="schedule-f-profile" name="profile" style="width:100%">
+              <option value="quick">quick</option>
+              <option value="safe" selected>safe</option>
+              <option value="full">full</option>
+            </select>
+          </label>
+          <label style="grid-column:1/-1">
+            <input id="schedule-f-enabled" name="enabled" type="checkbox" checked>
+            <span data-i18n="schedule.f_enabled">Enabled</span>
+          </label>
+          <label style="grid-column:1/-1">
+            <span data-i18n="schedule.f_desc">Description (optional)</span><br>
+            <input id="schedule-f-desc" name="description" maxlength="400" style="width:100%">
+          </label>
+          <div style="grid-column:1/-1;display:flex;gap:0.5rem">
+            <button type="submit" class="btn btn-primary" data-i18n="schedule.f_save">Save schedule</button>
+            <span id="schedule-form-status" class="dim" style="margin-left:auto;align-self:center"></span>
+          </div>
+        </form>
+      </div>
+    </section>
+
     <!-- Settings -->
     <section id="view-settings" class="view hidden">
       <h2 data-i18n="settings.title">Settings</h2>
@@ -1118,6 +1195,10 @@ python -m ascendo dashboard --port 8765 [--background]
             <tr><td><code>msstore</code> — <code>adapters/windows/scripts/msstore/*.ps1</code></td><td>Microsoft Store apps + MSIX bundles. Surfaces store entries from <code>winget list</code>; <code>apply</code> uses <code>winget upgrade --source msstore</code>. Microsoft Store auto-refresh in the background can claim updates between phases — Ascendo emits <code>STORE-AUTO-REFRESHED</code> as info, not warn.</td></tr>
             <tr><td><code>registry_arp</code> — <code>adapters/windows/scripts/arp/*.ps1</code></td><td>Add-or-Remove-Programs entries (legacy MSI / EXE installers). <code>check</code> walks <code>HKLM/HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall</code>; <code>apply</code> is best-effort — many ARP entries don't expose a silent uninstall+reinstall path, so the manager surfaces a manual-action advisory instead of attempting a risky upgrade.</td></tr>
             <tr><td><code>windows_update</code> — <code>adapters/windows/scripts/windows_update/*.ps1</code></td><td>OS patches (KB cumulative updates, defender definitions, security rollups). Backed by the PSWindowsUpdate module (<code>Get-WUList -MicrosoftUpdate</code> for check, <code>Install-WindowsUpdate -AcceptAll -AutoReboot:$false</code> for apply). First call installs the module from PSGallery if missing.</td></tr>
+            <tr><td><code>npm</code> — <code>adapters/windows/scripts/npm/*.ps1</code> <small class="dim">(Sesja 58)</small></td><td>Node.js global CLIs (claude-code, codex, gemini, typescript, eslint, prettier, …). <code>check</code> uses <code>npm list -g</code> + PyPI-equivalent registry queries; <code>apply</code> runs <code>npm install -g name@latest</code>. No sudo — installs to user-owned <code>%APPDATA%\npm</code>. Stderr-tail surfaces EACCES / registry 404 reasons on failure.</td></tr>
+            <tr><td><code>pip</code> — <code>adapters/windows/scripts/pip/*.ps1</code> <small class="dim">(Sesja 58)</small></td><td>Python global CLIs (uv, ruff, mypy, pytest, black, …) in user-site. <code>apply</code> runs <code>pip install --user --upgrade name</code>. Self-skip rule for the <code>pip</code> package itself when it's the system Python's pip (avoids privilege conflicts).</td></tr>
+            <tr><td><code>web</code> — <code>adapters/windows/scripts/web/*.ps1</code> <small class="dim">(Sesja 59 → 64)</small></td><td>Curated third-party apps installed outside winget (Brave, Obsidian, OBS Studio, KeePassXC, Notepad++, AutoHotkey, GitHub CLI, OpenCode, VSCode User-Setup, etc.). <b>8 apps Tier-A</b> have full silent install: download installer, verify Authenticode against expected publisher, kill running process, run silent flags, read new DisplayVersion from registry. Sesja 64 added <i>fake-success detection</i> — apply now reads DisplayVersion BEFORE the install too and flips the result to <code>failed</code> if the version did NOT change despite exit 0. Sesja 65 deduped web-auto rows against winget by DisplayName so the same app no longer shows under both categories.</td></tr>
+            <tr><td><code>plugin</code> — <code>plugins/dell-driver-update/</code> <small class="dim">(Sesja 58 wiring)</small></td><td>Dell Command Update plugin — driver + BIOS updates on Dell hardware. Needs Administrator. Health probe reports the dcu-cli.exe path; non-Dell hosts auto-skip with <code>dcu unavailable</code>.</td></tr>
             <tr><td><code>snapshot</code> — <code>adapters/windows/scripts/snapshot/snapshot.ps1</code></td><td>Pre-apply snapshot via Volume Shadow Copy (<code>vssadmin create shadow</code>). Bounded by a 300s timeout — never stalls the run; falls through to a warn diagnostic if VSS is disabled or the system drive is read-only.</td></tr>
             <tr><td><code>scheduler</code> — registered through <code>schtasks /Create</code></td><td>Per-user Task Scheduler entry <code>\\Ascendo\\WeeklyRun</code>. Trigger string is cron-like or schtasks-native; the scheduled job runs <code>python -m ascendo run</code> with the saved profile and battery / focus / window guards (<code>ASCENDO_REQUIRE_AC=1</code>, <code>ASCENDO_MAINTENANCE_WINDOW=02:00-05:00</code>).</td></tr>
             <tr><td><code>elevation</code> — <code>adapters/windows/ascendo_windows/managers/elevation.py</code></td><td>UAC-based elevation. Allowlists native binaries by basename (lowercase), denies on non-Windows, runs the helper with <code>ShellExecute</code> + <code>runas</code>. The dashboard caches the Administrator token in-memory only — never on disk.</td></tr>
@@ -1232,7 +1313,89 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
           browser console (F12). Common cause: stale browser cache after a
           <code>git pull</code>; the cache buster only triggers on script
           name changes.</li>
+          <li><b>An app shows <code>outdated</code> despite being manually
+          upgraded</b> <small class="dim">(Sesja 66)</small> — stale post-apply
+          overlay from an older <code>triggered</code> run was leaking through
+          newer <code>up_to_date</code> checks. <code>git pull</code> + restart
+          dashboard; <code>_latest_check_overlay</code> now only walks
+          same-run apply/verify.</li>
+          <li><b><code>winget list Version=Unknown</code> package re-applied
+          every full run</b> <small class="dim">(Sesja 66)</small> — plan +
+          apply now consult the Sesja 63 apply-mark; a successful upgrade
+          short-circuits to <code>up_to_date</code> on subsequent runs.</li>
+          <li><b>Inventory shows fewer rows than <code>winget list</code> /
+          MSStore</b> <small class="dim">(Sesja 67)</small> — pre-v2 the DB
+          PK was <code>(category, name)</code> which silently dropped 17
+          MSStore + 14 winget + 3 ARP packages sharing DisplayNames across
+          architectures. <code>git pull</code> auto-migrates; next live-scan
+          repopulates within seconds.</li>
         </ul>
+
+        <h3 id="help-recent">12 · Recent additions (Sesja 58-67)</h3>
+        <p>Tools and mechanisms added in recent sessions, in operator-facing order:</p>
+        <ul>
+          <li><b data-i18n="help.windows.managers_h"></b></li>
+          <li><span data-i18n="help.windows.m_winget"></span></li>
+          <li><span data-i18n="help.windows.m_msstore"></span></li>
+          <li><span data-i18n="help.windows.m_npm"></span></li>
+          <li><span data-i18n="help.windows.m_pip"></span></li>
+          <li><span data-i18n="help.windows.m_web"></span></li>
+          <li><span data-i18n="help.windows.m_plugin"></span></li>
+          <li><span data-i18n="help.windows.m_arp"></span></li>
+          <li><span data-i18n="help.windows.m_wu"></span></li>
+        </ul>
+
+        <details style="margin-top:0.8rem">
+          <summary><b data-i18n="help.windows.tier_a_h"></b></summary>
+          <p data-i18n="help.windows.tier_a_p" style="margin:0.4rem 0 0"></p>
+        </details>
+        <details style="margin-top:0.6rem">
+          <summary><b data-i18n="help.windows.fake_success_h"></b></summary>
+          <p data-i18n="help.windows.fake_success_p" style="margin:0.4rem 0 0"></p>
+        </details>
+        <details style="margin-top:0.6rem">
+          <summary><b data-i18n="help.windows.apply_mark_h"></b></summary>
+          <p data-i18n="help.windows.apply_mark_p" style="margin:0.4rem 0 0"></p>
+        </details>
+        <details style="margin-top:0.6rem">
+          <summary><b data-i18n="help.windows.dedup_h"></b></summary>
+          <p data-i18n="help.windows.dedup_p" style="margin:0.4rem 0 0"></p>
+        </details>
+
+        <h3 id="help-tooling">13 · Operator tooling (Sesja 58-67)</h3>
+        <p>CLI + PowerShell wrappers shipped recently to streamline day-to-day operation:</p>
+        <details style="margin-top:0.6rem" open>
+          <summary><b data-i18n="help.windows.web_lifecycle_h"></b></summary>
+          <p data-i18n="help.windows.web_lifecycle_p" style="margin:0.4rem 0 0"></p>
+        </details>
+        <details style="margin-top:0.6rem">
+          <summary><b data-i18n="help.windows.build_inventory_h"></b></summary>
+          <p data-i18n="help.windows.build_inventory_p" style="margin:0.4rem 0 0"></p>
+        </details>
+        <details style="margin-top:0.6rem">
+          <summary><b data-i18n="help.windows.tag_release_h"></b></summary>
+          <p data-i18n="help.windows.tag_release_p" style="margin:0.4rem 0 0"></p>
+        </details>
+        <details style="margin-top:0.6rem">
+          <summary><b data-i18n="help.windows.install_service_h"></b></summary>
+          <p data-i18n="help.windows.install_service_p" style="margin:0.4rem 0 0"></p>
+        </details>
+        <details style="margin-top:0.6rem">
+          <summary><b data-i18n="help.windows.validate_harness_h"></b></summary>
+          <p data-i18n="help.windows.validate_harness_p" style="margin:0.4rem 0 0"></p>
+        </details>
+        <details style="margin-top:0.6rem">
+          <summary><b data-i18n="help.windows.watchdog_h"></b></summary>
+          <p data-i18n="help.windows.watchdog_p" style="margin:0.4rem 0 0"></p>
+        </details>
+        <details style="margin-top:0.6rem">
+          <summary><b data-i18n="help.windows.suggestions_ai_h"></b></summary>
+          <p data-i18n="help.windows.suggestions_ai_p" style="margin:0.4rem 0 0"></p>
+        </details>
+        <details style="margin-top:0.6rem">
+          <summary><b data-i18n="help.windows.schedule_tab_h"></b></summary>
+          <p data-i18n="help.windows.schedule_tab_p" style="margin:0.4rem 0 0"></p>
+        </details>
       </article>
     </section>
 
@@ -1259,6 +1422,44 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
         <div class="card">
           <h3 data-i18n="about.system">Host system</h3>
           <div id="about-system">…</div>
+        </div>
+        <!-- Sesja 67: curated highlights of the last 10 sessions so the
+             operator doesn't have to scroll the full release notes to see
+             what's new. Populated client-side from the i18n catalog. -->
+        <div class="card" style="grid-column: 1 / -1">
+          <h3 data-i18n="about.highlights">Recent highlights</h3>
+          <p class="dim" data-i18n="about.highlights_hint"
+             style="margin:0.3rem 0 0.8rem">
+            Major capabilities added in the last few sessions. Click any item
+            for details, or scroll Release notes below for the full history.
+          </p>
+          <ul id="about-highlights" style="margin:0;padding-left:1.2rem">
+            <li><b data-i18n="about.h_sesja67_t"></b>
+                <span data-i18n="about.h_sesja67_d"></span></li>
+            <li><b data-i18n="about.h_sesja66_t"></b>
+                <span data-i18n="about.h_sesja66_d"></span></li>
+            <li><b data-i18n="about.h_sesja65_t"></b>
+                <span data-i18n="about.h_sesja65_d"></span></li>
+            <li><b data-i18n="about.h_sesja64_t"></b>
+                <span data-i18n="about.h_sesja64_d"></span></li>
+            <li><b data-i18n="about.h_sesja63_t"></b>
+                <span data-i18n="about.h_sesja63_d"></span></li>
+            <li><b data-i18n="about.h_sesja62_t"></b>
+                <span data-i18n="about.h_sesja62_d"></span></li>
+            <li><b data-i18n="about.h_sesja61_t"></b>
+                <span data-i18n="about.h_sesja61_d"></span></li>
+            <li><b data-i18n="about.h_sesja59_t"></b>
+                <span data-i18n="about.h_sesja59_d"></span></li>
+            <li><b data-i18n="about.h_sesja58_t"></b>
+                <span data-i18n="about.h_sesja58_d"></span></li>
+          </ul>
+          <p class="dim" style="margin:0.8rem 0 0;font-size:0.85em">
+            <a href="https://github.com/KasprowiczM/ascendo" target="_blank" rel="noopener"
+               data-i18n="about.github_link">GitHub: KasprowiczM/ascendo</a>
+            &nbsp;·&nbsp;
+            <a href="https://github.com/KasprowiczM/ascendo/releases" target="_blank" rel="noopener"
+               data-i18n="about.releases_link">Releases &amp; downloads</a>
+          </p>
         </div>
         <div class="card" style="grid-column: 1 / -1">
           <details class="release-notes-details">

@@ -34,10 +34,18 @@ _log = logging.getLogger(__name__)
 
 
 _SCHEMA_STATEMENTS: tuple[str, ...] = (
+    # Sesja 67: schema v2 widens the primary key to include item_id so that
+    # multiple packages sharing the same DisplayName (different architectures
+    # — x86/x64/arm64 — or different versions installed side-by-side) each
+    # keep their own row. Pre-v2 the PK was (category, name) which silently
+    # collapsed 17 msstore + 14 winget + 3 arp duplicates on DP5520WMK.
+    # item_id is COALESCE'd to name in the dedup key so legacy rows without
+    # an explicit id behave exactly like before.
     """
     CREATE TABLE IF NOT EXISTS inventory_items (
         category    TEXT NOT NULL,
         name        TEXT NOT NULL,
+        item_id     TEXT NOT NULL DEFAULT '',
         installed   TEXT,
         candidate   TEXT,
         status      TEXT,
@@ -45,11 +53,12 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
         vendor      TEXT,
         metadata    TEXT,
         updated_at  TEXT NOT NULL,
-        PRIMARY KEY (category, name)
+        PRIMARY KEY (category, name, item_id)
     )
     """,
     "CREATE INDEX IF NOT EXISTS ix_inventory_status ON inventory_items(status)",
     "CREATE INDEX IF NOT EXISTS ix_inventory_category ON inventory_items(category)",
+    "CREATE INDEX IF NOT EXISTS ix_inventory_item_id ON inventory_items(category, item_id)",
     """
     CREATE TABLE IF NOT EXISTS inventory_meta (
         adapter      TEXT PRIMARY KEY,
@@ -98,6 +107,7 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     out: dict[str, Any] = {
         "category": row["category"],
         "name": row["name"],
+        "item_id": row["item_id"] if "item_id" in row.keys() else "",
         "installed": row["installed"],
         "candidate": row["candidate"],
         "status": row["status"],
@@ -193,9 +203,39 @@ class InventoryDB:
     def _migrate(self) -> None:
         with self._init_lock:
             with self._connect() as conn:
+                # Sesja 67 — schema v2: widen the inventory_items PK to
+                # include item_id so packages with duplicate DisplayNames
+                # (different MSIX architectures, parallel-installed VC++
+                # redistributables, etc.) don't silently collapse into a
+                # single row.
+                #
+                # Detect a pre-v2 schema by checking whether the
+                # ``item_id`` column exists. On v1 DBs we materialise a
+                # new table, copy the legacy rows in (item_id='') and
+                # swap. Idempotent: v2 DBs skip the rebuild.
+                cur = conn.execute("PRAGMA table_info(inventory_items)")
+                cols = {row[1] for row in cur.fetchall()}
+                if cols and "item_id" not in cols:
+                    self._migrate_inventory_items_v1_to_v2(conn)
                 for stmt in _SCHEMA_STATEMENTS:
                     conn.execute(stmt)
                 conn.commit()
+
+    @staticmethod
+    def _migrate_inventory_items_v1_to_v2(conn: "sqlite3.Connection") -> None:
+        """Replace inventory_items with the v2 schema (PK widened to
+        include item_id).
+
+        We intentionally DROP the legacy data: copying old rows in with
+        ``item_id=''`` would duplicate every multi-architecture package
+        once the new flush starts emitting rows with real id-discriminated
+        keys (msstore MSIX, ARP GUIDs, etc.). The dashboard re-populates
+        the table on the next `/inventory/refresh` or post-run flush —
+        typically within seconds of startup — so the operator sees a
+        flicker, not a gap. Migration runs inside the outer ``_migrate``
+        transaction so a crash mid-flight leaves the DB untouched.
+        """
+        conn.execute("DROP TABLE inventory_items")
 
     # ── path ────────────────────────────────────────────────────────────
 
@@ -265,6 +305,12 @@ class InventoryDB:
         Each row dict requires ``category`` + ``name``; remaining fields
         are optional. Rows missing the two keys are silently skipped.
         Returns the number of rows actually written.
+
+        Sesja 67: optional ``item_id`` widens the dedup key. Two rows
+        sharing ``(category, name)`` but with different ``item_id`` get
+        SEPARATE persisted rows (parallel-installed VC++ redistributables,
+        MSIX x86 vs x64 vs arm64, etc.). Legacy callers that pass no
+        ``item_id`` get ``''`` and behave exactly like pre-v2.
         """
         materialised: list[tuple[Any, ...]] = []
         ts = _utcnow()
@@ -273,6 +319,7 @@ class InventoryDB:
             name = row.get("name")
             if not category or not name:
                 continue
+            item_id = row.get("item_id") or row.get("id") or ""
             metadata = row.get("metadata")
             meta_blob: str | None
             if metadata is None:
@@ -290,6 +337,7 @@ class InventoryDB:
                 (
                     str(category),
                     str(name),
+                    str(item_id),
                     row.get("installed"),
                     row.get("candidate"),
                     row.get("status") or "unknown",
@@ -305,10 +353,10 @@ class InventoryDB:
             conn.executemany(
                 """
                 INSERT INTO inventory_items
-                    (category, name, installed, candidate, status,
+                    (category, name, item_id, installed, candidate, status,
                      source_type, vendor, metadata, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(category, name) DO UPDATE SET
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(category, name, item_id) DO UPDATE SET
                     installed   = excluded.installed,
                     candidate   = excluded.candidate,
                     status      = excluded.status,
@@ -350,10 +398,10 @@ class InventoryDB:
             params.append(f"%{search.lower()}%")
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         sql = (
-            "SELECT category, name, installed, candidate, status,"
+            "SELECT category, name, item_id, installed, candidate, status,"
             " source_type, vendor, metadata, updated_at"
             f" FROM inventory_items{where}"
-            " ORDER BY category, name"
+            " ORDER BY category, name, item_id"
         )
         with self._connect() as conn:
             cursor = conn.execute(sql, tuple(params))

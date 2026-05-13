@@ -677,17 +677,30 @@ def _build_buckets_live(
 def _flatten_buckets_for_db(
     buckets: dict[str, list[dict[str, Any]]],
 ) -> list[dict[str, Any]]:
-    """Flatten the bucketed dicts into ``inventory_db.bulk_upsert`` rows."""
+    """Flatten the bucketed dicts into ``inventory_db.bulk_upsert`` rows.
+
+    Sesja 67: include ``item_id`` so packages with identical DisplayNames
+    but distinct underlying identifiers (e.g. winget MSIX rows for
+    different architectures of the same package) survive the DB write.
+    Pre-v2 PK ``(category, name)`` silently collapsed those duplicates;
+    the new PK ``(category, name, item_id)`` keeps them apart.
+    """
     rows: list[dict[str, Any]] = []
     for cat, items in buckets.items():
         for it in items:
             name = it.get("name")
             if not name:
                 continue
+            raw_id = it.get("id") or it.get("item_id") or ""
+            # Only carry item_id when it actually differs from name. This
+            # keeps simple managers (one row per package) using the empty
+            # discriminator and avoids spurious row splits.
+            item_id = str(raw_id) if raw_id and str(raw_id) != str(name) else ""
             rows.append(
                 {
                     "category": cat,
                     "name": name,
+                    "item_id": item_id,
                     "installed": it.get("installed"),
                     "candidate": it.get("candidate"),
                     "status": it.get("status") or "unknown",
@@ -726,20 +739,28 @@ def _replace_buckets_in_db(
 
 
 def _buckets_from_db(db) -> dict[str, list[dict[str, Any]]]:  # type: ignore[no-untyped-def]
-    """Read every row from the DB and re-shape into ``{cat: [item, ...]}``."""
+    """Read every row from the DB and re-shape into ``{cat: [item, ...]}``.
+
+    Sesja 67: re-surface ``item_id`` so the SPA can disambiguate packages
+    that share a DisplayName (different architectures, parallel-installed
+    redistributables). ``id`` mirrors item_id when present.
+    """
     out: dict[str, list[dict[str, Any]]] = {}
     for row in db.query():
         cat = row["category"]
-        out.setdefault(cat, []).append(
-            {
-                "name": row["name"],
-                "installed": row.get("installed"),
-                "candidate": row.get("candidate"),
-                "source": row.get("source_type") or cat,
-                "status": row.get("status") or "ok",
-                "vendor": row.get("vendor"),
-            },
-        )
+        item_id = row.get("item_id") or ""
+        item: dict[str, Any] = {
+            "name": row["name"],
+            "installed": row.get("installed"),
+            "candidate": row.get("candidate"),
+            "source": row.get("source_type") or cat,
+            "status": row.get("status") or "ok",
+            "vendor": row.get("vendor"),
+        }
+        if item_id:
+            item["id"] = item_id
+            item["item_id"] = item_id
+        out.setdefault(cat, []).append(item)
     return out
 
 

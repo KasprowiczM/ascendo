@@ -104,8 +104,10 @@ _SPA_FETCH_INVENTORY: dict[str, str] = {
     "POST /hosts/upsert": "stub",
     "POST /onboarding/complete": "served",
     "POST /profiles/import": "stub",
-    "POST /scheduler/install": "stub",
-    "POST /scheduler/remove": "stub",
+    "POST /scheduler/install": "served (scheduler_real.py — Sesja 67)",
+    "POST /scheduler/remove":  "served (scheduler_real.py — Sesja 67)",
+    "POST /scheduler/trigger": "served (scheduler_real.py — Sesja 67)",
+    "GET  /scheduler/list":    "served (scheduler_real.py — Sesja 67)",
     "POST /suggestions/apply": "stub",
     "POST /suggestions/dismiss": "stub",
     "POST /suggestions/test": "stub",
@@ -613,16 +615,12 @@ async def system_reboot_stub(delay: int = 5) -> dict[str, Any]:
 
 
 # -- Scheduler -------------------------------------------------------------
-
-
-@router.post("/scheduler/install")
-async def scheduler_install_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True}
-
-
-@router.post("/scheduler/remove")
-async def scheduler_remove_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True}
+# Sesja 67: /scheduler/* endpoints are now served by scheduler_real.py
+# which drives the adapter's IScheduler implementation (WindowsScheduler /
+# LaunchdScheduler / SystemdScheduler). No stubs needed any more — the
+# real router is mounted BEFORE spa_stubs in app.py so collisions are
+# impossible. If a future adapter doesn't implement SCHEDULING the real
+# router returns HTTP 503 with a helpful message.
 
 
 # -- Telemetry / updates ---------------------------------------------------
