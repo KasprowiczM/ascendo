@@ -159,8 +159,8 @@ never logged).
 | **Microsoft Store apps** | msstore → apply | Bound to the user's Store account |
 | **Windows 11 itself** | windows_update → apply | Downloads + stages KB patches; reboot required |
 | **npm/pip CLIs** | npm/pip → check / apply | No sudo needed; user-scope installs |
-| **VS Code / KeePassXC / Notepad++ / AutoHotkey / GitHub CLI / OpenCode** | web → apply | **Full Tier-A silent install** (Sesja 61): downloads installer, Authenticode-verifies the signing publisher, kills running process, runs silent install (`/qn` MSI or `/VERYSILENT` Inno or `/S` NSIS), reads new DisplayVersion from registry. No browser, no clicks. |
-| **Brave / Obsidian / OBS / Notion / Discord / Slack / Zoom / Cursor / GitHubDesktop / BraveNightly** | web → check | Real candidate-version probes (Tier-A check, Tier-B apply); when outdated, apply opens the vendor download page so you run the installer manually. Full silent install pending per-app validation. |
+| **VS Code / KeePassXC / Notepad++ / AutoHotkey / GitHub CLI / OpenCode / Obsidian / OBS Studio** | web → apply | **Full Tier-A silent install** (Sesja 61, 64): downloads installer, Authenticode-verifies the signing publisher against `expected_publisher`, kills running process, runs silent install (`/qn` MSI or `/VERYSILENT` Inno or `/S` NSIS), reads new DisplayVersion from registry, **and verifies the version actually changed** (Sesja 64 fake-success detection). No browser, no clicks. |
+| **Brave / Notion / Discord / Slack / Zoom / Cursor / GitHubDesktop / BraveNightly** | web → check | Real candidate-version probes (Tier-A check, Tier-B apply); when outdated, apply opens the vendor download page so you run the installer manually. Full silent install pending per-app silent-flag validation. |
 | **Proton Mail / Proton Drive / rclone / Tuta Mail** | web → check | Real candidate-version probe; apply currently Tier-B trigger-only. Promotion to Tier-A silent install pending validation. |
 | **Dell drivers + BIOS** | plugin → check / apply | Dell Command Update CLI. Needs Admin / UAC. Plugin lives at `plugins/dell-driver-update/`. |
 
@@ -334,46 +334,49 @@ D:\Dev_Env\ascendo\
 └─ logs\runs\<uuid>\           # All sidecars and per-phase logs
 ```
 
-## 11 · Native installers (.msi / .exe) — current status
+## 11 · Distribution: one-liner only — MSI / NSIS retired (Sesja 64)
 
-> **Native installer distribution is dev-only today on the public
-> repo.** Public Windows users get the `iwr … install.ps1 \| iex`
-> one-liner (CLI + Web profile). MSI / NSIS builds live in-repo for
-> contributors building locally; ship them publicly only after code
-> signing. See [`docs/DESKTOP_INSTALLER_STATUS.md`](docs/DESKTOP_INSTALLER_STATUS.md)
-> for the full reasoning.
+**Public distribution is the `iwr install.ps1 \| iex` one-liner**
+(see Section 1). No pre-built `.msi` / `.exe` installers are
+published. Retirement is symmetric with the macOS `.dmg` decision
+the project made earlier.
 
-For contributors who want to build installers locally:
+### Why no native installers?
 
-```powershell
-# Produces dist/Ascendo-<version>-x64-setup.exe (NSIS) + .msi (WiX)
-pwsh .\bin\build-installer.ps1 -Edition basic
-```
+| Concern | Reality |
+|---------|---------|
+| SmartScreen on unsigned `.msi` / `.exe` | Every recipient sees "Windows protected your PC" on first launch, regardless of how many people downloaded successfully before. Bad first impression. |
+| Code signing cost | EV Authenticode = $300-700/yr; Azure Trusted Signing = $120/yr (cheapest path). The project hasn't made that investment yet. |
+| Feature parity with web | `ascendo web start` opens the SAME SPA at `http://127.0.0.1:8765/` that a Tauri native window would show. The web dashboard and the desktop shell are functionally identical. |
+| Update story | `update.ps1` rolls forward cleanly via `git pull --ff-only`. No "drag the new MSI to Program Files" friction. |
 
-**SmartScreen reality on an unsigned build (today)**:
+### What stays in-repo (and why)
 
-| Signing | Recipient first-launch experience |
-|---------|------------------------------------|
-| **None** *(today's build)* | Blue "Windows protected your PC" screen → "More info" → "Run anyway". Works on every supported Windows; ugly on first launch. |
-| Standard OV/IV Authenticode cert ($100–300/yr) | Same blue screen at first, reputation accrues over ~3000 successful installs. |
-| **EV Authenticode** ($300–700/yr) | **No SmartScreen warning at all**. Single UAC prompt only. |
-| **Azure Trusted Signing** ($10/mo) | Same UX as EV, cheaper. Recommended path when re-introducing public installers. |
+| File / dir | Status | Reason |
+|---|---|---|
+| `bin/install-service.ps1` | **Active** | NSSM-based 24/7 dashboard service — orthogonal to installer retirement |
+| `bin/install-shortcut.ps1` | **Active** | Desktop + Start Menu shortcuts that target the existing CLI install |
+| `bin/build-installer.ps1` | **Retained** | Still builds the Tauri `.app` shell bundle locally for contributor testing; no longer produces `.msi` / `.exe` artifacts since Sesja 64 retired those targets |
+| `ui/desktop-tauri/` | **Retained** | Tauri 2.x scaffold for contributor dev (`launch-desktop.ps1`); same SPA as the web dashboard inside a native window |
+| `packaging/winget-manifest/` | **Retained** | Local-build template; not published to microsoft/winget-pkgs yet |
+| `ui/desktop-tauri/src-tauri/tauri.conf.json` | **Edited (Sesja 64)** | `bundle.windows.wix` + `bundle.windows.nsis` sub-tables removed; `bundle.targets` now `["app", "deb", "rpm", "appimage"]` — `.msi`, `.exe`, and `.dmg` excluded |
 
-Crucially, Windows never **hard-blocks** an unsigned installer the way
-macOS Gatekeeper does on Sequoia/Tahoe — the "Run anyway" escape hatch
-is always one click away. So an unsigned .msi published to GitHub
-Releases is *usable*, just ugly. The recommendation is still to ship
-the install.ps1 one-liner publicly until signing is in place.
+### Re-enabling later (v0.7+ roadmap)
 
-`bin/build-installer.ps1` accepts `-CertificatePath`,
-`-CertificatePassword`, `-TimestampUrl` parameters — signing is one
-config block away when a cert is available.
+Once code-signing infrastructure lands (EV Authenticode cert or Azure
+Trusted Signing subscription), re-enabling is a config flip:
 
-The Windows MSI/NSIS build now also bundles the WebManager registry
-(`adapters/windows/config/web_apps.toml`) and the npm/pip global-CLI
-manifest files alongside the existing PowerShell adapter resources, so
-the new sources work out of the box for users installing from the
-installer.
+1. Add `"msi"` + `"nsis"` back to `bundle.targets` in `tauri.conf.json`
+2. Re-add the `bundle.windows.wix` + `bundle.windows.nsis` blocks
+   (`installer-assets/` BMPs are still in-repo)
+3. Run `bin/build-installer.ps1 -CertificatePath ... -CertificatePassword ...`
+   (the script already accepts these args; signing is one config
+   block away when a cert is available)
+4. Create `.github/workflows/release.yml` to auto-publish signed
+   builds on tag push
+
+Tracked in [`PLAN.md`](PLAN.md) under "v0.7+ desktop distribution"
+and [`docs/DESKTOP_INSTALLER_STATUS.md`](docs/DESKTOP_INSTALLER_STATUS.md).
 
 ## 12 · One-liner sanity check
 

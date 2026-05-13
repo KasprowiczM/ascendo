@@ -1,6 +1,25 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-13 (sesja 63) — **Unknown-version apply-mark
+> Last updated: 2026-05-13 (sesja 64) — **Deep audit + fake-success
+> detection + Tier-A promotions + MSI/NSIS retirement.** Operator's
+> sweep request ("analyze deeply, no fake runs, retire .exe/.msi like
+> .dmg, fix all issues, use subagents") drove a three-agent parallel
+> read-only audit (apply paths / web Tier-A coverage / docs +
+> packaging). Five fixes shipped: (1) `Invoke-GitHubReleaseApplyReal`
+> + `Invoke-ReleaseFeedApplyReal` now capture pre-install
+> DisplayVersion and return `Success=false` on no-change fake-success
+> (the audit's #1 finding); (2) obsidian promoted to Tier-A silent
+> install (NSIS `/S`, publisher `Obsidian`); (3) obs-studio promoted
+> (NSIS `/S`, publisher `Open Broadcaster Software`); (4) MSI + NSIS
+> Tauri bundlers disabled in `tauri.conf.json` (public distribution =
+> `iwr install.ps1 \| iex` only, mirror of macOS .dmg retirement);
+> (5) 10 regression tests pinning all of the above. Tier-A apply
+> count goes from 6 -> **8** (vscode-user, keepassxc, notepadpp,
+> autohotkey, github-cli, opencode, **obsidian**, **obs-studio**).
+> Test count 432 -> **442** Windows + 324 contract (+10 new). See
+> HANDOFF.md Sesja 64.
+>
+> Previous milestone (sesja 63) — **Unknown-version apply-mark
 > for `SoftSea.IMGtoISO` + similar packages.** Operator report:
 > "img to iso always reports unknown version, fix it, even after
 > update." Root cause: `winget list --id SoftSea.IMGtoISO` returns

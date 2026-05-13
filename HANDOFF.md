@@ -6,6 +6,145 @@
 
 ---
 
+## Sesja 64 (2026-05-13, night) — Deep audit + fake-success detection + Tier-A promotions + MSI/NSIS retirement
+
+Operator request, verbatim: *"analyze this project deeply, make sure that
+all apps from all categories are fully scanned to inventory, main
+functionality is working from building inventory, check all the way to
+apply and finally cleanup. make sure that all apps are silently updated,
+elevated permissions where necessary are working, there is now fake runs,
+that ascendo shows success run, but apps are not updated still, implement
+some kind of verification for this. check docs if all the missing piecies
+for windows have been implemented. As we discarded .dmg files on macos,
+discard exe and msi installers here. make sure all categories works
+perfectly and web app is working without any problems. fix all issues,
+use subagents, use skills."*
+
+Dispatched three parallel read-only audit agents before any code change
+(per the `dispatching-parallel-agents` skill). Each agent had a tight
+independent scope:
+
+| Agent | Domain | Output |
+|-------|--------|--------|
+| A | Per-category apply.ps1 silent-flag + elevation + post-install readback audit (8 categories) | Critical-gaps report with file:line citations |
+| B | Web Tier-A coverage + handler post-install verification + Authenticode strictness + kill_processes resilience | Per-app promotion table + handler-vulnerability report |
+| C | Docs accuracy + MSI/NSIS packaging surface (what to retire) | Stale-claim list + file-by-file retire/keep recommendation |
+
+### The biggest finding: handlers had a fake-success hole
+
+Both `Invoke-GitHubReleaseApplyReal` (github_release.ps1) and
+`Invoke-ReleaseFeedApplyReal` (release_feed.ps1) re-read DisplayVersion
+from the registry AFTER running the installer, but returned
+`Success=true` regardless of whether the version actually changed. The
+classic failure modes that produce exit code 0 without a real install:
+
+- Squirrel.Windows auto-rollback when the new build trips a self-check
+- MSI ICE warning that silently aborts the install
+- Silent-skip on a running process the kill step couldn't terminate
+  (e.g., system-protected, permission denied)
+- Partial download where the installer believes the local copy is OK
+- Per-machine MSI claiming success while the per-user registry stays
+  unchanged
+
+This **exactly** matches the operator's "no fake runs" requirement.
+
+### Five fixes shipped in commit `8074a84`
+
+**A. github_release.ps1 / `Invoke-GitHubReleaseApplyReal`**
+
+- Capture `$preInstallVersion` at the start of the function (after
+  process-kill, before download). Uses `Get-WebReinstalledVersion`.
+- After the post-install readback, compare `$newVersion` to
+  `$preInstallVersion`. If unchanged AND the version isn't already
+  equal to the tag we tried to install, return `Success=$false` with
+  an explicit `ErrorMessage` citing the DisplayVersion mismatch.
+- Exemption: when `newVersion == tag` (operator forced a re-install
+  of the same version), no fake-success flag fires.
+
+**B. release_feed.ps1 / `Invoke-ReleaseFeedApplyReal`**
+
+Mirror of A. Compares against `$candidate` (the version the feed
+reported) instead of `$tag` (release_feed handlers don't have a tag
+concept; the candidate version is the moral equivalent).
+
+**C. `obsidian` promoted to Tier-A silent install** in `web_apps.toml`:
+
+```toml
+tier_a_apply = true
+[app.github_release]
+expected_publisher = "Obsidian"
+silent_args = ["/S"]
+installer_kind = "exe"
+kill_processes = ["Obsidian"]
+```
+
+NSIS `/S` is the well-known silent flag. Obsidian's Authenticode
+publisher is stable.
+
+**D. `obs-studio` promoted to Tier-A silent install** with identical
+shape (NSIS `/S`, `expected_publisher = "Open Broadcaster Software"`,
+`kill_processes = ["obs64", "obs32"]`).
+
+**E. MSI + NSIS Windows installers retired** in
+`ui/desktop-tauri/src-tauri/tauri.conf.json`:
+
+- `bundle.windows.wix` sub-table removed
+- `bundle.windows.nsis` sub-table removed
+- `bundle.targets` switched from `"all"` to
+  `["app", "deb", "rpm", "appimage"]`. macOS `.dmg` also dropped per
+  the operator's parallel decision (the macOS adapter had already
+  retired DMG public distribution).
+
+Inline comment in `tauri.conf.json` documents the v0.7+ re-enable
+condition: investing in EV Authenticode or Azure Trusted Signing.
+
+### Tests
+
+- **+10 regression tests** in `test_fake_success_detection.py`:
+  - github_release captures `$preInstallVersion`
+  - github_release compares pre+post and returns false on no-change
+  - github_release exempts `$newVersion == $tag` (legitimate re-install)
+  - release_feed: symmetric three assertions
+  - obsidian Tier-A configuration pinned
+  - obs-studio Tier-A configuration pinned
+  - tauri.conf.json targets array excludes `msi` + `nsis`
+  - tauri.conf.json `bundle.windows` no longer has `wix` or `nsis`
+- Windows adapter: **442 passed** (+10 over Sesja 63), 1 intentional skip
+- Contract: 324 passed (unchanged)
+
+### Carry-forward — Tier-A promotion candidates documented for future
+
+Auditor flagged these as needing more research before Tier-A promotion:
+
+- **brave** — Keystone-equivalent auto-updater on Windows; silent
+  install flags for the .exe undocumented. Defer.
+- **notion** — Electron-builder YAML feed needs `download_path` walk to
+  resolve the installer URL. Add when validated against the live feed.
+- **proton-mail / proton-drive** — release_feed with valid `Releases[0]`
+  paths (fixed in Sesja 61) but no documented silent flags. Defer.
+- **rclone** — Distributed as a `.zip` (not an installer). Skip.
+- **tuta-mail** — Display name suffix issue (`Tuta Mail 348.260506.0`);
+  needs `display_name_pattern` validation before Tier-A.
+
+The mechanism is in place; future sessions just add the silent-args
+fields per app.
+
+### MSI/NSIS retirement — operator impact
+
+| Surface | Before | After |
+|---------|--------|-------|
+| Public Windows install | `iwr install.ps1 \| iex` + (theoretical) MSI/NSIS public dist | `iwr install.ps1 \| iex` only |
+| Contributor dev build | `pwsh .\bin\build-installer.ps1` produced .msi + .exe artifacts | Same script still builds the `.app` bundle (no .msi/.exe) — Tauri config skips those targets |
+| Tauri shell | Full WiX + NSIS bundlers active | Tauri shell still builds; no installer artifacts |
+| Web dashboard | Functionally identical to Tauri shell | Same (the existing `ascendo web start` is the canonical UI) |
+
+Zero operator-visible loss: the web dashboard remains the canonical UI;
+the one-liner installer is the canonical distribution path. The Tauri
+shell + build scripts stay in-repo for the future signing path (PLAN.md
+v0.7+).
+
+---
+
 ## Sesja 63 (2026-05-13, evening) — Unknown-version apply-mark for IMG to ISO + similar packages
 
 Operator report: "img to iso always reports unknown version, fix it,
