@@ -391,6 +391,37 @@ try {
         $target = $null
         if ($hasAvailable) { $target = [string]$pkg.Available }
 
+        # Unknown-version suppression. Some packages (Inno Setup
+        # installers without DisplayVersion: SoftSea.IMGtoISO is the
+        # canonical example) have ``winget list`` Version='Unknown'
+        # BOTH before and after a successful upgrade. Without a state
+        # marker every check phase re-classifies them as 'planned',
+        # every apply phase re-runs the installer. Operator
+        # observation on DP5520WMK 2026-05-13: "img to iso always
+        # reports unknown version, fix it, even after update".
+        #
+        # The mark records "we successfully applied this id at this
+        # version on this date". Two outcomes:
+        #
+        #   * Available == mark.target -> the package is at the marked
+        #     version (post-install state) AND winget agrees there's
+        #     no newer version. Status = 'up_to_date'.
+        #   * Available != mark.target (and Available is set) -> winget
+        #     sees a newer version than we last applied. Status stays
+        #     'planned'; surface the marked version as 'current' so
+        #     the SPA shows "1.0 -> 1.1" instead of "Unknown -> 1.1".
+        if ([string]::IsNullOrWhiteSpace($current) -or $current -eq 'Unknown') {
+            try {
+                $mark = Get-AscendoApplyMark -Id ([string]$pkg.Id)
+            } catch { $mark = $null }
+            if ($null -ne $mark -and $mark.target) {
+                $current = [string]$mark.target
+                if ($hasAvailable -and $target -eq $current) {
+                    $status = 'up_to_date'
+                }
+            }
+        }
+
         $itemArgs = @{
             Sidecar     = $sidecar
             Id          = [string]$pkg.Id

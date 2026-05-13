@@ -853,7 +853,27 @@ try {
             }
         }
 
-        # 5j. Add to sidecar
+        # 5j. Persist the unknown-version apply-mark on success when the
+        # pre-install reading was Unknown / blank. Future check phases
+        # use the mark to suppress the false-positive "outdated" state
+        # that hits packages like SoftSea.IMGtoISO whose Inno Setup
+        # uninstaller never writes DisplayVersion to the registry.
+        # See AscendoWinget.psm1::Set-AscendoApplyMark + the operator
+        # observation logged there (DP5520WMK 2026-05-13).
+        if ($itemStatus -eq 'success' -and $target -and ($target -ne 'Unknown')) {
+            $needsMark = (-not $current) -or ($current -eq 'Unknown')
+            if ($needsMark) {
+                try {
+                    Set-AscendoApplyMark -Id ([string]$pkg.Id) -Target ([string]$target)
+                } catch {
+                    # Marking is best-effort -- never abort a successful
+                    # install because the state file is unwritable.
+                    Write-Verbose ("Set-AscendoApplyMark threw for {0}: {1}" -f $pkg.Id, $_)
+                }
+            }
+        }
+
+        # 5k. Add to sidecar
         $itemArgs = @{
             Sidecar    = $sidecar
             Id         = [string]$pkg.Id

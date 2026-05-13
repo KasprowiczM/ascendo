@@ -674,6 +674,206 @@ function Get-WingetInstalled {
 }
 
 # -----------------------------------------------------------------------------
+# Unknown-version suppression state file
+# -----------------------------------------------------------------------------
+# Some winget packages have no usable installed version: their Inno Setup
+# uninstall registry entry lacks DisplayVersion, and ``winget list`` reports
+# Version='Unknown' both before AND after a successful upgrade. The classic
+# example on DP5520WMK (2026-05-13) is ``SoftSea.IMGtoISO``:
+#
+#   Name       Id               Version Available Source
+#   IMG to ISO SoftSea.IMGtoISO Unknown 1.0       winget
+#
+# Without state, every check phase re-classifies it as ``planned`` (Available
+# differs from "Unknown") and every apply phase re-runs the installer -- even
+# when the operator just installed version 1.0 minutes ago.
+#
+# The fix: persist a per-id mark whenever apply succeeds with a known target.
+# On subsequent check phases, if winget still reports Unknown AND the
+# Available matches the marked target, classify as ``up_to_date`` and
+# surface the marked version as installed.
+#
+# State file: $env:ASCENDO_STATE_DIR/winget_apply_marks.json, defaulting to
+# $env:USERPROFILE/.ascendo/state/winget_apply_marks.json. JSON shape:
+#
+#   {
+#     "SoftSea.IMGtoISO": {"target": "1.0", "appliedAt": "2026-05-13T12:36Z"},
+#     "Nomacs.nomacs":    {"target": "3.20.0", ...}
+#   }
+#
+# Operator override / reset: delete the file (or remove a single id) to
+# force re-detection. The mark is read-only metadata; nothing else in the
+# pipeline depends on it.
+# -----------------------------------------------------------------------------
+
+function _Get-AscendoApplyMarksPath {
+    $base = if ($env:ASCENDO_STATE_DIR) {
+        [string]$env:ASCENDO_STATE_DIR
+    } elseif ($env:USERPROFILE) {
+        Join-Path $env:USERPROFILE '.ascendo\state'
+    } else {
+        # Tests / containers without USERPROFILE: fall back to TEMP.
+        Join-Path $env:TEMP 'ascendo-state'
+    }
+    return (Join-Path $base 'winget_apply_marks.json')
+}
+
+function Get-AscendoApplyMark {
+    <#
+    .SYNOPSIS
+        Return the persisted apply-mark for a winget package id, or $null
+        when no mark exists.
+
+    .DESCRIPTION
+        The mark records the last version we successfully applied for a
+        given id. Check phase consults it to suppress the
+        "Version=Unknown but a known Available exists" false-positive
+        outdated state.
+
+    .PARAMETER Id
+        Winget package id (e.g. ``SoftSea.IMGtoISO``).
+
+    .OUTPUTS
+        [pscustomobject] with ``target`` (string) + ``appliedAt`` (string),
+        or $null when the state file is missing / unreadable / has no
+        entry for this id.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)] [string] $Id
+    )
+
+    $path = _Get-AscendoApplyMarksPath
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+    try {
+        $raw = Get-Content -LiteralPath $path -Raw -Encoding UTF8
+    } catch { return $null }
+    if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+
+    # Parse defensively; corrupt state shouldn't crash the phase.
+    $data = $null
+    try {
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            $data = $raw | ConvertFrom-Json -AsHashtable
+        } else {
+            $data = $raw | ConvertFrom-Json
+        }
+    } catch { return $null }
+    if ($null -eq $data) { return $null }
+
+    if ($data -is [System.Collections.IDictionary]) {
+        if (-not $data.ContainsKey($Id)) { return $null }
+        $entry = $data[$Id]
+    } else {
+        $prop = $data.PSObject.Properties[$Id]
+        if (-not $prop) { return $null }
+        $entry = $prop.Value
+    }
+    if ($null -eq $entry) { return $null }
+
+    # Normalise to a PSCustomObject so callers don't need to switch on type.
+    $targetVal = $null
+    $appliedVal = $null
+    if ($entry -is [System.Collections.IDictionary]) {
+        if ($entry.Contains('target'))    { $targetVal  = [string]$entry['target'] }
+        if ($entry.Contains('appliedAt')) { $appliedVal = [string]$entry['appliedAt'] }
+    } else {
+        $tp = $entry.PSObject.Properties['target']
+        if ($tp -and $tp.Value) { $targetVal = [string]$tp.Value }
+        $ap = $entry.PSObject.Properties['appliedAt']
+        if ($ap -and $ap.Value) { $appliedVal = [string]$ap.Value }
+    }
+    if (-not $targetVal) { return $null }
+    return [pscustomobject]@{
+        target    = $targetVal
+        appliedAt = $appliedVal
+    }
+}
+
+function Set-AscendoApplyMark {
+    <#
+    .SYNOPSIS
+        Persist the version we just applied for a winget package id, so
+        future check phases can suppress the unknown-version false-positive.
+
+    .PARAMETER Id
+        Winget package id.
+
+    .PARAMETER Target
+        The version that was just applied (typically pkg.Available from
+        the upgrade output). Must be non-empty and not ``'Unknown'`` --
+        marking with Unknown defeats the purpose.
+
+    .OUTPUTS
+        None. Failure to write is logged via Write-Verbose and swallowed
+        (state-file write must never abort a successful apply).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $Id,
+        [Parameter(Mandatory)] [string] $Target
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Id))      { return }
+    if ([string]::IsNullOrWhiteSpace($Target))  { return }
+    if ($Target -eq 'Unknown')                  { return }
+
+    $path = _Get-AscendoApplyMarksPath
+    $dir = Split-Path -Parent $path
+    try {
+        if (-not (Test-Path -LiteralPath $dir)) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+    } catch {
+        Write-Verbose ("Set-AscendoApplyMark: failed to create state dir {0}: {1}" -f $dir, $_)
+        return
+    }
+
+    # Read existing state (best-effort).
+    $data = [ordered]@{}
+    if (Test-Path -LiteralPath $path) {
+        try {
+            $raw = Get-Content -LiteralPath $path -Raw -Encoding UTF8
+            if (-not [string]::IsNullOrWhiteSpace($raw)) {
+                $parsed = if ($PSVersionTable.PSVersion.Major -ge 6) {
+                    $raw | ConvertFrom-Json -AsHashtable
+                } else {
+                    $raw | ConvertFrom-Json
+                }
+                if ($parsed -is [System.Collections.IDictionary]) {
+                    foreach ($k in $parsed.Keys) { $data[$k] = $parsed[$k] }
+                } elseif ($parsed) {
+                    foreach ($p in $parsed.PSObject.Properties) {
+                        $data[$p.Name] = $p.Value
+                    }
+                }
+            }
+        } catch {
+            Write-Verbose ("Set-AscendoApplyMark: corrupt state at {0}, will overwrite: {1}" -f $path, $_)
+            $data = [ordered]@{}
+        }
+    }
+
+    $data[$Id] = [ordered]@{
+        target    = [string]$Target
+        appliedAt = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    }
+
+    try {
+        $json = ConvertTo-Json $data -Depth 4
+        # Atomic-ish write: write to .tmp + rename. PS doesn't expose a
+        # transactional FS API; this minimises the window for a partial
+        # file if the process is killed mid-write.
+        $tmp = "$path.tmp"
+        [System.IO.File]::WriteAllText($tmp, $json, [System.Text.UTF8Encoding]::new($false))
+        Move-Item -LiteralPath $tmp -Destination $path -Force
+    } catch {
+        Write-Verbose ("Set-AscendoApplyMark: write failed for {0}: {1}" -f $path, $_)
+    }
+}
+
+# -----------------------------------------------------------------------------
 # Module export
 # -----------------------------------------------------------------------------
 Export-ModuleMember -Function @(
@@ -683,6 +883,8 @@ Export-ModuleMember -Function @(
     'Get-WingetInstalled'
     'Convert-WingetExitCode'
     'Resolve-WingetId'
+    'Get-AscendoApplyMark'
+    'Set-AscendoApplyMark'
 )
 
 # =============================================================================
