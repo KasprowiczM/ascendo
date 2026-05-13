@@ -1,6 +1,27 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-13 (sesja 62) — **Post-apply ResolvedVersion
+> Last updated: 2026-05-13 (sesja 63) — **Unknown-version apply-mark
+> for `SoftSea.IMGtoISO` + similar packages.** Operator report:
+> "img to iso always reports unknown version, fix it, even after
+> update." Root cause: `winget list --id SoftSea.IMGtoISO` returns
+> `Version=Unknown` BOTH before and after a successful upgrade
+> because the Inno Setup uninstaller skips DisplayVersion in its
+> ARP registry key. Without a state marker every check re-classifies
+> the package as `planned` (Available='1.0' differs from current=
+> 'Unknown') and inventory.db stays stuck at `cur=Unknown,
+> status=outdated`. Sesja 63 ships two new exported helpers in
+> `AscendoWinget.psm1` (`Get-/Set-AscendoApplyMark`), persists the
+> apply target to `$USERPROFILE/.ascendo/state/winget_apply_marks.json`
+> on successful Unknown-version applies, and consults the mark in
+> check phase to flip the row to `up_to_date` when
+> `mark.target == Available`. End-to-end verified live: IMG to ISO
+> goes from `status=planned cur='Unknown'` to
+> `status=up_to_date cur='1.0' tgt='1.0'`. Same mechanism handles
+> other Inno Setup / MSI / Steam-wrapper packages that skip
+> DisplayVersion. Test count 424 → **432** Windows + 324 contract
+> (+8 new). See HANDOFF.md Sesja 63.
+>
+> Previous milestone (sesja 62) — **Post-apply ResolvedVersion
 > + verify sibling-sidecar lookup.** Audit of run `91769201`
 > (operator's full update at 12:36 UTC, 3 real upgrades + 598
 > up_to_date + 0 failures) surfaced two latent bugs that broke the

@@ -6,6 +6,116 @@
 
 ---
 
+## Sesja 63 (2026-05-13, evening) — Unknown-version apply-mark for IMG to ISO + similar packages
+
+Operator report: "img to iso always reports unknown version, fix it,
+even after update."
+
+### Root cause
+
+`winget list --id SoftSea.IMGtoISO` returns `Version=Unknown` BOTH
+before AND after a successful `winget upgrade`. The Inno Setup
+uninstaller writes the registry key (`{GUID}_is1`) with
+`DisplayName='IMG to ISO'` but no `DisplayVersion` field — so the
+ARP-registry fallback can't recover the version either. Without a
+state marker:
+
+- Every check phase classifies the package as `planned` (Available='1.0'
+  differs from current='Unknown')
+- Every apply phase re-runs the installer
+- inventory.db keeps the row at `cur=Unknown, status=outdated` forever
+
+This is a known long-standing class of bug (HANDOFF.md "M3.6 unknown-
+version suppression (dla MEGAsync, IMG-to-ISO) DEFERRED").
+
+### Fix shipped (commit `5f5f6b9`)
+
+**A.** `AscendoWinget.psm1` gains two new exported helpers:
+
+```
+Get-AscendoApplyMark -Id <id>           -> [pscustomobject] {target,appliedAt} or $null
+Set-AscendoApplyMark -Id <id> -Target <v>
+```
+
+State file: `$env:ASCENDO_STATE_DIR/winget_apply_marks.json`,
+defaulting to `$env:USERPROFILE/.ascendo/state/winget_apply_marks.json`:
+
+```json
+{
+  "SoftSea.IMGtoISO": {"target": "1.0", "appliedAt": "2026-05-13T13:09:57Z"}
+}
+```
+
+- `Set-AscendoApplyMark` refuses `Target='Unknown'` or empty (marking
+  with Unknown defeats the purpose).
+- Writes are atomic-ish (tmp + `Move-Item -Force`).
+- `ConvertFrom-Json -AsHashtable` on PS6+ for round-trip stability.
+
+**B.** `scripts/winget/apply.ps1` writes the mark on a successful upgrade
+WHEN the pre-install reading was Unknown / blank. Doesn't pollute
+state for packages that already self-report a version. Wrapped in
+`try/catch` so a state-file write failure can't abort a successful apply.
+
+**C.** `scripts/winget/check.ps1` reads the mark when `current` is
+Unknown / blank (gated so we never override a legitimate registry-
+supplied version). Two outcomes:
+
+- `Available == mark.target` → `status='up_to_date'`, surface marked
+  target as current
+- `Available != mark.target` → status stays `planned` but current
+  surfaces as the marked version, so the SPA shows `"1.0 → 1.1"`
+  instead of `"Unknown → 1.1"`
+
+### End-to-end verification
+
+Pre-populated the mark for `SoftSea.IMGtoISO` at `target=1.0` (which
+the operator's apply at 12:42 UTC successfully installed), then ran
+the worktree's `check.ps1` directly:
+
+```
+Before fix: SoftSea.IMGtoISO  status=planned     cur='Unknown'  tgt='1.0'
+After fix:  SoftSea.IMGtoISO  status=up_to_date  cur='1.0'      tgt='1.0'
+```
+
+Live mark written to `~/.ascendo/state/winget_apply_marks.json` on
+the operator's machine — next run's check phase will report IMG to ISO
+as `up_to_date` without any further action.
+
+### Operator reset path
+
+Delete the state file (or remove a single id from the JSON) to force
+re-detection: `Remove-Item ~/.ascendo/state/winget_apply_marks.json`.
+The mark is read-only metadata; nothing else in the pipeline depends
+on it.
+
+### Tests
+
+- **+8 regression tests** in `test_winget_apply_mark.py` covering:
+  helpers defined + exported, `ASCENDO_STATE_DIR` env override,
+  `Set` refuses `Target='Unknown'`, `check` consults the mark only
+  when current is Unknown/blank, status flips to `up_to_date` when
+  `mark.target == Available`, `apply` writes the mark only on
+  success-with-Unknown, error-swallowing on write failures, Export-
+  ModuleMember list pinned.
+- Windows adapter: **432 passed** (+8 over Sesja 62), 1 intentional skip
+- Contract: 324 passed (unchanged), 5 pre-existing failures unchanged
+
+### Carry-forward
+
+Same fix structure also works for similar packages where winget
+reports `Version=Unknown` post-install. Examples to monitor on
+DP5520WMK or other Windows hosts:
+
+- Inno Setup `*.exe` installers that skip `DisplayVersion`
+- Legacy MSI packages with corrupt ARP entries
+- Some Steam-bundled installer wrappers
+
+For each, the FIRST successful apply via Ascendo writes the mark
+and all subsequent checks suppress correctly. No per-app
+configuration needed.
+
+---
+
 ## Sesja 62 (2026-05-13, late) — Post-apply ResolvedVersion + verify sibling-sidecar lookup
 
 Operator request: "check last run, check what was successfuly applied,
