@@ -207,10 +207,9 @@ function Invoke-ReleaseFeedApply {
         [Parameter(Mandatory)] [object] $Config
     )
 
-    # v1 scope: Tier-B trigger-only. We don't download + run installers from
-    # release_feed yet (needs Authenticode + UAC + per-installer flag handling
-    # we'll add in a follow-up). Open the feed URL so the operator can
-    # navigate to the actual download.
+    # Tier-B trigger-only path: open the feed URL so the operator can
+    # navigate to the actual download. Default for apps without
+    # tier_a_apply=true.
     $cfg = _RF-GetSub -Config $Config
     if ($null -eq $cfg) { return $false }
     $url = [string]$cfg.url
@@ -221,6 +220,272 @@ function Invoke-ReleaseFeedApply {
     } catch {
         Write-Verbose "$Slug : Start-Process $url failed: $_"
         return $false
+    }
+}
+
+# -----------------------------------------------------------------------------
+# Tier-A apply (uses Invoke-WebInstallerDownload / Invoke-WebInstallerVerify /
+# Invoke-WebInstallerRun / Get-WebReinstalledVersion from github_release.ps1
+# which the apply.ps1 dispatcher always imports first).
+# -----------------------------------------------------------------------------
+
+function _RF_ResolveDownloadUrl {
+    <#
+    .SYNOPSIS
+        Resolve the absolute installer URL from a release_feed config.
+
+        Priority order:
+          1. download_url        - static absolute URL pinned in TOML
+          2. download_path       - dotted JSON walk on the same body as
+                                   the version probe; resolved against
+                                   the feed URL if it comes back as a
+                                   relative path
+          3. (no download_url + no download_path + format=text)
+                                  - fall back to the feed URL itself
+                                   (e.g. when the body IS the installer
+                                   URL on one line). Reject if it doesn't
+                                   look like an installer URL.
+
+    .OUTPUTS
+        [string] absolute URL or $null on failure.
+    #>
+    param(
+        [Parameter(Mandatory)] [object] $Cfg,
+        [Parameter(Mandatory)] [string] $Version,
+        [Parameter()] [int] $TimeoutSec = 8
+    )
+
+    $duProp = $Cfg.PSObject.Properties['download_url']
+    if ($null -ne $duProp -and $duProp.Value) {
+        return [string]$duProp.Value
+    }
+
+    $dpProp = $Cfg.PSObject.Properties['download_path']
+    if ($null -eq $dpProp -or -not $dpProp.Value) {
+        return $null
+    }
+    $downloadPath = [string]$dpProp.Value
+
+    $feedUrl = [string]$Cfg.PSObject.Properties['url'].Value
+    if (-not $feedUrl) { return $null }
+
+    # Fetch the feed JSON, walk the download_path.
+    $override = $env:ASCENDO_WEB_RELEASE_FEED_OVERRIDE
+    $body = $null
+    if ($override -and (Test-Path -LiteralPath $override)) {
+        try {
+            $body = Get-Content -LiteralPath $override -Raw -Encoding UTF8
+        } catch { return $null }
+    } else {
+        try {
+            $body = Invoke-WebRequest -Uri $feedUrl `
+                -Headers @{ 'User-Agent' = 'Ascendo/0.0.7' } `
+                -TimeoutSec $TimeoutSec `
+                -UseBasicParsing `
+                -ErrorAction Stop |
+                Select-Object -ExpandProperty Content
+        } catch { return $null }
+    }
+    if (-not $body) { return $null }
+
+    $parsed = $null
+    try { $parsed = $body | ConvertFrom-Json } catch { return $null }
+    if ($null -eq $parsed) { return $null }
+
+    $raw = _RF-WalkJsonPath -Parsed $parsed -Path $downloadPath
+    if ($null -eq $raw) { return $null }
+    $rawUrl = [string]$raw
+    if (-not $rawUrl) { return $null }
+
+    # Absolute URL already? Use as-is.
+    if ($rawUrl -match '^https?://') {
+        return $rawUrl
+    }
+    # Resolve relative path against feed URL's parent directory.
+    try {
+        $baseUri = [System.Uri]::new($feedUrl)
+        $resolved = [System.Uri]::new($baseUri, $rawUrl)
+        return $resolved.AbsoluteUri
+    } catch {
+        return $null
+    }
+}
+
+function Invoke-ReleaseFeedApplyReal {
+    <#
+    .SYNOPSIS
+        Tier-A apply: probe candidate version, resolve installer URL,
+        download, verify Authenticode, execute, read DisplayVersion back.
+    .OUTPUTS
+        Hashtable: Success (bool), InstalledVersion (string|$null),
+                   ExitCode (int), ErrorMessage (string|$null),
+                   RebootRequired (bool), DownloadPath (string|$null),
+                   UacCancelled (bool)
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $Slug,
+        [Parameter(Mandatory)] [object] $Config
+    )
+
+    $cfg = _RF-GetSub -Config $Config
+    if ($null -eq $cfg) {
+        return @{
+            Success          = $false
+            InstalledVersion = $null
+            ExitCode         = -1
+            ErrorMessage     = 'release_feed sub-table missing on config'
+            RebootRequired   = $false
+            DownloadPath     = $null
+            UacCancelled     = $false
+        }
+    }
+
+    # We need a candidate version both as the cache prefix AND as the value
+    # we report back. Probe via the public Check function.
+    $candidate = Invoke-ReleaseFeedCheck -Slug $Slug -Config $Config
+    if ([string]::IsNullOrWhiteSpace($candidate)) {
+        return @{
+            Success          = $false
+            InstalledVersion = $null
+            ExitCode         = -1
+            ErrorMessage     = "candidate probe unavailable (rate-limited / 404 / regex no-match)"
+            RebootRequired   = $false
+            DownloadPath     = $null
+            UacCancelled     = $false
+        }
+    }
+
+    $timeout = 8
+    $tProp = $cfg.PSObject.Properties['http_timeout_s']
+    if ($null -ne $tProp -and $tProp.Value) { $timeout = [int]$tProp.Value }
+
+    $downloadUrl = _RF_ResolveDownloadUrl -Cfg $cfg -Version $candidate -TimeoutSec $timeout
+    if (-not $downloadUrl) {
+        return @{
+            Success          = $false
+            InstalledVersion = $null
+            ExitCode         = -1
+            ErrorMessage     = ("could not resolve download URL " +
+                                "(neither download_url nor download_path set, " +
+                                "or feed walk failed)")
+            RebootRequired   = $false
+            DownloadPath     = $null
+            UacCancelled     = $false
+        }
+    }
+
+    # Optional process kill before install.
+    $killList = @()
+    $killProp = $cfg.PSObject.Properties['kill_processes']
+    if ($null -ne $killProp -and $null -ne $killProp.Value) {
+        $killList = @($killProp.Value)
+    }
+    foreach ($procName in $killList) {
+        try {
+            $running = @(Get-Process -Name $procName -ErrorAction SilentlyContinue)
+            foreach ($proc in $running) {
+                try {
+                    Stop-Process -Id $proc.Id -Force -ErrorAction Stop
+                } catch {
+                    Write-Verbose "$Slug : Stop-Process $procName failed: $_"
+                }
+            }
+        } catch {
+            Write-Verbose "$Slug : Get-Process $procName threw: $_"
+        }
+    }
+
+    # 1) Download
+    $assetName = ($downloadUrl -split '/')[-1]
+    $downloadPath = Invoke-WebInstallerDownload -Slug $Slug -Url $downloadUrl `
+        -Version $candidate -AssetName $assetName
+    if (-not $downloadPath) {
+        return @{
+            Success          = $false
+            InstalledVersion = $null
+            ExitCode         = -1
+            ErrorMessage     = "installer download failed for $downloadUrl"
+            RebootRequired   = $false
+            DownloadPath     = $null
+            UacCancelled     = $false
+        }
+    }
+
+    # 2) Verify Authenticode
+    $expectedPub = ''
+    $pubProp = $cfg.PSObject.Properties['expected_publisher']
+    if ($null -ne $pubProp -and $pubProp.Value) { $expectedPub = [string]$pubProp.Value }
+    $verifyResult = Invoke-WebInstallerVerify -InstallerPath $downloadPath `
+        -ExpectedPublisher $expectedPub
+    if (-not $verifyResult.Verified) {
+        return @{
+            Success          = $false
+            InstalledVersion = $null
+            ExitCode         = -1
+            ErrorMessage     = ("Authenticode verification failed: " + $verifyResult.ErrorMessage)
+            RebootRequired   = $false
+            DownloadPath     = $downloadPath
+            UacCancelled     = $false
+        }
+    }
+
+    # 3) Run installer
+    $kind = $null
+    $kindProp = $cfg.PSObject.Properties['installer_kind']
+    if ($null -ne $kindProp -and $kindProp.Value) { $kind = [string]$kindProp.Value }
+    $silent = $null
+    $silentProp = $cfg.PSObject.Properties['silent_args']
+    if ($null -ne $silentProp -and $null -ne $silentProp.Value) {
+        $silent = @($silentProp.Value)
+    }
+    $runResult = Invoke-WebInstallerRun -InstallerPath $downloadPath `
+        -InstallerKind $kind -SilentArgs $silent
+    $uacCancelled = $false
+    if ($runResult.PSObject.Properties['UacCancelled']) {
+        $uacCancelled = [bool]$runResult.UacCancelled
+    }
+    if (-not $runResult.Started) {
+        return @{
+            Success          = $false
+            InstalledVersion = $null
+            ExitCode         = $runResult.ExitCode
+            ErrorMessage     = $runResult.ErrorMessage
+            RebootRequired   = $false
+            DownloadPath     = $downloadPath
+            UacCancelled     = $uacCancelled
+        }
+    }
+    if ($runResult.ExitCode -ne 0 -and -not $runResult.RebootRequired) {
+        return @{
+            Success          = $false
+            InstalledVersion = $null
+            ExitCode         = $runResult.ExitCode
+            ErrorMessage     = $runResult.ErrorMessage
+            RebootRequired   = $false
+            DownloadPath     = $downloadPath
+            UacCancelled     = $uacCancelled
+        }
+    }
+
+    # 4) Readback installed version
+    $uninstallKey = ''
+    $ukProp = $Config.PSObject.Properties['windows_uninstall_key']
+    if ($null -ne $ukProp -and $ukProp.Value) { $uninstallKey = [string]$ukProp.Value }
+    $dnp = $null
+    $dnpProp = $cfg.PSObject.Properties['display_name_pattern']
+    if ($null -ne $dnpProp -and $dnpProp.Value) { $dnp = [string]$dnpProp.Value }
+    $newVersion = Get-WebReinstalledVersion -UninstallKey $uninstallKey `
+        -DisplayNamePattern $dnp -Slug $Slug
+
+    return @{
+        Success          = $true
+        InstalledVersion = $newVersion
+        ExitCode         = $runResult.ExitCode
+        ErrorMessage     = $null
+        RebootRequired   = $runResult.RebootRequired
+        DownloadPath     = $downloadPath
+        UacCancelled     = $false
     }
 }
 

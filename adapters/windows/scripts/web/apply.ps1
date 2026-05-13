@@ -1,26 +1,37 @@
 <#
 .SYNOPSIS
-    Web (third-party app) apply phase. v1 scope: Tier-B trigger-only.
+    Web (third-party app) apply phase. Supports Tier-A (download + install)
+    and Tier-B (trigger-only) per app, gated by the `tier_a_apply` flag in
+    web_apps.toml.
 
 .DESCRIPTION
     For every installed app whose candidate is strictly newer than its
-    installed version, this phase invokes Invoke-<handler>Apply (opens
-    the vendor's release/download page in the default browser) and emits
-    a 'triggered' sidecar item.
+    installed version, this phase dispatches to one of two paths:
 
-    v1 scope: we do NOT download/run .exe installers from Ascendo on
-    Windows yet -- that requires Authenticode signature verification +
-    UAC handoff + per-installer flag handling we'll add in a follow-up.
-    Apply opens the page; the operator clicks through the vendor's own
-    install flow.
+    * Tier-A (handler=github_release or release_feed, tier_a_apply=true):
+        Invoke-<handler>ApplyReal -- downloads the matching installer
+        asset, verifies Authenticode signature (publisher subject check
+        when expected_publisher set), runs silently (NSIS /S or msiexec
+        /qn /norestart by default; override via silent_args), then reads
+        DisplayVersion back from the Uninstall registry to confirm the
+        install landed. Emits `success` / `failed` / `skipped` (UAC
+        cancel) per item.
 
-    Status semantics (matching macOS Tier-B handlers):
-      * triggered : we successfully opened the vendor URL.
-      * skipped   : the app isn't installed on this host (no item emitted).
+    * Tier-B (handler=builtin, OR Tier-A handler with tier_a_apply=false):
+        Invoke-<handler>Apply -- opens the vendor's release/download
+        page in the default browser. The operator clicks through the
+        vendor's own install flow. Emits `triggered`.
+
+    Status semantics:
+      * success   : Tier-A apply landed; readback DisplayVersion >= candidate.
+      * triggered : Tier-B successfully opened the vendor URL.
+      * skipped   : the app isn't installed on this host (no item emitted),
+                    OR UAC was cancelled.
       * up_to_date: installed == candidate (no action taken).
-      * failed    : Start-Process threw (rare; e.g. no default browser).
+      * failed    : Tier-A install or readback failed; Start-Process threw
+                    on Tier-B.
 
-    Dry-run mode emits items with status='planned' (no Start-Process call).
+    Dry-run mode emits items with status='planned' (no network/install call).
 #>
 [CmdletBinding()]
 param(
@@ -67,8 +78,9 @@ try {
     $sidecar = New-Sidecar @newSidecarArgs
 
     Add-SidecarMessage -Sidecar $sidecar -Level 'info' `
-        -Text ("Web apply is Tier-B trigger-only in v1: opens vendor download/release page; " +
-               "no .exe install performed by Ascendo. Operator clicks through vendor flow.")
+        -Text ("Web apply: Tier-A apps (tier_a_apply=true) download + verify Authenticode " +
+               "+ run installer silently + readback DisplayVersion. Tier-B apps (default + " +
+               "all builtin) open vendor URL for manual install.")
 
     $itemFilterArray = $null
     if ($ItemFilter -and $ItemFilter.Trim()) {
@@ -195,7 +207,124 @@ try {
             continue
         }
 
-        # Live apply: invoke handler.
+        # Decide Tier-A vs Tier-B for this app. Tier-A requires:
+        #   * handler in {github_release, release_feed}  (NOT builtin)
+        #   * tier_a_apply = true on the WebAppV1 entry
+        # When either condition is false, fall through to the existing
+        # Tier-B trigger-only behaviour.
+        $tierA = $false
+        $tierAProp = $appConfig.PSObject.Properties['tier_a_apply']
+        if ($null -ne $tierAProp -and $tierAProp.Value) {
+            $tierA = [bool]$tierAProp.Value
+        }
+        if ($handler -eq 'builtin') { $tierA = $false }
+
+        if ($tierA) {
+            # ── Tier-A: real download + verify + install + readback ──
+            $result = $null
+            try {
+                switch ($handler) {
+                    'github_release' {
+                        $result = Invoke-GitHubReleaseApplyReal -Slug $slug -Config $appConfig
+                    }
+                    'release_feed' {
+                        $result = Invoke-ReleaseFeedApplyReal -Slug $slug -Config $appConfig
+                    }
+                }
+            } catch {
+                $result = @{
+                    Success          = $false
+                    InstalledVersion = $null
+                    ExitCode         = -1
+                    ErrorMessage     = "handler ApplyReal threw: $($_.Exception.Message)"
+                    RebootRequired   = $false
+                    DownloadPath     = $null
+                    UacCancelled     = $false
+                }
+            }
+
+            if ($null -eq $result) {
+                Add-SidecarMessage -Sidecar $sidecar -Level 'error' `
+                    -Text ("{0}: ApplyReal returned null" -f $slug)
+                $itemArgs = @{
+                    Sidecar        = $sidecar
+                    Id             = "web:$slug"
+                    Name           = $displayName
+                    Category       = 'web'
+                    SourceType     = 'web'
+                    Status         = 'failed'
+                    CurrentVersion = $installed
+                    TargetVersion  = $targetVer
+                }
+                [void](Add-SidecarItem @itemArgs)
+                continue
+            }
+
+            $uacCancelled = $false
+            if ($result.PSObject.Properties['UacCancelled']) {
+                $uacCancelled = [bool]$result.UacCancelled
+            }
+
+            $finalStatus = 'failed'
+            if ($result.Success) {
+                $finalStatus = 'success'
+            } elseif ($uacCancelled) {
+                $finalStatus = 'skipped'
+            }
+
+            $reportedTarget = $targetVer
+            if ($result.PSObject.Properties['InstalledVersion'] -and
+                $result.InstalledVersion) {
+                $reportedTarget = [string]$result.InstalledVersion
+            }
+            $reportedExit = 0
+            if ($result.PSObject.Properties['ExitCode']) {
+                $reportedExit = [int]$result.ExitCode
+            }
+            $rebootRequired = $false
+            if ($result.PSObject.Properties['RebootRequired']) {
+                $rebootRequired = [bool]$result.RebootRequired
+            }
+
+            if (-not $result.Success -and $result.ErrorMessage) {
+                Add-SidecarMessage -Sidecar $sidecar -Level 'error' `
+                    -Text ("{0}: {1}" -f $slug, $result.ErrorMessage)
+            } elseif ($uacCancelled) {
+                Add-SidecarMessage -Sidecar $sidecar -Level 'warn' `
+                    -Text ("{0}: operator cancelled UAC prompt" -f $slug)
+            } elseif ($rebootRequired) {
+                Add-SidecarMessage -Sidecar $sidecar -Level 'info' `
+                    -Text ("{0}: installer succeeded; reboot required (exit 3010)" -f $slug)
+            }
+
+            $itemArgs = @{
+                Sidecar        = $sidecar
+                Id             = "web:$slug"
+                Name           = $displayName
+                Category       = 'web'
+                SourceType     = 'web'
+                Status         = $finalStatus
+                CurrentVersion = $installed
+                TargetVersion  = $reportedTarget
+                ExitCode       = $reportedExit
+            }
+            [void](Add-SidecarItem @itemArgs)
+
+            if ($rebootRequired) {
+                # Best-effort: AscendoJson exposes Set-SidecarNeedsReboot
+                # in newer builds; ignore if absent (compatibility shim).
+                try {
+                    if (Get-Command -Name 'Set-SidecarNeedsReboot' -ErrorAction SilentlyContinue) {
+                        Set-SidecarNeedsReboot -Sidecar $sidecar -Value $true
+                    } else {
+                        $sidecar | Add-Member -NotePropertyName 'needs_reboot' -NotePropertyValue $true -Force
+                    }
+                } catch {}
+            }
+            continue
+        }
+
+        # ── Tier-B: trigger-only (open vendor URL) ──
         $opened = $false
         try {
             switch ($handler) {
