@@ -34,6 +34,93 @@ Set-StrictMode -Version Latest
 # PRIVATE HELPERS
 # -----------------------------------------------------------------------------
 
+function Expand-WUAggregatedRow {
+    <#
+    .SYNOPSIS
+        Split a PSWindowsUpdate result row whose per-property values are
+        Object[] (one value per KB) into N per-KB rows with scalar values.
+    .DESCRIPTION
+        Some PSWindowsUpdate configurations return a single result row
+        whose properties are parallel arrays:
+
+            KB             = [KB5087051, KB5089549]
+            Title          = ["Cumulative Update ...", "Defender ..."]
+            Result         = ["Installed", "Installed"]
+            HResult        = [0, 0]
+            RebootRequired = [True, True]
+
+        The naive dedup-by-KB downstream key-on-array stringification
+        ("KB5087051 KB5089549") which produces ONE merged item with
+        Result="Installed Installed" -- which Convert-WUResultToItemStatus
+        then classifies as 'failed' (anchored regex ^Installed$ doesn't
+        match the joined form). Operator observation on DP5520WMK (run
+        f3f9d20f, 2026-05-13): 2 KBs actually installed, reboot pending,
+        but apply.ps1 reported items=1 failed=1 success=0.
+
+        This helper walks all PSObject properties, finds the maximum
+        array length across them (treating scalars as length 1), and
+        emits N output rows. For each output row index i, each
+        property's value is either Object[i] (when the source value is
+        Object[] of sufficient length) or the source scalar (broadcast).
+
+        Non-aggregated rows (no Object[] property) return the original
+        row unchanged inside a 1-element array, so callers can blindly
+        iterate the result.
+    .PARAMETER Row
+        A PSCustomObject from Install-WindowsUpdate. May have scalar
+        or Object[] property values.
+    .OUTPUTS
+        [pscustomobject[]] - 1 or more rows; N if the input was an
+        aggregated row of N KBs; 1 otherwise.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param(
+        [Parameter(Mandatory)] [AllowNull()] $Row
+    )
+
+    if ($null -eq $Row) { return ,@() }
+
+    # Determine the fan-out width by scanning all properties for the
+    # longest Object[]. Strings count as scalar (length 1) -- strings
+    # ARE IEnumerable, but we deliberately treat them as opaque values.
+    $maxLen = 1
+    $arrayProps = @{}
+    foreach ($p in $Row.PSObject.Properties) {
+        $v = $p.Value
+        if ($v -is [string]) { continue }
+        if ($v -is [System.Array]) {
+            $len = $v.Length
+            if ($len -gt $maxLen) { $maxLen = $len }
+            $arrayProps[$p.Name] = $v
+        }
+    }
+
+    # No fan-out needed -- return the row unchanged inside a 1-element
+    # array so callers can iterate uniformly.
+    if ($maxLen -le 1 -or $arrayProps.Count -eq 0) {
+        return ,@($Row)
+    }
+
+    $expanded = New-Object System.Collections.Generic.List[object]
+    for ($i = 0; $i -lt $maxLen; $i++) {
+        $fields = [ordered]@{}
+        foreach ($p in $Row.PSObject.Properties) {
+            $v = $p.Value
+            # Array property: take element i when in-range, else null.
+            # Scalar (incl. string): broadcast to every output row.
+            if ($arrayProps.ContainsKey($p.Name)) {
+                $arr = $arrayProps[$p.Name]
+                if ($i -lt $arr.Length) { $fields[$p.Name] = $arr[$i] } else { $fields[$p.Name] = $null }
+            } else {
+                $fields[$p.Name] = $v
+            }
+        }
+        $expanded.Add([pscustomobject]$fields) | Out-Null
+    }
+    return ,$expanded.ToArray()
+}
+
 function Get-WUKBId {
     <#
     .SYNOPSIS
@@ -360,10 +447,34 @@ function Install-WindowsUpdateBatch {
         return  # was `return ,@()` — see Stop-PackageProcesses comment
     }
 
+    # Some PSWindowsUpdate configurations (especially when -AcceptAll
+    # and -IgnoreReboot are both set, as we do) collapse multiple
+    # updates into ONE result row where the per-property values are
+    # Object[] in parallel: KB=[KB1,KB2], Title=[T1,T2], Result=
+    # [Installed,Installed], HResult=[0,0], RebootRequired=[True,True].
+    # Without expansion, the dedup below sees the joined string
+    # ("KB1 KB2") as a single key and emits one bogus item with
+    # id="KB1 KB2", Result="Installed Installed" — which the regex in
+    # Convert-WUResultToItemStatus then classifies as 'failed' (because
+    # ^Installed$ doesn't match "Installed Installed"). Operator
+    # observation on DP5520WMK (run f3f9d20f, 2026-05-13 09:09 UTC):
+    # 2 KBs actually installed (system asked for reboot) but the apply
+    # phase reported `failed items=1 failed=1 success=0`.
+    #
+    # Expand-WUAggregatedRow splits an aggregated row into N per-KB
+    # rows by walking each Object[] property in parallel. Scalar
+    # properties get broadcast (same value on every output row).
+    $expanded = New-Object System.Collections.Generic.List[object]
+    foreach ($r in $raw) {
+        if ($null -eq $r) { continue }
+        $exp = Expand-WUAggregatedRow -Row $r
+        foreach ($e in $exp) { $expanded.Add($e) | Out-Null }
+    }
+
     # Deduplicate by KB id; PSWindowsUpdate fires the result callback once
     # per stage (Downloading, Installing, Installed). Keep the last result.
     $seen = @{}
-    foreach ($r in $raw) {
+    foreach ($r in $expanded) {
         if ($null -eq $r) { continue }
         $key = Get-WUKBId -Update $r
         if (-not $key) { $key = ('?row{0}' -f $seen.Count) }
@@ -482,4 +593,5 @@ Export-ModuleMember -Function @(
     'Install-WindowsUpdateBatch'
     'Get-WUInstallStderr'
     'Convert-WUResultToItemStatus'
+    'Expand-WUAggregatedRow'
 )

@@ -426,6 +426,13 @@ try {
     if ($rebootRequired) {
         Add-SidecarMessage -Sidecar $sidecar -Level 'warn' `
             -Text 'Reboot required to complete one or more Windows updates.'
+        # Top-level needs_reboot flag (per ADR-0003 + Sesja 26 schema
+        # move). Save-Sidecar serialises whatever key is on the dict,
+        # so even if New-Sidecar didn't pre-populate this slot we can
+        # set it directly. Without this, the orchestrator's CLI banner
+        # picks up the warn message via text matching, but downstream
+        # consumers reading sidecar.needs_reboot from JSON see False.
+        try { $sidecar['needs_reboot'] = $true } catch { }
     }
 
     $successCnt = @($sidecar['items'] | Where-Object { $_['status'] -eq 'success' }).Count
