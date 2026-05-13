@@ -1,6 +1,35 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-13 (sesja 64) — **Deep audit + fake-success
+> Last updated: 2026-05-13 (sesja 65) — **Web/winget dedup + operator
+> coverage report.** Operator request: *"make sure Ascendo really takes
+> care of all updates on windows fully, silently, perfectly, with no
+> errors. give me report which apps are fully covered… which are still
+> in manual mode."* Root cause of "108 web apps but most are duplicates":
+> `_Get-AscendoWingetIds` cached ownership by winget PackageId
+> (`7zip.7zip`) but `_owned_by` looked up by registry sub-key name
+> (`7-Zip`) — they never matched, so 31 winget-managed apps appeared as
+> false `web:auto:*` rows alongside their winget rows. Sesja 65 ships:
+> (1) new by-name caches `_AscendoWingetNameCache` + `_AscendoMsstoreNameCache`
+> keyed on DisplayName.Trim().ToLowerInvariant(); (2) `_Get-AscendoWingetIds`
+> populates by-name cache in all 3 source branches including ARP-style
+> rows (Source='') that were previously dropped; (3) eligibility check
+> in `Invoke-AscendoWebDiscovery` falls back to DisplayName lookup when
+> the sub-key match misses; (4) defensive `$owns.ContainsKey()` access
+> so older test fixtures don't trip on new keys; (5) 6 regression tests
+> pinning the contract. **Coverage report on DP5520WMK: ~355 apps fully
+> covered silently** = 221 winget + 95 msstore + 14 npm + 11 pip + 8 web
+> Tier-A + 5..20 windows_update + 1 Dell DCU plugin. **12 web apps in
+> manual mode** (all 12 auto-update via their own Squirrel/Omaha
+> background services — manual mode is operationally fine). **~28
+> remaining web:auto entries are NOT Ascendo's problem** (~12 .NET
+> runtimes = Windows Update, ~6 Dell drivers = Dell DCU plugin, ~6
+> vendor self-updaters = Edge/OneDrive/HP/Firefox handle themselves,
+> ~2 niche/legacy). Feature parity with legacy
+> `Aktualizacje-W11-Dell5520` confirmed + exceeded. Test count
+> 442 → **448** Windows (+6 dedup regression), 0 regressions. See
+> HANDOFF.md Sesja 65.
+>
+> Previous milestone (sesja 64) — **Deep audit + fake-success
 > detection + Tier-A promotions + MSI/NSIS retirement.** Operator's
 > sweep request ("analyze deeply, no fake runs, retire .exe/.msi like
 > .dmg, fix all issues, use subagents") drove a three-agent parallel

@@ -78,10 +78,12 @@ $script:_AscendoIneligibleKeyPatterns = @(
 )
 
 # Module-level caches. Cleared by Clear-AscendoWebDiscoveryCache (test hook).
-$script:_AscendoWingetIdCache = $null     # @{ id = $true }
-$script:_AscendoMsstoreIdCache = $null    # @{ id = $true }
+$script:_AscendoWingetIdCache    = $null  # @{ winget package id (lowercased) = $true }
+$script:_AscendoMsstoreIdCache   = $null  # @{ msstore package id (lowercased) = $true }
+$script:_AscendoWingetNameCache  = $null  # @{ displayName (lowercased) = $true } -- Sesja 65
+$script:_AscendoMsstoreNameCache = $null  # @{ displayName (lowercased) = $true } -- Sesja 65
 $script:_AscendoCuratedNameCache = $null  # @{ displayName (lowercased) = slug }
-$script:_AscendoCuratedKeyCache = $null   # @{ uninstall_key (lowercased) = slug }
+$script:_AscendoCuratedKeyCache  = $null  # @{ uninstall_key (lowercased) = slug }
 
 
 # -----------------------------------------------------------------------------
@@ -96,10 +98,12 @@ function Clear-AscendoWebDiscoveryCache {
     [CmdletBinding()]
     param()
 
-    $script:_AscendoWingetIdCache = $null
-    $script:_AscendoMsstoreIdCache = $null
+    $script:_AscendoWingetIdCache    = $null
+    $script:_AscendoMsstoreIdCache   = $null
+    $script:_AscendoWingetNameCache  = $null
+    $script:_AscendoMsstoreNameCache = $null
     $script:_AscendoCuratedNameCache = $null
-    $script:_AscendoCuratedKeyCache = $null
+    $script:_AscendoCuratedKeyCache  = $null
 }
 
 
@@ -140,26 +144,34 @@ function _Get-AscendoWingetIds {
     # caches via SetAscendoWebDiscoveryWingetCache stay unmodified.
     if ($null -ne $script:_AscendoWingetIdCache -and $null -ne $script:_AscendoMsstoreIdCache) {
         return @{
-            winget  = $script:_AscendoWingetIdCache
-            msstore = $script:_AscendoMsstoreIdCache
+            winget        = $script:_AscendoWingetIdCache
+            msstore       = $script:_AscendoMsstoreIdCache
+            wingetByName  = if ($null -ne $script:_AscendoWingetNameCache) { $script:_AscendoWingetNameCache } else { @{} }
+            msstoreByName = if ($null -ne $script:_AscendoMsstoreNameCache) { $script:_AscendoMsstoreNameCache } else { @{} }
         }
     }
 
-    $script:_AscendoWingetIdCache = @{}
-    $script:_AscendoMsstoreIdCache = @{}
+    $script:_AscendoWingetIdCache    = @{}
+    $script:_AscendoMsstoreIdCache   = @{}
+    $script:_AscendoWingetNameCache  = @{}
+    $script:_AscendoMsstoreNameCache = @{}
 
     if ($env:ASCENDO_WEB_DISCOVERY_NO_WINGET) {
         return @{
-            winget  = $script:_AscendoWingetIdCache
-            msstore = $script:_AscendoMsstoreIdCache
+            winget        = $script:_AscendoWingetIdCache
+            msstore       = $script:_AscendoMsstoreIdCache
+            wingetByName  = $script:_AscendoWingetNameCache
+            msstoreByName = $script:_AscendoMsstoreNameCache
         }
     }
 
     $wingetCmd = Get-Command -Name 'winget' -ErrorAction SilentlyContinue
     if ($null -eq $wingetCmd) {
         return @{
-            winget  = $script:_AscendoWingetIdCache
-            msstore = $script:_AscendoMsstoreIdCache
+            winget        = $script:_AscendoWingetIdCache
+            msstore       = $script:_AscendoMsstoreIdCache
+            wingetByName  = $script:_AscendoWingetNameCache
+            msstoreByName = $script:_AscendoMsstoreNameCache
         }
     }
 
@@ -172,8 +184,10 @@ function _Get-AscendoWingetIds {
         # relies on the registry walk alone. The macOS analogue degrades
         # similarly when brew is not on PATH.
         return @{
-            winget  = $script:_AscendoWingetIdCache
-            msstore = $script:_AscendoMsstoreIdCache
+            winget        = $script:_AscendoWingetIdCache
+            msstore       = $script:_AscendoMsstoreIdCache
+            wingetByName  = $script:_AscendoWingetNameCache
+            msstoreByName = $script:_AscendoMsstoreNameCache
         }
     }
 
@@ -182,8 +196,10 @@ function _Get-AscendoWingetIds {
     } catch {
         Write-Verbose "AscendoWebDiscovery: Get-WingetInstalled failed: $_"
         return @{
-            winget  = $script:_AscendoWingetIdCache
-            msstore = $script:_AscendoMsstoreIdCache
+            winget        = $script:_AscendoWingetIdCache
+            msstore       = $script:_AscendoMsstoreIdCache
+            wingetByName  = $script:_AscendoWingetNameCache
+            msstoreByName = $script:_AscendoMsstoreNameCache
         }
     }
 
@@ -199,21 +215,44 @@ function _Get-AscendoWingetIds {
         }
         $sourceLower = $source.Trim().ToLowerInvariant()
 
-        if ($sourceLower -eq 'msstore') {
+        # Capture DisplayName for the by-name fallback. Operator
+        # observation on DP5520WMK 2026-05-13 (Sesja 65): 31 of 34
+        # auto-discovered apps were ALREADY claimed by winget but
+        # appeared as ``web:auto:*`` duplicates because the
+        # ownership check matched only by ID (e.g. ``7zip.7zip``)
+        # vs the registry sub-key (e.g. ``7-Zip``). Both indices
+        # are populated so discovery can deduplicate properly.
+        $displayName = ''
+        if ($row.PSObject.Properties['Name'] -and $row.Name) {
+            $displayName = [string]$row.Name
+        }
+        $nameKey = $displayName.Trim().ToLowerInvariant()
+
+        if ($sourceLower -eq 'msstore' -or $id -like 'MSIX\*') {
             $script:_AscendoMsstoreIdCache[$key] = $true
+            if ($nameKey) { $script:_AscendoMsstoreNameCache[$nameKey] = $true }
         } elseif ($sourceLower -eq 'winget') {
             $script:_AscendoWingetIdCache[$key] = $true
-        } elseif ($id -like 'MSIX\*') {
-            $script:_AscendoMsstoreIdCache[$key] = $true
+            if ($nameKey) { $script:_AscendoWingetNameCache[$nameKey] = $true }
         } else {
-            # ARP rows from winget surface here too; we don't mark them as
-            # owned because that's what the WebManager actually wants to see.
+            # ARP rows from winget surface here too. Track them in
+            # the winget by-name cache so a registry walker can
+            # claim them as winget-managed -- ``winget upgrade --id
+            # ARP\Machine\X64\CCleaner`` still works as long as
+            # ``winget list`` knows the app exists. Without this,
+            # apps with empty Source (most ARP-resolved entries)
+            # surface as web:auto duplicates of their winget rows.
+            if ($nameKey) {
+                $script:_AscendoWingetNameCache[$nameKey] = $true
+            }
         }
     }
 
     return @{
-        winget  = $script:_AscendoWingetIdCache
-        msstore = $script:_AscendoMsstoreIdCache
+        winget       = $script:_AscendoWingetIdCache
+        msstore      = $script:_AscendoMsstoreIdCache
+        wingetByName  = $script:_AscendoWingetNameCache
+        msstoreByName = $script:_AscendoMsstoreNameCache
     }
 }
 
@@ -534,14 +573,43 @@ function Invoke-AscendoWebDiscovery {
                 $reason = 'inno_update_bundle'
             }
 
-            # 4. Owned-by-winget / -msstore (by KeyName).
+            # 4. Owned-by-winget / -msstore.
+            #
+            # Three lookups in priority order:
+            #   a) registry sub-key name (lowercased) against the ID
+            #      cache -- catches the case where winget reports the
+            #      package with its registry KeyName as Id.
+            #   b) DisplayName (lowercased) against the by-name cache
+            #      (Sesja 65 addition). Catches the common case where
+            #      winget's PackageId differs from the registry sub-key
+            #      (e.g. winget id ``7zip.7zip`` vs registry key
+            #      ``7-Zip`` -- the DisplayName ``7-Zip 26.01 (x64
+            #      edition)`` matches across both indices). On
+            #      DP5520WMK, 31 of 34 web:auto duplicates resolved
+            #      via this fallback.
+            #   c) Same lookups for msstore.
+            #
+            # When a lookup hits, the app is marked owned by the
+            # winget/msstore source -- discovery skips it (unless
+            # ``-IncludeOwned``) so it doesn't appear as a web:auto
+            # duplicate of a row that the winget / msstore category
+            # already manages via ``winget upgrade --silent``.
             if ($eligibility -eq 'eligible') {
                 $keyNameLower = $keyName.Trim().ToLowerInvariant()
-                if ($owns.winget.ContainsKey($keyNameLower)) {
+                $displayNameLower = ([string]$displayName).Trim().ToLowerInvariant()
+
+                # $owns is a hashtable; older callers may pass one without
+                # the *ByName keys. Defensive ContainsKey check.
+                $wingetByName  = if ($owns.ContainsKey('wingetByName'))  { $owns['wingetByName']  } else { @{} }
+                $msstoreByName = if ($owns.ContainsKey('msstoreByName')) { $owns['msstoreByName'] } else { @{} }
+
+                if ($owns.winget.ContainsKey($keyNameLower) -or `
+                    ($displayNameLower -and $wingetByName.ContainsKey($displayNameLower))) {
                     $eligibility = 'owned'
                     $source = 'winget'
                     $reason = 'owned_by_winget'
-                } elseif ($owns.msstore.ContainsKey($keyNameLower)) {
+                } elseif ($owns.msstore.ContainsKey($keyNameLower) -or `
+                          ($displayNameLower -and $msstoreByName.ContainsKey($displayNameLower))) {
                     $eligibility = 'owned'
                     $source = 'msstore'
                     $reason = 'owned_by_msstore'
