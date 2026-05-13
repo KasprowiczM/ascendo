@@ -250,6 +250,7 @@ class InventoryDB:
         category: str,
         name: str,
         *,
+        item_id: str = "",
         installed: str | None = None,
         candidate: str | None = None,
         status: str | None = None,
@@ -262,6 +263,13 @@ class InventoryDB:
         Status defaults to ``"unknown"`` when neither ``installed`` nor
         ``candidate`` is supplied; callers that have already classified
         should pass ``status`` explicitly.
+
+        Sesja 67: ``item_id`` widens the dedup key to match schema v2's
+        PK ``(category, name, item_id)``. Defaults to ``""`` so legacy
+        callers stay backward-compatible — two rows sharing
+        ``(category, name)`` with empty item_id still collapse, but
+        callers that pass distinct ``item_id`` get separate rows
+        (parallel architectures, MSIX rows, etc.).
         """
         if not category or not name:
             return  # silently ignore malformed rows; never raise on bad input
@@ -271,10 +279,10 @@ class InventoryDB:
             conn.execute(
                 """
                 INSERT INTO inventory_items
-                    (category, name, installed, candidate, status,
+                    (category, name, item_id, installed, candidate, status,
                      source_type, vendor, metadata, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(category, name) DO UPDATE SET
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(category, name, item_id) DO UPDATE SET
                     installed   = excluded.installed,
                     candidate   = excluded.candidate,
                     status      = excluded.status,
@@ -286,6 +294,7 @@ class InventoryDB:
                 (
                     category,
                     name,
+                    item_id,
                     installed,
                     candidate,
                     status or "unknown",

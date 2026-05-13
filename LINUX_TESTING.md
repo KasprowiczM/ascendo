@@ -335,10 +335,12 @@ destructive and requires a recovery shell. The Python wrapper supports
 
 ---
 
-## 11. Troubleshooting (Sesja 55 fixes recap)
+## 11. Troubleshooting (Sesja 55-68 fixes recap)
 
 | Symptom | Likely cause | Quick check |
 |---------|--------------|-------------|
+| `safe update hangs on apt` for 10+ minutes (heartbeat: `>>> apt apply still running (Ns elapsed)` forever) | Pre-Sesja-68 bug — keepalive subshell inherited parent's stdout/stderr pipes; Python's `subprocess.run(capture_output=True)` blocked forever on pipe EOF. apt apply.sh additionally overwrote common.sh's trap chain, dropping the keepalive killer. Pull main; subshell now redirects stdio to /dev/null AND apt's custom trap kills keepalive. | `grep -F '</dev/null >/dev/null 2>&1 &' lib/common.sh` should print 2 lines |
+| `snap apply produced no sidecar` (status=failed, items=0 in synthesized fallback) | Pre-Sesja-68 bug — chained EXIT trap had `kill $PID 2>/dev/null; finalize`. When keepalive PID already dead (TTY-less sudo cache fails on first iteration), kill returns 1 + set -e aborts trap before finalize runs. Pull main; trap now wraps kill with `\|\| true` + keepalive uses `sudo -A -v` for proper askpass refresh. | `grep -F 'kill ${SUDO_KEEP_ALIVE_PID} 2>/dev/null \|\| true' lib/common.sh` should print 2 lines |
 | `npm/pip categories show 0 items` in inventory | Pre-Sesja-55 bug — bash heredoc parser error in `inventory/list.sh`. Pull main + rebuild: `rm ~/.ascendo/inventory.db && ascendo dashboard` | `git log --oneline | head -10` should show `32db6f1 fix(ubuntu/inventory)` |
 | `snap apply shows status=failed but stream log says it worked` | Pre-Sesja-55 bug — `require_sudo` was clobbering the json EXIT trap. Pull + retry. | `git log --oneline | grep require_sudo` should show `497b629` |
 | `SPA candidate column empty after Quick check` | Pre-Sesja-55 bug — overlay didn't index by trailing name segment. Pull + retry. | `git log --oneline | grep check-overlay` should show `3c4ca99` |

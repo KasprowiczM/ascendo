@@ -123,8 +123,20 @@ _restore_excluded_apt_holds() {
 # fire on exit (regardless of whether we exit normally or via set -e). The
 # previous version overrode the json trap and the apply.json sidecar was never
 # written — orchestrator then silently dropped apt:apply from run.json.
+#
+# Sesja 68: the kill-keepalive step MUST run too. require_sudo (called above)
+# installs a trap chain that includes `kill ${SUDO_KEEP_ALIVE_PID}` to stop
+# the background sudo-refresher subshell. If we overwrite the trap without
+# preserving that kill, the subshell holds the parent's stdio pipes open and
+# Python's subprocess.run(capture_output=True) blocks forever on EOF —
+# producing the operator-visible "safe update hanged on apt" symptom. The
+# kill is wrapped in `|| true` because the keepalive PID may have already
+# exited by then; under set -e a failing kill aborts the trap chain.
 _apt_apply_on_exit() {
     local rc=$?
+    if [[ -n "${SUDO_KEEP_ALIVE_PID:-}" ]]; then
+        kill "${SUDO_KEEP_ALIVE_PID}" 2>/dev/null || true
+    fi
     _restore_nvidia_holds 2>/dev/null || true
     _restore_excluded_apt_holds 2>/dev/null || true
     _json_finalize_on_exit "$rc"

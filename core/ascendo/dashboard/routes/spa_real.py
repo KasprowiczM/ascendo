@@ -692,10 +692,12 @@ def _flatten_buckets_for_db(
             if not name:
                 continue
             raw_id = it.get("id") or it.get("item_id") or ""
-            # Only carry item_id when it actually differs from name. This
-            # keeps simple managers (one row per package) using the empty
-            # discriminator and avoids spurious row splits.
-            item_id = str(raw_id) if raw_id and str(raw_id) != str(name) else ""
+            # Only carry item_id when it's a REAL disambiguator. Ubuntu
+            # synthetic ids like ``brew:wget`` merely category-prefix the
+            # name — using them as PK discriminator creates phantom rows.
+            # See run_async._normalize_item_id for the full heuristic.
+            from ascendo.orchestrator.run_async import _normalize_item_id
+            item_id = _normalize_item_id(raw_id, str(name))
             rows.append(
                 {
                     "category": cat,

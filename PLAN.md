@@ -1,6 +1,76 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-14 (sesja 67) — **Inventory dedup + Suggestions
+> Last updated: 2026-05-13 (sesja 68) — **Ubuntu parity hardening:
+> snap apply trap fix + apt apply pipe-hang fix + help.linux i18n +
+> inventory_db.upsert schema-v2 + item_id Ubuntu normalization.**
+> Operator: *"check this project deeply, see if you can implement any
+> improvements to ubuntu version based on latest changes to windows
+> version … fix the snap apply step that is still failing … safe
+> update hanged on apt"*. Five deliverables shipped end-to-end on
+> mk-uP5520:
+> (1) **Snap apply trap chain** — `lib/common.sh` require_sudo
+> chained the EXIT trap with `kill $PID 2>/dev/null; ...`. When the
+> keepalive subshell was already dead (TTY-less sudo cache fails on
+> first iteration), `kill <DEAD_PID>` returned 1 under set -e and
+> ABORTED the trap before `_json_finalize_on_exit` could run.
+> Sidecar never written → "snap apply produced no sidecar". Fix:
+> append `|| true` to the kill (canonical bash cleanup idiom) AND
+> swap `sudo -n true` for `sudo -A -v` in the keepalive loop when
+> `SUDO_ASKPASS` is set — refreshes credentials properly across
+> TTY boundaries. Snap apply now reproducibly green 3/3 on
+> mk-uP5520.
+> (2) **Apt apply pipe-hang** — operator reported "safe update
+> hanged on apt" for 10+ minutes. Root cause: the keepalive
+> subshell inherits parent bash's stdout/stderr pipes. Python's
+> `subprocess.run(capture_output=True)` blocks until ALL writers
+> close the pipes (EOF); the subshell holds them open through
+> `sleep 50` loops forever. apt apply.sh additionally OVERWRITES
+> common.sh's trap chain on line 132, dropping the keepalive-killer
+> entirely. Fix: redirect keepalive subshell's stdio to /dev/null
+> (`</dev/null >/dev/null 2>&1 &`) so it can't hold pipes hostage,
+> AND extend apt's `_apt_apply_on_exit` to kill the keepalive too
+> (defense-in-depth). Apt-only apply: 10+ min hang → **16 seconds**.
+> Full safe profile (check+plan+apply+verify × 7 categories): **111
+> seconds, 28/28 green**.
+> (3) **help.linux i18n section** — Windows had `help.windows.*`
+> (33 keys × EN/PL) documenting Sesja 58-67 features; Linux had
+> none. Shipped `help.linux.{managers, validate, deb, salvage,
+> ipc_fixes, polarity, web_lifecycle, build_inventory, scheduler,
+> elevation, snapshots, ai_suggestions, schedule_tab}` × EN+PL
+> (33 keys each, 873/873 i18n parity preserved). SPA wires
+> sections 12 + 13 with `data-platforms="linux ubuntu"`. PL `about`
+> block gained the missing `help_li4_*` keys.
+> (4) **InventoryDB.upsert schema-v2** — singular `upsert()` had
+> `ON CONFLICT(category, name)` pre-Sesja-67 PK; schema v2 widened
+> to `(category, name, item_id)` but only `bulk_upsert` was
+> updated. Singular method raised `sqlite3.OperationalError: ON
+> CONFLICT clause does not match any PRIMARY KEY or UNIQUE
+> constraint`. Two contract tests failed. Fixed: added `item_id=""`
+> default param + ON CONFLICT updated. Both tests pass now.
+> (5) **Ubuntu item_id normalization** — `_normalize_item_id()`
+> in `run_async.py`: Sesja 67's PK widening was creating phantom
+> rows on Ubuntu where synthetic ids like `brew:wget` /
+> `apt:upgrade:firefox` merely category-prefix the name. Heuristic:
+> id ending with name (with separator `:` `/` `-` `.`) → treated as
+> "no real discriminator" → empty `item_id` → upserts existing
+> legacy `(cat, name, "")` row in place. Windows multi-arch dedup
+> (e.g. `Microsoft.VCRedist.2008.x64` — doesn't end with display
+> name) preserved.
+> Cross-platform readiness check: Sesja 67's inventory dedup, AI
+> Suggestions, Schedule tab, REPORT.md history links, same-run
+> overlay filter all already worked on Ubuntu — they live in
+> `core/` and `app/frontend/`, just needed live verification.
+> Live-verified all five on mk-uP5520: scheduler installs real
+> systemd `~/.config/systemd/user/ascendo-*.{service,timer}`
+> units; `/suggestions/library` returns rule-based cards with AI
+> path falling back transparently.
+> 143/143 Ubuntu adapter tests + 47/47 contract (inventory_db,
+> overlay, suggestions AI, legacy_compat) + 23/23 validate-ubuntu
+> + 4/5 new bash regression tests in
+> `tests/bash/test_require_sudo_trap.bats` (5th is a negative
+> control). Zero regressions. See HANDOFF.md Sesja 68.
+>
+> Previous milestone (sesja 67) — **Inventory dedup + Suggestions
 > AI + Schedule tab + Help/About refresh.** Operator: *"check why
 > inventory changes after each run … implement fully working
 > suggestions … every click in web app works … use subagents"*. Four

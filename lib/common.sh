@@ -185,7 +185,41 @@ require_sudo() {
         echo -e "${YELLOW}  Sudo password required for privileged operations:${RESET}"
         sudo -v || { print_error "sudo authentication failed"; exit 1; }
     fi
-    (while true; do sudo -n true 2>/dev/null || break; sleep 50; done) &
+    # Refresher: if SUDO_ASKPASS is wired (dashboard path), use it to
+    # re-validate the cache periodically — `sudo -A -v` re-runs the
+    # askpass helper and refreshes credentials cleanly. Without askpass
+    # (interactive run with a TTY), fall back to `sudo -n true` which
+    # works as long as the sudo cache stays valid.
+    #
+    # CRITICAL: when the dashboard spawns this script with stdin=DEVNULL +
+    # start_new_session=True (no controlling TTY), `sudo -n true` from
+    # the keepalive subshell can fail on the FIRST iteration even when
+    # `sudo -A -v` just succeeded, because sudo's credential cache is
+    # tty-scoped. The subshell then `break`s, the keepalive PID dies,
+    # and 50s later the script's EXIT trap tries to `kill <dead-PID>`,
+    # which returns 1 under set -e — aborting the trap chain BEFORE
+    # `_json_finalize_on_exit` runs. Result: no sidecar produced, the
+    # bridge raises "snap apply script produced no sidecar". See
+    # HANDOFF.md Sesja 68 for the full trace + Ubuntu 24.04 docs on
+    # sudo / no-tty / askpass interaction.
+    # CRITICAL: redirect the keepalive subshell's stdin/stdout/stderr to
+    # /dev/null. When the parent bash is spawned by Python with
+    # `subprocess.run(capture_output=True)`, the dashboard reads stdout
+    # and stderr via pipes — and Popen.communicate() blocks until ALL
+    # writers close those pipes (EOF). Without the redirection here, the
+    # keepalive subshell INHERITS the parent's pipe FDs, holds them open,
+    # and Python never sees EOF after the main bash exits. Result: the
+    # apt apply Python sees the script as "still running" for tens of
+    # minutes even though the bash trap finished and the sidecar landed.
+    # Detaching the subshell's stdio here also makes the entire chain
+    # safer if the script's trap is overwritten (apt apply.sh does this
+    # — see _apt_apply_on_exit) since the keepalive can no longer keep
+    # the parent pipes alive.
+    if [[ -n "${SUDO_ASKPASS:-}" ]]; then
+        (while true; do sudo -A -v 2>/dev/null || break; sleep 50; done) </dev/null >/dev/null 2>&1 &
+    else
+        (while true; do sudo -n true 2>/dev/null || break; sleep 50; done) </dev/null >/dev/null 2>&1 &
+    fi
     SUDO_KEEP_ALIVE_PID=$!
     # CRITICAL: chain — do NOT replace. lib/json.sh registers a json_finalize
     # EXIT trap so the sidecar gets written; if we clobber it with a single
@@ -193,13 +227,22 @@ require_sudo() {
     # bridge raises "no sidecar produced", marking the apply as failed even
     # though every command succeeded. Chain by reading the current EXIT trap
     # body and prepending our killer.
+    #
+    # The trailing `|| true` is LOAD-BEARING: when set -e is in effect
+    # inside the trap and `kill` returns non-zero (PID already gone —
+    # the keepalive subshell may have died if its `sudo -n true` failed
+    # on a TTY-less spawn), the chain aborts before the existing json
+    # finalize trap runs. `|| true` swallows the kill failure locally so
+    # the finalize hook always executes. This is the documented bash
+    # idiom for cleanup chains under errexit (see Ubuntu / GNU bash
+    # docs on EXIT trap + set -e interaction).
     _existing_exit_trap=$(trap -p EXIT 2>/dev/null | sed -E "s/^trap -- '(.*)' EXIT$/\1/" || true)
     if [[ -n "${_existing_exit_trap}" ]]; then
         # shellcheck disable=SC2064  # we WANT eager expansion of $SUDO_KEEP_ALIVE_PID
-        trap "kill ${SUDO_KEEP_ALIVE_PID} 2>/dev/null; ${_existing_exit_trap}" EXIT
+        trap "kill ${SUDO_KEEP_ALIVE_PID} 2>/dev/null || true; ${_existing_exit_trap}" EXIT
     else
         # shellcheck disable=SC2064
-        trap "kill ${SUDO_KEEP_ALIVE_PID} 2>/dev/null" EXIT
+        trap "kill ${SUDO_KEEP_ALIVE_PID} 2>/dev/null || true" EXIT
     fi
     unset _existing_exit_trap
 }

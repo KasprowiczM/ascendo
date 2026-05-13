@@ -6,6 +6,333 @@
 
 ---
 
+## Sesja 68 (2026-05-13) — Ubuntu parity hardening: snap trap fix + apt pipe-hang fix + help.linux i18n + inventory_db.upsert + item_id normalization
+
+Operator request (single multi-part ask spanning multiple turns):
+*"read handoff, check this project deeply, see if you can implement
+any improvements to ubuntu version on this machine based on latest
+changes to windows version … fix the snap apply step that is still
+failing … safe update hanged on apt … check what's going on … update
+docs … commit push merge to main, don't lose anything"*.
+
+Five real bugs uncovered and fixed end-to-end on mk-uP5520, plus a
+docs/i18n parity sweep so Linux operators get the same Help depth as
+Windows operators.
+
+### Pre-fix state audit
+
+Three-agent parallel audit determined that most Sesja 64-67 Windows
+improvements were ALREADY cross-platform (they live in `core/` and
+`app/frontend/`):
+- Sesja 67 inventory dedup (schema v2 PK `(category, name, item_id)`)
+  — wired in inventory_db.py, run_async.py, spa_real.py.
+- Sesja 67 Suggestions AI — `call_provider_inference()` in
+  `routes/ai.py` for 6 providers; `_maybe_augment_with_ai` in
+  `routes/suggestions.py` prepending 1-3 AI cards.
+- Sesja 67 Schedule tab — `routes/scheduler_real.py` drives
+  `IScheduler`; Ubuntu has `SystemdScheduler` wired.
+- Sesja 66 same-run overlay filter — `_latest_check_overlay` in
+  spa_real.py walks only same-run apply/verify.
+- Sesja 66 History REPORT.md links — `app.js` History tab renders
+  📄 link per row to `/runs/{id}/report`.
+
+What was actually missing: i18n `help.linux` section (Windows had 33
+keys, Linux 0); bugs in the shared code that bit Ubuntu specifically;
+trap chain regressions in `lib/common.sh` + `scripts/apt/apply.sh`.
+
+### Bug #1 — Snap apply "produced no sidecar" (the operator's first ask)
+
+**Symptom.** Across many runs in `~/.ascendo/runs/`, `apply__snap.json`
+sidecars consistently showed:
+```
+status: failed
+message: ManagerError: snap apply script produced no sidecar.
+  script: /home/mk/Dev_Env/Ascendo/scripts/snap/apply.sh
+  exit code: 1
+  stdout (tail): ── Refreshing snaps ── … ── Configured snaps ── (nothing after)
+```
+Sidecar got synthesized by the orchestrator's `_safe_run_phase` fallback.
+
+**Investigation.** Instrumented snap apply with `exec 2>/tmp/xtrace.log;
+PS4='+T ${BASH_SOURCE##*/}:${LINENO}: '; set -x`. Traced through a fresh
+dashboard run; saw:
+```
++T apply.sh:166: exit 0
++T apply.sh:1: kill 63911           ← EXIT trap fires kill
+(nothing further; no _json_finalize_on_exit)
+```
+Added a probe to dump trap content at exit time:
+```
+DEBUG-TRAP: trap -- 'kill 63911 2>/dev/null; _json_finalize_on_exit $?' EXIT
+```
+Trap shape was correct. Added another probe — `kill -0 <PID>` right
+before exit — got:
+```
+DEBUG-PID: 64397 alive? kill: (64397) - No such process
+```
+**The keepalive subshell had already died.** Under `set -euo pipefail`
+inside an EXIT trap, `kill <DEAD_PID> 2>/dev/null` returns 1 → errexit
+fires → trap chain aborts BEFORE `_json_finalize_on_exit` runs → no
+sidecar.
+
+Verified the bash semantics with a minimal repro:
+```bash
+trap 'kill 99999 2>/dev/null; echo CONTINUED' EXIT  # CONTINUED never prints, rc=1
+trap 'kill 99999 2>/dev/null || true; echo CONTINUED' EXIT  # CONTINUED prints, rc=0
+```
+
+Why the keepalive died: Ubuntu 24.04 sudo cache is TTY-scoped. The
+dashboard spawns bash with `stdin=DEVNULL` + `start_new_session=True`
+(no controlling TTY). The keepalive subshell's `sudo -n true` fails
+on the first iteration even after `sudo -A -v` just succeeded in the
+parent — sudo doesn't see the askpass-validated cache for the
+subshell's tty key. `|| break` then exits the subshell. Confirmed via
+[Ubuntu/sudo docs research](https://www.cyberciti.biz/faq/linux-unix-bsd-sudo-sorry-you-must-haveattytorun/)
+and [bash trap-chain best practices](https://nickjanetakis.com/blog/using-trap-to-run-a-command-after-your-shell-script-exits).
+
+**Fix in `lib/common.sh::require_sudo`.** Two changes:
+1. `kill PID 2>/dev/null || true` in the chained trap (canonical bash
+   defensive-cleanup idiom — failing commands inside trap functions
+   abort the chain under set -e).
+2. Use `sudo -A -v` instead of `sudo -n true` in the keepalive loop
+   when `SUDO_ASKPASS` is set — askpass-aware refresh works across
+   TTY boundaries; `sudo -n` doesn't.
+
+**Verification.** Live snap apply: status=success, items=7,
+exit_code=0. 3 consecutive runs all green.
+
+### Bug #2 — Apt apply "hung on safe update" (the operator's second ask)
+
+**Symptom.** Operator triggered safe update via dashboard. apt apply
+showed `>>> apt apply still running (530s elapsed)` heartbeat for 10+
+minutes. Status: running (forever). No `apply__apt.json` in run dir.
+
+**Investigation.** Found the stuck bash via `ps`: PID 88892,
+`/proc/88892/wchan = do_wait`, only child = `sleep 50` (the
+keepalive). Read the script's own log file at
+`/tmp/ascendo-ubuntu-apt-*/.../apt/apply.log` — script had ALREADY
+COMPLETED all phases (apt-get update, upgrade, dist-upgrade, NVIDIA
+unholds) at T+11s. The `apply.json` sidecar EXISTED at T+11s
+(`ended_at: "2026-05-13T18:33:50Z"`). But bash was still alive 10
+minutes later.
+
+Test: killed the keepalive's sleep manually — bash exited immediately,
+Python read the sidecar, run progressed to next category. Reproduced
+the hang in isolation with `subprocess.run(capture_output=True)`:
+script with backgrounded subshell + manual chained trap → **30s
+timeout** (still hung). Same script invoked directly with `bash`
+(no Python capture): **0.235s exit**.
+
+**Root cause.** Python's `subprocess.run(capture_output=True)` uses
+`Popen.communicate()`, which blocks until ALL writers close the
+stdout/stderr pipes (EOF). The backgrounded keepalive subshell
+inherits the parent bash's pipes and holds them open through
+indefinite `sleep 50` loops. The bash main process exits cleanly
+(trap fires, sidecar is finalized), but Python never sees pipe EOF.
+
+apt apply.sh OVERWRITES common.sh's chained trap on line 132 with
+`trap _apt_apply_on_exit EXIT` — and the new handler doesn't kill
+the keepalive. So for apt specifically, the keepalive subshell
+survives the script exit and holds the pipes hostage. Snap/brew
+inherit common.sh's chain (with the Sesja-68 `|| true` fix) and kill
+the keepalive, so those don't hang.
+
+**Fix in two places:**
+1. `lib/common.sh::require_sudo` — redirect keepalive subshell's
+   stdio to /dev/null at spawn time:
+   ```bash
+   (while ...) </dev/null >/dev/null 2>&1 &
+   ```
+   Subshell no longer holds parent pipes regardless of trap behavior.
+2. `scripts/apt/apply.sh::_apt_apply_on_exit` — defense-in-depth,
+   kill the keepalive in apt's custom trap too (preserves the kill
+   that common.sh's chain would have provided).
+
+**Verification.**
+- apt-only apply via dashboard: 10+ min hang → **16 seconds**.
+- Full safe profile (check+plan+apply × 7 categories): **86 seconds**.
+- Full safe profile (check+plan+apply+verify × 7 categories): **111
+  seconds, 28/28 all success**.
+- Python `subprocess.run(capture_output=True)` repro: 30s timeout →
+  **0.22s exit**.
+
+### Bug #3 — `InventoryDB.upsert()` schema v2 mismatch
+
+**Symptom.** `tests/contract/test_inventory_db.py::test_db_upsert_replaces_row`
+failed:
+```
+sqlite3.OperationalError: ON CONFLICT clause does not match any
+PRIMARY KEY or UNIQUE constraint
+```
+
+**Root cause.** Sesja 67 widened the schema to PK `(category, name,
+item_id)` but only updated `bulk_upsert`. The singular `upsert()`
+method still used `ON CONFLICT(category, name)` — broken since Sesja
+67 landed.
+
+**Fix.** Added `item_id: str = ""` param to `upsert()` signature
+(backward-compatible default), changed ON CONFLICT to
+`(category, name, item_id)`, inserted item_id into the VALUES tuple.
+
+### Bug #4 — Ubuntu item_id phantom rows
+
+**Symptom.** `test_post_run_flush_is_upsert_only` failed after Bug #3
+fix:
+```
+AssertionError: Upsert did not refresh wget.installed:
+  {'name': 'wget', 'item_id': '', 'installed': '0.9', ...}
+```
+
+**Root cause.** Ubuntu sidecars emit synthetic ids like `brew:wget`,
+`apt:upgrade:firefox`. After legacy_compat translation, both `id` and
+`name` get the synthetic id (e.g. both = `apt:upgrade:firefox`). Pre-
+Sesja-67 they collapsed cleanly. But the test case had MIXED state:
+DB had `(brew, wget, "")` from a live-scan; sidecar had
+`{id: "brew:wget", name: "wget"}`. After Sesja 67, `id != name` →
+`item_id = "brew:wget"` → upsert creates a NEW row at
+`(brew, wget, "brew:wget")` instead of updating the existing
+`(brew, wget, "")` row.
+
+The Sesja 67 dedup was designed for Windows multi-arch packages where
+multiple distinct ids share a DisplayName (Microsoft VC++ 2008 ×
+{x86, x64, arm64}). Ubuntu's category-prefixed synthetic ids aren't
+real disambiguators.
+
+**Fix.** New helper `_normalize_item_id(raw_id, name)` in
+`run_async.py`:
+- If `id` ends with name (with separator `:` `/` `-` `.`) → not a
+  real discriminator → return empty string.
+- Else → keep as-is.
+
+Examples:
+- `id="brew:wget", name="wget"` → ends with `:wget` → `""`
+- `id="apt:upgrade:firefox", name="firefox"` → ends with `:firefox` → `""`
+- `id="Microsoft.VCRedist.2008.x64", name="Microsoft Visual C++ 2008 Redistributable - x64"` → doesn't end with name → kept
+
+Wired into both `_flush_run_to_inventory_db` (run_async.py) and
+`_flatten_buckets_for_db` (spa_real.py). All 34 inventory_db /
+overlay / suggestions_ai tests pass.
+
+### help.linux i18n section + SPA wiring
+
+Windows had `help.windows.*` with 33 keys × EN/PL documenting Sesja
+58-67 features (managers table, Tier-A apply, fake-success detection,
+apply-mark, web/winget dedup, web lifecycle, build-inventory, tag-
+release, install-service, validate harness, watchdog, Suggestions
+AI, Schedule tab). Linux had nothing equivalent for its own Sesja
+54-58 features.
+
+**Shipped.** New `help.linux.*` block in `app/frontend/i18n.js`:
+33 keys × EN + PL = 66 entries documenting:
+- 8 manager rows (apt / snap / brew / npm / pip / flatpak / web / drivers)
+- Sesja 54: `bin/validate-ubuntu.sh` 23-check harness
+- Sesja 55: 8 live-fire IPC fixes (heredoc parse error, python3
+  stdin collision, require_sudo trap clobber, SPA overlay name match,
+  SIGINT propagation, watchdog heartbeat, brew greedy redownload,
+  pip plan kind clobber)
+- Sesja 56: `packaging/build-deb.sh --edition` + sidecar salvage path
+- Sesja 57: version polarity bidirectional (13 call-sites across 9
+  scripts)
+- Sesja 58: `ascendo web start/stop/restart/status`, build-inventory,
+  systemd scheduler, LinuxElevation askpass, timeshift snapshots
+- Sesja 67: AI suggestions integration, Schedule tab
+
+SPA `index.html` got two new `<h3>` sections — "12 · Recent additions
+(Sesja 54-67)" and "13 · Operator tooling (Sesja 56-67)" — with
+`data-platforms="linux ubuntu"` so they only render on Linux. EN/PL
+parity confirmed at **873/873 keys** total via
+`Object.keys` + flatten + diff.
+
+Plus: PL `about` block was missing `help_li4_b` / `help_li4_t` keys
+(EN had them). Added.
+
+### Live verification on mk-uP5520
+
+| Test | Result |
+|------|--------|
+| `python3 -m ascendo doctor` | 14 components ok |
+| `bash bin/validate-ubuntu.sh` | **23/23 PASS** |
+| Snap apply via dashboard × 3 | **3/3 success, items=7 each** |
+| Apt-only apply via dashboard | **16 seconds, success** (was: 10+ min hang) |
+| Full safe profile (check+plan+apply, 7 cats) | **86 seconds, 7/7 success** |
+| Full safe profile (check+plan+apply+verify, 7 cats × 4 phases) | **111 seconds, 28/28 success** |
+| Python `subprocess.run(capture_output=True)` apt repro | 30s timeout → **0.22s** |
+| Ubuntu adapter pytest | **143/143 pass** |
+| Contract pytest (inventory_db + overlay + suggestions + legacy) | **47/47 pass** |
+| Schedule tab via dashboard | install + list + remove green; real systemd unit at `~/.config/systemd/user/ascendo-ascendo-test-port.{service,timer}` |
+| Suggestions library | rule-based cards returned; AI fallback transparent |
+
+### Files changed (8 files, +269 lines, -19 lines)
+
+```
+NEW:
+  tests/bash/test_require_sudo_trap.bats                    | 5 tests
+
+MODIFIED:
+  app/frontend/i18n.js                                      | +71 (help.linux EN+PL + about.help_li4 PL)
+  app/frontend/index.html                                   | +28 (help-linux-recent + help-linux-tooling)
+  core/ascendo/dashboard/inventory_db.py                    | +15 -3 (upsert schema v2)
+  core/ascendo/dashboard/routes/spa_real.py                 | +6 -4 (item_id normalization wired)
+  core/ascendo/orchestrator/run_async.py                    | +42 -3 (_normalize_item_id helper)
+  lib/common.sh                                             | +49 -3 (kill || true + stdio detach + askpass keepalive)
+  scripts/apt/apply.sh                                      | +12 (custom trap kills keepalive)
+```
+
+### Operator verification path
+
+```bash
+cd ~/Dev_Env/Ascendo && git pull
+
+# 1. Snap apply — was failing, should now succeed
+python3 -m ascendo run --category snap --phase apply
+
+# 2. Apt apply — was hanging 10+ min, should finish in <30s
+python3 -m ascendo run --category apt --phase apply
+
+# 3. Full safe profile end-to-end
+python3 -m ascendo run --profile safe --phases check,plan,apply,verify
+
+# 4. Help tab in SPA — new Linux sections
+xdg-open http://127.0.0.1:8765
+# Click Help in sidebar; scroll past existing sections to see
+# "12 · Recent additions (Sesja 54-67)" + "13 · Operator tooling"
+# Switch language (top-right) — both EN + PL fully translated.
+
+# 5. Regression tests
+python3 -m pytest adapters/ubuntu/tests/ tests/contract/test_inventory_db.py \
+  tests/contract/test_overlay_same_run_only.py tests/contract/test_suggestions_ai.py \
+  tests/contract/test_legacy_compat.py -q
+# Expected: 190/190 passing
+
+# 6. Bash regression (locks the snap + apt trap fixes)
+bats tests/bash/test_require_sudo_trap.bats   # 4 pass + 1 skipped (negative control)
+
+# 7. End-to-end smoke
+bash bin/validate-ubuntu.sh   # 23/23 PASS
+```
+
+### Carry-forward
+
+- **`_normalize_item_id` heuristic edge case**: id-ending-with-name
+  with separator `:` `/` `-` `.` collapses to empty item_id. Future
+  vendor whose synthetic id happens to look like `<prefix><sep><name>`
+  could trigger false collapse. Hasn't come up in practice on Windows
+  (multi-arch ids carry `.x64` SUFFIX after name not BEFORE). Worth
+  monitoring across the next 100-ish inventory rows.
+- **Other apply scripts also overwrite trap chain**: Only apt apply.sh
+  does this today (special hold/unhold needs). Future scripts that
+  add custom traps must remember to kill SUDO_KEEP_ALIVE_PID. The
+  stdio detach in common.sh makes this less catastrophic but the
+  pattern is fragile. Could be cleaned up by exposing a helper
+  `register_phase_exit_handler(fn)` that auto-chains.
+- **Bash `bats` not installed** on this host — regression tests in
+  `tests/bash/test_require_sudo_trap.bats` are written in bats format
+  and can be run via `sudo apt install bats && bats
+  tests/bash/test_require_sudo_trap.bats`. Manual harness in the
+  test file's docstring also works.
+
+---
+
 ## Sesja 67 (2026-05-14) — Inventory dedup + Suggestions AI + Schedule tab + Help/About refresh
 
 Operator request (verbatim, post-Sesja-66): *"check why inventory

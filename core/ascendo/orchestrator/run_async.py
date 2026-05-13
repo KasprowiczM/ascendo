@@ -239,6 +239,41 @@ def _phase_of(sc: Any) -> str:
     return phase.value if hasattr(phase, "value") else str(phase)
 
 
+def _normalize_item_id(item_id_raw: Any, name: str) -> str:
+    """Decide whether an ``id`` field is a real disambiguator or merely
+    a synthetic prefix of the display name.
+
+    Sesja 67 widened the inventory PK to ``(category, name, item_id)``
+    so Windows multi-arch packages (Microsoft VC++ 2008 Redistributable
+    × {x86, x64, arm64}) don't collapse. But Ubuntu phase scripts emit
+    synthetic ids like ``brew:wget`` / ``apt:upgrade:firefox`` that
+    just category-prefix the name — those don't disambiguate, they're
+    a namespacing convention. Returning an empty string lets the
+    legacy ``(cat, name, "")`` row upsert in place.
+
+    Heuristic: id is a "real" discriminator when it doesn't end with
+    name (case-insensitive). Examples:
+      - id="brew:wget",         name="wget"     -> ends with name -> ""
+      - id="apt:upgrade:firefox", name="firefox" -> ends with name -> ""
+      - id="Microsoft.VCRedist.2008.x64", name="Microsoft Visual C++..."
+        -> doesn't end with name -> kept as discriminator
+      - id == name                                -> trivially same -> ""
+    """
+    if not item_id_raw or not name:
+        return ""
+    raw = str(item_id_raw)
+    lower_raw = raw.lower()
+    lower_name = name.lower()
+    if lower_raw == lower_name:
+        return ""
+    # Tolerate one of these separators between prefix and name:
+    #   "brew:wget", "apt/firefox", "snap-firefox", "winget.7zip"
+    for sep in (":", "/", "-", "."):
+        if lower_raw.endswith(sep + lower_name):
+            return ""
+    return raw
+
+
 def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
     """Walk the just-finished run's sidecars + bulk-upsert their items.
 
@@ -317,7 +352,15 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
             # ARP entries with identical Name but distinct registry GUIDs)
             # land in separate inventory_items rows instead of silently
             # collapsing. Empty when name == id, falls back to ''.
-            item_id = str(item_id_raw) if (item_id_raw and item_id_raw != name) else ""
+            #
+            # Edge: Ubuntu sidecars emit synthetic ids like
+            # ``brew:wget`` or ``apt:upgrade:firefox`` that category-prefix
+            # the name — those don't disambiguate two packages, they're
+            # just a namespacing convention. Treat id-that-merely-ends-
+            # with-name as "no real discriminator" so post-run flush
+            # upserts the existing legacy ``(cat, name, "")`` row
+            # instead of creating a phantom sibling.
+            item_id = _normalize_item_id(item_id_raw, str(name))
 
             row = {
                 "category": category,
