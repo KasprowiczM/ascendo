@@ -222,13 +222,68 @@ try {
     $filterArray = $null
     if ($null -ne $itemFilterArray) { $filterArray = $itemFilterArray }
 
-    Write-AscendoStreamLine -Text ">>> Install-WindowsUpdateBatch starting (this may take several minutes)"
+    # Fast-path pre-check: enumerate pending updates BEFORE invoking
+    # Install-WindowsUpdateBatch. The PSWindowsUpdate Install-WindowsUpdate
+    # cmdlet wraps the Windows Update Agent COM API, which can hang for
+    # MANY minutes inside Search even when the result is empty. By calling
+    # Get-PendingWindowsUpdates first (a lighter read-only scan that uses
+    # the same WUA but doesn't pause on the install pipeline), we can
+    # short-circuit with "nothing to apply" in a few seconds instead of
+    # blocking the entire run pipeline.
+    #
+    # Concrete bug this prevents (run e5f0e0f1, 2026-05-12): check phase
+    # reported 4 KBs all already installed (0 pending); apply.ps1 still
+    # called Install-WindowsUpdateBatch, which wedged for so long the
+    # operator killed the dashboard. The orchestrator never got to
+    # subsequent categories (plugin, etc.) and no apply__windows_update.json
+    # was ever written. With this pre-check, the same scenario writes a
+    # success sidecar in under 20s and the run proceeds.
+    Write-AscendoStreamLine -Text ">>> Scanning pending Windows updates (pre-check)..."
+    $hbPre = Start-AscendoHeartbeat -IntervalSeconds 10 -Label "Windows Update pre-check scan"
+    $pending = @()
+    try {
+        $pending = @(Get-PendingWindowsUpdates -ErrorAction Stop)
+    } catch {
+        Add-SidecarMessage -Sidecar $sidecar -Level 'warn' `
+            -Text ("Get-PendingWindowsUpdates failed during apply pre-check: {0}" -f $_.Exception.Message)
+    } finally {
+        Stop-AscendoHeartbeat $hbPre
+    }
+
+    # Apply ItemFilter to the pending set so the empty-after-filter case
+    # also short-circuits cleanly.
+    if ($null -ne $filterArray -and $filterArray.Count -gt 0) {
+        $pending = @(
+            $pending | Where-Object {
+                $kb = if ($null -ne $_ -and $_.PSObject.Properties['KB']) { [string]$_.KB } else { '' }
+                $kb -and ($filterArray -contains $kb)
+            }
+        )
+    }
+
+    if ($pending.Count -eq 0) {
+        # Nothing pending (or nothing matched by ItemFilter). Emit success
+        # with zero items and exit. This is the canonical "no work to do"
+        # path now that the dashboard fires apply unconditionally after
+        # plan (rather than gating apply on plan having items).
+        $reason = if ($null -ne $filterArray -and $filterArray.Count -gt 0) {
+            ("No pending Windows updates matched the requested filter ({0})." -f ($filterArray -join ','))
+        } else {
+            'No pending Windows updates; nothing to install.'
+        }
+        Add-SidecarMessage -Sidecar $sidecar -Level 'info' -Text $reason
+        Write-AscendoStreamLine -Text ('>>> ' + $reason)
+        [void](Save-Sidecar -Sidecar $sidecar -OutputDir $OutputDir)
+        exit 0
+    }
+
+    Write-AscendoStreamLine -Text (">>> Install-WindowsUpdateBatch starting for {0} pending update(s) (this may take several minutes)" -f $pending.Count)
 
     # Heartbeat matters most here — some KB installs run 10+ minutes
     # with zero output while servicing stack processes the payload.
     # Mirror of Ubuntu Sesja 55 heartbeat. See Start-AscendoHeartbeat
     # in AscendoJson.psm1.
-    $hb = Start-AscendoHeartbeat -IntervalSeconds 10 -Label "Windows Update install"
+    $hb = Start-AscendoHeartbeat -IntervalSeconds 10 -Label ("Windows Update install ({0} update(s))" -f $pending.Count)
 
     $results = @()
     try {

@@ -889,9 +889,16 @@ function Start-AscendoHeartbeat {
 
     $stopFlag = [ref]$false
     $start    = [datetime]::UtcNow
+    # Capture the stream-log path on the parent's env so the runspace
+    # (which gets its own session-state) can mirror heartbeat lines into
+    # the file the dashboard's SSE consumer tails. Without this, the
+    # heartbeat went only to [Console]::Error which subprocess.run
+    # captures but doesn't forward, so the SPA Run Center showed zero
+    # liveness during long Install-WindowsUpdate / winget upgrade hangs.
+    $streamLog = $env:ASCENDO_STREAM_LOG
 
     $script = {
-        param($intervalSeconds, $label, $start, $stopFlag)
+        param($intervalSeconds, $label, $start, $stopFlag, $streamLog)
         while (-not $stopFlag.Value) {
             $elapsed = [int]([datetime]::UtcNow - $start).TotalSeconds
             if ($label) {
@@ -900,6 +907,17 @@ function Start-AscendoHeartbeat {
                 $msg = ">>> still running ${elapsed}s"
             }
             try { [Console]::Error.WriteLine($msg) } catch { }
+            if ($streamLog) {
+                try {
+                    # Direct append from the runspace — Write-AscendoStreamLine
+                    # isn't necessarily imported into the new session, and
+                    # Add-Content with -ErrorAction SilentlyContinue is safe
+                    # to call concurrently (file is opened/closed per
+                    # append; collisions just lose a tick which is fine).
+                    Add-Content -LiteralPath $streamLog -Value ($msg + "`n") `
+                        -Encoding utf8 -ErrorAction SilentlyContinue
+                } catch { }
+            }
             # Sleep in 200ms chunks so Stop-AscendoHeartbeat returns
             # promptly when StopFlag is flipped.
             $remainingMs = $intervalSeconds * 1000
@@ -921,7 +939,8 @@ function Start-AscendoHeartbeat {
             AddArgument($IntervalSeconds).
             AddArgument($Label).
             AddArgument($start).
-            AddArgument($stopFlag)
+            AddArgument($stopFlag).
+            AddArgument($streamLog)
         $ps.Runspace = $rs
         $handle = $ps.BeginInvoke()
     } catch {
