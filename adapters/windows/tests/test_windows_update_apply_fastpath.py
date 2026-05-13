@@ -181,6 +181,79 @@ def test_apply_pre_scan_heartbeat_lifecycle(apply_text: str) -> None:
     )
 
 
+def test_apply_normalises_hresult_array_to_scalar(apply_text: str) -> None:
+    """Regression test for the user-side post-merge failure on DP5520WMK
+    (2026-05-13 08:52-08:56 UTC). PSWindowsUpdate's Install-WindowsUpdate
+    sometimes returns result rows whose HResult property is an
+    Object[] (aggregated across Download / Install stages). The naive
+    `[int]$r.HResult` cast threw "Cannot convert the System.Object[]
+    value of type 'System.Object[]' to type 'System.Int32'" under
+    Set-StrictMode and aborted the whole apply phase.
+
+    Fix: normalise via `$hrRaw -is [System.Array]` check, take the
+    last element when an array, swallow the cast failure when scalar
+    isn't coercible to int.
+    """
+    # The normalisation block must reference both the [System.Array]
+    # type check and a `[int]` cast wrapped in try/catch so a future
+    # refactor can't silently regress.
+    assert "-is [System.Array]" in apply_text, (
+        "apply.ps1 must check `$hrRaw -is [System.Array]` before the "
+        "[int] cast on HResult; PSWindowsUpdate can return HResult as "
+        "Object[] for multi-stage operations."
+    )
+    # The cast must be wrapped in try/catch so a non-coercible value
+    # (e.g. an HRESULT struct from a different framework version) is
+    # swallowed rather than aborting the run.
+    pattern = re.compile(
+        r"try\s*\{\s*\$itemArgs\['ExitCode'\]\s*=\s*\[int\]\$hrRaw\s*\}\s*catch\s*\{\s*\}",
+        flags=re.DOTALL,
+    )
+    assert pattern.search(apply_text), (
+        "apply.ps1 must wrap the `[int]$hrRaw` cast on HResult in a "
+        "try/catch so a non-int payload doesn't abort the whole phase."
+    )
+
+
+def test_apply_normalises_rebootrequired_array_to_bool(apply_text: str) -> None:
+    """Sister regression to the HResult normalisation: $r.RebootRequired
+    can also come back as Object[] from PSWindowsUpdate when a single
+    update row aggregates multiple operation stages. Naive `if
+    ($r.RebootRequired)` evaluation works (PowerShell treats non-empty
+    Object[] as truthy) but using `[bool]$r.RebootRequired` later in
+    item construction throws the same Int32-conversion class of error.
+    Defensive normalisation via -or aggregation handles both.
+    """
+    assert "rebootForThisRow" in apply_text, (
+        "apply.ps1 must compute `$rebootForThisRow` via -or aggregation "
+        "of the (possibly Object[]) `$r.RebootRequired` property so the "
+        "downstream `if ($rebootForThisRow)` checks see a plain bool."
+    )
+
+
+def test_apply_outer_catch_captures_stack_trace(apply_text: str) -> None:
+    """The outer catch must record ScriptStackTrace + InvocationInfo
+    in the sidecar so future "Cannot convert X to Y"-class failures
+    can be triaged from the sidecar alone, not just by re-running with
+    `$ErrorActionPreference = 'Stop'` interactively.
+
+    Without this enrichment, the Sesja-59 user-side failure surfaced
+    only as "Phase failed: Cannot convert the System.Object[] value of
+    type 'System.Object[]' to type 'System.Int32'" — no line number,
+    no helper name, no clue where in 400 lines of apply.ps1 it threw.
+    """
+    assert "ScriptStackTrace" in apply_text, (
+        "Outer catch in apply.ps1 must capture `$_.ScriptStackTrace` "
+        "into the error sidecar message so the failing line is "
+        "diagnosable from the sidecar alone."
+    )
+    assert "InvocationInfo.PositionMessage" in apply_text, (
+        "Outer catch must also capture `$_.InvocationInfo.PositionMessage`"
+        " so the operator sees `at: <file>:<line> <code>` alongside the"
+        " stack trace."
+    )
+
+
 def test_apply_no_non_ascii_in_string_literals() -> None:
     """Sesja 58 lesson: PS5.1 reads .ps1 via CP1252, so em-dashes (U+2014)
     inside STRING LITERALS break the parser by mis-decoding to a quote

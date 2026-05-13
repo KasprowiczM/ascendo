@@ -352,11 +352,24 @@ try {
         if (-not $kb) { continue }
 
         $itemStatus = Convert-WUResultToItemStatus -Result ([string]$r.Result)
-        if ($r.RebootRequired) { $rebootRequired = $true }
+        # Mirror of the HResult defensive normalisation below: PSWindowsUpdate
+        # sometimes returns RebootRequired as an Object[] across multiple
+        # operation stages. Reduce to a single bool via -or aggregation
+        # (any stage requiring reboot means the whole row does).
+        $rebootForThisRow = $false
+        if ($null -ne $r.RebootRequired) {
+            $rr = $r.RebootRequired
+            if ($rr -is [System.Array]) {
+                foreach ($v in $rr) { if ($v) { $rebootForThisRow = $true; break } }
+            } else {
+                try { $rebootForThisRow = [bool]$rr } catch { $rebootForThisRow = $false }
+            }
+        }
+        if ($rebootForThisRow) { $rebootRequired = $true }
 
         $messages = @()
         $messages += @{ level = 'info'; text = ('PSWindowsUpdate result: ' + [string]$r.Result) }
-        if ($r.RebootRequired) {
+        if ($rebootForThisRow) {
             $messages += @{ level = 'warn'; text = 'Update installed but a system restart is required to complete it.' }
         }
         # Stderr tail on failed items — parity with macOS apply.sh.
@@ -386,7 +399,25 @@ try {
             DurationMs = $perItemMs
             Messages   = $messages
         }
-        if ($null -ne $r.HResult) { $itemArgs['ExitCode'] = [int]$r.HResult }
+        # HResult can come back as scalar Int32 (the common case) OR as
+        # Object[] when PSWindowsUpdate aggregates results from multiple
+        # operation stages (Search/Download/Install). The naive
+        # [int]$r.HResult cast throws "Cannot convert the System.Object[]
+        # value of type 'System.Object[]' to type 'System.Int32'" on
+        # those rows -- which under StrictMode propagates up to the
+        # outer catch and aborts the whole phase. Normalise defensively:
+        # if it's an array, take the LAST element (the final stage's
+        # HResult is the one the operator wants to see); ignore if the
+        # value isn't coercible to int.
+        if ($null -ne $r.HResult) {
+            $hrRaw = $r.HResult
+            if ($hrRaw -is [System.Array]) {
+                if ($hrRaw.Length -gt 0) { $hrRaw = $hrRaw[-1] } else { $hrRaw = $null }
+            }
+            if ($null -ne $hrRaw) {
+                try { $itemArgs['ExitCode'] = [int]$hrRaw } catch { }
+            }
+        }
         if ($null -ne $rollback)  { $itemArgs['Rollback'] = $rollback }
 
         [void](Add-SidecarItem @itemArgs)
@@ -407,8 +438,24 @@ try {
     exit 0
 } catch {
     $errMsg = $_.Exception.Message
+    # Capture the full PowerShell stack trace and the inner-most error
+    # invocation line so operators can pinpoint which line of apply.ps1
+    # / which AscendoPSWindowsUpdate helper raised. Without this, a
+    # plain "Phase failed: <message>" hides the line number entirely
+    # (the original Sesja 59 user-side bug took 30 minutes to triage
+    # because we had no stack trace).
+    $stackTrace = ''
+    try { $stackTrace = [string]$_.ScriptStackTrace } catch { }
+    $invocation = ''
+    try { $invocation = [string]$_.InvocationInfo.PositionMessage } catch { }
+    $errorType = ''
+    try { $errorType = $_.Exception.GetType().FullName } catch { }
+    $detailedMsg = "Phase failed: $errMsg"
+    if ($errorType)  { $detailedMsg += " [type=$errorType]" }
+    if ($invocation) { $detailedMsg += "`n  at: $invocation" }
+    if ($stackTrace) { $detailedMsg += "`n  stack:`n$stackTrace" }
     if ($null -ne $sidecar) {
-        try { Add-SidecarMessage -Sidecar $sidecar -Level 'error' -Text ("Phase failed: {0}" -f $errMsg) } catch { }
+        try { Add-SidecarMessage -Sidecar $sidecar -Level 'error' -Text $detailedMsg } catch { }
         try {
             Add-SidecarItem -Sidecar $sidecar -Id '__phase_error__' -Name 'apply phase error' `
                 -Category 'windows_update' -SourceType 'windows_update' -Status 'failed' | Out-Null
@@ -416,11 +463,12 @@ try {
         try {
             [void](Save-Sidecar -Sidecar $sidecar -OutputDir $OutputDir)
         } catch {
-            try { Write-FailureSidecarSynthetic -RunId $RunId -OutputDir $OutputDir -ErrorMessage $errMsg } catch { }
+            try { Write-FailureSidecarSynthetic -RunId $RunId -OutputDir $OutputDir -ErrorMessage $detailedMsg } catch { }
         }
     } else {
-        try { Write-FailureSidecarSynthetic -RunId $RunId -OutputDir $OutputDir -ErrorMessage $errMsg } catch { }
+        try { Write-FailureSidecarSynthetic -RunId $RunId -OutputDir $OutputDir -ErrorMessage $detailedMsg } catch { }
     }
     [Console]::Error.WriteLine("apply__windows_update.ps1 FAILED: $errMsg")
+    if ($invocation) { [Console]::Error.WriteLine("  at: $invocation") }
     exit 1
 }
