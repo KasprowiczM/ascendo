@@ -75,13 +75,18 @@ url = "https://brave.com/download-nightly/"
 slug = "obsidian"
 display_name = "Obsidian"
 handler = "github_release"
+tier_a_apply = true
 windows_uninstall_key = "Obsidian"
-notes = "GitHub releases at obsidianmd/obsidian-releases. Asset_pattern matches the canonical Obsidian-X.Y.Z.exe (NSIS-built installer). tag_name on the release is the bare version (e.g. `v1.12.7`); github_release.ps1 strips the leading `v` before comparing to DisplayVersion."
+notes = "GitHub releases at obsidianmd/obsidian-releases. Asset_pattern matches the canonical Obsidian-X.Y.Z.exe (NSIS-built installer). tag_name on the release is the bare version (e.g. `v1.12.7`); github_release.ps1 strips the leading `v` before comparing to DisplayVersion. Tier-A apply: NSIS /S silent install."
 
 [app.github_release]
 repo = "obsidianmd/obsidian-releases"
 asset_pattern = "^Obsidian-[0-9.]+\\.exe$"
 http_timeout_s = 8
+expected_publisher = "Obsidian"
+silent_args = ["/S"]
+installer_kind = "exe"
+kill_processes = ["Obsidian"]
 
 [[app]]
 slug = "notion"
@@ -135,13 +140,18 @@ url = "https://zoom.us/download"
 slug = "obs-studio"
 display_name = "OBS Studio"
 handler = "github_release"
+tier_a_apply = true
 windows_uninstall_key = "OBS Studio"
-notes = "GitHub releases at obsproject/obs-studio. Asset_pattern matches the Windows x64 NSIS installer (e.g. OBS-Studio-32.1.2-Windows-x64-Installer.exe). tag_name is bare version (e.g. `32.1.2`); no leading `v`."
+notes = "GitHub releases at obsproject/obs-studio. Asset_pattern matches the Windows x64 NSIS installer (e.g. OBS-Studio-32.1.2-Windows-x64-Installer.exe). tag_name is bare version (e.g. `32.1.2`); no leading `v`. Tier-A apply: NSIS /S silent install. Kills obs64, obs32, obs-streaming-output."
 
 [app.github_release]
 repo = "obsproject/obs-studio"
 asset_pattern = "^OBS-Studio-[0-9.]+-Windows-x64-Installer\\.exe$"
 http_timeout_s = 8
+expected_publisher = "Open Broadcaster Software"
+silent_args = ["/S"]
+installer_kind = "exe"
+kill_processes = ["obs64", "obs32"]
 
 # ═════════════════════════════ Dev tools (builtin fallback) ═════════════════════════════
 

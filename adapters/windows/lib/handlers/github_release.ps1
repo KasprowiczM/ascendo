@@ -706,6 +706,32 @@ function Invoke-GitHubReleaseApplyReal {
     $assetName = $picked.AssetName
     $tag = $picked.Tag
 
+    # Capture pre-install version BEFORE we touch anything. This is the
+    # baseline we compare against post-install to detect fake-success:
+    # an installer that returns exit 0 without actually replacing the
+    # binary (silent-skip on running process, partial download, MSI
+    # rollback on ICE warning, Squirrel auto-rollback) leaves the
+    # registry DisplayVersion unchanged. Without this comparison we'd
+    # emit ``Success=true`` and the operator sees no upgrade despite
+    # the green checkmark.
+    $uninstallKey = ''
+    $ukProp = $Config.PSObject.Properties['windows_uninstall_key']
+    if ($null -ne $ukProp -and $ukProp.Value) { $uninstallKey = [string]$ukProp.Value }
+    $dnp = $null
+    $dnpProp = $cfg.PSObject.Properties['display_name_pattern']
+    if ($null -ne $dnpProp -and $dnpProp.Value) { $dnp = [string]$dnpProp.Value }
+    $preInstallVersion = $null
+    try {
+        $preInstallVersion = Get-WebReinstalledVersion -UninstallKey $uninstallKey `
+            -DisplayNamePattern $dnp -Slug $Slug
+    } catch {
+        # First-install case (not previously on disk) or registry read
+        # failure -- both fall through to post-install readback as the
+        # only truth source. No-change detection only fires when we had
+        # a baseline to compare against.
+        $preInstallVersion = $null
+    }
+
     # Optional process kill before install (some apps lock files in
     # Program Files; the installer fails or prompts otherwise).
     $killList = @()
@@ -799,15 +825,40 @@ function Invoke-GitHubReleaseApplyReal {
         }
     }
 
-    # 4) Readback installed version from registry
-    $uninstallKey = ''
-    $ukProp = $Config.PSObject.Properties['windows_uninstall_key']
-    if ($null -ne $ukProp -and $ukProp.Value) { $uninstallKey = [string]$ukProp.Value }
-    $dnp = $null
-    $dnpProp = $cfg.PSObject.Properties['display_name_pattern']
-    if ($null -ne $dnpProp -and $dnpProp.Value) { $dnp = [string]$dnpProp.Value }
+    # 4) Readback installed version from registry. The uninstall key
+    # was captured at the start of the function (line ~705) so we can
+    # also compare against the pre-install reading.
     $newVersion = Get-WebReinstalledVersion -UninstallKey $uninstallKey `
         -DisplayNamePattern $dnp -Slug $Slug
+
+    # 5) Fake-success detection. The installer reported a non-error
+    # exit code, but the registry's DisplayVersion is unchanged from
+    # what we read pre-install. That's a lie (Squirrel auto-rollback,
+    # silent-skip on running process, MSI ICE warning, etc.). Surface
+    # as Success=false with an explicit diagnostic so verify won't
+    # paper over it. Skipped when:
+    #   * we had no pre-install baseline (first install case)
+    #   * the new readback is null (registry quirk; trust exit code)
+    #   * the registry DisplayVersion legitimately equals the tag we
+    #     just installed (a successful re-install of the same version)
+    if ($preInstallVersion -and $newVersion -and
+        ($newVersion -eq $preInstallVersion) -and
+        ($newVersion -ne $tag) -and
+        ($newVersion -ne $tag.TrimStart('v', 'V'))) {
+        $msg = ("installer reported exit {0} but registry " +
+                "DisplayVersion did not change from '{1}' (expected '{2}'). " +
+                "Treating as fake-success.") -f
+                $runResult.ExitCode, $preInstallVersion, $tag
+        return @{
+            Success          = $false
+            InstalledVersion = $newVersion
+            ExitCode         = $runResult.ExitCode
+            ErrorMessage     = $msg
+            RebootRequired   = $runResult.RebootRequired
+            DownloadPath     = $downloadPath
+            UacCancelled     = $false
+        }
+    }
 
     return @{
         Success          = $true

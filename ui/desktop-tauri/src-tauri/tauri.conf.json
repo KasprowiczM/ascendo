@@ -17,7 +17,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "// targets": "MSI + NSIS Windows targets retired in Sesja 64 (public dist is iwr install.ps1 | iex). Tauri shell still builds locally as .app for contributor dev; explicit allow-list excludes msi/nsis. macOS .dmg retired in earlier session per same rationale.",
+    "targets": ["app", "deb", "rpm", "appimage"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -39,23 +40,7 @@
       "bin-staging/**/*"
     ],
     "windows": {
-      "digestAlgorithm": "sha256",
-      "wix": {
-        "language": ["en-US"],
-        "upgradeCode": "5C9E0E4F-5A1A-4F7C-B3F6-2E2C2C5B5C5C",
-        "bannerPath": "installer-assets/installer-banner-wix.bmp",
-        "dialogImagePath": "installer-assets/installer-sidebar-wix.bmp"
-      },
-      "nsis": {
-        "displayLanguageSelector": false,
-        "languages": ["English"],
-        "installMode": "perMachine",
-        "installerIcon": "icons/icon.ico",
-        "headerImage": "installer-assets/installer-banner-nsis.bmp",
-        "sidebarImage": "installer-assets/installer-sidebar-nsis.bmp",
-        "compression": "lzma",
-        "installerHooks": "installer-assets/nsis-installer-hooks.nsh"
-      }
+      "digestAlgorithm": "sha256"
     }
   }
 }

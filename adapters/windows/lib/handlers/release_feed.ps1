@@ -426,6 +426,26 @@ function Invoke-ReleaseFeedApplyReal {
         }
     }
 
+    # Capture pre-install DisplayVersion BEFORE we touch anything --
+    # used post-install to detect fake-success (installer reports
+    # exit 0 without actually replacing the binary). See the symmetric
+    # comment in github_release.ps1 for full rationale.
+    $uninstallKey = ''
+    $ukPropEarly = $Config.PSObject.Properties['windows_uninstall_key']
+    if ($null -ne $ukPropEarly -and $ukPropEarly.Value) {
+        $uninstallKey = [string]$ukPropEarly.Value
+    }
+    $dnp = $null
+    $dnpProp = $cfg.PSObject.Properties['display_name_pattern']
+    if ($null -ne $dnpProp -and $dnpProp.Value) { $dnp = [string]$dnpProp.Value }
+    $preInstallVersion = $null
+    try {
+        $preInstallVersion = Get-WebReinstalledVersion -UninstallKey $uninstallKey `
+            -DisplayNamePattern $dnp -Slug $Slug
+    } catch {
+        $preInstallVersion = $null
+    }
+
     # Optional process kill before install.
     $killList = @()
     $killProp = $cfg.PSObject.Properties['kill_processes']
@@ -519,15 +539,32 @@ function Invoke-ReleaseFeedApplyReal {
         }
     }
 
-    # 4) Readback installed version
-    $uninstallKey = ''
-    $ukProp = $Config.PSObject.Properties['windows_uninstall_key']
-    if ($null -ne $ukProp -and $ukProp.Value) { $uninstallKey = [string]$ukProp.Value }
-    $dnp = $null
-    $dnpProp = $cfg.PSObject.Properties['display_name_pattern']
-    if ($null -ne $dnpProp -and $dnpProp.Value) { $dnp = [string]$dnpProp.Value }
+    # 4) Readback installed version. The uninstall key was captured at
+    # the start of the function for the pre-install baseline.
     $newVersion = Get-WebReinstalledVersion -UninstallKey $uninstallKey `
         -DisplayNamePattern $dnp -Slug $Slug
+
+    # 5) Fake-success detection (mirror of github_release.ps1). If the
+    # installer reported a non-error exit code but the registry's
+    # DisplayVersion is unchanged AND doesn't already match the
+    # candidate we were trying to install, treat as fake-success.
+    if ($preInstallVersion -and $newVersion -and
+        ($newVersion -eq $preInstallVersion) -and
+        ($newVersion -ne $candidate)) {
+        $msg = ("installer reported exit {0} but registry " +
+                "DisplayVersion did not change from '{1}' (expected '{2}'). " +
+                "Treating as fake-success.") -f
+                $runResult.ExitCode, $preInstallVersion, $candidate
+        return @{
+            Success          = $false
+            InstalledVersion = $newVersion
+            ExitCode         = $runResult.ExitCode
+            ErrorMessage     = $msg
+            RebootRequired   = $runResult.RebootRequired
+            DownloadPath     = $downloadPath
+            UacCancelled     = $false
+        }
+    }
 
     return @{
         Success          = $true
