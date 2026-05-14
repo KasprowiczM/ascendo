@@ -929,6 +929,7 @@ window.I18N = {
     },
     settings: {
       title:           "Settings",
+      saved_flash:     "Saved ✓",
       help_summary: "Configure defaults, appearance, scheduler, AI, backup, and Windows service for your Ascendo installation.",
       help_details_label: "What settings can I configure? Click to expand",
       help_li1_b: "Defaults section", help_li1_t: "Default profile for quick actions, pre-apply snapshots, desktop notifications.",
@@ -2303,6 +2304,7 @@ window.I18N = {
     },
     settings: {
       title:           "Ustawienia",
+      saved_flash:     "Zapisano ✓",
       help_summary: "Konfiguruj domyślne ustawienia, wygląd, scheduler, AI, backup i Windows service dla Ascendo.",
       help_details_label: "Jakie ustawienia mogę konfigurować? Kliknij aby rozwinąć",
       help_li1_b: "Sekcja Domyślne", help_li1_t: "Domyślny profil, snapshoty przed apply, powiadomienia desktopowe.",

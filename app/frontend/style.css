@@ -2126,3 +2126,25 @@ button.is-refreshing::before {
     width: auto;
     min-width: 140px;
 }
+
+/* Inline "Saved ✓" flash next to the Save settings button. Fades in
+   instantly on submit success, holds for ~2.5 s, fades out. */
+.settings-saved-flash {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: var(--radius-pill);
+    background: var(--ok-bg);
+    color: var(--ok);
+    font: 12px var(--font-sans);
+    font-weight: var(--fw-medium);
+    letter-spacing: 0.01em;
+    opacity: 0;
+    transform: translateY(-1px);
+    transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+    pointer-events: none;
+}
+.settings-saved-flash.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}

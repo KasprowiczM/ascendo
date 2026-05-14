@@ -4355,6 +4355,7 @@ if (settingsForm) {
   settingsForm.addEventListener("submit", async e => {
     e.preventDefault();
     const out = $("#settings-output");
+    const flash = $("#settings-saved-flash");
     try {
       const r = await fetch("/settings", {
         method: "PUT",
@@ -4363,6 +4364,15 @@ if (settingsForm) {
       });
       const j = await r.json();
       out.textContent = "saved:\n" + JSON.stringify(j, null, 2);
+      if (flash) {
+        flash.hidden = false;
+        flash.classList.add("is-visible");
+        clearTimeout(flash._t);
+        flash._t = setTimeout(() => {
+          flash.classList.remove("is-visible");
+          setTimeout(() => { flash.hidden = true; }, 400);
+        }, 2500);
+      }
     } catch (err) { out.textContent = String(err); }
   });
 }
