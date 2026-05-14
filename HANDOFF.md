@@ -6,6 +6,101 @@
 
 ---
 
+## Sesja 71 (2026-05-14) — v0.5.0: AI Tools chat Phase B + C end-to-end
+
+Continuation of Sesja 70 (Phase A — Tasks 1-13 landed as commit
+`2859da1`). Phase B (Tasks 14-18) + Phase C (Tasks 19-26) executed
+inline serially per operator instruction, no subagents (Sesja 70
+documented why subagents thrash on this repo's auto-loaded docs).
+13 commits on top of Phase A. End state: dashboard endpoints +
+SSE streaming + SPA tab + persistence + i18n parity guard +
+validate stages + docs + tag `v0.5.0`.
+
+### Phase B — dashboard + SPA wiring (Tasks 14-18)
+
+| Commit | Task | What |
+|--------|------|------|
+| `7952c01` | T14 | `core/ascendo/ai/prompts.py` + `prompts/library.toml` — 10 starter entries × EN+PL across 3 groups (diagnostics / setup / customize); macOS-only `enable_touch_id_sudo` entry gated via `platforms = ["macos"]`. `system_prompt(locale)` returns EN or PL frame referencing the 12-entry action whitelist. 3 tests in `test_ai_context_injector.py`. |
+| `f79a2d1` | T15 | `core/ascendo/ai/streaming.py::run_turn()` — single `AsyncIterator` orchestration wiring Backend + ChatsDB + TurnRegistry + `parse_actions`. Persists user message → loads history → drives `backend.stream()` → buffers tokens → strips action fences post-hoc + persists clean prose with structured actions on the dedicated column. Boundary handler converts exceptions to terminal error+done chunks. 4 tests. |
+| `9a8da3e` | T16 | `core/ascendo/dashboard/routes/chat.py` — 10 routes mounted at `/ai/chat/*` (backends / library / 4 conversation CRUD / POST chat / SSE stream / cancel / action). Producer task drains `run_turn` chunks onto an `asyncio.Queue` keyed by turn_id; SSE handler relays each chunk as `event: <type>\ndata: <json>` line. ChatsDB + TurnRegistry lazy-init on `app.state`. 12 tests. Wired into `dashboard/app.py` lifespan via `app.include_router(chat_router)`. |
+| `111dbb5` | T17 | SPA — 3-column shell injected inside `#view-suggest` (URL path preserved per spec §10.2). Left rail = conversations, middle = chat thread + input row, right rail = prompt library. `aitools.*` JS namespace (~270 LOC) mirrors Schedule tab pattern: lazy `init()` on view-switch, DOM-safe `createElement` + `textContent`, SSE consumer accumulates tokens into pending `.aitools-msg-pending` div, swaps caret on `done`. 24-key `aitools.*` i18n namespace × EN+PL parity. Full CSS for grid + chips + rails (narrow-viewport stack at <1100px). Sesja 67 cards + AI wizard retained below the new shell. |
+| `4ecea61` | T18 | 5 contract tests pinning the dispatcher proxy plan shape for the rest of `ALLOWED_ACTIONS` (`install_schedule`, `open_view`, `refresh_inventory`, `run_apply`) + slug-regex rejection on bad input. |
+
+### Phase C — polish + docs + tag (Tasks 19-26)
+
+| Commit | Task | What |
+|--------|------|------|
+| `6214928` | T19 | **Pre-fix bug**: `post_chat` returned a turn_id that didn't match the one `run_turn()` registered internally → `POST /ai/chat/cancel/{turn_id}` always 404'd. Threaded the same `TurnState` from chat route → `run_turn()` via new `state=` kwarg. `stream_turn` now looks up the state on disconnect + sets `cancel_event` so backend streams stop between tokens. +3 tests in `test_ai_chat_sse_disconnect.py`. Also caught a `BackendResolver.resolve` monkey-patch leak (now fixed via `monkeypatch.setattr` instead of class-level swap). |
+| `d9b4363` | T20 | Incremental `action_proposal` SSE events during streaming. After every token, `streaming.py` re-runs `parse_actions` on the buffer + yields any newly-closed fence as a `Chunk(type="action_proposal")`. `emitted_actions` counter avoids re-emitting the same fence on subsequent tokens. SPA's `aitools._streamTurn` adds an `action_proposal` listener that appends a chip to the pending message div the moment the fence closes. +2 tests. |
+| `eb81318` | T21 | `scripts/check-i18n-parity.py` uses node(1) to evaluate `app/frontend/i18n.js` as a JS object literal + flattens en/pl sub-trees into dotted leaf-path sets. Exits 0 when matched. Current state: **942 EN keys == 942 PL keys**. +2 tests in `test_i18n_parity.py` (one drives the script, one targets the aitools.* namespace specifically). |
+| `f8904a4` | T22 | `bin/validate-{macos,ubuntu}.sh` + `bin/validate-windows.ps1` each gain Stage 14 (8 sub-steps): prompt library load + EN+PL field check, action whitelist size lock (12), backend resolver names (4 CLIs), ChatsDB write + 0600 perms, i18n parity script, and three dashboard endpoints (backends / library / conversations round-trip). Uses `DASHBOARD_PORT+1` so it doesn't collide with Stages 6-13. |
+| `98acc4d` | T23 | QUICKSTART docs — new section in each of MACOS / WINDOWS / LINUX. Backend resolution order, 10-prompt library grouping, action chip flow, local-only chat history posture, copy-paste curl smoke commands, pitfall table. Renumbered existing sections (e.g. macOS §14 → §15). |
+| this commit | T24 | This entry + PLAN.md milestone header refresh. |
+| (next) | T25-26 | Full-suite regression + tag `v0.5.0`. |
+
+### Coordination bugs caught + fixed during Phase C
+
+1. **turn_id drift** (Task 19) — the cancel/disconnect endpoints couldn't reach the producer because chat route + `run_turn` each generated their own UUID. Threaded the same TurnState through. Wasn't caught in Phase B test coverage because no test exercised both `POST /ai/chat` + `POST /cancel/{turn_id}` in the same flow.
+
+2. **Monkey-patch leak** (Task 19) — the disconnect tests' `_install_fake_backend` originally did a class-level `BackendResolver.resolve = ...` which permanently mutated the class for the rest of the test session. Caught when `test_ai_cli_drivers` started failing on subsequent runs. Fixed with `monkeypatch.setattr` so teardown restores the original.
+
+3. **i18n parser fragility** (Task 21) — the first cut of `check-i18n-parity.py` used a hand-rolled regex parser that fell over on JS comments + template strings + nested structures (reported 101 false positives on first run). Pivoted to node(1) for the evaluation step.
+
+4. **HTML section numbering collision** (Task 23) — MACOS_QUICKSTART already had §14 "One-liner sanity check"; the plan said §14 for the new content. Renumbered the existing one to §15 and inserted the new §14.
+
+### Test counts
+
+| Suite | After Phase A | After Phase B | After Phase C |
+|-------|---------------|---------------|---------------|
+| AI contract (`test_ai_*.py`) | 94 | 109 | 130 |
+| Streaming-specific | 0 | 4 | 6 |
+| Chat endpoints | 0 | 12 | 17 |
+| SSE disconnect | 0 | 0 | 3 |
+| i18n parity | 0 | 0 | 2 |
+| **Total AI suite** | **94** | **125** | **138** |
+
+Full contract suite: 455 passing, 3 pre-existing unrelated failures
+unchanged (apply_report grouping + 2 scheduler-stub overlap).
+
+### Carry-forward / known limitations
+
+- **Real LLM end-to-end not exercised in tests.** The fake-claude /
+  fake-gemini / fake-codex / fake-opencode fixtures from Phase A test
+  the CLI driver shape; the chat route tests use Python `FakeBackend`
+  instances. Real CLI-backed turns require an installed CLI on PATH +
+  authenticated session. Stage 14 of the validate scripts covers the
+  HTTP surface but won't actually stream a model response in CI.
+- **No SSE retry semantics.** The SPA's `EventSource` retries on
+  network errors by default but the server doesn't track a
+  last-event-id. If the client reconnects mid-turn, it re-subscribes
+  but won't replay missed tokens. Acceptable for v1; revisit when
+  apply phase needs the same hardening.
+- **`/ai/chat/status/{turn_id}` not exposed.** The route handler
+  returns `stream_url` + `cancel_url`; status polling lives as a
+  spec idea but no consumer needs it today (SPA reads progress from
+  the SSE stream).
+- **Section renumbering risk.** §14 of MACOS_QUICKSTART now bumps
+  the expected `validate-macos.sh` result from 44/44 to **52/52**
+  (Task 22 added 8 sub-steps). The number is hard-coded in the
+  doc; if Stage 14 gains or loses sub-steps later, update both.
+
+### How to resume from this Sesja
+
+Phase B + C is complete. v0.5.0 ready to tag (Task 26). Any next
+session can:
+
+- Land the `v0.5.0` tag if not done yet: `git tag -a v0.5.0 -m 'AI Tools chat end-to-end (Sesja 70-71)' && git push --tags`
+- Verify on real macOS / Windows / Linux hardware by running the
+  Stage 14 sub-steps in each `bin/validate-*.sh` / `validate-*.ps1`
+- Pick up real-LLM smoke testing: install one of claude / gemini /
+  codex / opencode CLIs and run `ascendo web start`, click the AI
+  Tools tab, send a starter prompt
+- Extend the prompt library (`core/ascendo/ai/prompts/library.toml`)
+  with more entries — each new entry just needs EN+PL title +
+  starter_prompt + context_tags
+
+---
+
 ## Sesja 70 (2026-05-14) — AI Tools chat foundation: spec + plan + Phase A landed
 
 Operator request (verbatim): *"tell me if i would like to implement

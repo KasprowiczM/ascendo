@@ -1,16 +1,34 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-14 (sesja 70) — **AI Tools chat — Phase A
+> Last updated: 2026-05-14 (sesja 71) — **v0.5.0 — AI Tools chat
+> end-to-end.** Phase B (Tasks 14-18) + Phase C (Tasks 19-26) landed
+> on main as 13 commits on top of the Phase A foundation (Sesja 70).
+> Net surface: 10 dashboard endpoints under `/ai/chat/*` + SSE relay
+> with mid-stream `action_proposal` events + cancel/disconnect that
+> both reach the same TurnState; SPA grew a 3-column AI Tools tab
+> inside `#view-suggest` (rename only — URL path stays for external
+> bookmarks per spec §10.2); ChatsDB persistence at
+> `~/.ascendo/chats.db` mode 0600 in dev-sync HARD_EXCLUDE; 10-entry
+> shipped prompt library with EN+PL parity (942/942 keys total);
+> 12-entry action whitelist proxied through `dispatch_action()` with
+> Pydantic body validation; `scripts/check-i18n-parity.py` +
+> `validate-{macos,windows,ubuntu}.sh` Stage 14 (8 sub-steps each)
+> lock the chat surface against regression. **138 AI contract tests
+> pass** (was 94/94 after Phase A; +44 across Phase B/C). Full
+> contract suite: 455 passing, same 3 pre-existing unrelated
+> failures (apply_report grouping + 2 scheduler-stub overlap).
+> Spec at `docs/superpowers/specs/2026-05-14-ai-tools-chat-design.md`,
+> plan at `docs/superpowers/plans/2026-05-14-ai-tools-chat.md`. See
+> HANDOFF.md Sesja 71 for full commit table + carry-forward.
+>
+> Previous milestone (sesja 70) — **AI Tools chat — Phase A
 > foundation merged.** Spec, plan, and Tasks 1-13 of 26 done. New
 > `core/ascendo/ai/` package with: Backend ABC + 5 drivers (claude /
 > gemini / codex / opencode + API-key fallback) + BackendResolver +
 > ChatsDB SQLite v1 + context injector with 10 resolvers + fence
 > parser with 12-entry action whitelist. 94/94 tests passing, zero
-> regressions, zero dashboard surface yet. Spec at
-> `docs/superpowers/specs/2026-05-14-ai-tools-chat-design.md`, plan at
-> `docs/superpowers/plans/2026-05-14-ai-tools-chat.md`. Next session
-> picks up Phase B at Task 14 (prompts.py + library.toml → routes →
-> SPA). See HANDOFF.md Sesja 70 for full commit table + carry-forward.
+> regressions, zero dashboard surface yet. See HANDOFF.md Sesja 70
+> for full commit table + carry-forward.
 >
 > Previous milestone (sesja 69) — **macOS parity pass.**
 > Operator: *"bring this macOS version of ascendo app up to date with
