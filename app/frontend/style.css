@@ -1874,6 +1874,25 @@ button.is-refreshing::before {
     letter-spacing: 0.1em;
     color: var(--fg-muted);
     margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.aitools-msg-badge {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--bg-elev);
+    color: var(--fg-muted);
+    border: 1px solid var(--border);
+}
+.aitools-msg-failed .aitools-msg-body {
+    border-left: 3px solid var(--err);
+    color: var(--err);
+    background: transparent;
 }
 
 .aitools-msg-body {

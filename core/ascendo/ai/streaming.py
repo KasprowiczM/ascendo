@@ -114,7 +114,7 @@ async def run_turn(
                 error = chunk.error
                 final_status = "error"
                 yield chunk
-            elif chunk.type in ("action_proposal", "context_trimmed"):
+            elif chunk.type in ("action_proposal", "context_trimmed", "meta"):
                 yield chunk
     except Exception as exc:  # noqa: BLE001 - boundary handler
         error = str(exc)

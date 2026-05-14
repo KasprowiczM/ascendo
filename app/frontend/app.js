@@ -5474,7 +5474,7 @@ window.ui = ui;
       while (thread.firstChild) thread.removeChild(thread.firstChild);
     },
 
-    appendMessage(role, content, actions) {
+    appendMessage(role, content, actions, modelBadge) {
       const thread = $ait("aitools-thread");
       if (!thread) return null;
       // Strip the empty-state placeholder on first real message.
@@ -5483,10 +5483,19 @@ window.ui = ui;
 
       const div = document.createElement("div");
       div.className = `aitools-msg aitools-msg-${role}`;
+      if (modelBadge) div.dataset.modelBadge = modelBadge;
 
       const roleLine = document.createElement("div");
       roleLine.className = "aitools-msg-role";
-      roleLine.textContent = t(`aitools.role.${role}`, role);
+      const roleLabel = document.createElement("span");
+      roleLabel.textContent = t(`aitools.role.${role}`, role);
+      roleLine.appendChild(roleLabel);
+      if (role === "assistant" && modelBadge) {
+        const badge = document.createElement("span");
+        badge.className = "aitools-msg-badge";
+        badge.textContent = modelBadge;
+        roleLine.appendChild(badge);
+      }
       div.appendChild(roleLine);
 
       const body = document.createElement("div");
@@ -5592,17 +5601,24 @@ window.ui = ui;
         }
         const j = await r.json();
         this.state.pendingTurnId = j.turn_id;
-        this._streamTurn(j.stream_url);
+        // Compose the "Claude Code CLI · opus-4-7" pill the SPA shows
+        // next to each assistant reply. Some drivers learn the model
+        // only after the first stream event — in that case backend is
+        // populated but model is empty and we show just the backend.
+        const parts = [];
+        if (j.backend) parts.push(j.backend);
+        if (j.model) parts.push(j.model);
+        this._streamTurn(j.stream_url, parts.join(" · "));
       } catch (e) {
         this.appendMessage("system", t("aitools.error_send"));
       }
     },
 
-    _streamTurn(url) {
+    _streamTurn(url, modelBadge) {
       if (this.state.sse) {
         try { this.state.sse.close(); } catch {}
       }
-      const pending = this.appendMessage("assistant", "");
+      const pending = this.appendMessage("assistant", "", null, modelBadge);
       if (pending) pending.classList.add("aitools-msg-pending");
       this.state.pendingMsgEl = pending;
       let buf = "";
@@ -5625,6 +5641,28 @@ window.ui = ui;
         } catch {}
       });
 
+      // When the driver learns the real model id mid-stream (e.g. claude
+      // CLI's system-init event exposes "claude-opus-4-7[1m]"), refresh
+      // the badge that was rendered with the constructor fallback.
+      sse.addEventListener("meta", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (!pending) return;
+          const role = pending.querySelector(".aitools-msg-role");
+          if (!role) return;
+          let badge = role.querySelector(".aitools-msg-badge");
+          if (!badge) {
+            badge = document.createElement("span");
+            badge.className = "aitools-msg-badge";
+            role.appendChild(badge);
+          }
+          const parts = [];
+          if (data.backend) parts.push(data.backend);
+          if (data.model) parts.push(data.model);
+          if (parts.length) badge.textContent = parts.join(" · ");
+        } catch {}
+      });
+
       // Task 20: action chips appear DURING streaming, not only after
       // the persisted message lands. Re-opening the conversation later
       // still renders identical chips from the actions column - this
@@ -5643,25 +5681,78 @@ window.ui = ui;
         } catch {}
       });
 
-      sse.addEventListener("done", () => {
+      // Surface backend-side error chunks (e.g. claude CLI not authed,
+      // CLI hung, model 5xx) in the chat thread instead of leaving an
+      // empty assistant bubble. Server emits these as named
+      // `event: error\ndata: {...}` lines; the EventSource API delivers
+      // both those AND transport-level errors through the same
+      // listener, so we branch on whether `e.data` is set.
+      let lastError = null;
+      sse.addEventListener("error", (e) => {
+        if (e.data) {
+          try {
+            const data = JSON.parse(e.data);
+            lastError = data.error || "backend error";
+          } catch {
+            lastError = "backend error";
+          }
+          if (pending) {
+            const body = pending.querySelector(".aitools-msg-body");
+            if (body) {
+              body.innerHTML = renderMarkdown(
+                "_" + (lastError || "Backend error") + "_",
+              );
+            }
+            pending.classList.remove("aitools-msg-pending");
+            pending.classList.add("aitools-msg-failed");
+          }
+        } else {
+          // Transport-level (connection dropped). If we never saw any
+          // content, mark the bubble as failed so the user knows.
+          if (pending && !buf) {
+            const body = pending.querySelector(".aitools-msg-body");
+            if (body) {
+              body.innerHTML = renderMarkdown(
+                "_" + t("aitools.error_stream", "Stream interrupted.") + "_",
+              );
+            }
+            pending.classList.add("aitools-msg-failed");
+          }
+          sse.close();
+          this.state.sse = null;
+          if (pending && pending.parentNode) {
+            pending.classList.remove("aitools-msg-pending");
+          }
+        }
+      });
+
+      sse.addEventListener("done", (e) => {
         if (pending) pending.classList.remove("aitools-msg-pending");
+        let status = null;
+        try { status = (JSON.parse(e.data || "{}")).status || null; } catch {}
+        if (status === "error" && !lastError && pending && !buf) {
+          // Backend finished with status=error but never sent an explicit
+          // error chunk we could parse. Show a generic message so the
+          // user sees SOMETHING in the bubble.
+          const body = pending.querySelector(".aitools-msg-body");
+          if (body) {
+            body.innerHTML = renderMarkdown(
+              "_" + t("aitools.error_stream", "Backend returned no content.") + "_",
+            );
+          }
+          pending.classList.add("aitools-msg-failed");
+        }
         sse.close();
         this.state.sse = null;
         this.state.pendingTurnId = null;
         // Refresh conversation list to pick up auto-title.
         this.loadConversations();
         // Re-open the active conversation so action chips render
-        // (they live on the persisted assistant message).
-        if (this.state.conversationId) {
+        // (they live on the persisted assistant message). Skip when the
+        // turn failed — re-opening would replace our error bubble with
+        // an empty one (the assistant message persisted is empty).
+        if (this.state.conversationId && status !== "error") {
           this.openConversation(this.state.conversationId);
-        }
-      });
-
-      sse.addEventListener("error", () => {
-        sse.close();
-        this.state.sse = null;
-        if (pending && pending.parentNode) {
-          pending.classList.remove("aitools-msg-pending");
         }
       });
     },

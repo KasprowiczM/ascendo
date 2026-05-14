@@ -27,13 +27,21 @@ class Chunk(BaseModel):
     """One streaming chunk produced by a backend during a turn."""
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal["token", "action_proposal", "context_trimmed", "done", "error"]
+    type: Literal[
+        "token", "action_proposal", "context_trimmed", "done", "error", "meta",
+    ]
     content: str | None = None
     action: dict | None = None
     status: Literal["success", "cancelled", "error"] | None = None
     error: str | None = None
     tokens_in: int | None = None
     tokens_out: int | None = None
+    # `meta` events carry backend/model identification once the driver
+    # has observed it (some CLIs only reveal the active model on the
+    # first event of a stream). The SPA listens for these and refreshes
+    # the model badge in the pending assistant bubble.
+    backend: str | None = None
+    model: str | None = None
 
 
 class Backend(ABC):

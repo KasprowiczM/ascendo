@@ -638,7 +638,41 @@
               data-i18n="aitools.no_backend">No backend configured</span>
       </h2>
 
-      <!-- 3-column AI Tools shell (Sesja 70 Phase B) -->
+      <!-- Quick suggestions (Sesja 67 rule + AI cards) — now sits ABOVE
+           the chat shell so users see actionable insights immediately
+           without scrolling past the chat thread (Sesja 71c reorder). -->
+      <h3 style="margin-top:0.5rem" data-i18n="aitools.quick_suggestions_h">Quick suggestions</h3>
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+        <span class="dim" data-i18n="suggest.title">Smart Suggestions</span>
+        <button id="suggest-refresh-btn" class="secondary" style="margin-left:auto;font-size:0.8rem"
+                data-i18n="suggest.btn_refresh">Re-analyse</button>
+      </div>
+      <section class="tab-help card" style="margin-bottom:1rem">
+        <p data-i18n="suggest.help_summary"></p>
+        <details style="margin-top:0.5rem">
+          <summary data-i18n="suggest.help_details_label"></summary>
+          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
+            <li><b data-i18n="suggest.help_li1_b"></b> <span data-i18n="suggest.help_li1_t"></span></li>
+            <li><b data-i18n="suggest.help_li2_b"></b> <span data-i18n="suggest.help_li2_t"></span></li>
+            <li><b data-i18n="suggest.help_li3_b"></b> <span data-i18n="suggest.help_li3_t"></span></li>
+            <li><b data-i18n="suggest.help_li4_b"></b> <span data-i18n="suggest.help_li4_t"></span></li>
+          </ul>
+        </details>
+      </section>
+      <p class="dim" data-i18n="suggest.hint">
+        Heuristic + optional AI advice based on your inventory and run history.
+        Always shown as a diff - nothing is applied without your click.
+      </p>
+      <div id="suggest-list">…</div>
+
+      <!-- 3-column AI Tools chat shell (Sesja 70 Phase B; moved BELOW
+           Quick suggestions in Sesja 71c per operator feedback). -->
+      <h3 style="margin-top:1.5rem" data-i18n="aitools.chat_h">Chat</h3>
+      <p class="dim" style="margin-top:0; font-size:12px"
+         data-i18n="aitools.chat_hint">
+        Conversational diagnosis. Pick a starter on the right or type below.
+        Configure backends in Settings → AI Tools backend.
+      </p>
       <div id="aitools-shell" class="card" style="margin-bottom:1rem; padding:0;">
         <div id="aitools-grid">
           <!-- Left rail: conversations -->
@@ -674,103 +708,6 @@
             <div id="aitools-library-list"></div>
           </aside>
         </div>
-      </div>
-
-      <!-- Quick suggestions (Sesja 67) + AI provider wizard remain below. -->
-      <h3 style="margin-top:1.5rem" data-i18n="aitools.quick_suggestions_h">Quick suggestions</h3>
-      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
-        <span class="dim" data-i18n="suggest.title">Smart Suggestions</span>
-        <button id="suggest-refresh-btn" class="secondary" style="margin-left:auto;font-size:0.8rem"
-                data-i18n="suggest.btn_refresh">Re-analyse</button>
-      </div>
-      <section class="tab-help card" style="margin-bottom:1rem">
-        <p data-i18n="suggest.help_summary"></p>
-        <details style="margin-top:0.5rem">
-          <summary data-i18n="suggest.help_details_label"></summary>
-          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
-            <li><b data-i18n="suggest.help_li1_b"></b> <span data-i18n="suggest.help_li1_t"></span></li>
-            <li><b data-i18n="suggest.help_li2_b"></b> <span data-i18n="suggest.help_li2_t"></span></li>
-            <li><b data-i18n="suggest.help_li3_b"></b> <span data-i18n="suggest.help_li3_t"></span></li>
-            <li><b data-i18n="suggest.help_li4_b"></b> <span data-i18n="suggest.help_li4_t"></span></li>
-          </ul>
-        </details>
-      </section>
-      <p class="dim" data-i18n="suggest.hint">
-        Heuristic + optional AI advice based on your inventory and run history.
-        Always shown as a diff - nothing is applied without your click.
-      </p>
-      <div id="suggest-list">…</div>
-
-      <h3 style="margin-top:1.5rem" data-i18n="suggest.ai_panel">AI provider</h3>
-      <p class="dim" data-i18n="suggest.ai_hint">
-        Optional. Configure an LLM provider to enrich rule-based suggestions.
-      </p>
-
-      <!-- 3-step AI wizard ============================================== -->
-      <div id="ai-wizard" class="ai-wizard">
-        <ol class="ai-stepper" aria-label="AI provider wizard steps">
-          <li id="ai-step-tab-1" class="ai-step active" data-step="1">
-            <span class="ai-step-num">1</span>
-            <span class="ai-step-label" data-i18n="suggest.wiz.step1">Provider</span>
-          </li>
-          <li id="ai-step-tab-2" class="ai-step" data-step="2">
-            <span class="ai-step-num">2</span>
-            <span class="ai-step-label" data-i18n="suggest.wiz.step2">Connect</span>
-          </li>
-          <li id="ai-step-tab-3" class="ai-step" data-step="3">
-            <span class="ai-step-num">3</span>
-            <span class="ai-step-label" data-i18n="suggest.wiz.step3">Model</span>
-          </li>
-        </ol>
-
-        <section id="ai-step-1" class="ai-step-panel" data-step="1">
-          <p class="dim" data-i18n="suggest.wiz.step1_hint">
-            Pick an LLM provider. Cloud providers need an API key; local providers need a base URL.
-          </p>
-          <div id="ai-provider-grid" class="ai-provider-grid"></div>
-          <div class="ai-step-actions">
-            <button type="button" id="ai-step1-next" disabled
-                    data-i18n="suggest.wiz.next">Next</button>
-          </div>
-        </section>
-
-        <section id="ai-step-2" class="ai-step-panel hidden" data-step="2">
-          <p class="dim" id="ai-step2-hint" data-i18n="suggest.wiz.step2_hint">
-            Enter your API key, then click Test connection.
-          </p>
-          <form id="ai-connect-form" class="ai-connect-form" autocomplete="off">
-            <label id="ai-apikey-row">
-              <span data-i18n="suggest.ai_apikey">API key</span>
-              <input type="password" name="ai_api_key" autocomplete="off" />
-            </label>
-            <label id="ai-baseurl-row" class="hidden">
-              <span data-i18n="suggest.ai_baseurl">Base URL</span>
-              <input type="text" name="ai_base_url" autocomplete="off" />
-            </label>
-          </form>
-          <pre id="ai-test-output" class="dim ai-test-output"></pre>
-          <div class="ai-step-actions">
-            <button type="button" id="ai-step2-back" class="secondary"
-                    data-i18n="suggest.wiz.back">Back</button>
-            <button type="button" id="ai-step2-test"
-                    data-i18n="suggest.wiz.test">Test connection</button>
-          </div>
-        </section>
-
-        <section id="ai-step-3" class="ai-step-panel hidden" data-step="3">
-          <p class="dim" data-i18n="suggest.wiz.step3_hint">Pick a model and save.</p>
-          <label class="ai-model-row">
-            <span data-i18n="suggest.ai_model">Model</span>
-            <select id="ai-model-select"></select>
-          </label>
-          <pre id="ai-save-output" class="dim ai-test-output"></pre>
-          <div class="ai-step-actions">
-            <button type="button" id="ai-step3-back" class="secondary"
-                    data-i18n="suggest.wiz.back">Back</button>
-            <button type="button" id="ai-step3-save"
-                    data-i18n="suggest.wiz.save">Save settings</button>
-          </div>
-        </section>
       </div>
     </section>
 
@@ -1058,9 +995,85 @@
             <p class="dim" id="ai-backend-empty" style="display:none"
                data-i18n="settings.ai_backends_empty">
               No CLI backends found on PATH. Install one of: Claude Code,
-              Gemini CLI, Codex CLI, or opencode — or scroll down to
-              configure an API key.
+              Gemini CLI, Codex CLI, or opencode — or use the API-key
+              fallback below.
             </p>
+          </div>
+          <!-- API-key fallback (moved from Suggestions tab in Sesja 71b).
+               Fires only when no CLI backend is selected/available, OR
+               when the user explicitly picks "API key" in the card above. -->
+          <div class="card" id="settings-ai-apikey">
+            <h3 data-i18n="settings.ai_apikey_title">API key fallback</h3>
+            <p class="dim" data-i18n="settings.ai_apikey_hint">
+              Optional. Configure a cloud LLM (Anthropic / OpenAI / OpenRouter /
+              Ollama / Google / LM Studio) to enrich Quick suggestions AND
+              serve as the AI Tools backend when no CLI is selected.
+            </p>
+            <div id="ai-wizard" class="ai-wizard">
+              <ol class="ai-stepper" aria-label="AI provider wizard steps">
+                <li id="ai-step-tab-1" class="ai-step active" data-step="1">
+                  <span class="ai-step-num">1</span>
+                  <span class="ai-step-label" data-i18n="suggest.wiz.step1">Provider</span>
+                </li>
+                <li id="ai-step-tab-2" class="ai-step" data-step="2">
+                  <span class="ai-step-num">2</span>
+                  <span class="ai-step-label" data-i18n="suggest.wiz.step2">Connect</span>
+                </li>
+                <li id="ai-step-tab-3" class="ai-step" data-step="3">
+                  <span class="ai-step-num">3</span>
+                  <span class="ai-step-label" data-i18n="suggest.wiz.step3">Model</span>
+                </li>
+              </ol>
+
+              <section id="ai-step-1" class="ai-step-panel" data-step="1">
+                <p class="dim" data-i18n="suggest.wiz.step1_hint">
+                  Pick an LLM provider. Cloud providers need an API key; local providers need a base URL.
+                </p>
+                <div id="ai-provider-grid" class="ai-provider-grid"></div>
+                <div class="ai-step-actions">
+                  <button type="button" id="ai-step1-next" disabled
+                          data-i18n="suggest.wiz.next">Next</button>
+                </div>
+              </section>
+
+              <section id="ai-step-2" class="ai-step-panel hidden" data-step="2">
+                <p class="dim" id="ai-step2-hint" data-i18n="suggest.wiz.step2_hint">
+                  Enter your API key, then click Test connection.
+                </p>
+                <form id="ai-connect-form" class="ai-connect-form" autocomplete="off">
+                  <label id="ai-apikey-row">
+                    <span data-i18n="suggest.ai_apikey">API key</span>
+                    <input type="password" name="ai_api_key" autocomplete="off" />
+                  </label>
+                  <label id="ai-baseurl-row" class="hidden">
+                    <span data-i18n="suggest.ai_baseurl">Base URL</span>
+                    <input type="text" name="ai_base_url" autocomplete="off" />
+                  </label>
+                </form>
+                <pre id="ai-test-output" class="dim ai-test-output"></pre>
+                <div class="ai-step-actions">
+                  <button type="button" id="ai-step2-back" class="secondary"
+                          data-i18n="suggest.wiz.back">Back</button>
+                  <button type="button" id="ai-step2-test"
+                          data-i18n="suggest.wiz.test">Test connection</button>
+                </div>
+              </section>
+
+              <section id="ai-step-3" class="ai-step-panel hidden" data-step="3">
+                <p class="dim" data-i18n="suggest.wiz.step3_hint">Pick a model and save.</p>
+                <label class="ai-model-row">
+                  <span data-i18n="suggest.ai_model">Model</span>
+                  <select id="ai-model-select"></select>
+                </label>
+                <pre id="ai-save-output" class="dim ai-test-output"></pre>
+                <div class="ai-step-actions">
+                  <button type="button" id="ai-step3-back" class="secondary"
+                          data-i18n="suggest.wiz.back">Back</button>
+                  <button type="button" id="ai-step3-save"
+                          data-i18n="suggest.wiz.save">Save settings</button>
+                </div>
+              </section>
+            </div>
           </div>
         </div>
         <div style="margin-top:1rem; display:flex; gap:0.5rem; flex-wrap:wrap;">

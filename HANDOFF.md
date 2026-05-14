@@ -8776,6 +8776,42 @@ Append a new entry here whenever a session ends with a recommended
 follow-up. Newest at the top. Each prompt is self-contained — paste it
 verbatim into a fresh session.
 
+### After Sesja 71c (chat works end-to-end + model badge + layout swap)
+
+```
+Chat now works end-to-end against installed CLIs (verified live on
+Mac with claude CLI 2.x). v0.6.0 → v0.6.1 follow-ups:
+
+1. mk-uP5520 (Ubuntu): install one of claude / gemini / codex /
+   opencode, pull main, launch dashboard, open AI Tools tab, send
+   "say hello in 3 words". Confirm:
+     - reply streams in
+     - "Backend · model" badge appears under "AI" role label
+     - if claude not authed, see a red error bubble (not silent)
+
+2. DP5520WMK (Windows): same flow. Confirm Settings → "AI Tools
+   backend" cards show install status correctly + selection
+   persists across page reload.
+
+3. Gemini/Codex/Opencode driver parity check: pick each via Settings
+   → AI Tools backend, send "hello". Some drivers may need their own
+   event-format fixes similar to the claude `--verbose` + `type=
+   assistant` parser fix in Sesja 71c. Document any failures here.
+
+4. Verify the meta-chunk badge refresh: send a message, watch the
+   badge — it should switch from "Claude Code CLI · claude
+   (subscription)" to "Claude Code CLI · claude-opus-4-7[1m]" (or
+   whatever the actual installed model is) within the first second.
+
+5. Smoke the new Settings → "API key fallback" card (moved from
+   Suggestions tab). Configure anthropic key, save, then in Settings
+   → "AI Tools backend" click "API key", send a chat message —
+   confirm the API path responds (uses Sesja 67's
+   call_provider_inference).
+
+6. If all green: bump __version__ to 0.6.1, tag, push.
+```
+
 ### After Sesja 71 (v0.6.0 — AI Tools chat) + Sesja 71b SPA polish
 
 ```

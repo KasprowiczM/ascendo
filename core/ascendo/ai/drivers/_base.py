@@ -45,18 +45,26 @@ async def run_streaming(
     grace_seconds: float = 2.0,
     chunk_timeout_s: float = 30.0,
     stdin_text: str | None = None,
+    cwd: str | None = None,
+    env: dict[str, str] | None = None,
 ) -> AsyncIterator[str]:
     """Spawn argv; yield each stdout line.
 
     Honors cancel_event: SIGTERM, wait grace_seconds, then SIGKILL.
     Raises SubprocessHang if chunk_timeout_s elapses with no output.
     Raises SubprocessFailure on non-zero exit (unless cancel_event set).
+
+    ``cwd`` lets the caller pin a working directory (e.g. so Claude Code
+    doesn't auto-load whatever repo the dashboard happens to be running
+    from). ``env`` mirrors subprocess semantics — None inherits.
     """
     proc = await asyncio.create_subprocess_exec(
         *argv,
         stdin=asyncio.subprocess.PIPE if stdin_text else asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        cwd=cwd,
+        env=env,
     )
     if stdin_text and proc.stdin:
         proc.stdin.write(stdin_text.encode("utf-8"))

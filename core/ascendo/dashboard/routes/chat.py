@@ -239,10 +239,20 @@ async def post_chat(body: PostChat, request: Request) -> dict:
 
     asyncio.create_task(_producer())
 
+    # Surface backend + model so the SPA can show a "Claude Code CLI · opus"
+    # badge under the AI reply. model_info() may not know the exact model
+    # yet (some drivers only learn it after the first stream event); the
+    # SPA refreshes the badge on the SSE `done` event in that case.
+    try:
+        info = backend.model_info() or {}
+    except Exception:  # noqa: BLE001 - belt-and-suspenders
+        info = {}
     return {
         "turn_id": turn_id,
         "stream_url": f"/ai/chat/stream/{turn_id}",
         "cancel_url": f"/ai/chat/cancel/{turn_id}",
+        "backend": info.get("backend") or backend.name,
+        "model": info.get("model") or "",
     }
 
 
