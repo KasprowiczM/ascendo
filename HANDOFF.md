@@ -6,7 +6,7 @@
 
 ---
 
-## Sesja 71 (2026-05-14) — v0.5.0: AI Tools chat Phase B + C end-to-end
+## Sesja 71 (2026-05-14) — v0.6.0: AI Tools chat Phase B + C end-to-end
 
 Continuation of Sesja 70 (Phase A — Tasks 1-13 landed as commit
 `2859da1`). Phase B (Tasks 14-18) + Phase C (Tasks 19-26) executed
@@ -94,10 +94,14 @@ macOS adapter suite: **393 passed** in ~80 s (no regression).
 
 ### How to resume from this Sesja
 
-Phase B + C is complete. v0.5.0 ready to tag (Task 26). Any next
-session can:
+Phase B + C is complete. v0.6.0 tagged (Task 26 — bumped from the
+plan's nominal v0.5.0 because that tag was already taken from
+Sesja 43, and v0.5.1 + v0.5.2 from Sesjas 44-45; Sesja 70-71 is a
+bigger feature than a patch bump so v0.6.0 is the natural next
+minor). Any next session can:
 
-- Land the `v0.5.0` tag if not done yet: `git tag -a v0.5.0 -m 'AI Tools chat end-to-end (Sesja 70-71)' && git push --tags`
+- Confirm: `git tag --sort=-creatordate | head -3` should list v0.6.0 first
+- Push the tag if not done yet: `git push --tags`
 - Verify on real macOS / Windows / Linux hardware by running the
   Stage 14 sub-steps in each `bin/validate-*.sh` / `validate-*.ps1`
 - Pick up real-LLM smoke testing: install one of claude / gemini /

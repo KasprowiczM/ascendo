@@ -1,6 +1,6 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-14 (sesja 71) — **v0.5.0 — AI Tools chat
+> Last updated: 2026-05-14 (sesja 71) — **v0.6.0 — AI Tools chat
 > end-to-end.** Phase B (Tasks 14-18) + Phase C (Tasks 19-26) landed
 > on main as 13 commits on top of the Phase A foundation (Sesja 70).
 > Net surface: 10 dashboard endpoints under `/ai/chat/*` + SSE relay
