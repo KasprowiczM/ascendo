@@ -314,6 +314,7 @@ const ui = {
     if (view === "history"    && !ui._loaded.history)    { ui._loaded.history = true;    ui.loadHistory(); }
     if (view === "sync"       && !ui._loaded.sync)       { ui._loaded.sync = true;       ui.loadSync(); }
     if (view === "settings"   && !ui._loaded.settings)   { ui._loaded.settings = true;   ui.loadSettings(); }
+    if (view === "settings") { try { window.aitoolsBackends && window.aitoolsBackends.load(); } catch {} }
     if (view === "hosts"      && !ui._loaded.hosts)      { ui._loaded.hosts = true;      ui.loadHosts(); }
     if (view === "schedule"   && !ui._loaded.schedule)   { ui._loaded.schedule = true;   ui.loadSchedule(); }
     if (view === "apps"       && !ui._loaded.apps)       { ui._loaded.apps = true;       ui.loadApps(); }
@@ -5407,13 +5408,27 @@ window.ui = ui;
         const list = j.backends || [];
         this.state.backends = list;
         const available = list.filter((b) => b.available === "true" || b.available === true);
+        // Honour the explicit preference from Settings → AI Tools backend.
+        let pref = null;
+        try { pref = localStorage.getItem("aitools.preferred_backend"); } catch {}
+        let active = null;
+        if (pref === "api") {
+          active = "api";
+        } else if (pref && pref !== "auto") {
+          // Show the chosen CLI even if it's not currently installed —
+          // the empty-state banner in Settings already calls this out.
+          active = pref;
+        } else if (available.length) {
+          active = available[0].name;
+        }
         if (pill) {
-          if (available.length) {
-            pill.textContent = `${t("aitools.backend_label", "Backend")}: ${available[0].name}`;
+          if (active) {
+            pill.textContent = `${t("aitools.backend_label", "Backend")}: ${active}`;
           } else {
             pill.textContent = t("aitools.no_backend");
           }
         }
+        this.state.backendName = active;
       } catch (e) {
         if (pill) pill.textContent = t("aitools.no_backend");
       }
@@ -5553,17 +5568,23 @@ window.ui = ui;
         await this.newConversation();
       }
       this.appendMessage("user", text);
+      // Read backend preference (set in Settings → AI Tools backend).
+      // "" / null = let the server pick the first available.
+      let pref = null;
+      try { pref = localStorage.getItem("aitools.preferred_backend") || null; } catch {}
+      const body = {
+        conversation_id: this.state.conversationId,
+        message: text,
+        template_id: templateId || null,
+        context_tags: contextTags || null,
+        locale: locale(),
+      };
+      if (pref && pref !== "auto") body.backend_override = pref;
       try {
         const r = await fetch("/ai/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            conversation_id: this.state.conversationId,
-            message: text,
-            template_id: templateId || null,
-            context_tags: contextTags || null,
-            locale: locale(),
-          }),
+          body: JSON.stringify(body),
         });
         if (!r.ok) {
           this.appendMessage("system", t("aitools.error_send"));
@@ -5647,4 +5668,172 @@ window.ui = ui;
   };
 
   window.aitools = aitools;
+})();
+
+/* ============================================================================
+ * AI Tools backend selector (Settings tab — Sesja 71). Renders 4 CLI
+ * options + Auto + API-key as clickable cards; selection persists to
+ * localStorage("aitools.preferred_backend") and aitools.send() reads it
+ * to populate body.backend_override.
+ * ========================================================================== */
+(function () {
+  const PREF_KEY = "aitools.preferred_backend";
+  const PRESETS = [
+    {
+      slug: "auto",
+      name: "Auto",
+      install_en: "Lets Ascendo pick the first installed CLI in order claude → gemini → codex → opencode.",
+      install_pl: "Ascendo wybierze pierwszy dostępny CLI w kolejności claude → gemini → codex → opencode.",
+    },
+    {
+      slug: "claude",
+      name: "Claude Code CLI",
+      bin: "claude",
+      install_en: "brew install --cask claude  (macOS) · winget install Anthropic.Claude  (Win) · or vendor docs",
+      install_pl: "brew install --cask claude  (macOS) · winget install Anthropic.Claude  (Win) · lub dokumentacja",
+    },
+    {
+      slug: "gemini",
+      name: "Gemini CLI",
+      bin: "gemini",
+      install_en: "brew install gemini-cli  · or vendor docs",
+      install_pl: "brew install gemini-cli  · lub dokumentacja",
+    },
+    {
+      slug: "codex",
+      name: "Codex CLI",
+      bin: "codex",
+      install_en: "Vendor docs (OpenAI Codex CLI)",
+      install_pl: "Dokumentacja OpenAI (Codex CLI)",
+    },
+    {
+      slug: "opencode",
+      name: "opencode CLI",
+      bin: "opencode",
+      install_en: "brew install opencode  · winget install Anomaly.opencode  · open source",
+      install_pl: "brew install opencode  · winget install Anomaly.opencode  · open source",
+    },
+    {
+      slug: "api",
+      name: "API key",
+      install_en: "Uses the Anthropic / OpenAI / etc. provider configured in the AI provider section below.",
+      install_pl: "Używa dostawcy chmurowego skonfigurowanego w sekcji AI poniżej.",
+    },
+  ];
+
+  function tr(k, fallback) {
+    return (window.tr && window.tr(k)) || (fallback || k);
+  }
+  function locale() { return window.UI_LANG === "pl" ? "pl" : "en"; }
+
+  function readPref() {
+    try { return localStorage.getItem(PREF_KEY) || "auto"; }
+    catch { return "auto"; }
+  }
+  function writePref(slug) {
+    try { localStorage.setItem(PREF_KEY, slug); } catch {}
+  }
+
+  const aitoolsBackends = {
+    async load() {
+      const grid = document.getElementById("ai-backend-grid");
+      if (!grid) return;
+      let serverStatus = [];
+      try {
+        const r = await fetch("/ai/chat/backends");
+        const j = await r.json();
+        serverStatus = j.backends || [];
+      } catch (e) {
+        console.warn("aitoolsBackends: /ai/chat/backends failed", e);
+      }
+      // Map server status by name for quick lookup.
+      const byName = {};
+      serverStatus.forEach((b) => { byName[b.name] = b; });
+
+      // Empty-state banner: hide unless NO CLI is available + user is on
+      // "auto" / unset (so it doesn't yell at users who picked an API key).
+      const empty = document.getElementById("ai-backend-empty");
+      const anyAvailable = serverStatus.some(
+        (b) => b.available === "true" || b.available === true,
+      );
+      const pref = readPref();
+      if (empty) {
+        empty.style.display =
+          !anyAvailable && (pref === "auto" || pref === "claude" ||
+                            pref === "gemini" || pref === "codex" ||
+                            pref === "opencode")
+            ? "" : "none";
+      }
+
+      // Build cards.
+      while (grid.firstChild) grid.removeChild(grid.firstChild);
+      PRESETS.forEach((p) => {
+        const card = document.createElement("div");
+        card.className = "ai-backend-card";
+        card.dataset.slug = p.slug;
+        if (pref === p.slug) card.classList.add("active");
+
+        const head = document.createElement("div");
+        head.className = "ai-backend-card-head";
+
+        const name = document.createElement("span");
+        name.className = "ai-backend-name";
+        if (p.slug === "auto") {
+          name.textContent = tr("settings.ai_backend_auto", "Auto");
+        } else if (p.slug === "api") {
+          name.textContent = tr("settings.ai_backend_apikey", "API key");
+        } else {
+          name.textContent = p.name;
+        }
+        head.appendChild(name);
+
+        const pill = document.createElement("span");
+        pill.className = "ai-backend-pill";
+        if (p.slug === "auto" || p.slug === "api") {
+          pill.textContent = pref === p.slug
+            ? tr("settings.ai_backend_active", "Active")
+            : tr("settings.ai_backend_use", "Use this");
+          pill.classList.add("installed");
+        } else {
+          const status = byName[p.slug];
+          const available = status && (status.available === "true" || status.available === true);
+          pill.textContent = available
+            ? tr("settings.ai_backend_installed", "Installed")
+            : tr("settings.ai_backend_unavailable", "Not installed");
+          pill.classList.add(available ? "installed" : "unavailable");
+          if (!available) card.classList.add("unavailable");
+        }
+        head.appendChild(pill);
+        card.appendChild(head);
+
+        if (p.bin) {
+          const bin = document.createElement("span");
+          bin.className = "ai-backend-binary";
+          bin.textContent = "$ " + p.bin;
+          card.appendChild(bin);
+        }
+
+        const note = document.createElement("span");
+        note.className = "ai-backend-action";
+        note.textContent = locale() === "pl" ? p.install_pl : p.install_en;
+        card.appendChild(note);
+
+        card.addEventListener("click", () => {
+          if (card.classList.contains("unavailable")) return;
+          writePref(p.slug);
+          // Re-render so the active state flips.
+          this.load();
+          // If the AI Tools tab has already initialised, refresh its
+          // backend pill so it reflects the new preference immediately.
+          try {
+            window.aitools && window.aitools.loadBackends && window.aitools.loadBackends();
+          } catch {}
+        });
+
+        grid.appendChild(card);
+      });
+    },
+  };
+
+  window.aitoolsBackends = aitoolsBackends;
 })();

@@ -1938,14 +1938,32 @@ button.is-refreshing::before {
     gap: 8px;
     align-items: flex-end;
 }
+/* The shell is a .card, so the global `.card button { width: 100% }` rule
+ * fires on the Send button and crushes the textarea. Force the textarea
+ * to flex-grow and pin the Send button to a fixed-ish width. */
 #aitools-input {
-    flex: 1;
+    flex: 1 1 auto;
+    width: 100%;
+    box-sizing: border-box;
     min-height: 44px;
     padding: 8px;
     font: 13px var(--font-sans);
     resize: vertical;
 }
-#aitools-send { min-width: 80px; }
+#aitools-shell #aitools-send {
+    flex: 0 0 auto;
+    display: inline-block;
+    width: auto;
+    min-width: 96px;
+    max-width: 140px;
+    margin-bottom: 0;
+}
+/* New chat lives in the left rail; stay full-width but shed the
+ * global .card button bottom margin so it hugs the conv list. */
+#aitools-shell #aitools-new-chat {
+    width: 100%;
+    margin-bottom: 12px;
+}
 
 #aitools-library-list h4 {
     margin: 10px 0 6px;
@@ -1979,4 +1997,47 @@ button.is-refreshing::before {
         border-bottom: 1px solid var(--border);
         max-height: 200px;
     }
+}
+
+/* ============================================================================
+ * Settings → AI Tools backend selector (Sesja 71)
+ * ========================================================================== */
+.ai-backend-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+.ai-backend-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    background: var(--bg-elev);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: border-color var(--dur-1) var(--ease-out);
+}
+.ai-backend-card:hover         { border-color: var(--accent-soft); }
+.ai-backend-card.active        { border-color: var(--accent); background: var(--accent-soft); }
+.ai-backend-card.unavailable   { opacity: 0.55; cursor: not-allowed; }
+.ai-backend-card-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.ai-backend-name      { font-weight: 600; font-size: 14px; }
+.ai-backend-pill {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 2px 8px;
+    border-radius: 12px;
+}
+.ai-backend-pill.installed     { background: var(--ok-bg, var(--accent-soft)); color: var(--ok, var(--accent-strong)); }
+.ai-backend-pill.unavailable   { background: var(--bg-sunk); color: var(--fg-muted); }
+.ai-backend-binary    { font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted); }
+.ai-backend-card .ai-backend-action {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--fg-muted);
 }

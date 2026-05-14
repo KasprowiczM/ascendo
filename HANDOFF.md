@@ -8770,6 +8770,47 @@ Jeśli zaczynasz nową sesję Cowork, zrób te kroki w kolejności:
 
 ---
 
+## Next session prompts
+
+Append a new entry here whenever a session ends with a recommended
+follow-up. Newest at the top. Each prompt is self-contained — paste it
+verbatim into a fresh session.
+
+### After Sesja 71 (v0.6.0 — AI Tools chat) + Sesja 71b SPA polish
+
+```
+Cross-platform validation for v0.6.0 (Sesja 70-71 AI Tools chat).
+
+1. mk-uP5520 (Ubuntu): pull main, run `bin/validate-ubuntu.sh`,
+   paste the Stage 14 output (8 sub-steps). Then `ascendo web start`,
+   click AI Tools tab, install one of claude / gemini / codex /
+   opencode CLIs, open Settings → AI Tools backend, pick the
+   installed one, return to AI Tools, send "What does exit code 75
+   mean?" — paste the streamed reply + any errors.
+
+2. DP5520WMK (Windows): pull main, run `.\bin\validate-windows.ps1`,
+   paste Stage 14 output. Same SPA smoke as above; confirm the chip
+   click flow works on a low-risk action like `refresh_inventory`.
+
+3. Mac (this box): run `bash bin/validate-macos.sh` again on a clean
+   ~/.ascendo to confirm 52/52 from a cold start.
+
+4. Visual check on Settings → AI Tools backend card: open Settings,
+   confirm the 6 cards render (Auto, Claude Code CLI, Gemini CLI,
+   Codex CLI, opencode CLI, API key) with correct Installed / Not
+   installed pills. Click each and verify the active card flips +
+   the AI Tools tab's backend pill at the top reflects the choice.
+
+5. Worktree cleanup: `git worktree remove
+   .claude/worktrees/optimistic-darwin-717414` and prune any other
+   stale worktrees.
+
+6. If everything green, close out with a final HANDOFF entry noting
+   the 3-OS validation results and any operator-reported tweaks.
+```
+
+---
+
 **End of HANDOFF.md** — jeśli coś jest niejasne lub brakuje, ZGŁOŚ to w
 sekcji Session Log następnej sesji i ten plik zaktualizujemy. Cel: każda
 przyszła sesja może wrócić tutaj i kontynuować bez utraty kontekstu.

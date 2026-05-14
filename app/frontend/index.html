@@ -1045,6 +1045,23 @@
               <button type="button" id="scheduler-remove-btn"  class="secondary" data-i18n="settings.btn_remove_t">Remove timer</button>
             </div>
           </div>
+          <!-- AI Tools backend selector (Sesja 71). Picks which installed
+               CLI Ascendo should prefer for the AI Tools chat tab. -->
+          <div class="card" id="settings-ai-backends">
+            <h3 data-i18n="settings.ai_backends_title">AI Tools backend</h3>
+            <p class="dim" data-i18n="settings.ai_backends_hint">
+              Pick which installed CLI Ascendo should use for the AI Tools
+              chat. "Auto" picks the first available; "API key" forces the
+              configured cloud provider (Anthropic / OpenAI / etc.) below.
+            </p>
+            <div id="ai-backend-grid" class="ai-backend-grid"></div>
+            <p class="dim" id="ai-backend-empty" style="display:none"
+               data-i18n="settings.ai_backends_empty">
+              No CLI backends found on PATH. Install one of: Claude Code,
+              Gemini CLI, Codex CLI, or opencode — or scroll down to
+              configure an API key.
+            </p>
+          </div>
         </div>
         <div style="margin-top:1rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
           <button type="submit" data-i18n="settings.btn_save">Save settings</button>
