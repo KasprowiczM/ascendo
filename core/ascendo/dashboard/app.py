@@ -26,6 +26,7 @@ from .middleware.edition_gate import EditionGateMiddleware
 from .routes.about import router as about_router
 from .routes.ai import router as ai_router
 from .routes.apps import router as apps_router
+from .routes.chat import router as chat_router
 from .routes.elevation import router as elevation_router
 from .routes.health import router as health_router
 from .routes.onboarding import router as onboarding_router
@@ -298,6 +299,10 @@ def create_app(
     # wizard). MUST be BEFORE spa_stubs (no overlap today, but future-
     # proof).
     app.include_router(ai_router, prefix="")
+    # AI Tools chat endpoints (Sesja 70 / Phase B). Mounts the eight
+    # /ai/chat/* routes that drive the new sidebar tab. MUST be BEFORE
+    # spa_stubs in case the legacy SPA ever registered a placeholder there.
+    app.include_router(chat_router, prefix="")
     # Preloaded suggestion library at /suggestions/library. MUST be
     # BEFORE spa_stubs so the real handler wins over the legacy
     # /suggestions stub returning ``[]``.
