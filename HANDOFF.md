@@ -8776,6 +8776,46 @@ Append a new entry here whenever a session ends with a recommended
 follow-up. Newest at the top. Each prompt is self-contained — paste it
 verbatim into a fresh session.
 
+### After Sesja 71d (gemini fix + Settings 12-column layout)
+
+```
+Visual + cross-OS verification for the Sesja 71d Settings reorg
+and Gemini driver fix:
+
+1. Open the dashboard on a wide monitor (>=1920px wide). Settings
+   tab should render:
+     - Defaults / Appearance / Profile templates / Backup / Scheduler
+       as 6 cards in 3-up rows (span 4 of 12 each)
+     - AI Tools backend + API key fallback as 2 wider cards (span 6
+       each), each on its own row
+     - Inside AI Tools backend: 6 tiles in a 2-3 col grid (Auto,
+       Claude, Gemini, Codex, opencode, API key)
+     - Inside API key fallback: provider tiles flow as 3-4 cols
+       (Anthropic / OpenAI / Google / OpenRouter / Ollama / LM Studio
+       / LiteLLM coming soon)
+   Resize the window down to ~1300px and confirm: AI cards become
+   full-row (span 12), small cards become span 6. Resize to <768px
+   and confirm everything stacks single-column.
+
+2. Click AI Tools → send "say hi in 3 words" with Gemini selected
+   in Settings → AI Tools backend. Confirm:
+     - reply streams in
+     - badge shows "Gemini CLI · auto-gemini-3" (or whatever model
+       the gemini CLI's init event reports)
+   Repeat with Codex + opencode. Both work but currently don't emit
+   meta chunks, so the badge stays on the POST-response default
+   ("Codex CLI · codex (subscription)" etc.). Adding stream-json
+   parsing + meta events to codex/opencode drivers is a follow-up.
+
+3. mk-uP5520 (Ubuntu) + DP5520WMK (Windows): pull main, repeat
+   steps 1+2.
+
+4. If the gemini reply still shows "google login" error: check
+   `gemini --version` is 0.40+ (older CLIs may not have
+   --output-format stream-json or --skip-trust). Upgrade with
+   `brew upgrade gemini-cli` or `npm install -g @google/gemini-cli`.
+```
+
 ### After Sesja 71c (chat works end-to-end + model badge + layout swap)
 
 ```
