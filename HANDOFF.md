@@ -50,17 +50,25 @@ validate stages + docs + tag `v0.5.0`.
 
 ### Test counts
 
-| Suite | After Phase A | After Phase B | After Phase C |
-|-------|---------------|---------------|---------------|
-| AI contract (`test_ai_*.py`) | 94 | 109 | 130 |
-| Streaming-specific | 0 | 4 | 6 |
-| Chat endpoints | 0 | 12 | 17 |
-| SSE disconnect | 0 | 0 | 3 |
-| i18n parity | 0 | 0 | 2 |
-| **Total AI suite** | **94** | **125** | **138** |
+| Component                              | After Phase A | After Phase B | After Phase C |
+|----------------------------------------|--------------:|--------------:|--------------:|
+| Phase A AI tests (drivers, ABC, etc.)  |            94 |            94 |            94 |
+| `test_ai_streaming.py`                 |             0 |             4 |             6 |
+| `test_ai_chat_endpoints.py`            |             0 |            17 |            17 |
+| `test_ai_chat_sse_disconnect.py`       |             0 |             0 |             3 |
+| `test_ai_context_injector.py` (new T14)|             0 |             3 |             3 |
+| `test_i18n_parity.py`                  |             0 |             0 |             2 |
+| **Total AI + i18n contract**           |        **94** |       **118** |       **125** |
 
-Full contract suite: 455 passing, 3 pre-existing unrelated failures
-unchanged (apply_report grouping + 2 scheduler-stub overlap).
+Note Phase B count of 118 = 94 + 4 streaming + 17 chat endpoints
+(Tasks 16 added 12, Task 18 added 5) + 3 prompt library tests in
+test_ai_context_injector.py.
+
+Full contract suite (excluding the Windows-only `test_service_endpoints.py`):
+**456 passing**, 3 pre-existing unrelated failures unchanged
+(apply_report grouping + 2 scheduler-stub overlap).
+
+macOS adapter suite: **393 passed** in ~80 s (no regression).
 
 ### Carry-forward / known limitations
 

@@ -13,9 +13,9 @@
 > 12-entry action whitelist proxied through `dispatch_action()` with
 > Pydantic body validation; `scripts/check-i18n-parity.py` +
 > `validate-{macos,windows,ubuntu}.sh` Stage 14 (8 sub-steps each)
-> lock the chat surface against regression. **138 AI contract tests
-> pass** (was 94/94 after Phase A; +44 across Phase B/C). Full
-> contract suite: 455 passing, same 3 pre-existing unrelated
+> lock the chat surface against regression. **125 AI contract tests
+> pass** (was 94 after Phase A; +31 across Phase B/C). Full
+> contract suite: 456 passing, same 3 pre-existing unrelated
 > failures (apply_report grouping + 2 scheduler-stub overlap).
 > Spec at `docs/superpowers/specs/2026-05-14-ai-tools-chat-design.md`,
 > plan at `docs/superpowers/plans/2026-05-14-ai-tools-chat.md`. See
