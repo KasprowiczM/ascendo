@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -e
+case "${FIXTURE_CASE:-success}" in
+  version) echo "claude 1.0.0"; exit 0 ;;
+  auth_probe_ok)
+    printf '{"type":"message_start"}\n'
+    printf '{"type":"content_block_delta","delta":{"text":"ok"}}\n'
+    printf '{"type":"message_stop"}\n'
+    exit 0 ;;
+  auth_expired) echo "Error: authentication expired, please run: claude /login" >&2; exit 1 ;;
+  crash) echo "Error: unexpected error" >&2; exit 137 ;;
+  hang) sleep 600 ;;
+  partial_then_eof)
+    printf '{"type":"message_start"}\n'
+    printf '{"type":"content_block_delta","delta":{"text":"partial"}}\n'
+    exit 1 ;;
+  success|*)
+    printf '{"type":"message_start"}\n'
+    printf '{"type":"content_block_delta","delta":{"text":"Hello"}}\n'
+    printf '{"type":"content_block_delta","delta":{"text":" world"}}\n'
+    printf '{"type":"message_stop"}\n'
+    exit 0 ;;
+esac

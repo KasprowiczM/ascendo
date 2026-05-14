@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -e
+case "${FIXTURE_CASE:-success}" in
+  version) echo "gemini 0.3.0"; exit 0 ;;
+  auth_probe_ok) echo "ok"; exit 0 ;;
+  auth_expired) echo "Error: not authenticated" >&2; exit 1 ;;
+  crash) exit 137 ;;
+  hang) sleep 600 ;;
+  partial_then_eof) printf "partial"; exit 1 ;;
+  success|*)
+    printf "Hello"
+    printf " world"
+    echo
+    exit 0 ;;
+esac

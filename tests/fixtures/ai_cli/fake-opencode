@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -e
+case "${FIXTURE_CASE:-success}" in
+  version) echo "opencode 1.14.41"; exit 0 ;;
+  auth_probe_ok) echo "ok"; exit 0 ;;
+  auth_expired) echo "Error: no provider configured" >&2; exit 1 ;;
+  crash) exit 137 ;;
+  hang) sleep 600 ;;
+  success|*)
+    printf "Hello"
+    printf " world\n"
+    exit 0 ;;
+esac
