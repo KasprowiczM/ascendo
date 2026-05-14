@@ -318,6 +318,7 @@ const ui = {
     if (view === "schedule"   && !ui._loaded.schedule)   { ui._loaded.schedule = true;   ui.loadSchedule(); }
     if (view === "apps"       && !ui._loaded.apps)       { ui._loaded.apps = true;       ui.loadApps(); }
     if (view === "suggest"    && !ui._loaded.suggest)    { ui._loaded.suggest = true;    ui.loadSuggestions(); }
+    if (view === "suggest") { try { window.aitools && window.aitools.init(); } catch {} }
     if (view === "logs"       && !ui._loaded.logs)       { ui._loaded.logs = true;       ui.loadLogsList(); }
     if (view === "about"      && !ui._loaded.about)      { ui._loaded.about = true;      ui.loadAbout(); }
     // Run Center is special: must always (re)bind active-stream subscription.
@@ -5261,4 +5262,371 @@ window.ui = ui;
   } else {
     render();
   }
+})();
+
+/* ============================================================================
+ * AI Tools tab (Sesja 70 Phase B). Drives the chat thread + library +
+ * conversations rail inside #view-suggest. Coexists with the legacy Sesja 67
+ * rule-based suggestions cards rendered below.
+ * ========================================================================== */
+(function () {
+  const $ait = (id) => document.getElementById(id);
+  const t = (k, fallback) => (window.tr && window.tr(k)) || (fallback || k);
+  const locale = () => (window.UI_LANG === "pl" ? "pl" : "en");
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>]/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;",
+    }[c]));
+  }
+
+  // Cheap markdown: escape, then ` **bold** ` and ` *italic* ` and code spans.
+  // Real implementation can swap in a tiny parser later; this is enough for
+  // first-token render.
+  function renderMarkdown(text) {
+    const esc = escapeHtml(text);
+    return esc
+      .replace(/\*\*([^*]+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/`([^`]+?)`/g, "<code>$1</code>")
+      .replace(/\n/g, "<br>");
+  }
+
+  const aitools = {
+    state: {
+      conversationId: null,
+      pendingTurnId: null,
+      pendingMsgEl: null,
+      sse: null,
+      initialized: false,
+      backends: [],
+    },
+
+    async init() {
+      if (this.state.initialized) return;
+      this.state.initialized = true;
+      this._wireDom();
+      await Promise.all([
+        this.loadConversations(),
+        this.loadLibrary(),
+        this.loadBackends(),
+      ]);
+    },
+
+    _wireDom() {
+      const send = $ait("aitools-send");
+      const input = $ait("aitools-input");
+      const newBtn = $ait("aitools-new-chat");
+      if (newBtn) newBtn.addEventListener("click", () => this.newConversation());
+      if (send) send.addEventListener("click", () => this._sendFromInput());
+      if (input) {
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            this._sendFromInput();
+          }
+        });
+      }
+    },
+
+    async loadConversations() {
+      try {
+        const r = await fetch("/ai/chat/conversations");
+        const j = await r.json();
+        this.renderConversations(j.conversations || []);
+      } catch (e) {
+        console.warn("aitools.loadConversations failed", e);
+      }
+    },
+
+    renderConversations(list) {
+      const root = $ait("aitools-conv-list");
+      if (!root) return;
+      while (root.firstChild) root.removeChild(root.firstChild);
+      if (!list.length) {
+        const p = document.createElement("p");
+        p.className = "dim";
+        p.textContent = t("aitools.empty_conversations");
+        root.appendChild(p);
+        return;
+      }
+      list.forEach((c) => {
+        const item = document.createElement("div");
+        item.className = "aitools-conv-item";
+        if (c.id === this.state.conversationId) item.classList.add("active");
+        item.textContent = c.title || "Untitled";
+        item.title = c.title || "Untitled";
+        item.addEventListener("click", () => this.openConversation(c.id));
+        root.appendChild(item);
+      });
+    },
+
+    async loadLibrary() {
+      try {
+        const r = await fetch("/ai/chat/library");
+        const j = await r.json();
+        this.renderLibrary(j.entries || []);
+      } catch (e) {
+        console.warn("aitools.loadLibrary failed", e);
+      }
+    },
+
+    renderLibrary(entries) {
+      const root = $ait("aitools-library-list");
+      if (!root) return;
+      while (root.firstChild) root.removeChild(root.firstChild);
+
+      const groups = {};
+      entries.forEach((e) => {
+        const g = e.group || "misc";
+        (groups[g] = groups[g] || []).push(e);
+      });
+      Object.entries(groups).forEach(([g, list]) => {
+        const h = document.createElement("h4");
+        h.textContent = t(`aitools.group.${g}`, g);
+        root.appendChild(h);
+        list.forEach((entry) => {
+          const btn = document.createElement("button");
+          btn.className = "aitools-prompt";
+          const lang = locale();
+          btn.textContent = entry.title?.[lang] || entry.title?.en || entry.id;
+          btn.addEventListener("click", () => {
+            const starter =
+              entry.starter_prompt?.[lang] || entry.starter_prompt?.en || "";
+            if (starter) this.send(starter, entry.id, entry.context_tags || []);
+          });
+          root.appendChild(btn);
+        });
+      });
+    },
+
+    async loadBackends() {
+      const pill = $ait("aitools-backend");
+      try {
+        const r = await fetch("/ai/chat/backends");
+        const j = await r.json();
+        const list = j.backends || [];
+        this.state.backends = list;
+        const available = list.filter((b) => b.available === "true" || b.available === true);
+        if (pill) {
+          if (available.length) {
+            pill.textContent = `${t("aitools.backend_label", "Backend")}: ${available[0].name}`;
+          } else {
+            pill.textContent = t("aitools.no_backend");
+          }
+        }
+      } catch (e) {
+        if (pill) pill.textContent = t("aitools.no_backend");
+      }
+    },
+
+    async newConversation() {
+      const r = await fetch("/ai/chat/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const j = await r.json();
+      this.state.conversationId = j.id;
+      this._clearThread();
+      await this.loadConversations();
+      const input = $ait("aitools-input");
+      if (input) input.focus();
+    },
+
+    async openConversation(id) {
+      this.state.conversationId = id;
+      try {
+        const r = await fetch(`/ai/chat/conversations/${encodeURIComponent(id)}`);
+        if (!r.ok) return;
+        const j = await r.json();
+        this._clearThread();
+        (j.messages || []).forEach((m) => {
+          let actions = null;
+          if (m.actions) {
+            try { actions = JSON.parse(m.actions); } catch {}
+          }
+          this.appendMessage(m.role, m.content, actions);
+        });
+      } catch (e) {
+        console.warn("openConversation failed", e);
+      }
+      await this.loadConversations();
+    },
+
+    _clearThread() {
+      const thread = $ait("aitools-thread");
+      if (!thread) return;
+      while (thread.firstChild) thread.removeChild(thread.firstChild);
+    },
+
+    appendMessage(role, content, actions) {
+      const thread = $ait("aitools-thread");
+      if (!thread) return null;
+      // Strip the empty-state placeholder on first real message.
+      const empty = thread.querySelector(".aitools-empty");
+      if (empty) empty.remove();
+
+      const div = document.createElement("div");
+      div.className = `aitools-msg aitools-msg-${role}`;
+
+      const roleLine = document.createElement("div");
+      roleLine.className = "aitools-msg-role";
+      roleLine.textContent = t(`aitools.role.${role}`, role);
+      div.appendChild(roleLine);
+
+      const body = document.createElement("div");
+      body.className = "aitools-msg-body";
+      body.innerHTML = renderMarkdown(content || "");
+      div.appendChild(body);
+
+      if (actions && actions.length) {
+        const chips = document.createElement("div");
+        chips.className = "aitools-chips";
+        actions.forEach((a) => chips.appendChild(this._makeChip(a)));
+        div.appendChild(chips);
+      }
+
+      thread.appendChild(div);
+      thread.scrollTop = thread.scrollHeight;
+      return div;
+    },
+
+    _makeChip(action) {
+      const btn = document.createElement("button");
+      const risk = action.risk || "low";
+      btn.className = `aitools-chip aitools-chip-${risk}`;
+      const lang = locale();
+      const label =
+        action[`label_${lang}`] || action.label_en || action.id || "action";
+      btn.textContent = label;
+      btn.addEventListener("click", () => this.executeAction(action));
+      return btn;
+    },
+
+    async executeAction(action) {
+      const lang = locale();
+      const label =
+        action[`label_${lang}`] || action.label_en || action.id || "action";
+      const risk = action.risk || "low";
+      if (risk === "medium" || risk === "high") {
+        const tpl = t("aitools.confirm_action", "Run action: {label}?");
+        const msg = tpl.replace("{label}", label);
+        if (!window.confirm(msg)) return;
+      }
+      try {
+        const r = await fetch("/ai/chat/action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action_id: action.id,
+            body: action.body || {},
+          }),
+        });
+        const j = await r.json();
+        if (r.ok && j.ok) {
+          this.appendMessage(
+            "system",
+            `${label} → ${j.verb} ${j.path}`,
+          );
+        } else {
+          this.appendMessage(
+            "system",
+            `${label} → error: ${j.detail || j.error || r.status}`,
+          );
+        }
+      } catch (e) {
+        this.appendMessage("system", `${label} → error: ${e.message || e}`);
+      }
+    },
+
+    _sendFromInput() {
+      const input = $ait("aitools-input");
+      if (!input) return;
+      const text = (input.value || "").trim();
+      if (!text) return;
+      input.value = "";
+      this.send(text);
+    },
+
+    async send(text, templateId, contextTags) {
+      if (!this.state.conversationId) {
+        await this.newConversation();
+      }
+      this.appendMessage("user", text);
+      try {
+        const r = await fetch("/ai/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversation_id: this.state.conversationId,
+            message: text,
+            template_id: templateId || null,
+            context_tags: contextTags || null,
+            locale: locale(),
+          }),
+        });
+        if (!r.ok) {
+          this.appendMessage("system", t("aitools.error_send"));
+          return;
+        }
+        const j = await r.json();
+        this.state.pendingTurnId = j.turn_id;
+        this._streamTurn(j.stream_url);
+      } catch (e) {
+        this.appendMessage("system", t("aitools.error_send"));
+      }
+    },
+
+    _streamTurn(url) {
+      if (this.state.sse) {
+        try { this.state.sse.close(); } catch {}
+      }
+      const pending = this.appendMessage("assistant", "");
+      if (pending) pending.classList.add("aitools-msg-pending");
+      this.state.pendingMsgEl = pending;
+      let buf = "";
+
+      const sse = new EventSource(url);
+      this.state.sse = sse;
+
+      sse.addEventListener("token", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.content) {
+            buf += data.content;
+            if (pending) {
+              const body = pending.querySelector(".aitools-msg-body");
+              if (body) body.innerHTML = renderMarkdown(buf);
+            }
+            const thread = $ait("aitools-thread");
+            if (thread) thread.scrollTop = thread.scrollHeight;
+          }
+        } catch {}
+      });
+
+      sse.addEventListener("done", () => {
+        if (pending) pending.classList.remove("aitools-msg-pending");
+        sse.close();
+        this.state.sse = null;
+        this.state.pendingTurnId = null;
+        // Refresh conversation list to pick up auto-title.
+        this.loadConversations();
+        // Re-open the active conversation so action chips render
+        // (they live on the persisted assistant message).
+        if (this.state.conversationId) {
+          this.openConversation(this.state.conversationId);
+        }
+      });
+
+      sse.addEventListener("error", () => {
+        sse.close();
+        this.state.sse = null;
+        if (pending && pending.parentNode) {
+          pending.classList.remove("aitools-msg-pending");
+        }
+      });
+    },
+  };
+
+  window.aitools = aitools;
 })();

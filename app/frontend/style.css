@@ -1789,3 +1789,194 @@ button.is-refreshing::before {
     font: 12px var(--font-mono);
     color: var(--fg-muted);
 }
+
+/* ============================================================================
+ * AI Tools tab (Sesja 70 — Phase B). 3-column grid on desktop; rails collapse
+ * into stacked sections on narrow viewports.
+ * ========================================================================== */
+
+.aitools-backend-pill {
+    margin-left: auto;
+    padding: 4px 10px;
+    border-radius: 16px;
+    font-size: 12px;
+    background: var(--bg-elev);
+    color: var(--fg-muted);
+    border: 1px solid var(--border);
+}
+
+#aitools-grid {
+    display: grid;
+    grid-template-columns: 240px 1fr 260px;
+    gap: 0;
+    min-height: 480px;
+}
+
+.aitools-rail {
+    padding: 12px;
+    overflow-y: auto;
+    max-height: 70vh;
+}
+
+#aitools-conversations { border-right: 1px solid var(--border); }
+#aitools-library       { border-left:  1px solid var(--border); }
+
+.aitools-rail h3 {
+    margin: 0 0 8px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--fg-muted);
+}
+
+#aitools-new-chat { width: 100%; margin-bottom: 12px; }
+
+.aitools-conv-item {
+    padding: 8px 10px;
+    cursor: pointer;
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.aitools-conv-item:hover         { background: var(--bg-elev); }
+.aitools-conv-item.active        { background: var(--accent-soft); color: var(--fg); }
+
+#aitools-main {
+    display: flex;
+    flex-direction: column;
+    min-height: 480px;
+}
+
+#aitools-thread {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    max-height: 60vh;
+}
+
+.aitools-empty {
+    text-align: center;
+    margin-top: 60px;
+}
+
+.aitools-msg {
+    margin-bottom: 14px;
+    display: flex;
+    flex-direction: column;
+}
+
+.aitools-msg-role {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--fg-muted);
+    margin-bottom: 4px;
+}
+
+.aitools-msg-body {
+    padding: 10px 12px;
+    border-radius: 10px;
+    line-height: 1.5;
+    max-width: 88%;
+    word-wrap: break-word;
+}
+
+.aitools-msg-user  .aitools-msg-body {
+    background: var(--accent-soft);
+    align-self: flex-end;
+}
+.aitools-msg-assistant .aitools-msg-body {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    align-self: flex-start;
+}
+.aitools-msg-system .aitools-msg-body {
+    color: var(--fg-muted);
+    font-style: italic;
+    border-left: 3px solid var(--accent-soft);
+    padding-left: 10px;
+    background: transparent;
+}
+
+.aitools-msg-pending::after {
+    content: "▍";
+    animation: aitools-blink 1s steps(2) infinite;
+    color: var(--accent-fg);
+}
+@keyframes aitools-blink {
+    0%, 50%   { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+.aitools-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+.aitools-chip {
+    padding: 6px 12px;
+    border-radius: 16px;
+    cursor: pointer;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    font-size: 12px;
+    font-weight: 600;
+}
+.aitools-chip:hover            { filter: brightness(1.1); }
+.aitools-chip-medium           { background: var(--warn); color: var(--bg); }
+.aitools-chip-high             { background: var(--err);  color: white; }
+
+#aitools-input-row {
+    padding: 12px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+}
+#aitools-input {
+    flex: 1;
+    min-height: 44px;
+    padding: 8px;
+    font: 13px var(--font-sans);
+    resize: vertical;
+}
+#aitools-send { min-width: 80px; }
+
+#aitools-library-list h4 {
+    margin: 10px 0 6px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--fg-muted);
+}
+.aitools-prompt {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+    margin-bottom: 4px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--fg);
+}
+.aitools-prompt:hover { background: var(--accent-soft); }
+
+@media (max-width: 1100px) {
+    #aitools-grid {
+        grid-template-columns: 1fr;
+    }
+    #aitools-conversations,
+    #aitools-library {
+        border: none;
+        border-bottom: 1px solid var(--border);
+        max-height: 200px;
+    }
+}

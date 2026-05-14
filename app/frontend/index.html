@@ -629,13 +629,60 @@
       <pre id="sync-output"></pre>
     </section>
 
-    <!-- Suggestions -->
+    <!-- AI Tools (formerly Suggestions; section id + data-view stay -->
+    <!-- "suggest" so external bookmarks keep working - see spec §10.2). -->
     <section id="view-suggest" class="view hidden">
       <h2 style="display:flex;align-items:center;gap:0.5rem">
-        <span data-i18n="suggest.title">Smart Suggestions</span>
+        <span data-i18n="aitools.title">AI Tools</span>
+        <span class="aitools-backend-pill" id="aitools-backend"
+              data-i18n="aitools.no_backend">No backend configured</span>
+      </h2>
+
+      <!-- 3-column AI Tools shell (Sesja 70 Phase B) -->
+      <div id="aitools-shell" class="card" style="margin-bottom:1rem; padding:0;">
+        <div id="aitools-grid">
+          <!-- Left rail: conversations -->
+          <aside id="aitools-conversations" class="aitools-rail">
+            <h3 data-i18n="aitools.conversations_h">Conversations</h3>
+            <button id="aitools-new-chat" class="primary"
+                    data-i18n="aitools.new_chat">New chat</button>
+            <div id="aitools-conv-list">
+              <p class="dim" data-i18n="aitools.empty_conversations">
+                No saved conversations yet.
+              </p>
+            </div>
+          </aside>
+
+          <!-- Middle: chat thread + input -->
+          <main id="aitools-main">
+            <div id="aitools-thread" aria-live="polite">
+              <p class="dim aitools-empty"
+                 data-i18n="aitools.empty_thread">Pick a prompt on the right, or type a question below.</p>
+            </div>
+            <div id="aitools-input-row">
+              <textarea id="aitools-input" rows="2"
+                        data-i18n-placeholder="aitools.input_placeholder"
+                        placeholder="Ask anything…"></textarea>
+              <button id="aitools-send" class="primary"
+                      data-i18n="aitools.send">Send</button>
+            </div>
+          </main>
+
+          <!-- Right rail: prompt library -->
+          <aside id="aitools-library" class="aitools-rail">
+            <h3 data-i18n="aitools.library_h">Prompt library</h3>
+            <div id="aitools-library-list"></div>
+          </aside>
+        </div>
+      </div>
+
+      <!-- Quick suggestions (Sesja 67) + AI provider wizard remain below. -->
+      <h3 style="margin-top:1.5rem" data-i18n="aitools.quick_suggestions_h">Quick suggestions</h3>
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+        <span class="dim" data-i18n="suggest.title">Smart Suggestions</span>
         <button id="suggest-refresh-btn" class="secondary" style="margin-left:auto;font-size:0.8rem"
                 data-i18n="suggest.btn_refresh">Re-analyse</button>
-      </h2>
+      </div>
       <section class="tab-help card" style="margin-bottom:1rem">
         <p data-i18n="suggest.help_summary"></p>
         <details style="margin-top:0.5rem">
