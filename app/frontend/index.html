@@ -1145,6 +1145,34 @@ python3 -m ascendo schedule install \
         <details data-platforms="linux ubuntu"><summary><b data-i18n="help.linux.snapshots_h"></b></summary><p data-i18n="help.linux.snapshots_p"></p></details>
         <details data-platforms="linux ubuntu"><summary><b data-i18n="help.linux.ai_suggestions_h"></b></summary><p data-i18n="help.linux.ai_suggestions_p"></p></details>
         <details data-platforms="linux ubuntu"><summary><b data-i18n="help.linux.schedule_tab_h"></b></summary><p data-i18n="help.linux.schedule_tab_p"></p></details>
+
+        <h3 id="help-macos-recent" data-platforms="macos">12 · Recent additions (v0.2.0 — v0.4.5, M5.x)</h3>
+        <p data-platforms="macos" class="dim">macOS-specific operator features shipped over the last several sessions. Click any item to expand.</p>
+        <ul data-platforms="macos">
+          <li><b data-i18n="help.macos.managers_h"></b></li>
+          <li><span data-i18n="help.macos.m_brew"></span></li>
+          <li><span data-i18n="help.macos.m_mas"></span></li>
+          <li><span data-i18n="help.macos.m_npm"></span></li>
+          <li><span data-i18n="help.macos.m_pip"></span></li>
+          <li><span data-i18n="help.macos.m_web"></span></li>
+          <li><span data-i18n="help.macos.m_softwareupdate"></span></li>
+        </ul>
+        <details data-platforms="macos"><summary><b data-i18n="help.macos.web_h"></b></summary><p data-i18n="help.macos.web_p"></p></details>
+        <details data-platforms="macos"><summary><b data-i18n="help.macos.discovery_h"></b></summary><p data-i18n="help.macos.discovery_p"></p></details>
+        <details data-platforms="macos"><summary><b data-i18n="help.macos.omaha_h"></b></summary><p data-i18n="help.macos.omaha_p"></p></details>
+        <details data-platforms="macos"><summary><b data-i18n="help.macos.release_feed_h"></b></summary><p data-i18n="help.macos.release_feed_p"></p></details>
+        <details data-platforms="macos"><summary><b data-i18n="help.macos.mas_cve_h"></b></summary><p data-i18n="help.macos.mas_cve_p"></p></details>
+        <details data-platforms="macos"><summary><b data-i18n="help.macos.softwareupdate_h"></b></summary><p data-i18n="help.macos.softwareupdate_p"></p></details>
+        <details data-platforms="macos"><summary><b data-i18n="help.macos.touchid_h"></b></summary><p data-i18n="help.macos.touchid_p"></p></details>
+
+        <h3 id="help-macos-tooling" data-platforms="macos">13 · Operator tooling (Sesja 30 — v0.4.5)</h3>
+        <details data-platforms="macos"><summary><b data-i18n="help.macos.snapshot_h"></b></summary><p data-i18n="help.macos.snapshot_p"></p></details>
+        <details data-platforms="macos"><summary><b data-i18n="help.macos.scheduler_h"></b></summary><p data-i18n="help.macos.scheduler_p"></p></details>
+        <details data-platforms="macos"><summary><b data-i18n="help.macos.elevation_h"></b></summary><p data-i18n="help.macos.elevation_p"></p></details>
+        <details data-platforms="macos"><summary><b data-i18n="help.macos.validate_h"></b></summary><p data-i18n="help.macos.validate_p"></p></details>
+        <details data-platforms="macos"><summary><b data-i18n="help.macos.ai_suggestions_h"></b></summary><p data-i18n="help.macos.ai_suggestions_p"></p></details>
+        <details data-platforms="macos"><summary><b data-i18n="help.macos.schedule_tab_h"></b></summary><p data-i18n="help.macos.schedule_tab_p"></p></details>
+        <details data-platforms="macos"><summary><b data-i18n="help.macos.inventory_db_h"></b></summary><p data-i18n="help.macos.inventory_db_p"></p></details>
       </article>
 
       <article class="help-doc card" data-platforms="windows">
@@ -1464,21 +1492,31 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
           <ul id="about-highlights" style="margin:0;padding-left:1.2rem">
             <li><b data-i18n="about.h_sesja67_t"></b>
                 <span data-i18n="about.h_sesja67_d"></span></li>
-            <li><b data-i18n="about.h_sesja66_t"></b>
+            <li class="adapter-only-macos"><b data-i18n="about.h_macos_v045_t"></b>
+                <span data-i18n="about.h_macos_v045_d"></span></li>
+            <li class="adapter-only-macos"><b data-i18n="about.h_macos_v04_t"></b>
+                <span data-i18n="about.h_macos_v04_d"></span></li>
+            <li class="adapter-only-macos"><b data-i18n="about.h_macos_v03_t"></b>
+                <span data-i18n="about.h_macos_v03_d"></span></li>
+            <li class="adapter-only-macos"><b data-i18n="about.h_macos_touchid_t"></b>
+                <span data-i18n="about.h_macos_touchid_d"></span></li>
+            <li class="adapter-only-macos"><b data-i18n="about.h_macos_v02_t"></b>
+                <span data-i18n="about.h_macos_v02_d"></span></li>
+            <li class="adapter-only-windows"><b data-i18n="about.h_sesja66_t"></b>
                 <span data-i18n="about.h_sesja66_d"></span></li>
-            <li><b data-i18n="about.h_sesja65_t"></b>
+            <li class="adapter-only-windows"><b data-i18n="about.h_sesja65_t"></b>
                 <span data-i18n="about.h_sesja65_d"></span></li>
-            <li><b data-i18n="about.h_sesja64_t"></b>
+            <li class="adapter-only-windows"><b data-i18n="about.h_sesja64_t"></b>
                 <span data-i18n="about.h_sesja64_d"></span></li>
-            <li><b data-i18n="about.h_sesja63_t"></b>
+            <li class="adapter-only-windows"><b data-i18n="about.h_sesja63_t"></b>
                 <span data-i18n="about.h_sesja63_d"></span></li>
-            <li><b data-i18n="about.h_sesja62_t"></b>
+            <li class="adapter-only-windows"><b data-i18n="about.h_sesja62_t"></b>
                 <span data-i18n="about.h_sesja62_d"></span></li>
-            <li><b data-i18n="about.h_sesja61_t"></b>
+            <li class="adapter-only-windows"><b data-i18n="about.h_sesja61_t"></b>
                 <span data-i18n="about.h_sesja61_d"></span></li>
-            <li><b data-i18n="about.h_sesja59_t"></b>
+            <li class="adapter-only-windows"><b data-i18n="about.h_sesja59_t"></b>
                 <span data-i18n="about.h_sesja59_d"></span></li>
-            <li><b data-i18n="about.h_sesja58_t"></b>
+            <li class="adapter-only-windows"><b data-i18n="about.h_sesja58_t"></b>
                 <span data-i18n="about.h_sesja58_d"></span></li>
           </ul>
           <p class="dim" style="margin:0.8rem 0 0;font-size:0.85em">

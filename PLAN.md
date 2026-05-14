@@ -1,6 +1,57 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-13 (sesja 68) — **Ubuntu parity hardening:
+> Last updated: 2026-05-14 (sesja 69) — **macOS parity pass.**
+> Operator: *"bring this macOS version of ascendo app up to date with
+> comparison to ubuntu and windows versions which were upgraded
+> recently … make sure macos app is ready for production, do code
+> review, fix all bugs, make sure inventory of installed apps are
+> working perfectly … all the scripts in cli works perfectly, no
+> errors, web app is updated in help and about menu. suggestions (ai
+> api is working). pretty much everything is ready to be deployed to
+> clients."* Three-agent parallel audit confirmed all Sesja 43-68
+> core fixes (inventory dedup v2, same-run overlay filter, REPORT.md
+> per-run, Suggestions AI 6-provider, Schedule tab via IScheduler,
+> _normalize_item_id heuristic) already cross-platform via `core/` +
+> `app/frontend/`. Live-verified on this Mac: doctor 12-component
+> rollup green, schema v2 migration runs on dashboard open, `ascendo
+> build-inventory` enumerates 567 packages across 6 sources (brew /
+> mas / npm / pip / system / web), Schedule tab installs real
+> `~/Library/LaunchAgents/dev.ascendo.*.plist` + list + trigger +
+> remove round-trip, Suggestions AI endpoint returns rule-based
+> fallback when no provider configured (AI cards prepended when
+> provider set). **44/44 validate-macos.sh** stages green + 47/47
+> contract tests (inventory_db, overlay same-run, suggestions AI,
+> legacy_compat) + 393/393 macOS adapter tests, zero regressions.
+> The actual macOS gap was UI documentation only:
+> (1) **help.macos.* i18n block** added — 35 keys × EN+PL = 70
+> entries (918/918 EN+PL parity) documenting v0.2.0 — v0.4.5
+> milestones: WebManager 7 handlers, web auto-discovery + tiered
+> probes, Omaha protocol, release_feed extensions, mas CVE-2025-43411
+> rule, softwareupdate -R rule + reboot survival, Touch ID 1-tap auth,
+> Time Machine read-only, LaunchdScheduler, MacElevation askpass,
+> validate harness, Suggestions AI, Schedule tab, inventory dedup v2.
+> (2) **`<h3>` sections** wired in `app/frontend/index.html`:
+> `help-macos-recent` + `help-macos-tooling` with `data-platforms=
+> "macos"` so they only render on Mac. 7 manager rows + 14 expandable
+> details panels each tied to a real i18n key.
+> (3) **About panel highlights** rebuilt platform-aware: existing 8
+> Windows-specific Sesjas 58/59/61/62/63/64/65/66 gated with
+> `class="adapter-only-windows"`, Sesja 67 stays as the single
+> cross-platform highlight, 5 new macOS items added with
+> `class="adapter-only-macos"` covering v0.4.5 (Omaha +
+> 223/224 candidate coverage), v0.4.0 (auto-discovery + tiered
+> probes), v0.3.0 (WebManager), Sesja 36 (Touch ID), and v0.2.0
+> (full M5 macOS adapter complete).
+> (4) **MACOS_QUICKSTART.md §13** new "Sesja 67 features" section
+> with curl smoke tests for `/suggestions/library` + `/scheduler/list`
+> + install/remove. (5) **MACOS_TESTING.md §8** validation table
+> extended with rows for Suggestions AI, Schedule tab, inventory
+> dedup v2, same-run overlay, History → REPORT.md links — each
+> linked to file:line of the live implementation.
+> Sanity check count bumped to **44/44** (was 41/41 in v0.4.5;
+> Sesja 67 added 3 new stages for scheduler + AI + inventory).
+>
+> Previous milestone (sesja 68) — **Ubuntu parity hardening:
 > snap apply trap fix + apt apply pipe-hang fix + help.linux i18n +
 > inventory_db.upsert schema-v2 + item_id Ubuntu normalization.**
 > Operator: *"check this project deeply, see if you can implement any

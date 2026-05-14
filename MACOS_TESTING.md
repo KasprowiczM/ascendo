@@ -305,11 +305,16 @@ on real macOS hardware:
 | Layer | Module | Validated? |
 |---|---|---|
 | 1 — Frontend SPA | `app/frontend/*` | ✅ via Categories + Run Center clicks |
-| 2 — Tauri shell | `ui/desktop-tauri/*` | 🟡 dev mode works; build produces unsigned `.app`/`.dmg` (signing is M6) |
+| 2 — Tauri shell | `ui/desktop-tauri/*` | 🟡 dev mode works; build produces unsigned `.app` (`.dmg` retired — public distribution is `curl install.sh \| bash`) |
 | 3 — Backend HTTP | `core/ascendo/dashboard/` | ✅ via Swagger UI + validate Stage 3 |
 | 4 — Core domain | `core/ascendo/{models,interfaces,orchestrator,cli}/` | ✅ via CLI |
 | 5 — Adapter Python | `adapters/macos/ascendo_macos/` | ✅ via doctor + run + scheduler |
 | 6 — Native scripts | `adapters/macos/{lib,scripts/*}` | ✅ via run (real brew + mas + softwareupdate + scheduler) |
+| Suggestions AI (Sesja 67) | `core/ascendo/dashboard/routes/{ai,suggestions}.py` | ✅ via `GET /suggestions/library` and `GET /ai/providers` (6 providers wired) |
+| Schedule tab (Sesja 67) | `core/ascendo/dashboard/routes/scheduler_real.py` + `adapters/macos/.../scheduler.py` | ✅ install + list + trigger + remove drives real `~/Library/LaunchAgents/dev.ascendo.*.plist` |
+| Inventory dedup (Sesja 67) | `core/ascendo/dashboard/inventory_db.py` v2 schema | ✅ migration `(category, name)` → `(category, name, item_id)` runs on first open; tests pin upsert behaviour |
+| Same-run overlay (Sesja 66) | `core/ascendo/dashboard/routes/spa_real.py::_latest_check_overlay` | ✅ filters post-apply payloads to same-run only; a stale `triggered` from an old run no longer pins a row |
+| History → REPORT.md links (Sesja 66) | `app/frontend/app.js::renderHistory` | ✅ 📄 link per row to `/runs/{id}/report` |
 
 ---
 

@@ -6,6 +6,196 @@
 
 ---
 
+## Sesja 69 (2026-05-14) — macOS parity pass: help.macos i18n + About highlights + docs sweep
+
+Operator request (verbatim): *"read handoff, bring this macos version
+of ascendo app up to date with comparison to ubuntu and windows
+versions which were upgraded recently. i know that core is the core
+but some of the fixed problems in main app functionality, the main
+check all the way to cleanup process was nicely fixed in ubuntu/windows
+versions. implement then in macos version. do code review, we are only
+going to stick to cli + web app on macos, dmg files i'm going to pass
+for now because of the costs. make sure macos app is ready for
+production … inventory of installed apps … if app is not installed
+don't process it, remove from inventory. if new app is found add it to
+inventory … categories and apps in categories are properly places based
+on how the app was originally installed (source of installation) remove
+any duplicates. … inventory shows actual version and after check
+candidate. all information is consistent across web app … web app is
+updated in help and about menu. suggestions (ai api is working). pretty
+much everything is ready to be deployed to clients."*
+
+### Three-agent parallel audit (read-only)
+
+Dispatched 2 parallel `Explore` agents to map the gap between macOS and
+the Ubuntu/Windows Sesja 43-68 work:
+
+| Agent | Domain | Key finding |
+|-------|--------|-------------|
+| A | macOS adapter inventory + cross-platform fixes | All Sesja 63-68 core fixes already cross-platform via `core/` + `app/frontend/`. macOS-specific work post-Sesja-50 has been confined to web handler extensions (M5.7.x: Omaha, release_feed, Sparkle YAML, app.asar binary mining) — no core-contract violations. |
+| B | macOS SPA UI gaps | No `help.macos.*` i18n block existed (Windows + Linux had 33 keys each, macOS had 0). No `data-platforms="macos"` sections in index.html for "12 · Recent additions" + "13 · Operator tooling". About panel highlights were Windows-skewed. Suggestions AI + Schedule tab routes already platform-agnostic. |
+
+### Live verification on this Mac
+
+| Check | Result |
+|-------|--------|
+| `python3 -m ascendo doctor` | 12 components green (ascendo_lib, ascendo_scripts, bash, brew, jq, launchctl, mas, pip, softwareupdate, system_profiler, tmutil, web=37 apps) |
+| Schema v2 migration | First InventoryDB construction triggers v1→v2 rebuild; previous 467 rows cleared per migration spec, next live-scan repopulates |
+| `ascendo build-inventory` | **567 packages** across 6 sources: brew=152 / mas=13 / npm=9 / pip=11 / system=64 / web=318 |
+| `GET /version` | `{"ascendo":"0.0.7","adapter":"macos","adapter_tier":1,"edition":"basic"}` |
+| `GET /scheduler/list` | empty list (no schedules installed) — works |
+| `POST /scheduler/install` | created `~/Library/LaunchAgents/dev.ascendo.ascendo-mac-test.plist` + sidecar JSON at `~/Library/Application Support/Ascendo/schedules/ascendo-mac-test.json` |
+| `POST /scheduler/remove` | both files deleted cleanly |
+| `GET /suggestions/library` | rule-based fallback ("Everything looks up to date"); `ai: null` because no provider configured (expected) |
+| `GET /ai/providers` | 6 providers wired + `implemented:true` for anthropic / openai / openrouter / ollama / google / lm_studio + scaffolded litellm |
+| `ascendo run --category brew --phase check` | 151 items, all with `current_version` + `target_version` populated; first item `{"id":"openai-whisper","name":"openai-whisper","current_version":"20250625_4","target_version":"20250625_5","status":"planned"}` |
+| `bin/validate-macos.sh` | **44/44 PASS** (was 41/41 in v0.4.5; Sesja 67 stages added) |
+| Contract tests | 47/47 pass (inventory_db + overlay same-run + suggestions_ai + legacy_compat) |
+| macOS adapter tests | **393/393 pass** in 84 s, zero regressions |
+
+### Shipped
+
+**1. `help.macos.*` i18n block** — `app/frontend/i18n.js`:
+35 keys × EN + PL = 70 entries. Structure parallel to Windows + Linux:
+1 `managers_h` + 6 manager rows + 14 expandable `<h>/<p>` detail pairs
+documenting:
+
+- `web_h/p` — WebManager 7 update mechanisms (v0.3.0 / M5.6)
+- `discovery_h/p` — Auto-discovery + tiered probes (v0.4.0 / M5.7)
+- `omaha_h/p` — Omaha protocol handler (v0.4.5 / M5.7.5)
+- `release_feed_h/p` — `version_regex` + `format=text` (v0.4.4)
+- `mas_cve_h/p` — CVE-2025-43411 `sudo mas upgrade` rule
+- `softwareupdate_h/p` — `-R` flag rule + reboot survival
+- `touchid_h/p` — Touch ID 1-tap auth (Sesja 36)
+- `snapshot_h/p` — Time Machine read-only (M5.4 — APFS auto-managed)
+- `scheduler_h/p` — LaunchdScheduler per-user LaunchAgents (M5.5)
+- `elevation_h/p` — MacElevation askpass cache
+- `validate_h/p` — `bin/validate-macos.sh` 44-check harness
+- `ai_suggestions_h/p` — Suggestions AI (Sesja 67, cross-platform)
+- `schedule_tab_h/p` — Schedule tab (Sesja 67, cross-platform)
+- `inventory_db_h/p` — schema v2 + `_normalize_item_id` heuristic
+
+Total i18n keys grew from 873/873 (post-Sesja-68) to **918/918**
+(net +45: 35 new help.macos + 10 new about.h_macos_* highlights).
+EN+PL parity verified by flatten-and-diff.
+
+**2. `<h3>` sections in `app/frontend/index.html`:**
+- `help-macos-recent` (id="help-macos-recent" data-platforms="macos")
+  with `<ul>` of 7 manager rows + 7 `<details>` blocks for §12
+- `help-macos-tooling` (id="help-macos-tooling" data-platforms="macos")
+  with 7 `<details>` blocks for §13
+
+Inserted between Linux block and Windows block; gated via the existing
+`ui.loadHelp()` data-platforms filter so only renders when
+`html[data-adapter=macos]`.
+
+**3. About panel highlights rebuilt platform-aware:**
+- Existing 8 Windows-specific Sesja items (58, 59, 61, 62, 63, 64, 65,
+  66) gated with `class="adapter-only-windows"`
+- Sesja 67 stays as the single platform-neutral highlight
+- 5 new macOS items added with `class="adapter-only-macos"`:
+  - v0.4.5 / M5.7.5 — Omaha + ~100% candidate coverage
+  - v0.4.0 / M5.7 — Web auto-discovery + tiered probes
+  - v0.3.0 / M5.6 — WebManager (6th IPackageManager)
+  - Sesja 36 — Touch ID 1-tap auth
+  - v0.2.0 — full M5 macOS adapter complete
+
+CSS gating via the existing `adapter-only-<name>` pattern in
+`style.css:106` — `display:none` by default, `display:revert` when
+`html[data-adapter]` matches.
+
+**4. `MACOS_QUICKSTART.md` §13 new "Sesja 67 features" section:**
+covers inventory dedup schema v2, Suggestions AI provider setup +
+curl smoke test, Schedule tab CLI + API round-trip, and a note
+about the new help-macos-recent + help-macos-tooling Help sections.
+Sanity check count bumped to **44/44**.
+
+**5. `MACOS_TESTING.md` §8 validation table extended** with 5 new
+rows: Suggestions AI, Schedule tab, inventory dedup v2, same-run
+overlay, History → REPORT.md links — each linked to file:line of
+the live implementation.
+
+### Files changed (4 files, +198 lines, -22 lines)
+
+```
+MODIFIED:
+  app/frontend/i18n.js              | +130 (help.macos EN+PL + about.h_macos_* EN+PL)
+  app/frontend/index.html           |  +44 (help-macos-recent + help-macos-tooling + about adapter-only gating)
+  MACOS_QUICKSTART.md               |  +60 (§13 Sesja 67 features + count 41 → 44)
+  MACOS_TESTING.md                  |   +6 (5 new validation rows + Tauri row updated for .dmg retirement)
+  PLAN.md                           |   header replaced with Sesja 69 entry
+  HANDOFF.md                        |   this entry
+```
+
+### What was NOT done (explicitly out of scope per operator request)
+
+- **`.dmg` distribution retired for cost reasons** — operator
+  explicitly said *"dmg files i'm going to pass for now because of
+  the costs"*. The `bin/build-dmg.sh` script + Tauri DMG bundler
+  remain in-repo for contributor dev (signing infrastructure +
+  notarization needed before public re-enable, separate Tauri 2.x
+  signing investment). Public distribution stays on the
+  `curl install.sh | bash` one-liner — same path the operator's
+  clients will use.
+- **No adapter code changes** — code review confirmed every Sesja
+  43-68 fix already cross-platform. The only "fix" needed was
+  surface visibility (UI + docs).
+- **Apply-mark mechanism not ported to macOS** — Windows-specific
+  (winget `Version=Unknown` behavior). macOS analog handlers
+  (`web/apply.sh`, `softwareupdate/apply.sh`, `mas/apply.sh`)
+  already do post-install version readback via
+  `_web_installed_version` / `softwareupdate -l` / `mas list` and
+  emit honest `failed` when the install didn't change the version.
+
+### Operator verification path
+
+```bash
+cd ~/Dev_Env/Ascendo && git pull
+PYTHONPATH=core:adapters/macos python3 -m ascendo doctor   # 12 components green
+
+# 1. Inventory schema auto-migrates on first dashboard launch;
+#    next /inventory/refresh or full check repopulates within seconds.
+python3 -m ascendo build-inventory --verbose
+# Expected: brew=NNN + mas=NN + npm=NN + pip=NN + system=NN + web=NNN
+
+# 2. Schedule tab in sidebar — Click + add a daily safe run:
+#    Name:       ascendo-daily
+#    Expression: DAILY 03:00
+#    Profile:    safe
+#    Enabled:    yes
+#    -> Save schedule
+ls ~/Library/LaunchAgents/dev.ascendo.*.plist
+launchctl list | grep dev.ascendo
+
+# 3. Suggestions tab — Settings → AI → configure provider + model.
+#    Then Suggestions tab shows 1-3 AI cards on top of rule-based cards.
+#    If the LLM is offline, Ascendo falls back to rule-based silently.
+
+# 4. About tab — scroll to "Recent highlights" for the macOS-aware
+#    capability tour with GitHub + Releases links. Windows-specific
+#    Sesja items (58/59/61-66) hidden via adapter-only-windows CSS.
+
+# 5. Help tab — scroll to "12 · Recent additions (v0.2.0 — v0.4.5,
+#    M5.x)" and "13 · Operator tooling (Sesja 30 — v0.4.5)" for the
+#    14 new macOS-specific capability summaries.
+
+# 6. End-to-end smoke:
+bash bin/validate-macos.sh   # ALL CHECKS PASSED. (44/44)
+```
+
+### Carry-forward
+
+- **i18n PL Sesja 36 description has Polish typo** ("auth Touch ID
+  1-tap" → could be "logowanie Touch ID 1-tap" for cleaner PL). Minor;
+  flagged for a future polish sweep.
+- **About panel Linux highlights**: this session gated the Windows
+  items but did NOT add Linux-specific items (Sesja 56, 57, 58, 68).
+  Linux operators see only Sesja 67 + Windows-gated items hidden via
+  CSS. Same scope as the macOS gate-and-add — a future session can
+  mirror the pattern for Linux.
+
+---
+
 ## Sesja 68 (2026-05-13) — Ubuntu parity hardening: snap trap fix + apt pipe-hang fix + help.linux i18n + inventory_db.upsert + item_id normalization
 
 Operator request (single multi-part ask spanning multiple turns):

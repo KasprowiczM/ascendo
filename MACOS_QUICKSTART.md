@@ -537,17 +537,83 @@ Touch ID, so this only helps fully unattended automation).
 └── ~/.ascendo/runs/<uuid>/              # All sidecars + per-phase logs (NB: home, not repo)
 ```
 
-## 13 · One-liner sanity check
+## 13 · Sesja 67 features (cross-platform)
+
+Three big improvements that landed for Windows and Ubuntu (HANDOFF Sesja
+67) live in `core/` + `app/frontend/`, so they work on macOS without any
+adapter-side change:
+
+### Inventory dedup — schema v2
+`~/.ascendo/inventory.db` primary key widened to `(category, name,
+item_id)`. Multi-architecture packages (e.g. parallel VC++ redistributables
+on Windows) no longer collapse into a single row. Migration is automatic
+on first dashboard launch; legacy v1 rows are dropped and repopulated
+within seconds by the next live-scan or run. On macOS this matters less
+than on Windows (Apple bundle ids are already unique per app), but the
+schema is unified — `ascendo build-inventory` benefits from the same
+upsert-only post-run flush that prevents stale rows after uninstall.
+
+### Suggestions AI integration
+Open **Settings → AI providers**, pick one of 6 providers (anthropic /
+openai / openrouter / ollama / google / lm_studio), paste API key (or
+`base_url` for ollama/lm_studio), Test connection, pick model, Save.
+The **Suggestions** tab in the sidebar then prepends 1-3 AI-generated
+cards on top of the rule-based ones. AI failures (rate limit, network)
+fall back to rule-based silently — the operator never sees a 500.
+
+```bash
+# Smoke-test from the CLI (no UI):
+curl http://127.0.0.1:8765/suggestions/library | jq '.ai, .ai_generated_count, .count'
+# Expected: {"provider":"anthropic","model":"claude-3-5-sonnet-...","ok":true,"count":N}
+#           ai_generated_count: 1..3
+#           total cards count
+```
+
+### Schedule tab — LaunchdScheduler driver
+The SPA sidebar now has a **Schedule** tab between Hosts and Settings.
+Install / list / trigger / remove launchd LaunchAgents through one UI.
+DSL: `DAILY HH:MM` · `WEEKLY DAY HH:MM` · `MONTHLY HH:MM` ·
+`HOURLY HH:MM` · `MINUTE N`. Files land at
+`~/Library/LaunchAgents/dev.ascendo.<name>.plist` +
+`~/Library/Application Support/Ascendo/schedules/<name>.json`.
+
+```bash
+# Smoke-test the backend without the UI:
+curl http://127.0.0.1:8765/scheduler/list
+
+# Install a daily quick run via the API:
+curl -X POST http://127.0.0.1:8765/scheduler/install \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"ascendo-daily","expression":"DAILY 03:00","profile":"quick","enabled":true}'
+
+# Trigger once now:
+curl -X POST http://127.0.0.1:8765/scheduler/trigger \
+  -H 'Content-Type: application/json' -d '{"name":"ascendo-daily"}'
+
+# Remove:
+curl -X POST http://127.0.0.1:8765/scheduler/remove \
+  -H 'Content-Type: application/json' -d '{"name":"ascendo-daily"}'
+```
+
+The Help tab now has a macOS-specific **"12 · Recent additions"** +
+**"13 · Operator tooling"** block with 14 expandable details documenting
+WebManager, Omaha protocol, release_feed extensions, mas CVE rule,
+softwareupdate -R rule, Touch ID, Time Machine snapshots, LaunchdScheduler,
+MacElevation, validate harness, Suggestions AI, Schedule tab, and the
+inventory dedup schema.
+
+## 14 · One-liner sanity check
 
 If anything seems off, run this first — exits 0 only when CLI + dashboard
 + all 5 phases × 6 categories produce real sidecars and the SPA assets
 serve correctly. Stage 12 exercises the launchd scheduler round-trip
 (install + list + trigger + remove a throwaway agent); Stage 13 exercises
-the M5.6 web app updater across all 5 phases (24 apps in shipped registry):
+the M5.6 / M5.7 web app updater across all 5 phases (37 apps in shipped
+registry):
 
 ```bash
 bash bin/validate-macos.sh
-# Expected: ALL CHECKS PASSED. (41/41)
+# Expected: ALL CHECKS PASSED. (44/44)
 ```
 
 Anything red names the failed component (CLI, manager, sidecar parse,
