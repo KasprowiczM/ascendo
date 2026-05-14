@@ -34,17 +34,29 @@ async def run_turn(
     registry: TurnRegistry,
     template_id: str | None = None,
     context_tags: list[str] | None = None,
+    state: TurnState | None = None,
 ) -> AsyncIterator[Chunk]:
-    """Execute one chat turn end-to-end, yielding chunks for SSE relay."""
-    turn_id = uuid.uuid4().hex
-    state = TurnState(
-        turn_id=turn_id,
-        conversation_id=conversation_id,
-        backend_name=backend.name,
-        status=TurnStatus.RUNNING,
-        started_at=time(),
-    )
-    registry.register(state)
+    """Execute one chat turn end-to-end, yielding chunks for SSE relay.
+
+    If ``state`` is supplied the caller has already registered it in the
+    registry (so its turn_id matches what was returned to the SPA + can
+    be addressed by /ai/chat/cancel/{turn_id}). Otherwise a fresh state
+    is generated and registered.
+    """
+    if state is None:
+        turn_id = uuid.uuid4().hex
+        state = TurnState(
+            turn_id=turn_id,
+            conversation_id=conversation_id,
+            backend_name=backend.name,
+            status=TurnStatus.RUNNING,
+            started_at=time(),
+        )
+        registry.register(state)
+    else:
+        state.status = TurnStatus.RUNNING
+        if state.started_at is None:
+            state.started_at = time()
 
     chats_db.append_message(
         conversation_id=conversation_id,

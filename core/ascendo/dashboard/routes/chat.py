@@ -30,7 +30,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
 from ascendo.ai.actions import dispatch_action
-from ascendo.ai.backend import BackendResolver, TurnRegistry
+from ascendo.ai.backend import BackendResolver, TurnRegistry, TurnState, TurnStatus
 from ascendo.ai.context import build_context
 from ascendo.ai.persistence import ChatsDB
 from ascendo.ai.prompts import filtered_library, system_prompt
@@ -203,6 +203,18 @@ async def post_chat(body: PostChat, request: Request) -> dict:
     import uuid
 
     turn_id = uuid.uuid4().hex
+    # Pre-register the TurnState with the SAME turn_id we return so
+    # /ai/chat/cancel/{turn_id} + the SSE disconnect path both reach the
+    # right cancel_event. Without this, the IDs drift and cancel always
+    # 404s. (Sesja 70 / Task 19 fix.)
+    state = TurnState(
+        turn_id=turn_id,
+        conversation_id=body.conversation_id,
+        backend_name=backend.name,
+        status=TurnStatus.PENDING,
+    )
+    reg.register(state)
+
     queue: asyncio.Queue = asyncio.Queue()
     streams = _chat_streams(request)
     streams[turn_id] = queue
@@ -219,6 +231,7 @@ async def post_chat(body: PostChat, request: Request) -> dict:
                 registry=reg,
                 template_id=body.template_id,
                 context_tags=body.context_tags,
+                state=state,
             ):
                 await queue.put(chunk)
         finally:
@@ -239,11 +252,19 @@ async def stream_turn(turn_id: str, request: Request):
     queue = streams.get(turn_id)
     if queue is None:
         raise HTTPException(status_code=404, detail="unknown turn_id")
+    reg = _turn_registry(request)
 
     async def _events():
         try:
             while True:
                 if await request.is_disconnected():
+                    # Signal the producer's backend.stream() to stop
+                    # between tokens. The producer's finally block still
+                    # persists whatever was buffered so partial responses
+                    # survive the client closing its tab.
+                    state = reg.get(turn_id)
+                    if state is not None:
+                        state.cancel_event.set()
                     return
                 chunk = await queue.get()
                 if chunk is None:
