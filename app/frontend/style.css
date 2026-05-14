@@ -2148,3 +2148,149 @@ button.is-refreshing::before {
     opacity: 1;
     transform: translateY(0);
 }
+
+/* =========================================================================
+ * Schedule view — compact form + inline buttons
+ *
+ * Pre-fix: every button in a .card was 100 % wide thanks to the global
+ * `.card button { width: 100 % }` rule. The schedule form's Save button
+ * stretched across the whole row, the Refresh button under the active-
+ * schedule list also went full-width, and the per-row action buttons
+ * (Run now / Edit / Delete) stacked vertically. All visually broken.
+ * ========================================================================= */
+#view-schedule .card button,
+#view-schedule .card button[type="submit"] {
+    width: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 120px;
+    margin-bottom: 0;
+}
+#view-schedule .card .schedule-row-actions button {
+    min-width: 64px;
+    margin-right: 4px;
+}
+#view-schedule #schedule-form {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 1rem;
+    row-gap: 0.75rem;
+    max-width: 720px;
+}
+#view-schedule #schedule-form input[type="text"],
+#view-schedule #schedule-form input:not([type="checkbox"]):not([type="radio"]),
+#view-schedule #schedule-form select {
+    max-width: 340px;
+}
+#view-schedule #schedule-form .schedule-form-buttons {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+#view-schedule table th,
+#view-schedule table td { padding: 0.4rem 0.6rem; }
+
+/* =========================================================================
+ * Settings — card alignment grid
+ *
+ * Make the Settings form lay out cards on an even 12-column grid so the
+ * card heights line up nicely regardless of content density. Cards keep
+ * a stable inline width across breakpoints instead of resizing per row.
+ * ========================================================================= */
+#view-settings .grid {
+    align-items: stretch;
+}
+#view-settings .card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+#view-settings .card > h3 { margin: 0; }
+#view-settings .card > label,
+#view-settings .card > div { margin: 0; }
+#view-settings .card label.inline { gap: 8px; }
+
+/* =========================================================================
+ * Overview — System Health card visual badges
+ *
+ * Replace the bare "ok" / "warn" text on each health component with a
+ * coloured pill so the operator can scan the column at a glance.
+ *
+ *   ok       → lime pill
+ *   degraded → amber pill
+ *   warn     → amber pill
+ *   error    → red pill
+ *   missing  → muted grey pill
+ *
+ * The render path lives in app.js (renderPreflight); these classes give
+ * each status row a consistent visual treatment.
+ * ========================================================================= */
+.health-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 0;
+    border-bottom: 1px dashed var(--border);
+    font: 13px var(--font-sans);
+}
+.health-row:last-child { border-bottom: 0; }
+.health-row .health-name {
+    color: var(--fg);
+    font-weight: var(--fw-medium);
+}
+.health-row .health-detail {
+    color: var(--fg-muted);
+    font: 11px var(--font-mono);
+    flex: 1;
+    margin-left: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.health-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 10px;
+    border-radius: var(--radius-pill);
+    font: 11px var(--font-sans);
+    font-weight: var(--fw-semibold);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    line-height: 1.5;
+    flex: 0 0 auto;
+}
+.health-badge::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}
+.health-badge.health-ok       { background: var(--ok-bg);   color: var(--ok); }
+.health-badge.health-warn     { background: var(--warn-bg); color: var(--warn); }
+.health-badge.health-degraded { background: var(--warn-bg); color: var(--warn); }
+.health-badge.health-error    { background: var(--err-bg);  color: var(--err); }
+.health-badge.health-missing  { background: var(--bg-sunk); color: var(--fg-muted); }
+
+/* The card needs a sensible default min-height so an empty card doesn't
+ * collapse to ~30 px and look broken next to the other Overview tiles. */
+#view-overview .card { min-height: 124px; }
+#view-overview .card > #preflight,
+#view-overview .card > #last-run,
+#view-overview .card > #git-status,
+#view-overview .card > #health-card,
+#view-overview .card > #inv-bars,
+#view-overview .card > #inv-donut {
+    flex: 1;
+    min-height: 0;
+}
+#view-overview .card #preflight.health-empty,
+#view-overview .card #health-card.health-empty,
+#view-overview .card #last-run.health-empty {
+    color: var(--fg-muted);
+    font: 12px var(--font-mono);
+    padding: 8px 0;
+}

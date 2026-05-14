@@ -6,6 +6,186 @@
 
 ---
 
+## Sesja 72 (2026-05-14, late) — Operator polish: node target + pip+brew + Schedule layout + Overview health + icons
+
+Continuation of Sesja 71. After the inventory/web fixes from Sesja 71f
+landed, operator surfaced six concrete polish items in a single
+multi-part request: node version reading wrong-direction; pip uv
+"failed"; Schedule menu missing icon + cramped layout; Settings cards
+out of alignment; Overview cards (System Health especially) rendering
+empty / tiny "ok" with no information density.
+
+### Node version target — track-aware picker
+
+`adapters/macos/lib/ascendo_npm.sh` `ascendo_npm_node_latest_version`
+used to always return latest LTS. On a box running Node 26.1.0
+(Current track), the check sidecar showed `cur=26.1.0, tgt=24.15.0`
+and classified as up_to_date because installed > target. Visually
+confusing — looked like the "installed newer than candidate" class of
+bug.
+
+Fix: probe BOTH tracks (`n --lts` + `n --latest`, with nodejs.org/
+dist/index.json fallback) and pick by installed-major heuristic. If
+installed major ≥ latest LTS major, the user is on Current; return
+latest Current. Otherwise return latest LTS (stable users see the
+LTS line). Live verified on Mac.r12.home: `cur=26.1.0, tgt=26.1.0`.
+
+### pip+brew skip rendering
+
+`uv` "failed" turned out to be the intentional pip+brew handoff:
+when brew also owns a formula (uv / pip / setuptools / wheel), pip
+apply emits `status=skipped` with message "brew also owns this
+formula; upgrade flows through brew". Behavior is correct — but the
+operator saw "skipped" and read it as "failed".
+
+Fix: `_normalise_reason()` in `core/ascendo/orchestrator/report.py`
+now substitutes friendlier text for two pip+brew message patterns:
+- "brew also owns 'uv'" → "managed by Homebrew (run `brew upgrade uv`
+  to bump)"
+- pip self-upgrade with no RECORD → "managed by Homebrew (run `brew
+  upgrade python` to bump pip)"
+
+REPORT.md's Deferred section now reads naturally.
+
+### Schedule menu icon + compact layout
+
+- `app/frontend/icons.js`: added `schedule` icon (calendar SVG, 18×18
+  Lucide-style). Sidebar `<a data-icon="schedule">` Schedule link now
+  renders the icon.
+- `app/frontend/style.css`: new `#view-schedule` rules.
+  - `.card button { width: 100% }` global rule was making the Save +
+    Refresh buttons span the entire row. Overrode for schedule with
+    `width: auto`, `min-width: 120px`, `display: inline-flex`.
+  - `#schedule-form` capped at `max-width: 720px` with `1fr 1fr` grid
+    so name + expression sit side-by-side instead of stacked
+    full-width.
+  - Per-row action buttons (Run now / Edit / Delete) wrapped in new
+    `.schedule-row-actions` div with `min-width: 64px` per button +
+    inline layout via flexbox.
+
+### Overview System Health card → /health rollup with visual badges
+
+`/preflight` returns `{ok, checks: [], warnings: [], errors: []}` on
+this Mac — empty arrays. The renderer fell into the "all-clear" branch
+and rendered one tiny bare "ok" pill, leaving the whole System Health
+card visually empty. Confusing because `/health` has 12 real
+components (brew, jq, mas, system_profiler, softwareupdate, tmutil,
+launchctl, pip, web, bash, ascendo_lib, ascendo_scripts).
+
+Fix:
+- `app/frontend/app.js` System Health render now calls `/health` first
+  and falls back to `/preflight` if it's unavailable. Each component
+  renders one row with name + version-detail + status badge.
+- `app/frontend/style.css`: new `.health-row` + `.health-badge`
+  classes. Status-keyed pills:
+  - `ok` → lime
+  - `warn` / `degraded` → amber
+  - `error` → red
+  - `missing` / `unavailable` → muted grey
+  - Each pill has a coloured dot before the text via `::before` pseudo
+- `#view-overview .card { min-height: 124px }` so empty cards no longer
+  collapse to ~30 px next to the populated ones.
+
+### Settings cards alignment
+
+`#view-settings .grid { align-items: stretch }` + each card uses
+flex column with even gap so the 6 small cards (Defaults, Appearance,
+Profiles, Backup, Scheduler, Service) have aligned heights regardless
+of content density, and the 2 wider AI cards (CLI backends + API key)
+keep their grid placement clean.
+
+### Files changed
+
+```
+adapters/macos/lib/ascendo_npm.sh                 | track-aware node picker
+app/frontend/app.js                               | System Health renderer + schedule row group
+app/frontend/i18n.js                              | overview.all_systems EN+PL (958/958 parity)
+app/frontend/icons.js                             | + schedule icon
+app/frontend/index.html                           | schedule form .schedule-form-buttons wrapper
+app/frontend/style.css                            | schedule + settings + overview badges (~150 LOC)
+core/ascendo/orchestrator/report.py               | pip+brew friendly substitutions
+```
+
+### Tests
+
+All AI + macOS adapter + run regression unchanged. The 13 pre-existing
+`test_service_endpoints` failures are still unrelated.
+
+---
+
+## Sesja 71f (2026-05-14, late) — Inventory + web bundle resolution + version normalization
+
+Operator-driven audit after Sesja 71e dashboard work. Operator's full-
+apply run 06bd09cd surfaced four real issues:
+
+(1) **Path mismatches in apply** — registry uses canonical names
+("Docker Desktop", "Codex Desktop", "Ledger Live", "Zoom") but Mac
+has the bundles as Docker.app, Codex.app, Ledger Wallet.app,
+zoom.us.app. apply.sh's `/Applications/${DISPLAY_NAME}.app` guess
+missed all 5 — marked them "skipped: not_installed_or_path_mismatch"
+even though they ARE installed and check.sh found them via discovery.
+
+(2) **Version normalization** — `web:zoom` cur="7.0.0 (77593)" vs
+tgt="7.0.0.77593", `web:gdrive` cur="125.0" vs tgt="125.0.0.0".
+Same versions, different vendor manifest formats. sort -V said
+they differed → "planned" → reinstall offered.
+
+(3) **System bundles polluting `web` inventory** — inventory.db had
+web=315 rows including AccessibilityUIServer, AddressBookManager,
+AirPlayUIAgent etc. Rule 1 in inventory/list.sh's classify_app only
+matched `/System/Applications/*`, missing the dozens of
+`/System/Library/CoreServices/*` and `/Library/Apple/*` bundles.
+
+(4) **Verbose internal reason codes in REPORT.md** — "not_installed_or_path_mismatch
+(registry app_path='/Applications/Codex Desktop.app' — bundle missing
+or unreadable; remove from override registry or fix app_path)"
+instead of human-friendly text.
+
+### Fixes
+
+- `_web_resolve_bundle_path` helper in `adapters/macos/lib/ascendo_web.sh`:
+  mdfind → cached system_profiler → fallback. Found Docker.app from
+  `com.docker.docker`, Codex.app, zoom.us.app, Ledger Wallet.app —
+  apps the registry's canonical-name guesses had been missing.
+- `_normalize_version` + `_version_eq_loose`: zoom-style "7.0.0 (77593)"
+  matches "7.0.0.77593"; gdrive "125.0" pads zeros to match "125.0.0.0".
+- check.sh now uses `_should_skip_upgrade` (vs bare `_version_gt`) —
+  Firefox Developer Edition 151.0 stable vs 151.0b10 beta correctly
+  stays `up_to_date`.
+- inventory/list.sh Rule 1 catches `/System/Library/*`,
+  `/System/iOSSupport/*`, `/System/Volumes/*`, `/Library/Apple/*`,
+  `/usr/libexec/*`. After build-inventory: 234 misclassified bundles
+  moved from `web` to `system`.
+- REPORT.md friendly substitutions in `_normalise_reason()`.
+
+### Verification on Mac.r12.home
+
+| Metric | Before | After |
+|---|---|---|
+| Web check "planned" | 6 apps | 3 apps (real upgrades only) |
+| Web apply "skipped" | 9 apps | 4 apps (truly-not-installed only) |
+| Inventory `web` category | 315 rows | 83 rows |
+| Inventory `system` category | 64 rows | 292 rows |
+
+### Tests
+
+395/395 macOS adapter tests pass (was 393, +2 new):
+`test_apply_falls_back_to_bundle_resolver_when_registry_path_wrong`
+and `test_system_library_coreservices_classifies_as_system`. Plus
+16 new bash tests for version normalization in
+`test_web_version_normalize.sh`.
+
+---
+
+## Sesja 71e (2026-05-14) — Save settings flash
+
+`feat(spa): inline "Saved ✓" flash next to Save settings button`
+(commit 6365c4d, later 544fb8f). Lime pill appears next to the
+Save button on PUT success, fades after 2.5 s. EN+PL i18n keys
+`settings.saved_flash`. 919/919 parity preserved.
+
+---
+
 ## Sesja 71 (2026-05-14) — v0.6.0: AI Tools chat Phase B + C end-to-end
 
 Continuation of Sesja 70 (Phase A — Tasks 1-13 landed as commit

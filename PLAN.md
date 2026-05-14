@@ -1,6 +1,35 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-14 (sesja 71) — **v0.6.0 — AI Tools chat
+> Last updated: 2026-05-14 (sesja 72) — **Operator polish: node
+> version target + pip+brew render + Schedule icon + System Health
+> badges + Settings alignment.** Six concrete issues from operator
+> audit fixed. Node 26.1.0 on Current track no longer reads "cur >
+> tgt" (now shows tgt=26.1.0 not 24.15.0 LTS). pip+brew "skipped"
+> entries now render as "managed by Homebrew" in REPORT.md.
+> Sidebar Schedule link shows a calendar icon. Schedule form is
+> compact (max-width 720 px) with inline action buttons. System
+> Health card now renders 12 component rows with coloured status
+> badges from /health rollup (was: empty card with one tiny "ok"
+> pill from empty /preflight). Settings cards align via stretch
+> grid. 958/958 EN+PL i18n parity. See HANDOFF Sesja 72.
+>
+> Previous milestone (sesja 71f) — **Inventory + web bundle
+> resolution + version normalization.** Operator's full-apply run
+> 06bd09cd surfaced four real issues: (1) registry uses canonical
+> names ("Docker Desktop") but Mac has short names (Docker.app) —
+> apply silently dropped 5 apps as "not_installed_or_path_mismatch".
+> Added `_web_resolve_bundle_path` (mdfind → cached system_profiler →
+> fallback). (2) Zoom "7.0.0 (77593)" vs "7.0.0.77593" and gdrive
+> "125.0" vs "125.0.0.0" — added `_normalize_version` +
+> `_version_eq_loose`. (3) Inventory had 315 web rows including
+> AccessibilityUIServer etc. — extended Rule 1 to catch
+> `/System/Library/*`, `/Library/Apple/*`, `/usr/libexec/*`. After:
+> system=292 (was 64), web=83 (was 315). (4) REPORT.md verbose
+> internal reason codes replaced with friendly substitutions.
+> 395/395 macOS adapter tests + 16 new bash tests for normalizer.
+> See HANDOFF Sesja 71f.
+>
+> Previous milestone (sesja 71) — **v0.6.0 — AI Tools chat
 > end-to-end.** Phase B (Tasks 14-18) + Phase C (Tasks 19-26) landed
 > on main as 13 commits on top of the Phase A foundation (Sesja 70).
 > Net surface: 10 dashboard endpoints under `/ai/chat/*` + SSE relay

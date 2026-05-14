@@ -251,24 +251,68 @@ ascendo_npm_node_installed_version() {
     "$_node" --version 2>/dev/null | sed 's/^v//' || true
 }
 
-# Latest Node LTS version. Tries `n` first (fast, local), then falls
-# back to nodejs.org's index.json which lists every release with an
-# ``lts`` flag — pick the first row whose lts is non-false. Returns
-# empty when both paths fail (no network, no `n`); the caller treats
-# that as "unknown latest".
+# Latest applicable Node version. Tracks BOTH tracks (LTS + Current)
+# and returns whichever is appropriate for what's installed:
+#
+#   * If installed major >= latest LTS major, the user is on Current.
+#     Return the latest Current release (so display matches reality).
+#   * Otherwise return latest LTS (stable users see the LTS line).
+#
+# Pre-fix this helper always returned latest LTS. On a box running
+# Node 26.1.0 (Current), the check sidecar showed cur=26.1.0,
+# tgt=24.15.0 (latest LTS) and classified as up_to_date because
+# installed > target. Visually confusing — looked like "installed
+# newer than candidate" bug.
+#
+# Tries `n` first (fast, local), falls back to nodejs.org/dist/index.json.
+# Empty stdout when both paths fail.
 ascendo_npm_node_latest_version() {
+    # Resolve installed major so we can pick the right track.
+    local _installed _installed_major _lts _current
+    _installed="$(ascendo_npm_node_installed_version 2>/dev/null)"
+    _installed_major="${_installed%%.*}"
+
     local _n="$(ascendo_npm_n_prefix)/bin/n"
     if [ -x "$_n" ]; then
-        local _v
-        _v="$(N_PREFIX="$(ascendo_npm_n_prefix)" "$_n" --lts 2>/dev/null | head -n1 || true)"
-        if [ -n "$_v" ]; then printf '%s' "$_v"; return 0; fi
+        _lts="$(N_PREFIX="$(ascendo_npm_n_prefix)" "$_n" --lts 2>/dev/null | head -n1 || true)"
+        _current="$(N_PREFIX="$(ascendo_npm_n_prefix)" "$_n" --latest 2>/dev/null | head -n1 || true)"
+        # Pick by installed-major heuristic. If we don't know the
+        # installed version (fresh box, no node), fall back to LTS.
+        if [ -n "$_lts" ] || [ -n "$_current" ]; then
+            if [ -n "$_installed_major" ] && [ -n "$_lts" ] && [ -n "$_current" ]; then
+                local _lts_major="${_lts%%.*}"
+                if [ "$_installed_major" -ge "$_lts_major" ] 2>/dev/null; then
+                    printf '%s' "$_current"
+                else
+                    printf '%s' "$_lts"
+                fi
+                return 0
+            fi
+            # Only one of the two probes returned data — use it.
+            [ -n "$_lts" ] && { printf '%s' "$_lts"; return 0; }
+            [ -n "$_current" ] && { printf '%s' "$_current"; return 0; }
+        fi
     fi
     # Network fallback. Don't fail if curl/jq missing.
     if ! command -v curl >/dev/null 2>&1; then return 0; fi
     if ! command -v jq >/dev/null 2>&1; then return 0; fi
-    # First LTS row — e.g. {"version":"v22.11.0","lts":"Jod",...}
-    curl -fsSL --max-time 5 'https://nodejs.org/dist/index.json' 2>/dev/null \
-        | jq -r 'map(select(.lts != false))[0].version // empty' 2>/dev/null \
-        | sed 's/^v//' \
-        || true
+    # Probe nodejs.org for BOTH the latest LTS and the absolute latest
+    # release. Same picker logic as the `n`-based branch above.
+    local _json
+    _json="$(curl -fsSL --max-time 5 'https://nodejs.org/dist/index.json' 2>/dev/null || true)"
+    [ -z "$_json" ] && return 0
+    _lts="$(printf '%s' "$_json" | jq -r 'map(select(.lts != false))[0].version // empty' 2>/dev/null | sed 's/^v//')"
+    _current="$(printf '%s' "$_json" | jq -r '.[0].version // empty' 2>/dev/null | sed 's/^v//')"
+    if [ -n "$_installed_major" ] && [ -n "$_lts" ] && [ -n "$_current" ]; then
+        local _lts_major="${_lts%%.*}"
+        if [ "$_installed_major" -ge "$_lts_major" ] 2>/dev/null; then
+            printf '%s' "$_current"
+        else
+            printf '%s' "$_lts"
+        fi
+        return 0
+    fi
+    [ -n "$_lts" ] && { printf '%s' "$_lts"; return 0; }
+    [ -n "$_current" ] && { printf '%s' "$_current"; return 0; }
+    return 0
 }

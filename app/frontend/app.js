@@ -1707,30 +1707,85 @@ const ui = {
       }
     } catch (e) { $("#last-run").textContent = String(e); }
     try {
-      const p = await api.get("/preflight");
-      // Backend /preflight currently returns {ok, checks, warnings, errors}.
-      // Some legacy paths instead returned {needs_reboot, items: [{tool, present}]}.
-      // Accept BOTH shapes so the System Health card never throws on
-      // ``undefined.map`` and instead renders whatever it has.
-      const items = Array.isArray(p.items) ? p.items : [];
-      const errors = Array.isArray(p.errors) ? p.errors : [];
-      const warnings = Array.isArray(p.warnings) ? p.warnings : [];
-      const parts = [];
-      if (p.needs_reboot) parts.push(`<b>${tr("overview.reboot_pending")}</b>`);
-      if (items.length) {
-        parts.push(items.map(i =>
-          `<span class="badge ${i.present ? "ok" : "warn"}">${i.tool || ""}</span>`
-        ).join(" "));
-      } else if (errors.length || warnings.length) {
-        if (errors.length) parts.push(
-          errors.map(e => `<span class="badge fail">${(e.msg || e).toString()}</span>`).join(" "));
-        if (warnings.length) parts.push(
-          warnings.map(w => `<span class="badge warn">${(w.msg || w).toString()}</span>`).join(" "));
-      } else {
-        // Genuinely all-clear — render an unobtrusive ok pill.
-        parts.push(`<span class="badge ok">${p.ok === false ? "issues" : "ok"}</span>`);
+      // Render the System Health card from the adapter's /health rollup
+      // (12 real components on macOS — brew, jq, mas, system_profiler,
+      // softwareupdate, tmutil, launchctl, pip, web, bash, ascendo_lib,
+      // ascendo_scripts) instead of /preflight which returns empty
+      // arrays on this host and used to render a single bare "ok" pill
+      // with no information density.
+      //
+      // Each component renders as a row with name + visual badge +
+      // optional version detail. Falls back to /preflight if /health
+      // isn't wired (older adapters). Uses DOM construction (createElement
+      // + textContent) instead of innerHTML to avoid the global-scope
+      // escapeHtml helper limitation and keep XSS-safe.
+      const host = $("#preflight");
+      host.innerHTML = "";
+      host.classList.remove("health-empty");
+
+      const mkRow = (name, detail, badgeKind) => {
+        const row = document.createElement("div");
+        row.className = "health-row";
+        const nm = document.createElement("span");
+        nm.className = "health-name";
+        nm.textContent = name;
+        row.appendChild(nm);
+        if (detail) {
+          const dt = document.createElement("span");
+          dt.className = "health-detail";
+          dt.textContent = detail;
+          row.appendChild(dt);
+        }
+        const bd = document.createElement("span");
+        bd.className = `health-badge health-${badgeKind}`;
+        bd.textContent = badgeKind === "missing" ? "missing" : badgeKind;
+        row.appendChild(bd);
+        return row;
+      };
+
+      let rendered = 0;
+      try {
+        const h = await api.get("/health");
+        const components = (h && typeof h.components === "object") ? h.components : {};
+        for (const name of Object.keys(components)) {
+          const raw = String(components[name] || "");
+          let badge = "ok";
+          if (raw.startsWith("degraded"))                              badge = "degraded";
+          else if (raw.startsWith("warn"))                             badge = "warn";
+          else if (raw.startsWith("error"))                            badge = "error";
+          else if (raw.startsWith("missing") || raw.startsWith("unavailable"))
+                                                                       badge = "missing";
+          const colon = raw.indexOf(":");
+          const detail = colon >= 0 ? raw.slice(colon + 1).trim() : "";
+          host.appendChild(mkRow(name, detail, badge));
+          rendered++;
+        }
+      } catch (_e) {
+        // Network / adapter mismatch — fall through to /preflight legacy shape.
       }
-      $("#preflight").innerHTML = parts.join("<br>");
+
+      if (rendered === 0) {
+        try {
+          const p2 = await api.get("/preflight");
+          const items = Array.isArray(p2 && p2.items) ? p2.items : [];
+          if (p2 && p2.needs_reboot) {
+            const banner = document.createElement("b");
+            banner.textContent = tr("overview.reboot_pending") || "Reboot pending";
+            host.appendChild(banner);
+          }
+          if (items.length) {
+            for (const i of items) {
+              host.appendChild(mkRow(i.tool || "?", "", i.present ? "ok" : "missing"));
+              rendered++;
+            }
+          }
+        } catch (_e) { /* nothing more we can do */ }
+      }
+
+      if (rendered === 0) {
+        const label = tr("overview.all_systems") || "All systems operational";
+        host.appendChild(mkRow(label, "", "ok"));
+      }
     } catch (e) { $("#preflight").textContent = String(e); }
     if (window.ASCENDO_EDITION !== "basic") {
       try {
@@ -2658,6 +2713,8 @@ const ui = {
           tr.appendChild(td);
         }
         const actTd = document.createElement("td");
+        const actGroup = document.createElement("div");
+        actGroup.className = "schedule-row-actions";
         const trigBtn = document.createElement("button");
         trigBtn.type = "button";
         trigBtn.className = "secondary";
@@ -2668,19 +2725,18 @@ const ui = {
         delBtn.type = "button";
         delBtn.className = "secondary";
         delBtn.style.fontSize = "0.78rem";
-        delBtn.style.marginLeft = "0.3rem";
         delBtn.textContent = i18n.t("schedule.delete", "Delete");
         delBtn.addEventListener("click", () => ui.scheduleRemove(it.name));
         const editBtn = document.createElement("button");
         editBtn.type = "button";
         editBtn.className = "secondary";
         editBtn.style.fontSize = "0.78rem";
-        editBtn.style.marginLeft = "0.3rem";
         editBtn.textContent = i18n.t("schedule.edit", "Edit");
         editBtn.addEventListener("click", () => ui.scheduleEdit(it));
-        actTd.appendChild(trigBtn);
-        actTd.appendChild(editBtn);
-        actTd.appendChild(delBtn);
+        actGroup.appendChild(trigBtn);
+        actGroup.appendChild(editBtn);
+        actGroup.appendChild(delBtn);
+        actTd.appendChild(actGroup);
         tr.appendChild(actTd);
         tbody.appendChild(tr);
       }

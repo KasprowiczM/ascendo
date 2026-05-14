@@ -30,6 +30,7 @@ templating engine. The markdown is small enough to build with f-strings.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -543,11 +544,23 @@ def _normalise_reason(text: str) -> str:
         return f"was running during the update — {tail}"
     if line.startswith("not_installed"):
         # Extract the app name from "registry expected '/Applications/Foo.app'"
-        import re
         m = re.search(r"/([^/]+)\.app", line)
         if m:
             return f"not installed on this machine — remove `{m.group(1)}` from your registry if you don't use it"
         return "not installed on this machine"
+    # Pip→brew handoff messages. The pip apply phase deliberately skips
+    # packages that brew also owns (uv, pip, setuptools, wheel) so we
+    # don't double-manage them — but the raw message is verbose and
+    # looks like a failure. Surface a cleaner one-liner.
+    #
+    # Original message: "skipped pip upgrade of 'uv' — brew also owns
+    # this formula; upgrade flows through brew (preserves /opt/homebrew/bin/uv)"
+    if "brew also owns" in line.lower() or "managed by brew" in line.lower():
+        m = re.search(r"'([^']+)'", line)
+        name = m.group(1) if m else "package"
+        return f"managed by Homebrew (run `brew upgrade {name}` to bump)"
+    if "no record" in line.lower() and ("brew" in line.lower() or "self-upgrade" in line.lower()):
+        return "managed by Homebrew (run `brew upgrade python` to bump pip)"
     return line
 
 
