@@ -6,6 +6,120 @@
 
 ---
 
+## Sesja 70 (2026-05-14) — AI Tools chat foundation: spec + plan + Phase A landed
+
+Operator request (verbatim): *"tell me if i would like to implement
+ai chat windows with ready made suggestions for this project and also
+implement authentication using claude (subscription plan not api),
+same with openai (subscription login not api) and gemini or google
+(login not api), or maybe use already logged cli versions of
+claude-code, gemini-cli or codex-cli. is it going to be difficult, is
+it possible to do. how hard is it, do research and give me plan how to
+implement it professionally. the whole idea of suggestions (or we can
+call it AI Tools) is to help diagnose any issues with specific use on
+different machine of ascendo app, for example how to improve overall
+update experience, how to setup ascendo app, how to run it, use it,
+maybe adjust some clients settings to include, exclude certain apps
+for updates process… use subagents, use skills."*
+
+Mid-session add: *"can you also add opencode-cli to this project so we
+have at least one opensource type."*
+
+### Three-skill workflow
+
+Used the `superpowers:brainstorming` → `writing-plans` →
+`subagent-driven-development` pipeline. Brainstorming did the
+clarifying-question loop (6 multi-choice questions); writing-plans
+produced the 26-task implementation plan; subagent-driven-development
+executed Phase A (Tasks 1-13) inline once subagent dispatches kept
+thrashing on autocompact from the ~70 KB of project context that
+loads into every agent's prompt.
+
+### Five foundational decisions (locked in spec)
+
+| Decision | Outcome |
+|---|---|
+| Backend strategy | CLI-first (`claude` / `gemini` / `codex` / `opencode`) + API-key fallback. Subscription-OAuth ruled out as not ToS-clean and not technically viable. |
+| Action capability | Advisory + one-click apply chips. LLM proposes via `ascendo-action` fenced JSON; server-side whitelist enforces what's runnable. |
+| Context injection | Smart auto-inject per question. ~500-token base + per-template extras up to a 4k cap. 10 named context tags, each with priority + fail-soft resolver. |
+| Suggestions tab | Renames to "AI Tools". Sesja 67's rule-based + AI-augmented cards stay as a Quick Suggestions rail at the top of the same tab. |
+| Persistence | SQLite at `~/.ascendo/chats.db`, per-host, 0600 file perms, dev-sync HARD_EXCLUDE. No cross-host sync in v1. |
+| Locale | UI locale flows through to LLM ("Respond in Polish"/"Respond in English"). EN+PL parity for every new UI string. |
+
+### What landed (Phase A — Tasks 1-13 of 26)
+
+Seven implementation commits on `claude/peaceful-jemison-a405c0`:
+
+| Commit | Task | What |
+|--------|------|------|
+| `43ae49c` | spec | `docs/superpowers/specs/2026-05-14-ai-tools-chat-design.md` (996 lines, 12 sections) |
+| `31bcd81` | plan | `docs/superpowers/plans/2026-05-14-ai-tools-chat.md` (4034 lines, 26 tasks) |
+| `1cdddd9` | T1 | Scaffold `core/ascendo/ai/{drivers,resolvers,prompts}/` + 4 fake CLI fixtures (`fake-claude` etc.) |
+| `3530ee7` | T2 | `Backend` ABC + `Chunk` pydantic model + `TurnRegistry` (mirror of M2.10 `RunRegistry`) + `BackendResolver` |
+| `a814154` | T3 | `drivers/_base.py` — `discover_binary`, `probe_version`, `run_streaming` (async stdout streamer with cancel race + hang detection + SIGTERM→SIGKILL grace) |
+| `fa4adca` | T4-9 | 5 backend drivers (claude_code / gemini_cli / codex_cli / opencode / api_key) + resolver tests. Each driver: version probe, auth probe, async streaming. `ApiKeyBackend` wraps Sesja 67's `call_provider_inference` so the existing 6-provider API path is preserved. |
+| `8192f01` | T10 | `ChatsDB` SQLite v1 — `conversations` + `messages` tables, auto-title from first user message, archive/pin/search via LIKE, 0600 perms, dev-sync exclusion documented |
+| `3e96221` | T11-12 | `build_context()` + 10 context resolvers (`doctor_full`, `outdated_apps`, `latest_failed_sidecar`, `latest_report_md`, `adapter_capabilities`, `churn_history_30d`, `skip_list_current`, `schedules_current`, `web_registry_schema`, `recent_apply_history`). Token budget 4k enforced via greedy priority fill. |
+| `aeef7b5` | T13 | `actions.py` — fence parser + `ALLOWED_ACTIONS` whitelist (12 entries) + dispatcher. Security boundary: LLM proposes IDs, server validates against whitelist + Pydantic body schemas. |
+
+**Test count: 94/94 passing in 1.31s.** Zero regressions; Phase A
+is purely additive (new `core/ascendo/ai/` package, no dashboard
+surface yet).
+
+### What's deferred to next session (Phases B + C)
+
+**Phase B (Tasks 14-18) — dashboard + SPA wiring**
+
+- T14: `prompts.py` + `prompts/library.toml` (10 starter entries × EN+PL)
+- T15: `streaming.py` orchestration (Backend + Context + Persistence + Actions glue)
+- T16: `core/ascendo/dashboard/routes/chat.py` (8 endpoints: backends, library, conversations CRUD, post chat, SSE stream, cancel, action). Mount via `dashboard/app.py` lifespan.
+- T17: `#view-aitools` SPA section + `aitools.*` JS namespace + chat thread styling + EN+PL i18n keys (~80 new strings)
+- T18: action dispatcher integration test
+
+**Phase C (Tasks 19-26) — polish + docs + tag**
+
+- T19: SSE disconnect handling test (`request.is_disconnected()` poll)
+- T20: action_proposal SSE event type
+- T21: EN+PL parity regression test
+- T22: `validate-{macos,windows,ubuntu}.sh` Stage 14 (8 sub-steps each)
+- T23: `MACOS_QUICKSTART.md` §14 + `WINDOWS_QUICKSTART.md` §13 + `LINUX_QUICKSTART.md` mirror
+- T24: `PLAN.md` milestone entry + `HANDOFF.md` close-out Sesja
+- T25: Full-suite regression on all 3 OSes
+- T26: Tag `v0.5.0` via `bin/run-tag-release-*`
+
+### Subagent reality check
+
+Dispatched 3 subagent attempts in this session (for Task 1 alone). All
+thrashed on autocompact because the worktree's `CLAUDE.md` (40 KB
+project rules) + `PLAN.md` (16 KB roadmap) + `HANDOFF.md` (250 KB
+session log) auto-load into every agent's prompt, leaving little
+headroom for actual work. The agents did make partial progress
+(wrote fake-claude + fake-gemini before crashing) but the controller
+finishing inline was faster.
+
+**Operational lesson:** for codebases with very large auto-loaded
+docs, prefer inline execution of well-spec'd tasks over subagent
+delegation. Subagents shine for genuinely independent multi-file
+work where the implementer doesn't need to absorb the whole
+project context — that wasn't the situation here.
+
+### How to pick up Phase B
+
+After merging Sesja 70 to main, start a fresh session and ask:
+
+> "Read HANDOFF.md Sesja 70 + the spec at
+> docs/superpowers/specs/2026-05-14-ai-tools-chat-design.md + the
+> plan at docs/superpowers/plans/2026-05-14-ai-tools-chat.md. Phase A
+> (Tasks 1-13) is done — see the commit table in the handoff. Start
+> Phase B with Task 14 (prompts.py + library.toml). Execute serially
+> per the plan; commit after each task. Skip the subagent indirection,
+> work inline. After Task 18, pause and confirm before Phase C."
+
+The new session's CLAUDE.md/PLAN.md/HANDOFF.md auto-load gives it
+everything it needs to land Phase B in one focused stretch.
+
+---
+
 ## Sesja 69 (2026-05-14) — macOS parity pass: help.macos i18n + About highlights + docs sweep
 
 Operator request (verbatim): *"read handoff, bring this macos version

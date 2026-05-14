@@ -1,6 +1,18 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-14 (sesja 69) — **macOS parity pass.**
+> Last updated: 2026-05-14 (sesja 70) — **AI Tools chat — Phase A
+> foundation merged.** Spec, plan, and Tasks 1-13 of 26 done. New
+> `core/ascendo/ai/` package with: Backend ABC + 5 drivers (claude /
+> gemini / codex / opencode + API-key fallback) + BackendResolver +
+> ChatsDB SQLite v1 + context injector with 10 resolvers + fence
+> parser with 12-entry action whitelist. 94/94 tests passing, zero
+> regressions, zero dashboard surface yet. Spec at
+> `docs/superpowers/specs/2026-05-14-ai-tools-chat-design.md`, plan at
+> `docs/superpowers/plans/2026-05-14-ai-tools-chat.md`. Next session
+> picks up Phase B at Task 14 (prompts.py + library.toml → routes →
+> SPA). See HANDOFF.md Sesja 70 for full commit table + carry-forward.
+>
+> Previous milestone (sesja 69) — **macOS parity pass.**
 > Operator: *"bring this macOS version of ascendo app up to date with
 > comparison to ubuntu and windows versions which were upgraded
 > recently … make sure macos app is ready for production, do code
