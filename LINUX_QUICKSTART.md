@@ -406,7 +406,73 @@ consistency with the cross-platform install experience. The .deb is
 useful when you want apt to manage dependencies for you, or when
 shipping into restricted environments without curl access.
 
-## 13 · One-liner sanity check
+## 13 · AI Tools chat (Sesja 70 / v0.5.0)
+
+The Suggestions tab grew a new chat surface that combines Sesja 67's
+rule-based + AI-augmented quick cards with a conversational LLM-backed
+diagnosis flow. The URL path stays `#suggest` so any external bookmarks
+keep working; only the visible label flips to **"AI Tools" / "Narzędzia AI"**
+via i18n.
+
+### Pick a backend
+
+Ascendo resolves the first available backend in this order:
+
+1. **claude** — Claude Code CLI (vendor docs)
+2. **gemini** — Gemini CLI
+3. **codex** — Codex CLI
+4. **opencode** — open-source CLI
+5. **API key fallback** — Settings → AI configures anthropic / openai /
+   openrouter / ollama / google / lm_studio.
+
+The backend pill at the top right of the AI Tools tab shows which
+backend is active. If it reads "No backend configured", install one of
+the CLIs above OR configure an API key in Settings → AI.
+
+### 10 starter prompts (grouped)
+
+The right rail is a "Prompt library" with 10 curated starters across
+three groups (Diagnostics / Setup / Customize). Each prompt has EN+PL
+titles and auto-injects the relevant context (latest failed sidecar,
+outdated apps, REPORT.md, etc.) when clicked.
+
+### Action chips
+
+The LLM emits fenced `ascendo-action` JSON blocks that render as
+clickable chips below the assistant message. Clicks proxy through
+`POST /ai/chat/action` which validates against a 12-entry whitelist:
+`run_check`, `run_plan`, `run_apply`, `run_verify`, `run_cleanup`,
+`install_schedule`, `remove_schedule`, `trigger_schedule`,
+`refresh_inventory`, `add_web_override`, `edit_skip_list`, `open_view`.
+
+### Chat history is local-only
+
+Conversations + messages persist to `~/.ascendo/chats.db` (SQLite, mode
+0600, per-host). The file is in the dev-sync HARD_EXCLUDE list so it
+never leaves the machine.
+
+To wipe: `rm ~/.ascendo/chats.db` — dashboard recreates on next launch.
+
+### Smoke-test the chat surface
+
+```bash
+ascendo web start
+curl -s http://127.0.0.1:8765/ai/chat/backends | python3 -m json.tool
+curl -s http://127.0.0.1:8765/ai/chat/library  | python3 -m json.tool
+
+CID=$(curl -s -X POST -H 'Content-Type: application/json' -d '{}' \
+  http://127.0.0.1:8765/ai/chat/conversations | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+TURN=$(curl -s -X POST -H 'Content-Type: application/json' \
+  -d "{\"conversation_id\":\"$CID\",\"message\":\"hello\",\"locale\":\"en\"}" \
+  http://127.0.0.1:8765/ai/chat | python3 -c "import sys,json; print(json.load(sys.stdin)['turn_id'])")
+curl -N http://127.0.0.1:8765/ai/chat/stream/$TURN
+```
+
+`bin/validate-ubuntu.sh` Stage 14 covers all of the above (prompt
+library, action whitelist size, backend resolver, ChatsDB writes,
+i18n parity, and three live dashboard endpoints).
+
+## 14 · One-liner sanity check
 
 If anything seems off, run this first:
 

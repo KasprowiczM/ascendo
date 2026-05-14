@@ -602,20 +602,128 @@ softwareupdate -R rule, Touch ID, Time Machine snapshots, LaunchdScheduler,
 MacElevation, validate harness, Suggestions AI, Schedule tab, and the
 inventory dedup schema.
 
-## 14 · One-liner sanity check
+## 14 · AI Tools chat (Sesja 70 / v0.5.0)
+
+The Suggestions tab grew a new chat surface that combines Sesja 67's
+rule-based + AI-augmented quick cards with a conversational LLM-backed
+diagnosis flow. The URL path stays `#suggest` so any external bookmarks
+keep working; only the visible label flips to **"AI Tools" / "Narzędzia AI"**
+via i18n.
+
+### Pick a backend
+
+Ascendo resolves the first available backend in this order:
+
+1. **claude** — Claude Code CLI (`brew install --cask claude`)
+2. **gemini** — Gemini CLI (`brew install gemini-cli` or vendor docs)
+3. **codex** — Codex CLI (vendor docs)
+4. **opencode** — open-source CLI (`brew install opencode`)
+5. **API key fallback** — Settings → AI configures anthropic / openai /
+   openrouter / ollama / google / lm_studio. Same provider list as
+   Suggestions (Sesja 67) since the AI Tools chat reuses the same
+   `call_provider_inference()` path.
+
+The backend pill at the top right of the AI Tools tab shows which
+backend is active. If it reads "No backend configured", install one of
+the CLIs above OR configure an API key in Settings → AI.
+
+### 10 starter prompts (grouped)
+
+The right rail is a "Prompt library" with 10 curated starters across
+three groups:
+
+| Group | Prompts |
+|-------|---------|
+| **Diagnostics** | Why did my last run fail? · What does this exit code mean? · Find apps not updated in 90+ days · Why does Ascendo say a reboot is required? · Which web apps have broken update probes? |
+| **Setup** | Help me set up Ascendo for the first time · How do I enable Touch ID for sudo? *(macOS only)* |
+| **Customize** | What apps should I exclude from updates? · Recommend an update schedule · How do I add a custom web app? |
+
+Each prompt has EN+PL titles and starter text. Clicking a prompt sends
+it with a pre-baked context bundle (e.g. "Why did my last run fail?"
+auto-injects the latest failed sidecar + REPORT.md).
+
+### Action chips
+
+The LLM can emit fenced code blocks like:
+
+````
+```ascendo-action
+{"id":"run_check","verb":"POST","path":"/runs/async",
+ "body":{"categories":["brew"],"phases":["check"]},
+ "label_en":"Run brew check","risk":"low"}
+```
+````
+
+These render as chips below the assistant message. Clicking a chip
+calls `POST /ai/chat/action` which validates the action against a
+**12-entry whitelist** (`run_check`, `run_plan`, `run_apply`,
+`run_verify`, `run_cleanup`, `install_schedule`, `remove_schedule`,
+`trigger_schedule`, `refresh_inventory`, `add_web_override`,
+`edit_skip_list`, `open_view`) and returns a proxy plan. The dashboard
+fires the underlying endpoint separately so every action remains
+visible in the Run Center activity log.
+
+`risk: medium` or `risk: high` chips trigger a `window.confirm()` before
+firing.
+
+### Chat history is local-only
+
+Conversations + messages persist to `~/.ascendo/chats.db` (SQLite, mode
+0600, per-host). The file is in the dev-sync HARD_EXCLUDE list so it
+never leaves the machine. Search and pin / archive work over the local
+DB only; there's no cloud sync in v1.
+
+To wipe history: `rm ~/.ascendo/chats.db` (the dashboard recreates an
+empty DB on next launch).
+
+### Smoke-test the chat surface
+
+```bash
+# Start the dashboard
+ascendo web start
+
+# List installed backends (look for "available": "true")
+curl -s http://127.0.0.1:8765/ai/chat/backends | python3 -m json.tool
+
+# Load the prompt library (entries gated by adapter — macOS-only entries
+# show because the macOS adapter is active)
+curl -s http://127.0.0.1:8765/ai/chat/library | python3 -m json.tool
+
+# Create a conversation, send a message, stream the reply
+CID=$(curl -s -X POST -H 'Content-Type: application/json' -d '{}' \
+  http://127.0.0.1:8765/ai/chat/conversations | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+TURN=$(curl -s -X POST -H 'Content-Type: application/json' \
+  -d "{\"conversation_id\":\"$CID\",\"message\":\"hello\",\"locale\":\"en\"}" \
+  http://127.0.0.1:8765/ai/chat | python3 -c "import sys,json; print(json.load(sys.stdin)['turn_id'])")
+curl -N http://127.0.0.1:8765/ai/chat/stream/$TURN
+```
+
+### Common pitfalls
+
+| Symptom | Likely cause / fix |
+|---------|--------------------|
+| Backend pill says "No backend configured" | No CLI on PATH AND no API key set. `which claude` to confirm; otherwise Settings → AI |
+| Chat says "Failed to send" | Backend resolver failed mid-turn (CLI vanished from PATH, API key expired). Restart dashboard + retest. |
+| Action chip click does nothing | The risk is medium/high and the confirm modal was dismissed. Click again + confirm. |
+| Conversations rail empty after restart | `~/.ascendo/chats.db` is fresh — no prior conversations. Click "New chat" to start one. |
+| Cyrillic / non-ASCII text in input garbled | Old Terminal encoding — relaunch the dashboard from a UTF-8 Terminal session (`echo $LANG` should show `*.UTF-8`). |
+
+## 15 · One-liner sanity check
 
 If anything seems off, run this first — exits 0 only when CLI + dashboard
 + all 5 phases × 6 categories produce real sidecars and the SPA assets
 serve correctly. Stage 12 exercises the launchd scheduler round-trip
 (install + list + trigger + remove a throwaway agent); Stage 13 exercises
 the M5.6 / M5.7 web app updater across all 5 phases (37 apps in shipped
-registry):
+registry); Stage 14 exercises the Sesja 70 AI Tools chat surface (prompt
+library load, action whitelist size, backend resolver, ChatsDB write,
+i18n parity, and three dashboard endpoints):
 
 ```bash
 bash bin/validate-macos.sh
-# Expected: ALL CHECKS PASSED. (44/44)
+# Expected: ALL CHECKS PASSED. (52/52)
 ```
 
 Anything red names the failed component (CLI, manager, sidecar parse,
-dashboard endpoint, SPA asset, scheduler) so you know exactly where to
-start.
+dashboard endpoint, SPA asset, scheduler, AI backend) so you know
+exactly where to start.

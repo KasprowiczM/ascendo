@@ -384,7 +384,108 @@ Trusted Signing subscription), re-enabling is a config flip:
 Tracked in [`PLAN.md`](PLAN.md) under "v0.7+ desktop distribution"
 and [`docs/DESKTOP_INSTALLER_STATUS.md`](docs/DESKTOP_INSTALLER_STATUS.md).
 
-## 12 · One-liner sanity check
+## 12 · AI Tools chat (Sesja 70 / v0.5.0)
+
+The Suggestions tab grew a new chat surface that combines Sesja 67's
+rule-based + AI-augmented quick cards with a conversational LLM-backed
+diagnosis flow. The URL path stays `#suggest` so any external bookmarks
+keep working; only the visible label flips to **"AI Tools" / "Narzędzia AI"**
+via i18n.
+
+### Pick a backend
+
+Ascendo resolves the first available backend in this order:
+
+1. **claude** — Claude Code CLI (`winget install Anthropic.Claude` or vendor docs)
+2. **gemini** — Gemini CLI
+3. **codex** — Codex CLI
+4. **opencode** — `winget install Anomaly.opencode` (open-source CLI)
+5. **API key fallback** — Settings → AI configures anthropic / openai /
+   openrouter / ollama / google / lm_studio.
+
+The backend pill at the top right of the AI Tools tab shows which
+backend is active. If it reads "No backend configured", install one of
+the CLIs above OR configure an API key in Settings → AI.
+
+### 10 starter prompts (grouped)
+
+The right rail is a "Prompt library" with 10 curated starters across
+three groups:
+
+| Group | Prompts (universal except where noted) |
+|-------|----------------------------------------|
+| **Diagnostics** | Why did my last run fail? · What does this exit code mean? · Find apps not updated in 90+ days · Why does Ascendo say a reboot is required? · Which web apps have broken update probes? |
+| **Setup** | Help me set up Ascendo for the first time |
+| **Customize** | What apps should I exclude from updates? · Recommend an update schedule · How do I add a custom web app? |
+
+Each prompt has EN+PL titles and starter text. Clicking a prompt sends
+it with a pre-baked context bundle (e.g. "Why did my last run fail?"
+auto-injects the latest failed sidecar + REPORT.md).
+
+### Action chips
+
+The LLM can emit fenced code blocks like:
+
+````
+```ascendo-action
+{"id":"run_check","verb":"POST","path":"/runs/async",
+ "body":{"categories":["winget"],"phases":["check"]},
+ "label_en":"Run winget check","risk":"low"}
+```
+````
+
+These render as chips below the assistant message. Clicking a chip
+calls `POST /ai/chat/action` which validates the action against a
+**12-entry whitelist** (`run_check`, `run_plan`, `run_apply`,
+`run_verify`, `run_cleanup`, `install_schedule`, `remove_schedule`,
+`trigger_schedule`, `refresh_inventory`, `add_web_override`,
+`edit_skip_list`, `open_view`) and returns a proxy plan. The dashboard
+fires the underlying endpoint separately so every action remains
+visible in the Run Center activity log.
+
+`risk: medium` or `risk: high` chips trigger a `window.confirm()` before
+firing.
+
+### Chat history is local-only
+
+Conversations + messages persist to `%LOCALAPPDATA%\Ascendo\chats.db`
+(SQLite, per-host). The file is in the dev-sync HARD_EXCLUDE list so it
+never leaves the machine. Search and pin / archive work over the local
+DB only; there's no cloud sync in v1.
+
+To wipe history: `Remove-Item $env:LOCALAPPDATA\Ascendo\chats.db` (the
+dashboard recreates an empty DB on next launch).
+
+### Smoke-test the chat surface
+
+```powershell
+ascendo web start
+# Lists installed backends — look for "available": "true"
+curl http://127.0.0.1:8765/ai/chat/backends | ConvertFrom-Json | Format-List
+
+# Load the prompt library (entries gated by adapter)
+curl http://127.0.0.1:8765/ai/chat/library | ConvertFrom-Json | Format-List
+
+# Create a conversation, send a message, stream the reply
+$cid = (curl http://127.0.0.1:8765/ai/chat/conversations -Method POST `
+  -Body '{}' -ContentType 'application/json' | ConvertFrom-Json).id
+$turn = (curl http://127.0.0.1:8765/ai/chat -Method POST `
+  -ContentType 'application/json' `
+  -Body (@{conversation_id=$cid; message="hello"; locale="en"} | ConvertTo-Json)).turn_id
+curl http://127.0.0.1:8765/ai/chat/stream/$turn
+```
+
+### Common pitfalls
+
+| Symptom | Likely cause / fix |
+|---------|--------------------|
+| Backend pill says "No backend configured" | No CLI on PATH AND no API key set. `where.exe claude` to confirm; otherwise Settings → AI |
+| Chat says "Failed to send" | Backend resolver failed mid-turn. Restart dashboard + retest. |
+| Action chip click does nothing | The risk is medium/high and the confirm modal was dismissed. Click again + confirm. |
+| Conversations rail empty after restart | `%LOCALAPPDATA%\Ascendo\chats.db` is fresh — no prior conversations. Click "New chat" to start one. |
+| Cyrillic / non-ASCII text in input garbled | Windows Terminal CP — make sure `chcp` returns 65001 (UTF-8). |
+
+## 13 · One-liner sanity check
 
 If anything seems off, run this first — exits 0 only when CLI + dashboard
 + all 5 phases × winget produce real sidecars and the SPA assets serve
