@@ -137,3 +137,95 @@ def test_stream_unknown_turn_404(app):
     c = TestClient(app)
     r = c.get("/ai/chat/stream/does-not-exist")
     assert r.status_code == 404
+
+
+# ============================================================================
+# Task 18 — action proxy plan shape for the rest of the whitelist
+# ============================================================================
+
+
+def test_post_action_install_schedule_returns_proxy(app):
+    c = TestClient(app)
+    r = c.post(
+        "/ai/chat/action",
+        json={
+            "action_id": "install_schedule",
+            "body": {
+                "name": "ascendo-nightly",
+                "expression": "DAILY 03:00",
+                "profile": "safe",
+                "enabled": True,
+            },
+        },
+    )
+    assert r.status_code == 200
+    j = r.json()
+    assert j["ok"] is True
+    assert j["action_id"] == "install_schedule"
+    assert j["verb"] == "POST"
+    assert j["path"] == "/scheduler/install"
+    assert j["body"]["name"] == "ascendo-nightly"
+
+
+def test_post_action_open_view_is_local_verb(app):
+    c = TestClient(app)
+    r = c.post(
+        "/ai/chat/action",
+        json={"action_id": "open_view", "body": {"view": "categories"}},
+    )
+    assert r.status_code == 200
+    j = r.json()
+    assert j["ok"] is True
+    assert j["verb"] == "local"
+    assert j["path"] == "navigate"
+    assert j["body"]["view"] == "categories"
+
+
+def test_post_action_refresh_inventory_empty_body_ok(app):
+    c = TestClient(app)
+    r = c.post(
+        "/ai/chat/action",
+        json={"action_id": "refresh_inventory", "body": {}},
+    )
+    assert r.status_code == 200
+    j = r.json()
+    assert j["ok"] is True
+    assert j["path"] == "/inventory/db/refresh"
+
+
+def test_post_action_install_schedule_rejects_bad_name(app):
+    c = TestClient(app)
+    # Capitalised name violates the slug regex.
+    r = c.post(
+        "/ai/chat/action",
+        json={
+            "action_id": "install_schedule",
+            "body": {
+                "name": "BadName",
+                "expression": "DAILY 03:00",
+                "profile": "safe",
+            },
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_post_action_run_apply_proxy_plan_carries_through_phases(app):
+    """The 5 run_* actions all share the RunPhaseBody schema."""
+    c = TestClient(app)
+    r = c.post(
+        "/ai/chat/action",
+        json={
+            "action_id": "run_apply",
+            "body": {
+                "categories": ["winget", "msstore"],
+                "phases": ["apply"],
+            },
+        },
+    )
+    assert r.status_code == 200
+    j = r.json()
+    assert j["action_id"] == "run_apply"
+    assert j["path"] == "/runs/async"
+    assert j["body"]["categories"] == ["winget", "msstore"]
+    assert j["body"]["phases"] == ["apply"]
