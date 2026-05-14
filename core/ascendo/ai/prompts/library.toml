@@ -1,0 +1,90 @@
+[[entries]]
+id = "diagnose_last_run"
+group = "diagnostics"
+title.en = "Why did my last run fail?"
+title.pl = "Dlaczego ostatni uruchom się nie powiódł?"
+starter_prompt.en = "Analyze my most recent failed run and explain what went wrong. Suggest concrete next steps."
+starter_prompt.pl = "Przeanalizuj mój ostatni nieudany uruchom i wyjaśnij, co poszło nie tak. Zaproponuj konkretne dalsze kroki."
+context_tags = ["latest_failed_sidecar", "latest_report_md"]
+
+[[entries]]
+id = "explain_exit_code"
+group = "diagnostics"
+title.en = "What does this exit code mean?"
+title.pl = "Co oznacza ten kod wyjścia?"
+starter_prompt.en = "Explain the meaning and operator-side implications of each Ascendo exit code (0, 1, 2, 30, 75)."
+starter_prompt.pl = "Wyjaśnij znaczenie i implikacje operacyjne każdego kodu wyjścia Ascendo (0, 1, 2, 30, 75)."
+context_tags = []
+
+[[entries]]
+id = "recommend_exclusions"
+group = "customize"
+title.en = "What apps should I exclude from updates?"
+title.pl = "Które aplikacje powinienem wykluczyć z aktualizacji?"
+starter_prompt.en = "Look at my outdated apps and update history. Suggest exclusions for apps that churn weekly or auto-update themselves."
+starter_prompt.pl = "Przejrzyj moje nieaktualne aplikacje i historię aktualizacji. Zaproponuj wykluczenia dla aplikacji aktualizujących się tygodniowo lub samodzielnie."
+context_tags = ["outdated_apps", "churn_history_30d", "skip_list_current"]
+
+[[entries]]
+id = "recommend_schedule"
+group = "customize"
+title.en = "Recommend an update schedule"
+title.pl = "Zaproponuj harmonogram aktualizacji"
+starter_prompt.en = "Based on my inventory size and current schedules, recommend an automated update cadence."
+starter_prompt.pl = "Na podstawie wielkości mojego inwentarza i obecnych harmonogramów, zaproponuj automatyczny harmonogram aktualizacji."
+context_tags = ["adapter_capabilities", "schedules_current"]
+
+[[entries]]
+id = "first_run_setup"
+group = "setup"
+title.en = "Help me set up Ascendo for the first time"
+title.pl = "Pomóż mi skonfigurować Ascendo po raz pierwszy"
+starter_prompt.en = "Walk me through what to do after my first Ascendo install. Be brief and adapter-aware."
+starter_prompt.pl = "Przeprowadź mnie przez to, co zrobić po pierwszej instalacji Ascendo. Bądź zwięzły i świadomy adaptera."
+context_tags = ["adapter_capabilities", "doctor_full"]
+
+[[entries]]
+id = "find_stale_apps"
+group = "diagnostics"
+title.en = "Find apps not updated in a long time"
+title.pl = "Znajdź aplikacje dawno nie aktualizowane"
+starter_prompt.en = "Find apps that haven't been updated in 90+ days. Suggest which to prioritize."
+starter_prompt.pl = "Znajdź aplikacje nieaktualizowane od ponad 90 dni. Zaproponuj, które priorytetowo zaktualizować."
+context_tags = ["recent_apply_history", "outdated_apps"]
+
+[[entries]]
+id = "add_web_app"
+group = "customize"
+title.en = "How do I add a custom web app?"
+title.pl = "Jak dodać niestandardową aplikację web?"
+starter_prompt.en = "Walk me through adding a custom web app to my web_apps.toml override."
+starter_prompt.pl = "Przeprowadź mnie przez dodawanie niestandardowej aplikacji web do mojego pliku web_apps.toml."
+context_tags = ["web_registry_schema"]
+
+[[entries]]
+id = "enable_touch_id_sudo"
+group = "setup"
+platforms = ["macos"]
+title.en = "How do I enable Touch ID for sudo?"
+title.pl = "Jak włączyć Touch ID dla sudo?"
+starter_prompt.en = "Walk me through enabling Touch ID for sudo on this Mac so Ascendo can elevate without a password prompt."
+starter_prompt.pl = "Przeprowadź mnie przez włączanie Touch ID dla sudo na tym Macu, żeby Ascendo mogło eskalować bez monitu o hasło."
+context_tags = ["adapter_capabilities"]
+
+[[entries]]
+id = "explain_reboot"
+group = "diagnostics"
+title.en = "Why does Ascendo say a reboot is required?"
+title.pl = "Dlaczego Ascendo mówi, że wymagany jest restart?"
+starter_prompt.en = "I see a reboot-required banner. Explain why and whether I can defer it."
+starter_prompt.pl = "Widzę baner wymagający restartu. Wyjaśnij dlaczego i czy mogę go odroczyć."
+context_tags = ["latest_report_md"]
+
+[[entries]]
+id = "find_broken_handlers"
+group = "diagnostics"
+title.en = "Which web apps have broken update probes?"
+title.pl = "Które aplikacje web mają zepsute sondy aktualizacji?"
+starter_prompt.en = "Look at my recent web check phases. Which apps return empty or failed candidate versions consistently?"
+starter_prompt.pl = "Przejrzyj moje ostatnie fazy sprawdzania web. Które aplikacje konsekwentnie zwracają puste lub błędne wersje?"
+context_tags = ["latest_failed_sidecar", "outdated_apps"]

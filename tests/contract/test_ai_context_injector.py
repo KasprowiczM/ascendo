@@ -249,3 +249,47 @@ def test_recent_apply_history_empty_table(tmp_path):
     text, _ = resolve(adapter=None, inventory_db=StubDB(), runs_dir=None)
     assert "Recent apply history" in text
     assert "empty" in text
+
+
+# ============================================================================
+# Task 14 — prompt library
+# ============================================================================
+
+
+def test_library_loads_10_entries_with_en_and_pl():
+    from ascendo.ai.prompts import load_library
+
+    lib = load_library()
+    assert len(lib) >= 10
+    for entry in lib:
+        assert "id" in entry
+        assert "title" in entry and "en" in entry["title"] and "pl" in entry["title"]
+        assert "starter_prompt" in entry
+        assert "en" in entry["starter_prompt"] and "pl" in entry["starter_prompt"]
+        assert "group" in entry
+        assert "context_tags" in entry
+
+
+def test_library_filter_by_platform():
+    from ascendo.ai.prompts import filtered_library
+
+    macos = filtered_library(adapter_name="macos")
+    windows = filtered_library(adapter_name="windows")
+    ids_macos = {e["id"] for e in macos}
+    ids_windows = {e["id"] for e in windows}
+    # Touch ID prompt is macOS-only.
+    assert "enable_touch_id_sudo" in ids_macos
+    assert "enable_touch_id_sudo" not in ids_windows
+    # Universal prompts appear on both.
+    assert "diagnose_last_run" in ids_macos
+    assert "diagnose_last_run" in ids_windows
+
+
+def test_system_prompt_locale_split():
+    from ascendo.ai.prompts import system_prompt
+
+    en = system_prompt("en")
+    pl = system_prompt("pl")
+    assert "Ascendo's AI Tools assistant" in en
+    assert "Jesteś asystentem AI Tools" in pl
+    assert system_prompt("xx") == en  # unknown locale falls back to EN
