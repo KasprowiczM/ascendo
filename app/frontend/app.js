@@ -5604,6 +5604,24 @@ window.ui = ui;
         } catch {}
       });
 
+      // Task 20: action chips appear DURING streaming, not only after
+      // the persisted message lands. Re-opening the conversation later
+      // still renders identical chips from the actions column - this
+      // just removes perceived latency.
+      sse.addEventListener("action_proposal", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (!data.action || !pending) return;
+          let chips = pending.querySelector(".aitools-chips");
+          if (!chips) {
+            chips = document.createElement("div");
+            chips.className = "aitools-chips";
+            pending.appendChild(chips);
+          }
+          chips.appendChild(this._makeChip(data.action));
+        } catch {}
+      });
+
       sse.addEventListener("done", () => {
         if (pending) pending.classList.remove("aitools-msg-pending");
         sse.close();

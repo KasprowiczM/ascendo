@@ -163,3 +163,77 @@ async def test_run_turn_registers_turn_in_registry(tmp_path):
     assert states[0].status == TurnStatus.COMPLETED
     assert states[0].started_at is not None
     assert states[0].ended_at is not None
+
+
+@pytest.mark.asyncio
+async def test_run_turn_emits_action_proposal_during_streaming(tmp_path):
+    """Action fences detected mid-stream emit action_proposal chunks BEFORE done.
+
+    Pre-Task-20 the parser only ran post-hoc so the SPA couldn't render
+    chips until the full message landed. Task 20 makes the chips appear
+    incrementally as soon as the closing ``` arrives.
+    """
+    from ascendo.ai.persistence import ChatsDB
+    from ascendo.ai.streaming import run_turn
+
+    chats = ChatsDB(tmp_path / "chats.db")
+    cid = chats.create_conversation(backend="fake", locale="en")
+    tokens = [
+        "Run check:\n",
+        '```ascendo-action\n{"id":"run_check","verb":"POST","path":"/runs/async",'
+        '"body":{"categories":["winget"],"phases":["check"]}}\n```',
+        "\nNext step is plan.",
+    ]
+    seen: list[Chunk] = []
+    async for c in run_turn(
+        backend=FakeBackend(tokens=tokens),
+        conversation_id=cid,
+        user_message="check",
+        system_prompt="sys",
+        context_blob="ctx",
+        chats_db=chats,
+        registry=TurnRegistry(),
+    ):
+        seen.append(c)
+
+    types = [c.type for c in seen]
+    assert "action_proposal" in types
+    # The proposal must arrive BEFORE the terminal done event.
+    proposal_idx = types.index("action_proposal")
+    done_idx = types.index("done")
+    assert proposal_idx < done_idx
+    proposal = seen[proposal_idx]
+    assert proposal.action is not None
+    assert proposal.action["id"] == "run_check"
+
+
+@pytest.mark.asyncio
+async def test_run_turn_does_not_double_emit_actions(tmp_path):
+    """Subsequent tokens after a closed fence must not re-emit the same action."""
+    from ascendo.ai.persistence import ChatsDB
+    from ascendo.ai.streaming import run_turn
+
+    chats = ChatsDB(tmp_path / "chats.db")
+    cid = chats.create_conversation(backend="fake", locale="en")
+    tokens = [
+        "Two actions:\n",
+        '```ascendo-action\n{"id":"run_check","body":{"categories":["w"],"phases":["check"]}}\n```',
+        "\nand\n",
+        '```ascendo-action\n{"id":"run_plan","body":{"categories":["w"],"phases":["plan"]}}\n```',
+        "\ndone.",
+    ]
+    seen: list[Chunk] = []
+    async for c in run_turn(
+        backend=FakeBackend(tokens=tokens),
+        conversation_id=cid,
+        user_message="show me",
+        system_prompt="sys",
+        context_blob="ctx",
+        chats_db=chats,
+        registry=TurnRegistry(),
+    ):
+        seen.append(c)
+
+    proposals = [c for c in seen if c.type == "action_proposal"]
+    ids = [p.action["id"] for p in proposals if p.action]
+    assert ids == ["run_check", "run_plan"]

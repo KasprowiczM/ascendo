@@ -81,6 +81,9 @@ async def run_turn(
     tokens_out_total = 0
     error: str | None = None
     final_status: str = "success"
+    # Count of action proposals already emitted as SSE events so we don't
+    # re-emit the same fence on every subsequent token (Task 20).
+    emitted_actions = 0
 
     try:
         async for chunk in backend.stream(
@@ -92,6 +95,16 @@ async def run_turn(
                 if chunk.content:
                     buffer.append(chunk.content)
                 yield chunk
+                # Incremental action detection: re-parse the running buffer
+                # and emit any newly-completed fence as an action_proposal
+                # chunk so the SPA renders chips DURING streaming, not only
+                # after `done`. parse_actions is a closed-fence regex, so
+                # half-typed fences don't fire prematurely.
+                actions_so_far, _ = parse_actions("".join(buffer))
+                while emitted_actions < len(actions_so_far):
+                    proposal = actions_so_far[emitted_actions]
+                    emitted_actions += 1
+                    yield Chunk(type="action_proposal", action=proposal)
             elif chunk.type == "done":
                 final_status = chunk.status or "success"
                 tokens_out_total = chunk.tokens_out or (len("".join(buffer)) // 4)
