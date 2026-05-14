@@ -810,6 +810,139 @@ print(len(d.get('items', [])))
 fi
 rm -rf "$WEB_DIR2"
 
+# ── 14. AI Tools chat surface (Sesja 70 / Phase B+C) ──────────────────────────
+step "14. AI Tools chat (Sesja 70)"
+
+# 14.1 prompt library: 10 entries with EN+PL parity (Task 14)
+if PYTHONPATH="$REPO_ROOT/core" python3 -c "
+from ascendo.ai.prompts import load_library
+lib = load_library()
+assert len(lib) >= 10, f'expected >=10 entries, got {len(lib)}'
+for e in lib:
+    assert 'en' in e['title'] and 'pl' in e['title']
+print(len(lib))
+" >/tmp/ascendo-ai-lib.out 2>&1; then
+    result "14.1 prompt library loads 10+ entries EN+PL" 1 "$(cat /tmp/ascendo-ai-lib.out) entries"
+else
+    result "14.1 prompt library loads 10+ entries EN+PL" 0 "$(cat /tmp/ascendo-ai-lib.out)"
+fi
+
+# 14.2 action whitelist: 12 entries (Task 13)
+if PYTHONPATH="$REPO_ROOT/core" python3 -c "
+from ascendo.ai.actions import ALLOWED_ACTIONS
+assert len(ALLOWED_ACTIONS) == 12, f'expected 12 entries, got {len(ALLOWED_ACTIONS)}'
+print(','.join(sorted(ALLOWED_ACTIONS)))
+" >/tmp/ascendo-ai-act.out 2>&1; then
+    result "14.2 action whitelist has 12 entries" 1 "$(cat /tmp/ascendo-ai-act.out)"
+else
+    result "14.2 action whitelist has 12 entries" 0 "$(cat /tmp/ascendo-ai-act.out)"
+fi
+
+# 14.3 backend resolver lists 4 CLI backends (Task 9)
+if PYTHONPATH="$REPO_ROOT/core" python3 -c "
+from ascendo.ai.backend import BackendResolver
+status = BackendResolver(preferred=None).list_status()
+names = sorted({b['name'] for b in status})
+assert names == ['claude', 'codex', 'gemini', 'opencode'], names
+print(','.join(names))
+" >/tmp/ascendo-ai-bk.out 2>&1; then
+    result "14.3 backend resolver lists 4 CLI drivers" 1 "$(cat /tmp/ascendo-ai-bk.out)"
+else
+    result "14.3 backend resolver lists 4 CLI drivers" 0 "$(cat /tmp/ascendo-ai-bk.out)"
+fi
+
+# 14.4 ChatsDB schema + 0600 perms (Task 10)
+CHATS_TMP=$(mktemp -d)
+if PYTHONPATH="$REPO_ROOT/core" python3 -c "
+from pathlib import Path
+from ascendo.ai.persistence import ChatsDB
+db = ChatsDB(Path('$CHATS_TMP') / 'chats.db')
+cid = db.create_conversation(backend='ci', locale='en')
+db.append_message(conversation_id=cid, role='user', content='hello')
+msgs = db.get_messages(cid)
+assert len(msgs) == 1
+import os, stat
+mode = stat.S_IMODE(os.stat(Path('$CHATS_TMP') / 'chats.db').st_mode)
+assert mode == 0o600, f'expected 0600, got {oct(mode)}'
+print('ok')
+" >/tmp/ascendo-ai-db.out 2>&1; then
+    result "14.4 ChatsDB writes + 0600 perms" 1 "$(cat /tmp/ascendo-ai-db.out)"
+else
+    result "14.4 ChatsDB writes + 0600 perms" 0 "$(cat /tmp/ascendo-ai-db.out)"
+fi
+rm -rf "$CHATS_TMP"
+
+# 14.5 EN ↔ PL parity for app/frontend/i18n.js (Task 21)
+if python3 "$REPO_ROOT/scripts/check-i18n-parity.py" >/tmp/ascendo-ai-parity.out 2>&1; then
+    result "14.5 i18n EN/PL parity" 1 "$(cat /tmp/ascendo-ai-parity.out)"
+else
+    result "14.5 i18n EN/PL parity" 0 "$(cat /tmp/ascendo-ai-parity.out)"
+fi
+
+# 14.6 + 14.7 + 14.8 — dashboard /ai/chat/* endpoints round-trip
+if [ "$SKIP_DASHBOARD" -ne 1 ]; then
+    AI_PORT=$((DASHBOARD_PORT + 1))
+    AI_HOME=$(mktemp -d)
+    AI_LOG=$(mktemp -t ascendo-ai-dash.XXXX)
+    (
+        PYTHONPATH="$REPO_ROOT/core:$REPO_ROOT/adapters/macos" \
+        ASCENDO_HOME="$AI_HOME" \
+        python3 -m ascendo dashboard --port "$AI_PORT" >"$AI_LOG" 2>&1
+    ) &
+    AI_PID=$!
+    # Wait up to 10s for dashboard to bind.
+    for _ in $(seq 1 20); do
+        if curl -fsS "http://127.0.0.1:$AI_PORT/version" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 0.5
+    done
+
+    # 14.6 /ai/chat/backends
+    if curl -fsS "http://127.0.0.1:$AI_PORT/ai/chat/backends" \
+        | grep -q '"backends"'; then
+        result "14.6 GET /ai/chat/backends" 1
+    else
+        result "14.6 GET /ai/chat/backends" 0
+    fi
+
+    # 14.7 /ai/chat/library returns entries
+    LIB_COUNT=$(curl -fsS "http://127.0.0.1:$AI_PORT/ai/chat/library" \
+        | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('entries', [])))" \
+        2>/dev/null)
+    if [ -n "$LIB_COUNT" ] && [ "$LIB_COUNT" -ge 9 ]; then
+        result "14.7 GET /ai/chat/library entries >= 9" 1 "$LIB_COUNT entries"
+    else
+        result "14.7 GET /ai/chat/library entries >= 9" 0 "got '$LIB_COUNT'"
+    fi
+
+    # 14.8 POST /ai/chat/conversations round-trip + DELETE
+    CONV_ID=$(curl -fsS -X POST -H 'Content-Type: application/json' \
+        -d '{}' "http://127.0.0.1:$AI_PORT/ai/chat/conversations" \
+        | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" \
+        2>/dev/null)
+    if [ -n "$CONV_ID" ]; then
+        HTTP=$(curl -o /dev/null -s -w '%{http_code}' -X DELETE \
+            "http://127.0.0.1:$AI_PORT/ai/chat/conversations/$CONV_ID")
+        if [ "$HTTP" = "200" ]; then
+            result "14.8 POST + DELETE /ai/chat/conversations round-trip" 1 "$CONV_ID"
+        else
+            result "14.8 POST + DELETE /ai/chat/conversations round-trip" 0 "DELETE returned $HTTP"
+        fi
+    else
+        result "14.8 POST + DELETE /ai/chat/conversations round-trip" 0 "POST failed"
+    fi
+
+    kill "$AI_PID" 2>/dev/null
+    wait "$AI_PID" 2>/dev/null || true
+    rm -f "$AI_LOG"
+    rm -rf "$AI_HOME"
+else
+    result "14.6 GET /ai/chat/backends"                            1 "skipped (--skip-dashboard)"
+    result "14.7 GET /ai/chat/library entries >= 9"                1 "skipped (--skip-dashboard)"
+    result "14.8 POST + DELETE /ai/chat/conversations round-trip"  1 "skipped (--skip-dashboard)"
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 printf "\n"
 if [ "$FAIL_COUNT" -eq 0 ]; then

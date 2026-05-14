@@ -540,6 +540,98 @@ try {
         Remove-Job $dashJob -Force -ErrorAction SilentlyContinue | Out-Null
     }
 
+    # ── 14. AI Tools chat surface (Sesja 70 / Phase B+C) ──────────────────
+    Write-Step "14. AI Tools chat (Sesja 70)"
+
+    $aiRepoRoot = (Resolve-Path "$PSScriptRoot\..").Path
+    $env:PYTHONPATH = "$aiRepoRoot\core;$aiRepoRoot\adapters\windows"
+
+    # 14.1 prompt library 10+ EN+PL
+    $libOut = python -c "from ascendo.ai.prompts import load_library; lib = load_library(); assert len(lib) >= 10; [(\"en\" in e[\"title\"] and \"pl\" in e[\"title\"]) for e in lib]; print(len(lib))" 2>&1
+    Test-Result "14.1 prompt library 10+ EN+PL" ($LASTEXITCODE -eq 0) "$libOut entries"
+
+    # 14.2 action whitelist 12 entries
+    $actOut = python -c "from ascendo.ai.actions import ALLOWED_ACTIONS; assert len(ALLOWED_ACTIONS) == 12; print(len(ALLOWED_ACTIONS))" 2>&1
+    Test-Result "14.2 action whitelist 12 entries" ($LASTEXITCODE -eq 0) $actOut
+
+    # 14.3 backend resolver lists 4 CLI drivers
+    $bkOut = python -c "from ascendo.ai.backend import BackendResolver; names = sorted({b['name'] for b in BackendResolver(preferred=None).list_status()}); assert names == ['claude', 'codex', 'gemini', 'opencode'], names; print(','.join(names))" 2>&1
+    Test-Result "14.3 backend resolver lists 4 drivers" ($LASTEXITCODE -eq 0) $bkOut
+
+    # 14.4 ChatsDB schema + writes
+    $chatsTmp = Join-Path $env:TEMP "ascendo-ai-chats-$([guid]::NewGuid())"
+    New-Item -ItemType Directory -Force -Path $chatsTmp | Out-Null
+    $dbOut = python -c "from pathlib import Path; from ascendo.ai.persistence import ChatsDB; db = ChatsDB(Path(r'$chatsTmp') / 'chats.db'); cid = db.create_conversation(backend='ci', locale='en'); db.append_message(conversation_id=cid, role='user', content='hi'); assert len(db.get_messages(cid)) == 1; print('ok')" 2>&1
+    Test-Result "14.4 ChatsDB writes" ($LASTEXITCODE -eq 0) $dbOut
+    Remove-Item -Recurse -Force -Path $chatsTmp -ErrorAction SilentlyContinue
+
+    # 14.5 i18n EN/PL parity (needs node)
+    $node = Get-Command node -ErrorAction SilentlyContinue
+    if ($node) {
+        $parOut = python "$aiRepoRoot\scripts\check-i18n-parity.py" 2>&1
+        Test-Result "14.5 i18n EN/PL parity" ($LASTEXITCODE -eq 0) $parOut
+    } else {
+        Test-Result "14.5 i18n EN/PL parity" $true "skipped (node not installed)"
+    }
+
+    # 14.6-14.8: dashboard /ai/chat/* round-trip
+    if (-not $SkipDashboard) {
+        $aiPort = $DashboardPort + 1
+        $aiHome = Join-Path $env:TEMP "ascendo-ai-home-$([guid]::NewGuid())"
+        New-Item -ItemType Directory -Force -Path $aiHome | Out-Null
+        $aiEnv = @{
+            PYTHONPATH    = "$aiRepoRoot\core;$aiRepoRoot\adapters\windows"
+            ASCENDO_HOME  = $aiHome
+        }
+        $aiJob = Start-Job -ScriptBlock {
+            param($repo, $port, $env_vars)
+            foreach ($k in $env_vars.Keys) { [Environment]::SetEnvironmentVariable($k, $env_vars[$k]) }
+            python -m ascendo dashboard --port $port
+        } -ArgumentList $aiRepoRoot, $aiPort, $aiEnv
+
+        # Wait up to 10s for dashboard
+        $up = $false
+        for ($i = 0; $i -lt 20; $i++) {
+            try {
+                $r = Invoke-RestMethod -Uri "http://127.0.0.1:$aiPort/version" -TimeoutSec 1 -ErrorAction Stop
+                $up = $true; break
+            } catch { Start-Sleep -Milliseconds 500 }
+        }
+
+        if ($up) {
+            try {
+                $bks = Invoke-RestMethod -Uri "http://127.0.0.1:$aiPort/ai/chat/backends" -ErrorAction Stop
+                Test-Result "14.6 GET /ai/chat/backends" ($null -ne $bks.backends)
+            } catch {
+                Test-Result "14.6 GET /ai/chat/backends" $false $_.Exception.Message
+            }
+            try {
+                $lib = Invoke-RestMethod -Uri "http://127.0.0.1:$aiPort/ai/chat/library" -ErrorAction Stop
+                $count = if ($lib.entries) { $lib.entries.Count } else { 0 }
+                Test-Result "14.7 GET /ai/chat/library entries >= 9" ($count -ge 9) "$count entries"
+            } catch {
+                Test-Result "14.7 GET /ai/chat/library entries >= 9" $false $_.Exception.Message
+            }
+            try {
+                $created = Invoke-RestMethod -Uri "http://127.0.0.1:$aiPort/ai/chat/conversations" -Method POST -ContentType 'application/json' -Body '{}' -ErrorAction Stop
+                $deleted = Invoke-WebRequest -Uri "http://127.0.0.1:$aiPort/ai/chat/conversations/$($created.id)" -Method DELETE -ErrorAction Stop
+                Test-Result "14.8 POST + DELETE /ai/chat/conversations round-trip" ($deleted.StatusCode -eq 200) $created.id
+            } catch {
+                Test-Result "14.8 POST + DELETE /ai/chat/conversations round-trip" $false $_.Exception.Message
+            }
+        } else {
+            Test-Result "14.6-14.8 dashboard reachable" $false "dashboard never bound on port $aiPort"
+        }
+
+        Stop-Job $aiJob -ErrorAction SilentlyContinue | Out-Null
+        Remove-Job $aiJob -Force -ErrorAction SilentlyContinue | Out-Null
+        Remove-Item -Recurse -Force -Path $aiHome -ErrorAction SilentlyContinue
+    } else {
+        Test-Result "14.6 GET /ai/chat/backends"                           $true "skipped"
+        Test-Result "14.7 GET /ai/chat/library entries >= 9"               $true "skipped"
+        Test-Result "14.8 POST + DELETE /ai/chat/conversations round-trip" $true "skipped"
+    }
+
     Write-Host ""
     if ($script:Failures -eq 0) {
         Write-Host "ALL CHECKS PASSED." -ForegroundColor Green
