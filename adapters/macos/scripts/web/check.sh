@@ -215,7 +215,16 @@ while [ "$i" -lt "$WORK_IDX" ]; do
         continue
     fi
 
-    if [ "$INSTALLED" = "$LATEST" ] || ! _version_gt "$LATEST" "$INSTALLED"; then
+    # Reuse the same skip-upgrade logic apply.sh uses — keeps check and
+    # apply consistent and catches all four "no upgrade needed" cases:
+    #   1. Strict string match
+    #   2. Loose equality (zoom-style parens, gdrive trailing zeros)
+    #   3. installed > candidate (vendor manifest lags reality)
+    #   4. candidate is a pre-release marker (beta/rc/alpha) but
+    #      installed is stable — don't replace stable with beta
+    #      (e.g. Firefox Developer Edition 151.0 stable installed,
+    #      Mozilla product-details still on 151.0b10 beta)
+    if [ "$INSTALLED" = "$LATEST" ] || _should_skip_upgrade "$INSTALLED" "$LATEST"; then
         json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "up_to_date" "web" "$HANDLER"
         COUNT_UTD=$((COUNT_UTD + 1))
     else

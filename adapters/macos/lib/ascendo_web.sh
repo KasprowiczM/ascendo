@@ -59,6 +59,90 @@ _web_installed_version() {
         CFBundleShortVersionString 2>/dev/null || true
 }
 
+# _web_resolve_bundle_path <bundle_id> [fallback_app_path]
+# Returns the on-disk path for a bundle id, regardless of how the app's
+# display name on disk differs from what `web_apps.toml` declares.
+#
+# Why this exists: registry uses canonical names (Codex Desktop, Docker
+# Desktop, Zoom, Ledger Live) but users have those installed under shorter
+# / vendor-specific names (Codex.app, Docker.app, zoom.us.app, Ledger
+# Wallet.app). The default "/Applications/${DISPLAY_NAME}.app" guess in
+# apply.sh broke for every such case, marking installed apps as
+# "skipped: not_installed_or_path_mismatch".
+#
+# Strategy (fastest → most thorough):
+#   1. mdfind kMDItemCFBundleIdentifier — covers anything Spotlight has
+#      indexed. Fastest path; works for ~70-80% of bundles.
+#   2. system_profiler -json (cached for the process via ASCENDO_WEB_SP_CACHE)
+#      — catches bundles Spotlight didn't index (recent installs, Spotlight
+#      disabled for a path, /Library/Application Support nested apps).
+#   3. Caller-supplied fallback path (the legacy /Applications/<display>.app
+#      guess) — last resort, only if it actually exists.
+_web_resolve_bundle_path() {
+    local bundle_id="$1" fallback="$2" path=""
+    if [ -z "$bundle_id" ]; then
+        [ -n "$fallback" ] && [ -d "$fallback" ] && printf '%s' "$fallback"
+        return 0
+    fi
+    # 1. mdfind — filter to .app bundles, skip test artifacts under /tmp.
+    path=$(/usr/bin/mdfind -onlyin /Applications \
+                "kMDItemCFBundleIdentifier == '${bundle_id}'" 2>/dev/null \
+           | /usr/bin/grep -E '\.app$' | /usr/bin/head -n 1)
+    if [ -z "$path" ]; then
+        path=$(/usr/bin/mdfind \
+                    "kMDItemCFBundleIdentifier == '${bundle_id}'" 2>/dev/null \
+               | /usr/bin/grep -E '\.app$' | /usr/bin/grep -v '^/tmp/' \
+               | /usr/bin/head -n 1)
+    fi
+    if [ -n "$path" ] && [ -d "$path" ]; then
+        printf '%s' "$path"
+        return 0
+    fi
+    # 2. system_profiler fallback — slow on cold start (~1.5 s) but cached
+    # per process. Catches Docker.app, Codex.app, zoom.us.app and similar
+    # bundles that Spotlight has missed on this host.
+    if [ -z "${ASCENDO_WEB_SP_CACHE:-}" ] || [ ! -f "$ASCENDO_WEB_SP_CACHE" ]; then
+        ASCENDO_WEB_SP_CACHE="${TMPDIR:-/tmp}/ascendo-web-sp-$$.json"
+        /usr/sbin/system_profiler -json -detailLevel mini \
+            SPApplicationsDataType > "$ASCENDO_WEB_SP_CACHE" 2>/dev/null || true
+        export ASCENDO_WEB_SP_CACHE
+    fi
+    if [ -f "$ASCENDO_WEB_SP_CACHE" ] && [ -s "$ASCENDO_WEB_SP_CACHE" ]; then
+        path=$(BUNDLE_ID="$bundle_id" python3 -c '
+import json, os, sys
+bid = os.environ["BUNDLE_ID"]
+try:
+    data = json.load(open(os.environ["ASCENDO_WEB_SP_CACHE"]))
+except Exception:
+    sys.exit(0)
+for app in data.get("SPApplicationsDataType", []):
+    p = app.get("path", "")
+    if not p or not p.endswith(".app"):
+        continue
+    try:
+        plist = os.path.join(p, "Contents", "Info.plist")
+        # PlistBuddy via subprocess would re-fork; instead use plistlib.
+        import plistlib
+        with open(plist, "rb") as f:
+            info = plistlib.load(f)
+        if info.get("CFBundleIdentifier", "") == bid:
+            print(p)
+            break
+    except Exception:
+        continue
+' 2>/dev/null)
+        if [ -n "$path" ] && [ -d "$path" ]; then
+            printf '%s' "$path"
+            return 0
+        fi
+    fi
+    # 3. Fallback to caller-supplied path if it exists on disk.
+    if [ -n "$fallback" ] && [ -d "$fallback" ]; then
+        printf '%s' "$fallback"
+    fi
+    return 0
+}
+
 # _version_gt <a> <b>
 # Exit 0 iff a > b (strict). Compares dotted version strings via sort -V.
 # Equal versions return 1 (not strictly greater).
@@ -68,6 +152,60 @@ _version_gt() {
     local higher
     higher=$(printf '%s\n%s\n' "$a" "$b" | sort -V | tail -n 1)
     [ "$higher" = "$a" ]
+}
+
+# _normalize_version <v>
+# Echoes a normalized form of a version string suitable for loose equality
+# comparison. Two common quirks vendor feeds add that don't reflect a real
+# version change:
+#   1. Parenthetical build suffix:  "7.0.0 (77593)" → "7.0.0.77593"
+#      (Zoom posts the same release as "7.0.0 (77593)" in its DMG bundle
+#      but as "7.0.0.77593" in the version manifest. Pure-string compare
+#      says they differ; semantically they're the same build.)
+#   2. Trailing zero segments:      "125.0" → "125.0.0.0"
+#      (Google Drive's Omaha manifest answers "125.0.0.0" but the bundle's
+#      CFBundleShortVersionString is "125.0". Semver-style equivalence.)
+#   3. Whitespace + Build metadata:
+#      "1.2.3+build.4" → "1.2.3+build.4"  (semver build metadata kept)
+#      "1.2.3 beta"    → "1.2.3-beta"     (whitespace → hyphen)
+#
+# Bash 3.2 compatible. No regex extensions beyond POSIX BRE.
+_normalize_version() {
+    local v="$1"
+    # 1. " (NNN)" → ".NNN"  — Zoom-style parenthetical builds.
+    v=$(printf '%s' "$v" | sed -E 's/ *\(([0-9A-Za-z._]+)\)/.\1/g')
+    # 2. Whitespace squashed to single hyphen (for tags like "1.0 beta").
+    v=$(printf '%s' "$v" | sed -E 's/[[:space:]]+/-/g')
+    printf '%s' "$v"
+}
+
+# _version_eq_loose <a> <b>
+# Exit 0 iff a == b after normalization (parenthetical build, trailing
+# zero segments, whitespace tag separator). Used by check + apply to
+# avoid the classic "installed=125.0 candidate=125.0.0.0 → outdated"
+# false positive.
+_version_eq_loose() {
+    local a b
+    a=$(_normalize_version "$1")
+    b=$(_normalize_version "$2")
+    [ "$a" = "$b" ] && return 0
+    # Trailing-zero equivalence: pad both to the longer dot-count and
+    # compare segment-by-segment. "125.0" vs "125.0.0.0" both pad to
+    # the same canonical "125.0.0.0".
+    local a_segs b_segs max i
+    a_segs=$(printf '%s' "$a" | awk -F. '{print NF}')
+    b_segs=$(printf '%s' "$b" | awk -F. '{print NF}')
+    max=$a_segs
+    [ "$b_segs" -gt "$max" ] && max=$b_segs
+    while [ "$a_segs" -lt "$max" ]; do
+        a="${a}.0"
+        a_segs=$((a_segs + 1))
+    done
+    while [ "$b_segs" -lt "$max" ]; do
+        b="${b}.0"
+        b_segs=$((b_segs + 1))
+    done
+    [ "$a" = "$b" ]
 }
 
 # _is_prerelease <version>
@@ -98,6 +236,11 @@ _should_skip_upgrade() {
     [ -z "$installed" ] && return 1     # no install info → let apply decide
     [ -z "$cand" ] && return 1          # no candidate → caller handles probe_unavailable
     [ "$installed" = "$cand" ] && return 0
+    # Loose equality catches vendor manifest quirks (parenthetical builds,
+    # trailing zero segments) before they trigger an unnecessary reinstall.
+    if _version_eq_loose "$installed" "$cand"; then
+        return 0
+    fi
     if _version_gt "$installed" "$cand"; then
         return 0
     fi

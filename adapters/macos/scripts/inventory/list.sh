@@ -149,9 +149,29 @@ classify_app() {
     local _name="$2"
     local _obtained="$3"
 
-    # Rule 1: Apple system apps
+    # Rule 1: Apple system apps. system_profiler enumerates Apple bundles
+    # from several paths, all of which we want classified as `system` (NOT
+    # `web`, which is for user-installed third-party apps):
+    #
+    #   /System/Applications/*               — first-party apps (Calculator, Calendar)
+    #   /System/Library/CoreServices/*       — agents (AddressBookManager, Dock)
+    #   /System/Library/Frameworks/*         — framework-resident bundles
+    #   /System/Library/PrivateFrameworks/*  — private framework bundles
+    #   /System/iOSSupport/*                 — Mac Catalyst iOS shims
+    #   /System/Volumes/Preboot/*            — boot-time helpers
+    #   /Library/Apple/*                     — Apple-provided non-system bundles
+    #   /usr/libexec/*                       — system service bundles
+    #
+    # Without these patterns, system_profiler's ~300 service bundles
+    # (AccessibilityUIServer, AddressBookManager, AirPlayUIAgent, etc.)
+    # pollute the `web` category and clutter the operator's inventory.
     case "$_path" in
         /System/Applications/*) printf 'system\n'; return ;;
+        /System/Library/*)      printf 'system\n'; return ;;
+        /System/iOSSupport/*)   printf 'system\n'; return ;;
+        /System/Volumes/*)      printf 'system\n'; return ;;
+        /Library/Apple/*)       printf 'system\n'; return ;;
+        /usr/libexec/*)         printf 'system\n'; return ;;
     esac
 
     # Rule 2: name appears in mas list output (pipe-delimited sentinels)

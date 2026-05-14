@@ -121,8 +121,9 @@ def test_emits_one_item_per_app(tmp_path):
     res = _run(SCRIPT, sp, mas, brew, out, rid)
     assert res.returncode == 0, res.stderr
     sc = _parse(out / rid / "check__inventory.json")
-    # 13 valid apps; the empty-path entry is skipped.
-    assert len(sc.items) == 13
+    # 16 valid apps; the empty-path entry is skipped.
+    # (13 baseline + 3 system service bundles for the path-classification test)
+    assert len(sc.items) == 16
     assert sc.status.value == "success"
 
 
@@ -145,8 +146,10 @@ def test_classification_distribution(tmp_path):
     for item in sc.items:
         st = item.source.type.value
         by_source[st] = by_source.get(st, 0) + 1
-    # SYSTEM: Safari, Mail, Calculator, Notes
-    assert by_source.get("system", 0) == 4
+    # SYSTEM: Safari + Mail + Calculator + Notes (under /System/Applications/)
+    #         AddressBookManager + AirPlayUIAgent (under /System/Library/CoreServices/)
+    #         Apple Mobile Sync (under /Library/Apple/...)
+    assert by_source.get("system", 0) == 7
     # MAS: Amphetamine, iMovie, KeePassium (rule 2 via _name match)
     assert by_source.get("mas", 0) == 3
     # BREW: Inkscape, MacWhisper, BlackHole 2ch (cask token match)
@@ -188,6 +191,40 @@ def test_no_brew_falls_through_to_web(tmp_path):
     # Inkscape + MacWhisper + BlackHole 2ch now classify as WEB,
     # plus the original 3 WEB apps (Firefox, VLC, Custom Internal Tool) -> 6 total
     assert by_source.get("web", 0) == 6
+
+
+def test_system_library_coreservices_classifies_as_system(tmp_path):
+    """Apps under /System/Library/* must classify as `system`, not `web`.
+
+    Pre-fix, only /System/Applications/* matched Rule 1. macOS service
+    bundles (AddressBookManager, AirPlayUIAgent, AccessibilityUIServer,
+    etc.) live under /System/Library/CoreServices/ — they were falling
+    through to Rule 5 default and polluting the `web` category with
+    hundreds of system bundles the operator can't update anyway.
+    """
+    sp = _make_fake_sp(tmp_path)
+    mas = _make_fake_mas(tmp_path)
+    brew = _make_fake_brew(tmp_path)
+    out = tmp_path / "out"
+    rid = str(uuid.uuid4())
+    res = _run(SCRIPT, sp, mas, brew, out, rid)
+    assert res.returncode == 0, res.stderr
+    sc = _parse(out / rid / "check__inventory.json")
+    # AddressBookManager lives under /System/Library/CoreServices/
+    abm = next(i for i in sc.items if i.id == "AddressBookManager")
+    assert abm.source.type.value == "system", (
+        f"AddressBookManager under {abm.source.feed} should be classified "
+        f"as `system` (Rule 1 system-path catch); got {abm.source.type.value}"
+    )
+    # AirPlayUIAgent lives under /System/Library/CoreServices/
+    airplay = next(i for i in sc.items if i.id == "AirPlayUIAgent")
+    assert airplay.source.type.value == "system"
+    # Apple Mobile Sync lives under /Library/Apple/...
+    ams = next(i for i in sc.items if i.id == "Apple Mobile Sync")
+    assert ams.source.type.value == "system", (
+        f"/Library/Apple/* bundles should classify as `system`; "
+        f"AMS came back as {ams.source.type.value}"
+    )
 
 
 def test_per_item_metadata(tmp_path):

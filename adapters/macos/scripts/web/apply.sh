@@ -116,6 +116,22 @@ for k, v in fields.items():
     [ -z "$APP_PATH" ] && APP_PATH="/Applications/${DISPLAY_NAME}.app"
 
     INSTALLED=$(_web_installed_version "$APP_PATH")
+    # If the registry's `app_path` guess (or the default
+    # /Applications/<display>.app) misses, try to resolve the bundle by
+    # its CFBundleIdentifier via mdfind + system_profiler fallback. This
+    # catches the common case where the registry uses a canonical name
+    # (Docker Desktop, Codex Desktop, Zoom, Ledger Live) but the user has
+    # the bundle installed under its shorter on-disk name (Docker.app,
+    # Codex.app, zoom.us.app, Ledger Wallet.app). Without this lookup,
+    # apply silently dropped those apps with a misleading "registry
+    # app_path bundle missing" message.
+    if [ -z "$INSTALLED" ] && [ -n "$BUNDLE_ID" ]; then
+        _resolved=$(_web_resolve_bundle_path "$BUNDLE_ID" "$APP_PATH")
+        if [ -n "$_resolved" ] && [ "$_resolved" != "$APP_PATH" ]; then
+            APP_PATH="$_resolved"
+            INSTALLED=$(_web_installed_version "$APP_PATH")
+        fi
+    fi
     # Pre-fix this `continue` silently dropped any registered slug whose
     # APP_PATH didn't resolve to a real CFBundleShortVersionString. The
     # operator then saw plan reporting "7 apps to upgrade" but apply only
@@ -125,7 +141,7 @@ for k, v in fields.items():
     # with explicit reason so the row appears in the sidecar.
     if [ -z "$INSTALLED" ]; then
         json_add_item "web:${SLUG}" "" "" "skipped" "web" "$HANDLER"
-        json_add_message "info" "${SLUG}: not_installed_or_path_mismatch (registry app_path='${APP_PATH}' — bundle missing or unreadable; remove from override registry or fix app_path)"
+        json_add_message "info" "${SLUG}: not_installed (bundle '${BUNDLE_ID:-?}' not found on disk; registry expected '${APP_PATH}' — remove from registry if you don't use this app)"
         COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
         continue
     fi

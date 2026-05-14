@@ -125,6 +125,33 @@
       "path": "",
       "signed_by": [],
       "version": ""
+    },
+    {
+      "_name": "AddressBookManager",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "2025-12-01T10:00:00Z",
+      "obtained_from": "apple",
+      "path": "/System/Library/CoreServices/AddressBookManager.app",
+      "signed_by": ["Software Signing"],
+      "version": "14.0"
+    },
+    {
+      "_name": "AirPlayUIAgent",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "2025-12-01T10:00:00Z",
+      "obtained_from": "apple",
+      "path": "/System/Library/CoreServices/AirPlayUIAgent.app",
+      "signed_by": ["Software Signing"],
+      "version": "2.0"
+    },
+    {
+      "_name": "Apple Mobile Sync",
+      "arch_kind": "arch_arm_i64",
+      "lastModified": "2025-12-01T10:00:00Z",
+      "obtained_from": "apple",
+      "path": "/Library/Apple/System/Library/CoreServices/AMS.app",
+      "signed_by": ["Software Signing"],
+      "version": "1.0"
     }
   ]
 }

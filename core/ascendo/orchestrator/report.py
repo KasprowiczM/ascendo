@@ -524,7 +524,31 @@ def _normalise_reason(text: str) -> str:
         "deferred_running": "was running during the update — re-run apply to upgrade it",
         "skipped_running": "was running during the update — re-run apply to upgrade it",
     }
-    return replacements.get(line, line)
+    if line in replacements:
+        return replacements[line]
+    # Heuristic shortening for long parenthetical reasons. We surface
+    # the head of the message (before the " (...)" parenthesis) so the
+    # report stays readable.
+    #
+    #   Before: "deferred_app_in_use (quit Notion and re-run apply to upgrade 1.2 → 1.3)"
+    #   After:  "was running during the update — quit it and re-run apply to upgrade 1.2 → 1.3"
+    #
+    #   Before: "not_installed (bundle 'com.x.y' not found on disk; registry expected '/Applications/Foo.app' — remove from registry if you don't use this app)"
+    #   After:  "not installed on this machine — remove `Foo` from your registry if you don't use it"
+    if line.startswith("deferred_app_in_use") and "(" in line:
+        tail = line.split("(", 1)[1].rstrip(")").strip()
+        # "quit Foo and re-run apply to upgrade 1 → 2" → keep useful tail
+        if tail.lower().startswith("quit "):
+            return f"was running during the update — {tail}"
+        return f"was running during the update — {tail}"
+    if line.startswith("not_installed"):
+        # Extract the app name from "registry expected '/Applications/Foo.app'"
+        import re
+        m = re.search(r"/([^/]+)\.app", line)
+        if m:
+            return f"not installed on this machine — remove `{m.group(1)}` from your registry if you don't use it"
+        return "not installed on this machine"
+    return line
 
 
 def _ordered_categories(buckets: dict[str, _CategoryBuckets]) -> list[str]:
