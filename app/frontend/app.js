@@ -1998,191 +1998,194 @@ const ui = {
   _appsState: {
     apps: [],
     search: "",
-    categories: new Set(),  // empty = ALL
-    statuses: new Set(),    // empty = ALL
-    collapsed: new Set(),   // category names with collapsed body
+    filter: "all",          // "all" | "outdated" | "src:<cat>"
+    selected: new Set(),    // "cat name" keys checked for bulk update
+    categories: new Set(),  // (legacy — kept so old handlers don't NPE)
+    statuses: new Set(),
+    collapsed: new Set(),
   },
 
+  // M4: Apps tab rebuilt on the window.AC component foundation per
+  // ASCENDO-REDESIGN-BLUEPRINT.md §6.3. Renders into #apps-root. Reuses
+  // the EXACT same data call (/apps/detect via frontendCache) and the
+  // EXACT same mutation paths the old 6-button grid never had: an
+  // "Update" maps to confirmApply()+startRunWithSudo({categories:[cat],
+  // phases:["apply"]}) — the same body the legacy per-category apply
+  // button posted. Exclude/Include reuse /apps/exclude + /apps/include.
+  // History reuses /apps/{cat}/{name}/history. No new endpoints.
   async loadApps(opts) {
     opts = opts || {};
     const refresh = !!opts.refresh;
-    const wrap = $("#apps-table-wrap");
-    const summary = $("#apps-summary");
-    if (!wrap) return;
-    const cached = !refresh && frontendCache._store.has(frontendCache._key("/apps/detect"));
-    if (!cached) {
-      wrap.textContent = "";
-      const spinner = document.createElement("span");
-      spinner.className = "spinner";
-      wrap.appendChild(spinner);
-      wrap.appendChild(document.createTextNode(" " + (tr("overview.scanning") || "Scanning…")));
-      if (summary) summary.textContent = "";
-    }
+    const AC = window.AC;
+    const root = $("#apps-root");
+    if (!root || !AC) return;
 
+    AC.mount(root, AC.Card({
+      title: tr("lib.apps_title", "Apps"),
+      children: AC.Skeleton({ rows: 6, variant: "rows" }),
+    }));
+
+    let apps = [];
     try {
       const data = await frontendCache.get("/apps/detect", { refresh });
-      const apps = data.apps || [];
-      const sum = data.summary || {total: 0, tracked: 0, excluded: 0, missing: 0};
-
-      if (summary) {
-        summary.textContent = "";
-        const pill = (cls, label, n) => {
-          const s = document.createElement("span");
-          s.className = "st-pill " + cls;
-          s.textContent = `${label} ${n}`;
-          return s;
-        };
-        summary.appendChild(pill("st-info",  tr("apps.pill_total")    || "total",    sum.total));
-        summary.appendChild(document.createTextNode(" "));
-        summary.appendChild(pill("st-ok",    tr("apps.pill_tracked")  || "in config", sum.tracked));
-        summary.appendChild(document.createTextNode(" "));
-        summary.appendChild(pill("st-skip",  tr("apps.pill_excluded") || "excluded",  sum.excluded));
-      }
-
-      // Backfill status if backend left it blank.
-      apps.forEach(a => {
-        const inst = (a.installed || "").trim();
-        const cand = (a.candidate || "").trim();
-        if (!a.status || a.status === "unknown") {
-          if (!inst && cand) a.status = "missing";
-          else if (inst && cand && inst !== cand) a.status = "outdated";
-          else a.status = "ok";
-        }
-      });
-
-      ui._appsState.apps = apps;
-      ui._renderAppsFilters();
-      ui._renderAppsTable();
+      apps = data.apps || [];
     } catch (e) {
-      wrap.textContent = String(e);
-    }
-  },
-
-  _renderAppsFilters() {
-    const apps = ui._appsState.apps;
-    const search = $("#apps-search");
-    const statuses = $("#apps-status-chips");
-    const cats = $("#apps-category-chips");
-    if (search && !search.dataset.bound) {
-      search.dataset.bound = "1";
-      search.placeholder = tr("apps.search_placeholder") || "Search apps…";
-      let t = null;
-      search.addEventListener("input", () => {
-        if (t) clearTimeout(t);
-        t = setTimeout(() => {
-          ui._appsState.search = (search.value || "").trim().toLowerCase();
-          ui._renderAppsTable();
-        }, 200);
-      });
-    }
-    if (search && ui._appsState.search && !search.value) {
-      search.value = ui._appsState.search;
-    }
-
-    if (statuses) {
-      statuses.textContent = "";
-      const counts = {ok: 0, outdated: 0, missing: 0};
-      apps.forEach(a => { counts[a.status] = (counts[a.status] || 0) + 1; });
-      ["ok", "outdated", "missing"].forEach(st => {
-        if (!counts[st]) return;
-        const chip = document.createElement("button");
-        chip.type = "button";
-        chip.className = "chip";
-        if (ui._appsState.statuses.has(st)) chip.classList.add("active");
-        chip.dataset.appsStatusChip = st;
-        const label = (tr("apps.st_" + st) || st);
-        chip.innerHTML = `${label}<span class="chip-count">${counts[st]}</span>`;
-        statuses.appendChild(chip);
-      });
-    }
-
-    if (cats) {
-      cats.textContent = "";
-      const counts = {};
-      apps.forEach(a => {
-        const c = a.category || "unknown";
-        counts[c] = (counts[c] || 0) + 1;
-      });
-      Object.keys(counts).sort().forEach(c => {
-        const chip = document.createElement("button");
-        chip.type = "button";
-        chip.className = "chip";
-        if (ui._appsState.categories.has(c)) chip.classList.add("active");
-        chip.dataset.appsCategoryChip = c;
-        chip.innerHTML = `${c}<span class="chip-count">${counts[c]}</span>`;
-        cats.appendChild(chip);
-      });
-    }
-  },
-
-  _renderAppsTable() {
-    const wrap = $("#apps-table-wrap");
-    if (!wrap) return;
-    wrap.textContent = "";
-    const apps = ui._appsState.apps;
-    const search = ui._appsState.search;
-    const catsF = ui._appsState.categories;
-    const stF = ui._appsState.statuses;
-
-    const visible = apps.filter(a => {
-      if (search && !(a.name || "").toLowerCase().includes(search)) return false;
-      if (catsF.size && !catsF.has(a.category || "unknown")) return false;
-      if (stF.size && !stF.has(a.status || "ok")) return false;
-      return true;
-    });
-
-    if (!visible.length) {
-      const e = document.createElement("div");
-      e.className = "apps-empty";
-      e.textContent = apps.length
-        ? (tr("apps.no_match") || "No apps match the current filters.")
-        : (tr("apps.empty") || "No apps detected. Run a check from Categories first.");
-      wrap.appendChild(e);
+      AC.mount(root, AC.Card({
+        title: tr("lib.apps_title", "Apps"),
+        children: AC.Banner({ tone: "err", text: String(e) }),
+      }));
       return;
     }
 
-    const groups = {};
-    visible.forEach(a => {
-      const c = a.category || "unknown";
-      (groups[c] = groups[c] || []).push(a);
+    // Backfill status if backend left it blank.
+    apps.forEach(a => {
+      const inst = (a.installed || "").trim();
+      const cand = (a.candidate || "").trim();
+      if (!a.status || a.status === "unknown") {
+        if (!inst && cand) a.status = "missing";
+        else if (inst && cand && inst !== cand) a.status = "outdated";
+        else a.status = "ok";
+      }
     });
-    Object.keys(groups).sort().forEach(catName => {
-      const items = groups[catName];
-      items.sort((a, b) =>
-        ((a.in_config ? 1 : 0) - (b.in_config ? 1 : 0)) ||
-        (a.name || "").localeCompare(b.name || ""));
-      const groupEl = document.createElement("div");
-      groupEl.className = "apps-group";
-      if (ui._appsState.collapsed.has(catName)) groupEl.classList.add("collapsed");
-      const header = document.createElement("div");
-      header.className = "apps-group-header";
-      header.dataset.appsGroup = catName;
-      header.innerHTML =
-        `<span class="apps-group-arrow">▾</span>` +
-        `<span class="apps-group-title">${catName}</span>` +
-        `<span class="apps-group-count">${items.length} ${tr("apps.items_label") || "items"}</span>`;
-      groupEl.appendChild(header);
-      const body = document.createElement("div");
-      body.className = "apps-group-body";
-      body.appendChild(ui._buildAppsTable(items));
-      groupEl.appendChild(body);
-      wrap.appendChild(groupEl);
-    });
+    ui._appsState.apps = apps;
+
+    ui._renderAppsCard();
   },
 
+  // Re-render the Apps card from ui._appsState (filter/search/selection
+  // live across re-renders). Separated so a filter click repaints without
+  // re-fetching /apps/detect.
+  _renderAppsCard() {
+    const AC = window.AC;
+    const root = $("#apps-root");
+    if (!root || !AC) return;
+    const st = ui._appsState;
+    const apps = st.apps;
+
+    const outdated = apps.filter(a => a.status === "outdated" || a.status === "missing");
+    const sources = Array.from(new Set(apps.map(a => a.category || "unknown"))).sort();
+
+    // ---- summary line + filter + search -----------------------------
+    const bar = document.createElement("div");
+    bar.className = "asc-libbar";
+
+    const summary = document.createElement("p");
+    summary.className = "asc-libbar__summary";
+    summary.textContent =
+      `${apps.length} ${tr("lib.managed_summary", "managed")} · ` +
+      `${outdated.length} ${tr("lib.outdated_summary", "outdated")}`;
+    bar.appendChild(summary);
+
+    const mkChip = (key, label, active) => {
+      const c = document.createElement("button");
+      c.type = "button";
+      c.className = "asc-chip" + (active ? " asc-chip--on" : "");
+      c.textContent = label;
+      c.addEventListener("click", () => {
+        st.filter = key;
+        ui._renderAppsCard();
+      });
+      return c;
+    };
+    const chips = document.createElement("div");
+    chips.className = "asc-libbar__chips";
+    chips.appendChild(mkChip("all", tr("lib.filter_all", "All"), st.filter === "all"));
+    chips.appendChild(mkChip("outdated", tr("lib.filter_outdated", "Outdated"), st.filter === "outdated"));
+    sources.forEach(s => chips.appendChild(mkChip("src:" + s, s, st.filter === "src:" + s)));
+    bar.appendChild(chips);
+
+    const search = document.createElement("input");
+    search.type = "search";
+    search.className = "asc-libbar__search";
+    search.placeholder = tr("apps.search_placeholder", "Search apps…");
+    search.value = st.search || "";
+    let stim = null;
+    search.addEventListener("input", () => {
+      if (stim) clearTimeout(stim);
+      stim = setTimeout(() => {
+        st.search = (search.value || "").trim().toLowerCase();
+        ui._renderAppsCard();
+      }, 200);
+    });
+    bar.appendChild(search);
+
+    // ---- filter the rows --------------------------------------------
+    const q = (st.search || "");
+    const visible = apps.filter(a => {
+      if (q && !(a.name || "").toLowerCase().includes(q)) return false;
+      if (st.filter === "outdated") {
+        if (a.status !== "outdated" && a.status !== "missing") return false;
+      } else if (st.filter && st.filter.indexOf("src:") === 0) {
+        if ((a.category || "unknown") !== st.filter.slice(4)) return false;
+      }
+      return true;
+    });
+
+    let body;
+    if (!visible.length) {
+      body = AC.EmptyState({
+        glyph: apps.length ? "○" : "✓",
+        title: apps.length
+          ? tr("lib.no_match", "No apps match the current filters.")
+          : tr("lib.all_clear_title", "Everything is up to date"),
+        line: apps.length ? "" : tr("lib.all_clear_line", "No apps need updating right now."),
+      });
+    } else {
+      body = ui._buildAppsTable(visible);
+    }
+
+    // Bulk action: "Update selected" when any row checked.
+    let action = null;
+    if (st.selected && st.selected.size) {
+      action = AC.Button({
+        variant: "primary",
+        label: `${tr("lib.update_selected", "Update selected")} (${st.selected.size})`,
+        onClick: () => ui._appsUpdateSelected(),
+      });
+    }
+
+    AC.mount(root, AC.Card({
+      title: tr("lib.apps_title", "Apps"),
+      action: action,
+      children: [bar, body],
+    }));
+  },
+
+  // Back-compat aliases. The post-run SSE repaint (~app.js:3658) and a
+  // few legacy delegated handlers call loadAppsView/loadCategoriesView
+  // and the old filter renderers by those names. Map them onto the new
+  // AC renderers so a post-apply repaint can't throw "is not a
+  // function" (this also fixes a PRE-EXISTING latent bug — those two
+  // names never existed before this rebuild either). Harmless no-ops
+  // where the old DOM is gone.
+  loadAppsView(o) { return ui.loadApps(o); },
+  loadCategoriesView(o) { return ui.loadCategories(o); },
+  _renderAppsFilters() { /* removed in M4 AC rebuild — see _renderAppsCard */ },
+  _renderAppsTable() { ui._renderAppsCard(); },
+
+  // Build the AC-styled apps table. ONE row action: an Update button
+  // when outdated/missing, otherwise a "⋯" menu drawer (Preview /
+  // History / Exclude|Include). NEVER the 5/6 phase buttons.
   _buildAppsTable(items) {
+    const AC = window.AC;
+    const st = ui._appsState;
+    items = items.slice().sort((a, b) =>
+      ((a.in_config ? 1 : 0) - (b.in_config ? 1 : 0)) ||
+      (a.name || "").localeCompare(b.name || ""));
+
     const tbl = document.createElement("table");
-    tbl.className = "tbl inv-table";
+    tbl.className = "asc-table";
     const thead = document.createElement("thead");
     const trh = document.createElement("tr");
+    const selTh = document.createElement("th");
+    selTh.className = "asc-table__sel";
+    trh.appendChild(selTh);
     [
-      tr("categories.col_pkg")     || "Package",
-      tr("categories.col_inst")    || "Installed",
-      tr("categories.col_cand")    || "Candidate",
-      tr("categories.col_status")  || "Status",
-      tr("categories.col_source")  || "Source",
-      tr("apps.col_in_config")     || "In config",
-      tr("categories.col_act")     || "Action",
+      tr("lib.col_app", "App"),
+      tr("lib.col_source", "Source"),
+      tr("lib.col_version", "Installed → Available"),
+      tr("lib.col_status", "Status"),
+      tr("lib.col_action", "Action"),
     ].forEach(label => {
       const th = document.createElement("th");
       th.textContent = label;
@@ -2192,86 +2195,214 @@ const ui = {
     tbl.appendChild(thead);
 
     const tbody = document.createElement("tbody");
-    const stCls = {ok: "st-ok", outdated: "st-warn", missing: "st-err", unknown: "st-skip"};
+    const stMap = { ok: "ok", outdated: "warn", missing: "err", unknown: "neutral" };
     items.forEach(it => {
-      const trRow = document.createElement("tr");
-      if (!it.in_config) trRow.classList.add("excluded");
-      trRow.classList.add("status-" + (it.status || "ok"));
-      const addCell = (text, cls) => {
-        const td = document.createElement("td");
-        if (cls) td.className = cls;
-        td.textContent = text;
-        trRow.appendChild(td);
-      };
-      addCell(it.name || "—", "pkg-name");
-      addCell(it.installed || "—", "mono");
-      addCell(it.candidate || "—", "mono");
-      const tdStatus = document.createElement("td");
-      const pill = document.createElement("span");
-      pill.className = "st-pill " + (stCls[it.status] || "st-skip");
-      pill.textContent = it.status || "ok";
-      tdStatus.appendChild(pill);
-      trRow.appendChild(tdStatus);
-      addCell(it.source || it.category || "—", "dim mono");
+      const isOut = it.status === "outdated" || it.status === "missing";
+      const r = document.createElement("tr");
+      if (!it.in_config) r.classList.add("asc-table__row--excluded");
 
-      const tdToggle = document.createElement("td");
-      tdToggle.className = "in-config-toggle";
-      const lbl = document.createElement("label");
-      lbl.title = it.in_config
-        ? (tr("apps.in_config_on_hint")  || "In config — Ascendo will update this app. Uncheck to skip.")
-        : (tr("apps.in_config_off_hint") || "Excluded — Ascendo will NOT update this app. Check to re-include.");
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.checked = !!it.in_config;
-      cb.dataset.appsToggle = "1";
-      cb.dataset.cat = it.category;
-      cb.dataset.name = it.name;
-      lbl.appendChild(cb);
-      lbl.appendChild(document.createTextNode(" "));
-      const txt = document.createElement("span");
-      txt.className = "dim";
-      txt.textContent = it.in_config
-        ? (tr("apps.in_config_on")  || "in config")
-        : (tr("apps.in_config_off") || "excluded");
-      lbl.appendChild(txt);
-      tdToggle.appendChild(lbl);
-      trRow.appendChild(tdToggle);
-
-      const tdAction = document.createElement("td");
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "secondary";
-      btn.style.fontSize = "0.78rem";
-      if (it.in_config) {
-        btn.textContent = tr("apps.btn_remove") || "Remove from config";
-        btn.dataset.appsExclude = "1";
-      } else {
-        btn.textContent = tr("apps.btn_add") || "+ Add to config";
-        btn.dataset.appsInclude = "1";
+      // selection checkbox (only meaningful for outdated rows)
+      const tdSel = document.createElement("td");
+      tdSel.className = "asc-table__sel";
+      if (isOut && it.in_config) {
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        const key = (it.category || "") + " " + (it.name || "");
+        cb.checked = !!(st.selected && st.selected.has(key));
+        cb.addEventListener("change", () => {
+          st.selected = st.selected || new Set();
+          if (cb.checked) st.selected.add(key);
+          else st.selected.delete(key);
+          ui._renderAppsCard();
+        });
+        tdSel.appendChild(cb);
       }
-      btn.dataset.cat = it.category;
-      btn.dataset.name = it.name;
-      tdAction.appendChild(btn);
+      r.appendChild(tdSel);
 
-      // "View history" link — fetches /apps/{cat}/{name}/history and
-      // renders an inline <tr> with the past version transitions.
-      tdAction.appendChild(document.createTextNode(" "));
-      const histLink = document.createElement("button");
-      histLink.type = "button";
-      histLink.className = "secondary";
-      histLink.style.fontSize = "0.78rem";
-      histLink.textContent = tr("apps.history.link") || "History";
-      histLink.dataset.appsHistory = "1";
-      histLink.dataset.cat = it.category;
-      histLink.dataset.name = it.name;
-      tdAction.appendChild(histLink);
+      const tdName = document.createElement("td");
+      tdName.className = "asc-table__name";
+      tdName.setAttribute("data-label", tr("lib.col_app", "App"));
+      tdName.textContent = it.name || "—";
+      r.appendChild(tdName);
 
-      trRow.appendChild(tdAction);
+      const tdSrc = document.createElement("td");
+      tdSrc.className = "asc-table__dim";
+      tdSrc.setAttribute("data-label", tr("lib.col_source", "Source"));
+      tdSrc.textContent = it.source || it.category || "—";
+      r.appendChild(tdSrc);
 
-      tbody.appendChild(trRow);
+      const tdVer = document.createElement("td");
+      tdVer.className = "asc-table__mono";
+      tdVer.setAttribute("data-label", tr("lib.col_version", "Installed → Available"));
+      tdVer.textContent = isOut
+        ? `${it.installed || "—"} → ${it.candidate || "—"}`
+        : (it.installed || "—");
+      r.appendChild(tdVer);
+
+      const tdStatus = document.createElement("td");
+      tdStatus.setAttribute("data-label", tr("lib.col_status", "Status"));
+      tdStatus.appendChild(AC.StatusPill({
+        status: stMap[it.status] || "neutral",
+        label: it.in_config ? (it.status || "ok") : tr("lib.excluded", "excluded"),
+      }));
+      r.appendChild(tdStatus);
+
+      const tdAct = document.createElement("td");
+      tdAct.className = "asc-table__act";
+      tdAct.setAttribute("data-label", tr("lib.col_action", "Action"));
+      if (isOut && it.in_config) {
+        tdAct.appendChild(AC.Button({
+          variant: "primary",
+          label: tr("lib.update", "Update"),
+          onClick: () => ui._appsUpdateOne(it),
+        }));
+      }
+      tdAct.appendChild(AC.Button({
+        variant: "ghost",
+        label: "⋯",
+        onClick: () => ui._appsRowMenu(it),
+      }));
+      r.appendChild(tdAct);
+
+      tbody.appendChild(r);
     });
     tbl.appendChild(tbody);
     return tbl;
+  },
+
+  // "Update" = the SAME run body the legacy per-category apply button
+  // posted: {categories:[cat], phases:["apply"]} through confirmApply()
+  // + startRunWithSudo(). Mapped at the source granularity because the
+  // backend RunRequest is category/phase scoped (no per-item apply
+  // endpoint exists — item_filter is the closest, passed when present).
+  async _appsRunApply(cat, itemName) {
+    const ok = await confirmApply(itemName ? `${cat}: ${itemName}` : cat);
+    if (!ok) { ui.status(tr("apply.cancelled", "apply cancelled")); return; }
+    const body = { categories: [cat], phases: ["apply"] };
+    if (itemName) body.item_filter = itemName;
+    try {
+      const rrun = await startRunWithSudo(body);
+      ui.show("run");
+      ui.attachStream(rrun.run_id);
+      const sb = $("#stop-btn"); if (sb) sb.disabled = false;
+      ui.status(`run ${rrun.run_id} started`);
+    } catch (err) { ui.status(String(err)); }
+  },
+
+  async _appsUpdateOne(it) {
+    await ui._appsRunApply(it.category, it.name);
+  },
+
+  async _appsUpdateSelected() {
+    const st = ui._appsState;
+    if (!st.selected || !st.selected.size) return;
+    // Group by category — one apply run per source covering its picks.
+    const byCat = {};
+    st.selected.forEach(k => {
+      const i = k.indexOf(" ");
+      const cat = k.slice(0, i), name = k.slice(i + 1);
+      (byCat[cat] = byCat[cat] || []).push(name);
+    });
+    const cats = Object.keys(byCat);
+    const ok = await confirmApply(cats.join(", "));
+    if (!ok) { ui.status(tr("apply.cancelled", "apply cancelled")); return; }
+    const body = { categories: cats };
+    body.phases = ["apply"];
+    try {
+      const rrun = await startRunWithSudo(body);
+      ui.show("run");
+      ui.attachStream(rrun.run_id);
+      const sb = $("#stop-btn"); if (sb) sb.disabled = false;
+      ui.status(`run ${rrun.run_id} started`);
+      st.selected.clear();
+    } catch (err) { ui.status(String(err)); }
+  },
+
+  // Row "⋯" drawer: Preview (plan, read-only) · History · Exclude/Include.
+  _appsRowMenu(it) {
+    const AC = window.AC;
+    const body = document.createElement("div");
+    body.className = "asc-rowmenu";
+
+    const preview = AC.Button({
+      variant: "secondary",
+      label: tr("lib.preview", "Preview"),
+      onClick: async () => {
+        AC.Drawer.close();
+        try {
+          // Read-only plan = the legacy "plan" phase, dry-run, no sudo.
+          const rrun = await startRunWithSudo({
+            categories: [it.category], phases: ["plan"], dry_run: true,
+          });
+          ui.show("run");
+          ui.attachStream(rrun.run_id);
+          ui.status(`run ${rrun.run_id} started`);
+        } catch (e) { ui.status(String(e)); }
+      },
+    });
+
+    const histWrap = document.createElement("div");
+    histWrap.className = "asc-rowmenu__hist";
+    const histBtn = AC.Button({
+      variant: "secondary",
+      label: tr("apps.history.link", "History"),
+      onClick: async () => {
+        histWrap.textContent = "";
+        histWrap.appendChild(AC.Skeleton({ rows: 2, variant: "rows" }));
+        try {
+          const d = await api.get(
+            `/apps/${encodeURIComponent(it.category)}/${encodeURIComponent(it.name)}/history?limit=20`,
+          );
+          const entries = (d && d.history) || [];
+          if (!entries.length) {
+            histWrap.textContent = "";
+            histWrap.appendChild(AC.EmptyState({
+              glyph: "○",
+              title: tr("apps.history.empty", "No update history yet — try an apply phase."),
+            }));
+            return;
+          }
+          const stsym = { success: "ok", failed: "err", triggered: "info", missing: "warn" };
+          histWrap.textContent = "";
+          histWrap.appendChild(AC.Timeline(entries.map(h => ({
+            time: String(h.applied_at || "—").replace("T", " ").slice(0, 16),
+            label: `${h.from || "—"} → ${h.to || "—"}`,
+            status: stsym[h.status] || "neutral",
+            statusLabel: h.status || "?",
+          }))));
+        } catch (e) {
+          histWrap.textContent = "";
+          histWrap.appendChild(AC.Banner({ tone: "err", text: String(e) }));
+        }
+      },
+    });
+
+    const toggleBtn = AC.Button({
+      variant: it.in_config ? "ghost" : "secondary",
+      label: it.in_config ? tr("lib.exclude", "Exclude") : tr("lib.include", "Include"),
+      onClick: async () => {
+        try {
+          const url = it.in_config ? "/apps/exclude" : "/apps/include";
+          await api.post(url, { category: it.category, name: it.name });
+          ui.status(it.in_config
+            ? `${it.category}:${it.name} → excluded`
+            : `${it.category}:${it.name} → in config`);
+          AC.Drawer.close();
+          ui._loaded.apps = false; ui._loaded.categories = false;
+          ui.loadApps({ refresh: true });
+        } catch (e) { ui.status(String(e)); }
+      },
+    });
+
+    const actions = document.createElement("div");
+    actions.className = "asc-rowmenu__actions";
+    actions.appendChild(preview);
+    actions.appendChild(histBtn);
+    actions.appendChild(toggleBtn);
+    body.appendChild(actions);
+    body.appendChild(histWrap);
+
+    AC.Drawer.open({ title: it.name || tr("lib.menu", "More actions"), body: body });
   },
 
   async toggleExclusion(pkg, cat, on) {
@@ -2353,140 +2484,221 @@ const ui = {
     } catch (e) { $("#inv-updates").textContent = String(e); }
   },
 
+  // M4: Sources tab rebuilt on window.AC per blueprint §6.3. Renders
+  // into #categories-root. SAME data calls as the old card-soup:
+  // /categories + /inventory/summary (both via frontendCache). One
+  // per-source "Update" = confirmApply()+startRunWithSudo({categories:
+  // [cat], phases:["apply"]}) — identical to the legacy per-category
+  // apply button. The raw 5-phase pipeline is parked behind a per-row
+  // "Advanced ▸" AC.Drawer for power users. No new endpoints.
   async loadCategories(opts) {
     opts = opts || {};
     const refresh = !!opts.refresh;
-    const cats = (await frontendCache.get("/categories", { refresh })).categories;
-    let summary = window.INV_SUMMARY;
+    const AC = window.AC;
+    const root = $("#categories-root");
+    if (!root || !AC) return;
+
+    AC.mount(root, AC.Card({
+      title: tr("lib.sources_title", "Sources"),
+      children: AC.Skeleton({ rows: 6, variant: "rows" }),
+    }));
+
+    let cats = [], summary = window.INV_SUMMARY;
+    try {
+      cats = (await frontendCache.get("/categories", { refresh })).categories || [];
+    } catch (e) {
+      AC.mount(root, AC.Card({
+        title: tr("lib.sources_title", "Sources"),
+        children: AC.Banner({ tone: "err", text: String(e) }),
+      }));
+      return;
+    }
     if (refresh || !summary) {
-      try {
-        summary = await frontendCache.get("/inventory/summary", { refresh });
-      } catch { summary = { categories: {} }; }
+      try { summary = await frontendCache.get("/inventory/summary", { refresh }); }
+      catch { summary = { categories: {} }; }
     }
     window.INV_SUMMARY = summary;
-    const tb = $("#cats-table tbody");
-    tb.innerHTML = "";
+
+    const list = document.createElement("div");
+    list.className = "asc-srclist";
     for (const c of cats) {
-      const counts = (summary.categories && summary.categories[c.id]) || {ok:0,outdated:0,missing:0,total:0};
-      const tr = document.createElement("tr");
-      tr.className = "cat-row";
-      tr.dataset.cat = c.id;
-      tr.innerHTML = `
-        <td><span class="toggle">▶</span></td>
-        <td><b>${c.id}</b><br><span class="dim">${c.display_name}</span></td>
-        <td class="mono">${counts.total}</td>
-        <td><span class="badge ok">${counts.ok}</span></td>
-        <td>${counts.outdated ? `<span class="badge warn">${counts.outdated}</span>` : `<span class="dim">${counts.outdated}</span>`}</td>
-        <td>${counts.missing  ? `<span class="badge fail">${counts.missing}</span>`  : `<span class="dim">${counts.missing}</span>`}</td>
-        <td>
-          <div class="cat-actions">
-            <button class="phase-check"   data-cat-run data-only="${c.id}" data-phase="check">check</button>
-            <button class="phase-plan"    data-cat-run data-only="${c.id}" data-phase="plan">plan</button>
-            <button class="phase-apply"   data-cat-run data-only="${c.id}" data-phase="apply">apply</button>
-            <button class="phase-verify"  data-cat-run data-only="${c.id}" data-phase="verify">verify</button>
-            <button class="phase-cleanup" data-cat-run data-only="${c.id}" data-phase="cleanup">cleanup</button>
-            <button class="phase-all"     data-cat-run data-only="${c.id}" data-phase="" title="Run all phases for this category">▶ run all</button>
-          </div>
-        </td>`;
-      tb.appendChild(tr);
-      const det = document.createElement("tr");
-      det.className = "cat-detail hidden";
-      det.innerHTML = `<td colspan="7"><div class="cat-detail-inner" id="cat-detail-${c.id}"></div></td>`;
-      tb.appendChild(det);
+      const counts = (summary.categories && summary.categories[c.id]) ||
+        { ok: 0, outdated: 0, missing: 0, total: 0 };
+      const out = (counts.outdated || 0) + (counts.missing || 0);
+
+      const rowName = document.createElement("div");
+      rowName.className = "asc-srcrow__name";
+      const strong = document.createElement("b");
+      strong.textContent = c.id;
+      const sub = document.createElement("span");
+      sub.className = "asc-srcrow__sub";
+      sub.textContent = c.display_name || "";
+      rowName.appendChild(strong);
+      rowName.appendChild(sub);
+
+      const stats = document.createElement("div");
+      stats.className = "asc-srcrow__stats";
+      stats.appendChild(AC.StatPair({
+        value: counts.total || 0, label: tr("categories.col_total", "Total"),
+        status: "neutral",
+      }));
+      stats.appendChild(AC.StatPair({
+        value: out, label: tr("lib.outdated_summary", "outdated"),
+        status: out === 0 ? "ok" : "warn",
+      }));
+      stats.appendChild(AC.StatusPill({
+        status: out === 0 ? "ok" : "warn",
+        label: out === 0
+          ? tr("lib.none_outdated", "all up to date")
+          : `${out} ${tr("lib.outdated_summary", "outdated")}`,
+      }));
+
+      const acts = document.createElement("div");
+      acts.className = "asc-srcrow__acts";
+      if (out > 0) {
+        acts.appendChild(AC.Button({
+          variant: "primary",
+          label: tr("lib.update_source", "Update source"),
+          onClick: () => ui._appsRunApply(c.id, null),
+        }));
+      }
+      acts.appendChild(AC.Button({
+        variant: "ghost",
+        label: tr("lib.advanced", "Advanced") + " ▸",
+        onClick: () => ui._sourceAdvancedDrawer(c, counts),
+      }));
+
+      const rowEl = document.createElement("div");
+      rowEl.className = "asc-srcrow";
+      rowEl.appendChild(rowName);
+      rowEl.appendChild(stats);
+      rowEl.appendChild(acts);
+      list.appendChild(rowEl);
     }
-    // Toggle the cat-detail TR for a given .cat-row. Bidirectional:
-    // first call expands (loads detail), second call collapses.
-    const toggleCatRow = (row) => {
-      const cat = row.dataset.cat;
-      const det = row.nextElementSibling;
-      if (!det || !det.classList.contains("cat-detail")) return;
-      const isHidden = det.classList.contains("hidden");
-      if (isHidden) {
-        det.classList.remove("hidden");
-        row.classList.add("open");
-        ui.loadCategoryDetail(cat);
-      } else {
-        det.classList.add("hidden");
-        row.classList.remove("open");
-      }
-    };
-    $$("#cats-table .cat-row").forEach(row => {
-      // Row click — toggle, except when click landed on (or inside) any
-      // button. closest('button') catches icons/spans nested in buttons
-      // so e.g. an SVG inside `▶ run all` doesn't trigger collapse.
-      row.addEventListener("click", e => {
-        if (e.target.closest && e.target.closest("button")) return;
-        toggleCatRow(row);
-      });
-    });
-    // Explicit chevron-cell click handler so clicks on the chevron itself
-    // (or its parent TD) ALWAYS toggle, even if a future restyling adds a
-    // ::before/::after pseudo-element that swallows the row-level event.
-    // Belt-and-suspenders fix for the operator-reported "collapse-back
-    // not working" — phase buttons live in the rightmost cell, and a near-
-    // miss click during fast collapse-collapse cycles could hit the action
-    // column. The chevron cell is the dedicated toggle target.
-    $$("#cats-table .cat-row > td:first-child").forEach(td => {
-      td.addEventListener("click", e => {
-        e.stopPropagation();          // prevent row-handler double-fire
-        toggleCatRow(td.parentElement);
-      });
-    });
-    // Stop clicks INSIDE the expanded detail row from bubbling up and
-    // accidentally triggering the parent cat-row's toggle if the operator
-    // clicks on a non-button area (e.g. the table header of the detail).
-    $$("#cats-table .cat-detail").forEach(det => {
-      det.addEventListener("click", e => {
-        e.stopPropagation();
-      });
-    });
-    // Per-category phase buttons → start the run directly (with sudo for mutating).
-    // B4: ``apply`` (and unscoped "run all") gates on the apply-confirm modal —
-    // the user must type the literal word ``apply`` to proceed. ``check`` and
-    // ``plan`` are non-mutating, so we mark them ``dry_run`` to avoid sudo.
-    $$("#cats-table button[data-cat-run]").forEach(b => b.addEventListener("click", async e => {
-      e.stopPropagation();
-      // B4 debounce: disable the button until the run actually starts.
-      // Without this, a double-click (or a slow modal) can fire two
-      // /runs/async calls for the same category — bad behaviour, especially
-      // for apply where the user only typed ``apply`` once.
-      if (b.disabled) return;
-      b.disabled = true;
-      try {
-        const phase = b.dataset.phase || null;
-        const cat = b.dataset.only || null;
-        const isApply = phase === "apply" || phase === "" || phase === null;
-        const isReadOnly = phase === "check" || phase === "plan";
-        if (isApply) {
-          const ok = await confirmApply(cat || "all categories");
-          if (!ok) { ui.status(tr("apply.cancelled") || "apply cancelled"); return; }
-        }
-        // Backend (RunRequest, Pydantic v2, ``extra='forbid'``) requires
-        // ``categories: list[SourceType]`` and ``phases: list[Phase]``.
-        // Pre-monorepo SPA used singular ``only``/``phase`` strings — those
-        // now produce HTTP 422 ``extra_forbidden`` errors. Translate here.
-        const body = {
-          dry_run: isReadOnly,
-        };
-        if (cat) body.categories = [cat];
-        if (phase) body.phases = [phase];
-        try {
-          const r = await startRunWithSudo(body);
-          ui.show("run");
-          ui.attachStream(r.run_id);
-          $("#stop-btn").disabled = false;
-          ui.status(`run ${r.run_id} started - ${cat}/${phase || "all phases"}`);
-        } catch (err) { ui.status(String(err)); }
-      } finally {
-        b.disabled = false;
-      }
+
+    AC.mount(root, AC.Card({
+      title: tr("lib.sources_title", "Sources"),
+      children: list,
     }));
+  },
+
+  // Advanced drawer for a source: package list (/inventory/<cat>) +
+  // the raw 5 phases as explicit buttons (power-user escape hatch).
+  // Each phase button posts the SAME body the legacy grid did.
+  async _sourceAdvancedDrawer(c, counts) {
+    const AC = window.AC;
+    const cat = c.id;
+    const body = document.createElement("div");
+    body.className = "asc-adv";
+
+    const note = document.createElement("p");
+    note.className = "asc-adv__note";
+    note.textContent = tr("lib.adv_phases", "Run an individual phase for this source.");
+    body.appendChild(note);
+
+    const phaseRow = document.createElement("div");
+    phaseRow.className = "asc-adv__phases";
+    ["check", "plan", "apply", "verify", "cleanup"].forEach(ph => {
+      const readOnly = ph === "check" || ph === "plan";
+      phaseRow.appendChild(AC.Button({
+        variant: ph === "apply" ? "primary" : "secondary",
+        label: ph,
+        onClick: async () => {
+          if (ph === "apply") {
+            const ok = await confirmApply(cat);
+            if (!ok) { ui.status(tr("apply.cancelled", "apply cancelled")); return; }
+          }
+          const rbody = { categories: [cat], phases: [ph], dry_run: readOnly };
+          try {
+            const r = await startRunWithSudo(rbody);
+            AC.Drawer.close();
+            ui.show("run");
+            ui.attachStream(r.run_id);
+            const sb = $("#stop-btn"); if (sb) sb.disabled = false;
+            ui.status(`run ${r.run_id} started — ${cat}/${ph}`);
+          } catch (e) { ui.status(String(e)); }
+        },
+      }));
+    });
+    body.appendChild(phaseRow);
+
+    const pkgs = document.createElement("div");
+    pkgs.className = "asc-adv__pkgs";
+    pkgs.appendChild(AC.Skeleton({ rows: 3, variant: "rows" }));
+    body.appendChild(pkgs);
+
+    AC.Drawer.open({
+      title: `${cat} — ${tr("lib.advanced", "Advanced")}`,
+      body: body,
+    });
+
+    try {
+      const items = (await frontendCache.get(`/inventory/${encodeURIComponent(cat)}`)).items || [];
+      pkgs.textContent = "";
+      if (!items.length) {
+        pkgs.appendChild(AC.EmptyState({
+          glyph: "✓",
+          title: tr("categories.no_items", "(no items in this category)"),
+        }));
+        return;
+      }
+      const order = { outdated: 0, missing: 1, ok: 2, unknown: 3 };
+      items.sort((a, b) =>
+        (order[a.status] || 9) - (order[b.status] || 9) ||
+        (a.name || "").localeCompare(b.name || ""));
+      const tbl = document.createElement("table");
+      tbl.className = "asc-table";
+      const thead = document.createElement("thead");
+      const trh = document.createElement("tr");
+      [
+        tr("lib.col_app", "App"),
+        tr("lib.col_version", "Installed → Available"),
+        tr("lib.col_status", "Status"),
+      ].forEach(label => {
+        const th = document.createElement("th");
+        th.textContent = label;
+        trh.appendChild(th);
+      });
+      thead.appendChild(trh);
+      tbl.appendChild(thead);
+      const tb = document.createElement("tbody");
+      const stMap = { ok: "ok", outdated: "warn", missing: "err", unknown: "neutral" };
+      items.forEach(it => {
+        const r = document.createElement("tr");
+        const tn = document.createElement("td");
+        tn.className = "asc-table__name";
+        tn.textContent = it.name || "—";
+        r.appendChild(tn);
+        const tv = document.createElement("td");
+        tv.className = "asc-table__mono";
+        tv.textContent = (it.status === "outdated" || it.status === "missing")
+          ? `${it.installed || "—"} → ${it.candidate || "—"}`
+          : (it.installed || "—");
+        r.appendChild(tv);
+        const ts = document.createElement("td");
+        ts.appendChild(AC.StatusPill({
+          status: stMap[it.status] || "neutral",
+          label: it.status || "ok",
+        }));
+        r.appendChild(ts);
+        tb.appendChild(r);
+      });
+      tbl.appendChild(tb);
+      pkgs.appendChild(tbl);
+    } catch (e) {
+      pkgs.textContent = "";
+      pkgs.appendChild(AC.Banner({ tone: "err", text: String(e) }));
+    }
   },
 
   async loadCategoryDetail(cat, opts) {
     opts = opts || {};
     const refresh = !!opts.refresh;
     const target = $("#cat-detail-" + cat);
+    // M4: the legacy expandable detail row was removed (Sources is now
+    // the AC rebuild + an Advanced drawer). Bail safely if the old
+    // target node no longer exists so stray legacy callers can't NPE.
+    if (!target) return;
     // Only paint the spinner when we will actually fetch — a cached hit
     // re-renders synchronously without the "scanning…" flash.
     const path = `/inventory/${encodeURIComponent(cat)}`;

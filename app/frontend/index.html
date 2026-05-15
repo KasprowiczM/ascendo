@@ -207,99 +207,14 @@
       <div id="overview-root"></div>
     </section>
 
-    <!-- Apps (detected vs configured) -->
+    <!-- Apps (detected vs configured) — M4: rebuilt on window.AC -->
     <section id="view-apps" class="view hidden">
-      <h2 style="display:flex;align-items:center;gap:0.5rem">
-        <span data-i18n="apps.title">Apps</span>
-        <button id="apps-refresh-btn" class="secondary"
-                style="margin-left:auto;font-size:0.8rem"
-                data-i18n="overview.refresh">Refresh</button>
-      </h2>
-      <section class="tab-help card" style="margin-bottom:1rem">
-        <p data-i18n="apps.help_summary"></p>
-        <details style="margin-top:0.5rem">
-          <summary data-i18n="apps.help_details_label"></summary>
-          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
-            <li><b data-i18n="apps.help_li1_b"></b> <span data-i18n="apps.help_li1_t"></span></li>
-            <li><b data-i18n="apps.help_li2_b"></b> <span data-i18n="apps.help_li2_t"></span></li>
-            <li><b data-i18n="apps.help_li3_b"></b> <span data-i18n="apps.help_li3_t"></span></li>
-            <li><b data-i18n="apps.help_li4_b"></b> <span data-i18n="apps.help_li4_t"></span></li>
-          </ul>
-        </details>
-      </section>
-      <p class="dim" data-i18n="apps.hint">
-        Compare what is installed on this machine with what's tracked in
-        config/*.list. Add detected packages to make them part of every
-        future update; install missing packages with one click.
-      </p>
-      <div id="apps-summary" class="dim" style="margin-bottom:0.5rem">…</div>
-      <!-- Apps filter bar: search + category chips + status chips -->
-      <div id="apps-filterbar" class="filterbar">
-        <div class="filterbar-row">
-          <input id="apps-search" type="search" autocomplete="off"
-                 placeholder="Search apps…"
-                 data-i18n-attr="placeholder:apps.search_placeholder" />
-          <button id="apps-clear-filters" type="button" class="secondary"
-                  data-i18n="apps.clear_filters">Clear filters</button>
-        </div>
-        <div class="filterbar-row">
-          <span class="filterbar-label" data-i18n="apps.filter_status">Status:</span>
-          <div id="apps-status-chips" class="chip-row" role="group"
-               aria-label="Status filter"></div>
-        </div>
-        <div class="filterbar-row">
-          <span class="filterbar-label" data-i18n="apps.filter_category">Category:</span>
-          <div id="apps-category-chips" class="chip-row" role="group"
-               aria-label="Category filter"></div>
-        </div>
-      </div>
-      <div id="apps-table-wrap">…</div>
+      <div id="apps-root"></div>
     </section>
 
-    <!-- Categories -->
+    <!-- Categories / Sources — M4: rebuilt on window.AC -->
     <section id="view-categories" class="view hidden">
-      <h2 style="display:flex;align-items:center;gap:0.5rem">
-        <span data-i18n="categories.title">Categories</span>
-        <button id="categories-refresh-btn" class="secondary"
-                style="margin-left:auto;font-size:0.8rem"
-                data-i18n="categories.refresh">Refresh</button>
-      </h2>
-      <section class="tab-help card" style="margin-bottom:1rem">
-        <p data-i18n="categories.help_summary"></p>
-        <details style="margin-top:0.5rem">
-          <summary data-i18n="categories.help_details_label"></summary>
-          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
-            <li><b data-i18n="categories.help_li1_b"></b> <span data-i18n="categories.help_li1_t"></span></li>
-            <li><b data-i18n="categories.help_li2_b"></b> <span data-i18n="categories.help_li2_t"></span></li>
-            <li><b data-i18n="categories.help_li3_b"></b> <span data-i18n="categories.help_li3_t"></span></li>
-            <li><b data-i18n="categories.help_li4_b"></b> <span data-i18n="categories.help_li4_t"></span></li>
-            <li><b data-i18n="categories.help_li5_b"></b> <span data-i18n="categories.help_li5_t"></span></li>
-          </ul>
-        </details>
-      </section>
-      <p class="dim" data-i18n="categories.hint">Click a row to expand. Each
-        category supports add/remove of packages from your config and runs the
-        5 phases independently.</p>
-      <div id="cats-add-widget" class="cats-add-widget">
-        <select id="cats-add-cat" aria-label="Category">
-          <option value="">- category -</option>
-        </select>
-        <input id="cats-add-pkg" type="text" placeholder="package name (e.g. snap-store)" autocomplete="off" />
-        <button id="cats-add-btn" type="button">+ Add to config</button>
-        <span class="dim" id="cats-add-out"></span>
-      </div>
-      <table id="cats-table">
-        <thead><tr>
-          <th></th>
-          <th data-i18n="categories.col_cat">Category</th>
-          <th data-i18n="categories.col_total">Total</th>
-          <th data-i18n="categories.col_ok">OK</th>
-          <th data-i18n="categories.col_outdated">Outdated</th>
-          <th data-i18n="categories.col_missing">Missing</th>
-          <th data-i18n="categories.col_act">Actions</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
+      <div id="categories-root"></div>
     </section>
 
     <!-- Run Center -->
@@ -609,48 +524,33 @@
     <!-- AI Tools (formerly Suggestions; section id + data-view stay -->
     <!-- "suggest" so external bookmarks keep working - see spec §10.2). -->
     <section id="view-suggest" class="view hidden">
-      <h2 style="display:flex;align-items:center;gap:0.5rem">
-        <span data-i18n="aitools.title">AI Tools</span>
-        <span class="aitools-backend-pill" id="aitools-backend"
-              data-i18n="aitools.no_backend">No backend configured</span>
-      </h2>
-
-      <!-- Quick suggestions (Sesja 67 rule + AI cards) — now sits ABOVE
-           the chat shell so users see actionable insights immediately
-           without scrolling past the chat thread (Sesja 71c reorder). -->
-      <h3 style="margin-top:0.5rem" data-i18n="aitools.quick_suggestions_h">Quick suggestions</h3>
-      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
-        <span class="dim" data-i18n="suggest.title">Smart Suggestions</span>
-        <button id="suggest-refresh-btn" class="secondary" style="margin-left:auto;font-size:0.8rem"
-                data-i18n="suggest.btn_refresh">Re-analyse</button>
-      </div>
-      <section class="tab-help card" style="margin-bottom:1rem">
-        <p data-i18n="suggest.help_summary"></p>
-        <details style="margin-top:0.5rem">
-          <summary data-i18n="suggest.help_details_label"></summary>
-          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
-            <li><b data-i18n="suggest.help_li1_b"></b> <span data-i18n="suggest.help_li1_t"></span></li>
-            <li><b data-i18n="suggest.help_li2_b"></b> <span data-i18n="suggest.help_li2_t"></span></li>
-            <li><b data-i18n="suggest.help_li3_b"></b> <span data-i18n="suggest.help_li3_t"></span></li>
-            <li><b data-i18n="suggest.help_li4_b"></b> <span data-i18n="suggest.help_li4_t"></span></li>
-          </ul>
-        </details>
+      <!-- M4: minimal reshell — page title + sub-tabs come from shell.js.
+           Functional IDs (#suggest-list, #suggest-refresh-btn, #aitools-*)
+           preserved verbatim so loadSuggestions() + the aitools object
+           keep working unchanged. -->
+      <section class="asc-card asc-card--default" style="margin-bottom:14px">
+        <header class="asc-card__head">
+          <h2 class="asc-card__title" data-i18n="lib.tools_suggestions">Quick suggestions</h2>
+          <div class="asc-card__action">
+            <span class="aitools-backend-pill" id="aitools-backend"
+                  data-i18n="aitools.no_backend">No backend configured</span>
+            <button id="suggest-refresh-btn" class="asc-btn asc-btn--secondary"
+                    type="button"><span class="asc-btn__label"
+                    data-i18n="suggest.btn_refresh">Re-analyse</span></button>
+          </div>
+        </header>
+        <div class="asc-card__body">
+          <div id="suggest-list">…</div>
+        </div>
       </section>
-      <p class="dim" data-i18n="suggest.hint">
-        Heuristic + optional AI advice based on your inventory and run history.
-        Always shown as a diff - nothing is applied without your click.
-      </p>
-      <div id="suggest-list">…</div>
 
-      <!-- 3-column AI Tools chat shell (Sesja 70 Phase B; moved BELOW
-           Quick suggestions in Sesja 71c per operator feedback). -->
-      <h3 style="margin-top:1.5rem" data-i18n="aitools.chat_h">Chat</h3>
-      <p class="dim" style="margin-top:0; font-size:12px"
-         data-i18n="aitools.chat_hint">
-        Conversational diagnosis. Pick a starter on the right or type below.
-        Configure backends in Settings → AI Tools backend.
-      </p>
-      <div id="aitools-shell" class="card" style="margin-bottom:1rem; padding:0;">
+      <!-- 3-column AI Tools chat shell (Sesja 70 Phase B) -->
+      <section class="asc-card asc-card--default">
+        <header class="asc-card__head">
+          <h2 class="asc-card__title" data-i18n="lib.tools_chat">Chat</h2>
+        </header>
+        <div class="asc-card__body" style="padding:0">
+      <div id="aitools-shell" style="margin-bottom:0; padding:0;">
         <div id="aitools-grid">
           <!-- Left rail: conversations -->
           <aside id="aitools-conversations" class="aitools-rail">
@@ -686,6 +586,8 @@
           </aside>
         </div>
       </div>
+        </div>
+      </section>
     </section>
 
     <!-- Hosts -->

@@ -386,6 +386,117 @@
   }
 }
 
+/* ---- Library (M4: Apps / Sources) -------------------- */
+.asc-libbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.asc-libbar__summary {
+  margin: 0;
+  color: var(--fg-muted);
+  font: var(--fw-medium) var(--fs-sm) / var(--lh-snug) var(--font-sans);
+}
+.asc-libbar__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.asc-libbar__search {
+  margin-left: auto;
+  min-width: 180px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-nested);
+  color: var(--fg);
+  font: var(--fs-sm) / var(--lh-snug) var(--font-sans);
+}
+/* DEFECT 1 — inactive chips are quiet (ghost); only the selected one
+   gets the accent. No solid-lime wall of chips. */
+.asc-chip {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--fg-muted);
+  font: var(--fw-medium) var(--fs-sm) / 1 var(--font-sans);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out);
+}
+.asc-chip:hover { background: var(--bg-nested); color: var(--fg); }
+.asc-chip--on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast, var(--bg));
+}
+.asc-chip--on:hover { background: var(--accent); color: var(--accent-contrast, var(--bg)); }
+
+/* DEFECT 2 — Sources row: id as a strong title, description on its
+   own muted line. No run-together text. */
+.asc-srclist { display: flex; flex-direction: column; gap: var(--space-2); }
+.asc-srcrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+.asc-srcrow:last-child { border-bottom: 0; }
+.asc-srcrow__name {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.asc-srcrow__name b {
+  font: var(--fw-semibold) var(--fs-md) / var(--lh-snug) var(--font-sans);
+  color: var(--fg);
+}
+.asc-srcrow__sub {
+  font: var(--fs-sm) / var(--lh-snug) var(--font-sans);
+  color: var(--fg-muted);
+}
+.asc-srcrow__stats { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.asc-srcrow__acts { display: flex; align-items: center; gap: var(--space-2); margin-left: auto; }
+
+.asc-table { width: 100%; border-collapse: collapse; }
+.asc-table th {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.asc-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  font: var(--fs-sm) / var(--lh-snug) var(--font-sans);
+  color: var(--fg);
+  vertical-align: middle;
+}
+.asc-table tr:last-child td { border-bottom: 0; }
+.asc-table__sel { width: 28px; }
+.asc-table__name { font-weight: var(--fw-medium); }
+.asc-table__dim { color: var(--fg-muted); }
+.asc-table__mono { font-family: var(--font-mono); color: var(--fg-muted); }
+.asc-table__act { display: flex; gap: var(--space-2); align-items: center; }
+.asc-table__row--excluded td:not(.asc-table__act) { opacity: 0.55; }
+
+.asc-rowmenu { display: flex; flex-direction: column; gap: var(--space-4); }
+.asc-rowmenu__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.asc-rowmenu__hist:empty { display: none; }
+.asc-adv { display: flex; flex-direction: column; gap: var(--space-4); }
+.asc-adv__note { margin: 0; color: var(--fg-muted); font: var(--fs-sm) / var(--lh-snug) var(--font-sans); }
+.asc-adv__phases { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
 /* ---- Responsive -------------------------------------- */
 @media (max-width: 768px) {
   .asc-kpi {
@@ -395,4 +506,36 @@
     width: 100vw;
     border-left: 0;
   }
+  .asc-libbar__search { margin-left: 0; flex: 1 1 100%; }
+  .asc-srcrow__acts { margin-left: 0; flex: 1 1 100%; }
+
+  /* DEFECT 3 — Apps table → stacked label/value cards on mobile so
+     nothing clips at 390px. Header hidden; each cell shows its
+     column label via data-label. The ⋯ + Update stay reachable. */
+  .asc-table thead { position: absolute; width: 1px; height: 1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .asc-table, .asc-table tbody, .asc-table tr, .asc-table td { display: block; width: 100%; }
+  .asc-table tr {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-2);
+    margin-bottom: var(--space-3);
+  }
+  .asc-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-3);
+    border-bottom: 0;
+    padding: var(--space-1) var(--space-2);
+  }
+  .asc-table td::before {
+    content: attr(data-label);
+    color: var(--fg-muted);
+    font: var(--fw-medium) var(--fs-xs) / 1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .asc-table td.asc-table__sel { display: none; }
+  .asc-table__act { justify-content: flex-end; }
 }
