@@ -1,15 +1,24 @@
 // ============================================================================
-// shell.js — AppShell: 5-destination IA, header, sub-tabs, Preferences,
-//            run-detail drawer. Loaded AFTER app.js.
+// shell.js — AppShell: OWNS the route. 5-destination IA, header, sub-tabs,
+//            Preferences popover, mobile bottom nav, run-detail drawer.
+//            Loaded `<script defer src="/shell.js">` AFTER app.js, BEFORE
+//            ui-components.js.
 // ============================================================================
-// Design intent: this is a presentation/navigation LAYER on top of the
-// existing working router. It does NOT rewrite any view loader or the
-// SSE/runs/AI wiring. The single integration point is wrapping
-// `ui.show(view)` so the chrome (sidebar active state, page header,
-// sub-tab rail, deep-link hash) reacts to whatever the rest of the app
-// already does. Deep-link routes (`#runs/history`) resolve to the real
-// underlying view id before the original router runs, so nothing
-// downstream needs to know the IA exists.
+// Ownership model (changed from the old monkey-patch wrapper):
+//
+//   * app.js still defines the *core view renderer* (hide `.view`, unhide
+//     `#view-<id>`, run the lazy-load flags, set sidebar-help). That logic
+//     is the single source of truth for "make a view visible" and we do
+//     NOT duplicate it.
+//   * The shell captures that core renderer ONCE as a private delegate
+//     (`coreShow`) and then defines `window.ui.show` EXACTLY ONCE as the
+//     shell router. There is no chain of wrappers: the rest of app.js
+//     keeps calling `ui.show(...)`, and that single definition resolves
+//     the IA route, asks the core renderer to paint the real view, then
+//     paints the chrome. One definition, one hashchange listener.
+//   * No shadow renderer. There is no second fetch, no MutationObserver,
+//     and no dependency on ui-redesign.js. Insights lazy-load goes through
+//     the existing `ui.loadInsights` path only.
 // ============================================================================
 (function () {
   "use strict";
@@ -24,7 +33,7 @@
 
   // ── Information architecture ──────────────────────────────────────────
   // Each destination owns one user question. `view` on a tab is the
-  // existing #view-<id> the original router already knows how to render.
+  // existing #view-<id> the core renderer already knows how to render.
   // `feature` (optional) gates a tab by Platform capability. `edition`
   // (optional) hides a tab outside the matching edition.
   const IA = {
@@ -85,16 +94,15 @@
     },
   };
 
-  // Reverse map: underlying view id → { dest, tabId }. Built once.
+  // Reverse map: underlying view id → { dest, tab }. Built once.
   const VIEW_TO_ROUTE = {};
   Object.keys(IA).forEach((dest) => {
     const d = IA[dest];
     if (!d.tabs) { VIEW_TO_ROUTE[d.defaultView] = { dest, tab: null }; return; }
     d.tabs.forEach((t) => { VIEW_TO_ROUTE[t.view] = { dest, tab: t.id }; });
   });
-  // Views the original router still has but that fold into a destination
-  // without their own tab (run-detail uses logs view; about/help live in
-  // Settings already mapped above).
+  // Views the core renderer still has but that fold into a destination
+  // without their own tab (overview is the dashboard default).
   if (!VIEW_TO_ROUTE.overview) VIEW_TO_ROUTE.overview = { dest: "dashboard", tab: null };
 
   function edition() { return window.ASCENDO_EDITION || "basic"; }
@@ -140,21 +148,26 @@
   const shell = {
     _suppressHash: false,
     _current: { dest: "dashboard", tab: null, view: "overview" },
+    // The core view renderer captured from app.js's `ui.show`. Set ONCE in
+    // ownRoute(); never reassigned, never chained.
+    _coreShow: null,
 
-    // Called after the original ui.show() ran with a real view id.
+    // ── Chrome painting ─────────────────────────────────────────────────
     renderChrome(dest, tab, view) {
       this._current = { dest, tab, view };
       this.paintSidebar(dest);
       this.paintHeader(dest, tab);
+      this.paintBottomNav(dest);
       this.paintStatus();
       // Platform/feature gating on the now-visible view.
       if (window.Platform) {
         const v = document.getElementById("view-" + view);
         if (v) window.Platform.applyTo(v);
       }
-      // Insights is shell-owned data; lazy-load on first visit.
+      // Insights is shell-owned data; lazy-load on first visit through the
+      // EXISTING single data path. No second fetch, no observer.
       if (view === "insights" && window.ui && typeof ui.loadInsights === "function"
-          && !ui._loaded?.insights) {
+          && !(ui._loaded && ui._loaded.insights)) {
         ui._loaded = ui._loaded || {};
         ui._loaded.insights = true;
         ui.loadInsights();
@@ -163,8 +176,9 @@
 
     paintSidebar(dest) {
       document.querySelectorAll("#nav .nav-link").forEach((a) => {
-        a.classList.toggle("active", a.dataset.dest === dest);
-        if (a.dataset.dest === dest) a.setAttribute("aria-current", "page");
+        const on = a.dataset.dest === dest;
+        a.classList.toggle("active", on);
+        if (on) a.setAttribute("aria-current", "page");
         else a.removeAttribute("aria-current");
       });
     },
@@ -243,6 +257,73 @@
       }
     },
 
+    // ── Mobile bottom nav ───────────────────────────────────────────────
+    // Absorbed from ui-components.js. The legacy bug was that the nav was
+    // appended somewhere that became a containing block for `position:
+    // fixed` (a transformed / `contain`/`filter` ancestor), so it floated
+    // mid-page. Fix: attach it as a DIRECT CHILD of <body> (which is never
+    // a fixed-positioning containing block) and add an inline fallback so
+    // even if CSS regresses it still pins to the viewport bottom. Class
+    // names preserved so existing `.bottom-nav` rules in style.css apply.
+    mountBottomNav() {
+      if (document.getElementById("bottom-nav")) return;
+      const src = document.querySelectorAll("#nav .nav-link");
+      if (!src.length) return;
+
+      const nav = document.createElement("nav");
+      nav.id = "bottom-nav";
+      nav.className = "bottom-nav";
+      nav.setAttribute("aria-label", trOr("uikit.sections", "Sections"));
+      // Defensive inline pinning: if an ancestor ever breaks `fixed`, the
+      // nav is body-attached so this still resolves against the viewport.
+      nav.style.cssText =
+        "position:fixed;left:0;right:0;bottom:0;z-index:80";
+
+      src.forEach((a) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "bottom-nav-btn";
+        b.dataset.dest = a.dataset.dest || "";
+        b.dataset.view = a.dataset.view || "";
+
+        const icon = document.createElement("span");
+        icon.className = "bottom-nav-icon";
+        icon.setAttribute("aria-hidden", "true");
+        const ic = a.querySelector(".nav-icon");
+        if (ic) icon.innerHTML = ic.innerHTML;
+
+        const lab = a.querySelector(".nav-label");
+        const label = document.createElement("span");
+        label.className = "bottom-nav-label";
+        label.textContent = lab ? lab.textContent.trim() : (a.dataset.dest || "");
+
+        b.appendChild(icon);
+        b.appendChild(label);
+        b.addEventListener("click", () => {
+          if (window.ui && typeof ui.show === "function") {
+            ui.show(b.dataset.dest || b.dataset.view);
+          }
+        });
+        nav.appendChild(b);
+      });
+
+      // DIRECT child of <body> — never inside a transformed/contain
+      // ancestor, so `position:fixed` resolves against the viewport.
+      document.body.appendChild(nav);
+    },
+
+    // Mirror the active destination onto the bottom-nav buttons. Driven
+    // directly from renderChrome (no MutationObserver, no second source).
+    paintBottomNav(dest) {
+      const cur = dest || (this._current && this._current.dest) || "";
+      document.querySelectorAll(".bottom-nav-btn").forEach((b) => {
+        const on = b.dataset.dest === cur;
+        b.classList.toggle("is-active", on);
+        if (on) b.setAttribute("aria-current", "page");
+        else b.removeAttribute("aria-current");
+      });
+    },
+
     // ── Preferences popover ─────────────────────────────────────────────
     bindPrefs() {
       const toggle = document.getElementById("prefs-toggle");
@@ -305,55 +386,96 @@
       if (drawer) drawer.classList.add("hidden");
     },
 
-    // ── Router integration ──────────────────────────────────────────────
-    patchRouter() {
-      if (!window.ui || typeof ui.show !== "function") return;
-      const orig = ui.show.bind(ui);
+    // ── Route ownership ─────────────────────────────────────────────────
+    // Define `window.ui.show` EXACTLY ONCE. We capture app.js's core
+    // renderer as `_coreShow` (the function that hides views, unhides the
+    // target, runs the lazy-load flags, sets the help block, sets
+    // location.hash to the bare view) and delegate the "render the view"
+    // step to it. The shell adds: IA route resolution, the shareable
+    // dest[/tab] hash, and chrome painting. No prior shell wrapper is ever
+    // chained — there is one and only one shell `ui.show`.
+    ownRoute() {
+      if (!window.ui) window.ui = {};
+      // Capture the core renderer once. If a previous shell.js instance
+      // already ran (hot reload / double include), `_owned` guards against
+      // capturing the shell wrapper as the core delegate.
+      if (!shell._coreShow) {
+        if (typeof window.ui.show === "function" && !window.ui.show._shellOwned) {
+          shell._coreShow = window.ui.show.bind(window.ui);
+        } else if (typeof window.ui.show === "function" && window.ui.show._coreRef) {
+          shell._coreShow = window.ui.show._coreRef;
+        }
+      }
+      // Fallback core renderer if app.js somehow exposed no show() yet.
+      const coreShow = (view) => {
+        if (shell._coreShow) { shell._coreShow(view); return; }
+        document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
+        const el = document.getElementById("view-" + view);
+        if (el) el.classList.remove("hidden");
+      };
 
-      ui.show = function (input) {
+      function shellShow(input) {
         const { view, dest, tab } = resolveRoute(input);
-        orig(view);                       // original router does the real work
-        // Rewrite hash to the shareable dest[/tab] form without recursing.
+        // 1) Core renderer paints the real view (single source of truth
+        //    for visibility + lazy-load flags). It also sets
+        //    location.hash = view; we rewrite to the shareable form next.
+        coreShow(view);
+        // 2) Rewrite hash to the shareable dest[/tab] form without
+        //    re-entering via hashchange.
         const wanted = tab ? "#" + dest + "/" + tab : "#" + dest;
         if (location.hash !== wanted) {
           shell._suppressHash = true;
           location.hash = wanted;
           setTimeout(() => { shell._suppressHash = false; }, 0);
         }
+        // 3) Paint chrome.
         shell.renderChrome(dest, tab, view);
-      };
+      }
+      shellShow._shellOwned = true;
+      shellShow._coreRef = shell._coreShow;
+      // THE single definition of ui.show after this point.
+      window.ui.show = shellShow;
 
-      // Deep-link / back-forward support.
-      window.addEventListener("hashchange", () => {
-        if (shell._suppressHash) return;
-        const r = resolveRoute(location.hash);
-        ui.show(r.tab ? r.dest + "/" + r.tab : r.dest);
-      });
-
-      // Let bootstrap's `location.hash.replace('#','') || 'overview'`
-      // still produce a valid view: our wrapped ui.show resolves any
-      // dest/route input, so no app.js edit is needed.
+      // THE single hashchange listener. Bound once; guarded so a double
+      // include doesn't add a second one.
+      if (!shell._hashBound) {
+        shell._hashBound = true;
+        window.addEventListener("hashchange", () => {
+          if (shell._suppressHash) return;
+          const r = resolveRoute(location.hash);
+          window.ui.show(r.tab ? r.dest + "/" + r.tab : r.dest);
+        });
+      }
     },
 
     init() {
-      this.patchRouter();
+      this.ownRoute();
       this.bindPrefs();
       this.bindDrawer();
+      this.mountBottomNav();
       if (window.Platform) window.Platform.applyTo(document);
-      // Paint chrome for whatever view is active right now (bootstrap may
-      // have already called ui.show before we patched, or not yet —
-      // resolve from the current hash either way).
+      // Paint chrome (and re-run the route through the now-owned ui.show)
+      // for whatever the current hash says. app.js bootstrap may already
+      // have called the core renderer with a bare view before we owned
+      // the route; re-running here normalises the hash to dest[/tab] and
+      // paints chrome consistently.
       const r = resolveRoute(location.hash || "#dashboard");
-      this.renderChrome(r.dest, r.tab, r.view);
+      if (window.ui && typeof window.ui.show === "function") {
+        window.ui.show(r.tab ? r.dest + "/" + r.tab : r.dest);
+      } else {
+        this.renderChrome(r.dest, r.tab, r.view);
+      }
       if (window.applyI18n) window.applyI18n(document.getElementById("app-header"));
     },
   };
 
   window.shell = shell;
 
-  // Scripts sit at end of <body>, so the DOM is parsed. app.js has run
-  // (its module body executed; bootstrap() is async and still awaiting
-  // /settings + /version), so ui.show exists and is safe to wrap now.
+  // Loaded with `defer`, so app.js (also deferred, earlier in document
+  // order) has fully executed and `window.ui` exists by the time this
+  // runs. `defer` scripts execute after the document is parsed but the
+  // DOMContentLoaded event has not necessarily fired yet for the very
+  // last deferred script — guard both cases.
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => shell.init());
   } else {
