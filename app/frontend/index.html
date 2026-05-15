@@ -45,6 +45,9 @@
        loaded LAST so it wins by source order. Removing this line +
        /ui-redesign.css restores the previous look byte-for-byte. -->
   <link rel="stylesheet" href="/ui-redesign.css" />
+  <!-- M4: component foundation (window.AC primitives). Loaded AFTER
+       ui-redesign.css so .asc-* rules win by source order. -->
+  <link rel="stylesheet" href="/components.css" />
   <!-- P0: layout-editor disabled — the "Edit layout" drag tool + always-on
        drag handles leaked into the default end-user surface. -->
   <!-- <link rel="stylesheet" href="/layout-editor.css" /> -->
@@ -190,103 +193,18 @@
       <button id="reboot-dismiss-btn" class="reboot-dismiss" title="dismiss">×</button>
     </div>
 
-    <!-- Overview -->
+    <!-- Overview / Dashboard.
+         M4: rebuilt on the window.AC component foundation. The shell
+         (shell.js) renders the "Dashboard" page title + primary CTA in
+         the sticky page header; this section is just the answer zone +
+         KPI strip + recent-runs timeline, all rendered by app.js's
+         ui.loadOverview() into #overview-root. The old donut / 100-score
+         / 12-row inline health list / 5-button stack / per-category bars
+         were deleted (see ASCENDO-REDESIGN-BLUEPRINT.md §6.1). The
+         #hostbadge target still lives in the shell footer; ui.loadOverview
+         keeps writing it (no behavior change). -->
     <section id="view-overview" class="view">
-      <h2 style="display:flex;align-items:center;gap:0.5rem">
-        <span data-i18n="overview.title">Overview</span>
-        <button id="overview-refresh-btn" class="secondary"
-                style="margin-left:auto;font-size:0.8rem"
-                data-i18n="overview.refresh">Refresh</button>
-      </h2>
-      <section class="tab-help card" style="margin-bottom:1rem">
-        <p data-i18n="overview.help_summary"></p>
-        <details style="margin-top:0.5rem">
-          <summary data-i18n="overview.help_details_label"></summary>
-          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
-            <li><b data-i18n="overview.help_li1_b"></b> <span data-i18n="overview.help_li1_t"></span></li>
-            <li><b data-i18n="overview.help_li2_b"></b> <span data-i18n="overview.help_li2_t"></span></li>
-            <li><b data-i18n="overview.help_li3_b"></b> <span data-i18n="overview.help_li3_t"></span></li>
-            <li><b data-i18n="overview.help_li4_b"></b> <span data-i18n="overview.help_li4_t"></span></li>
-            <li><b data-i18n="overview.help_li5_b"></b> <span data-i18n="overview.help_li5_t"></span></li>
-          </ul>
-        </details>
-      </section>
-      <!-- P0: answer-first — the product's core question ("is anything out
-           of date?") is now the first thing on the home screen, above the
-           fold, before any cards/charts. app.js fills #inv-updates by id. -->
-      <div class="card answer-card" id="answer-updates">
-        <h3 data-i18n="overview.available_updates">Available updates</h3>
-        <div id="inv-updates">…</div>
-      </div>
-      <div class="grid" data-layout-id="overview-main">
-        <div class="card">
-          <h3 data-i18n="overview.last_run">Last run</h3>
-          <div id="last-run">…</div>
-        </div>
-        <div class="card">
-          <h3 data-i18n="overview.health">System health</h3>
-          <div id="preflight">…</div>
-        </div>
-        <div class="card">
-          <h3 data-i18n="overview.git">Git</h3>
-          <div id="git-status">…</div>
-        </div>
-        <div class="card">
-          <h3 data-i18n="overview.quick">Quick actions</h3>
-          <button id="action-1-inventory" class="action-numbered"
-                  data-action="inventory"
-                  title="" data-i18n-title="overview.action_1_inventory_hint">
-            <span class="action-chip">1</span>
-            <span class="action-label" data-i18n="overview.action_1_inventory">Build inventory</span>
-          </button>
-          <button class="action-numbered" data-quick='{"profile":"quick"}'
-                  title="" data-i18n-title="overview.action_2_quick_hint">
-            <span class="action-chip">2</span>
-            <span class="action-label" data-i18n="overview.action_2_quick">Quick check</span>
-          </button>
-          <button class="action-numbered" data-quick='{"profile":"safe"}'
-                  title="" data-i18n-title="overview.action_3_safe_hint">
-            <span class="action-chip">3</span>
-            <span class="action-label" data-i18n="overview.action_3_safe">Safe update</span>
-          </button>
-          <button class="action-numbered" data-quick='{"profile":"full","dry_run":true}'
-                  title="" data-i18n-title="overview.action_4_dry_hint">
-            <span class="action-chip">4</span>
-            <span class="action-label" data-i18n="overview.action_4_dry">Full dry run</span>
-          </button>
-          <button class="action-numbered" data-quick='{"profile":"full"}'
-                  title="" data-i18n-title="overview.action_5_full_hint">
-            <span class="action-chip">5</span>
-            <span class="action-label" data-i18n="overview.action_5_full">Full update</span>
-          </button>
-          <button data-quick='{"profile":"full","extra_args":["--nvidia"]}' data-icon-prefix="nvidia" class="btn-nvidia adapter-only-linux adapter-only-windows adapter-hide-macos" title="Apply NVIDIA driver upgrade (held by default)">Update NVIDIA</button>
-          <button data-quick='{"only":"drivers","phase":"apply","extra_args":["--nvidia"]}' class="secondary adapter-only-linux adapter-only-windows adapter-hide-macos" title="Apply only the NVIDIA driver category">drivers only · with NVIDIA</button>
-        </div>
-        <div class="card">
-          <h3 data-i18n="health.title">Post-run health</h3>
-          <div id="health-card">…</div>
-          <button id="health-recheck-btn" class="secondary" style="margin-top:0.5rem"
-                  data-i18n="health.btn_recheck">Re-check</button>
-        </div>
-      </div>
-
-      <h3 style="margin-top:1.5rem;display:flex;align-items:center;gap:0.5rem">
-        <span data-i18n="overview.inventory">Inventory</span>
-        <button id="inv-refresh-btn" class="secondary" style="margin-left:auto;font-size:0.8rem"
-                data-i18n="overview.refresh">Refresh</button>
-      </h3>
-      <div class="grid">
-        <div class="card chart-card">
-          <h3 data-i18n="overview.status_donut">Status (all categories)</h3>
-          <div id="inv-donut">…</div>
-        </div>
-        <div class="card">
-          <h3 data-i18n="overview.per_category">Per category</h3>
-          <div id="inv-bars">…</div>
-        </div>
-        <!-- P0: "Available updates" moved to the top of #view-overview
-             (answer-first). Single #inv-updates now lives in #answer-updates. -->
-      </div>
+      <div id="overview-root"></div>
     </section>
 
     <!-- Apps (detected vs configured) -->
@@ -1782,12 +1700,18 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
   <script defer src="/i18n.js"></script>
   <script defer src="/platform.js"></script>
   <script defer src="/app.js"></script>
+  <!-- M4: component foundation (window.AC). Must exist before shell.init
+       runs and before app.js's ui.loadOverview renders. app.js defines
+       `ui`; components.js only defines window.AC primitives. -->
+  <script defer src="/components.js"></script>
   <script defer src="/shell.js"></script>
   <!-- Touch-first UI kit (Sesja 74): no-dropdown progressive disclosure,
        mobile bottom nav, run stepper, responsive history cards. -->
   <script defer src="/ui-components.js"></script>
-  <!-- UI redesign DOM layer (Sesja 75) — runtime node reorg. -->
-  <script defer src="/ui-redesign.js"></script>
+  <!-- P0/M2: ui-redesign.js disabled — the M2 shell.js owns the router +
+       IA; the shadow renderer caused a double Insights fetch + node
+       reorg fighting the new shell. CSS (ui-redesign.css) stays. -->
+  <!-- <script defer src="/ui-redesign.js"></script> -->
   <!-- P0: layout-editor.js disabled — drag-reorder power tool removed from
        the default end-user surface (was injecting "Edit layout" + handles). -->
   <!-- <script src="/layout-editor.js"></script> -->

@@ -1699,132 +1699,230 @@ const ui = {
     ui._loaded.suggest = false; ui.loadSuggestions();
   },
 
+  // M4: Dashboard rebuilt on the window.AC component foundation per
+  // ASCENDO-REDESIGN-BLUEPRINT.md §6.1 + §7 (answer-first). Renders into
+  // #overview-root. Reuses the EXACT same data calls the old card-soup
+  // made: /health (hostbadge + health drawer), /runs?limit=5 (timeline +
+  // last-run KPI), /health/check (health score), /inventory/summary
+  // (managed + outdated counts + answer state). No new endpoints, no SSE
+  // / router changes. The primary action reuses startRunWithSudo() with
+  // the same body shape the old data-quick buttons used.
   async loadOverview(opts) {
     opts = opts || {};
     const refresh = !!opts.refresh;
+    const AC = window.AC;
+    const root = $("#overview-root");
+    if (!root || !AC) return;
+
+    // #hostbadge still lives in the shell footer — keep feeding it
+    // (unchanged behavior; not part of the Dashboard render).
     try {
-      const h = await api.get("/health");
-      $("#hostbadge").textContent = h.repo_root || "";
+      const h0 = await api.get("/health");
+      const hb = $("#hostbadge");
+      if (hb) hb.textContent = h0.repo_root || "";
     } catch {}
-    try {
-      const runs = (await api.get("/runs?limit=1")).runs;
-      const last = runs[0];
-      // Staleness line is dev-only chrome; suppress in basic edition.
-      const isBasic = window.ASCENDO_EDITION === "basic";
-      if (last) {
-        const stale = ui.staleness(last.started_at);
-        $("#last-run").innerHTML = `${ui.badge(last.status)} <code>${last.id}</code><br>
-           <span class="dim">${ui.fmtTime(last.started_at)} → ${ui.fmtTime(last.ended_at)}</span><br>
-           profile: ${last.profile || "-"}, dry-run: ${last.dry_run ? "yes" : "no"}<br>
-           ${last.needs_reboot ? `<b>${tr("overview.reboot_required")}</b><br>` : ""}
-           ${isBasic ? "" : `<span class="meta" style="color:${stale.color};font-weight:600" data-staleness="${stale.key}">${stale.label}</span>`}`;
-      } else {
-        const stale = ui.staleness(null);
-        $("#last-run").innerHTML = `<span class='dim'>${tr("overview.no_runs")}</span>${isBasic ? "" : `<br>
-           <span class="meta" style="color:${stale.color}" data-staleness="${stale.key}">${stale.label}</span>`}`;
-      }
-    } catch (e) { $("#last-run").textContent = String(e); }
-    try {
-      // Render the System Health card from the adapter's /health rollup
-      // (12 real components on macOS — brew, jq, mas, system_profiler,
-      // softwareupdate, tmutil, launchctl, pip, web, bash, ascendo_lib,
-      // ascendo_scripts) instead of /preflight which returns empty
-      // arrays on this host and used to render a single bare "ok" pill
-      // with no information density.
-      //
-      // Each component renders as a row with name + visual badge +
-      // optional version detail. Falls back to /preflight if /health
-      // isn't wired (older adapters). Uses DOM construction (createElement
-      // + textContent) instead of innerHTML to avoid the global-scope
-      // escapeHtml helper limitation and keep XSS-safe.
-      const host = $("#preflight");
-      host.innerHTML = "";
-      host.classList.remove("health-empty");
 
-      const mkRow = (name, detail, badgeKind) => {
-        const row = document.createElement("div");
-        row.className = "health-row";
-        const nm = document.createElement("span");
-        nm.className = "health-name";
-        nm.textContent = name;
-        row.appendChild(nm);
-        if (detail) {
-          const dt = document.createElement("span");
-          dt.className = "health-detail";
-          dt.textContent = detail;
-          row.appendChild(dt);
-        }
-        const bd = document.createElement("span");
-        bd.className = `health-badge health-${badgeKind}`;
-        bd.textContent = badgeKind === "missing" ? "missing" : badgeKind;
-        row.appendChild(bd);
-        return row;
-      };
+    // Loading state: one skeleton primitive (blueprint §2.7).
+    AC.mount(root, [
+      AC.Skeleton({ rows: 2, variant: "rows" }),
+      AC.Skeleton({ rows: 4, variant: "rows" }),
+    ]);
 
-      let rendered = 0;
+    // ---- gather data (same endpoints as before) ----------------------
+    let summary = null, runs = [], health = null;
+    try { summary = await frontendCache.get("/inventory/summary", { refresh }); }
+    catch { summary = null; }
+    try { runs = (await api.get("/runs?limit=5")).runs || []; }
+    catch { runs = []; }
+    try { health = await api.get("/health/check"); }
+    catch { health = null; }
+
+    const totals  = (summary && summary.totals) || { ok: 0, outdated: 0, missing: 0, total: 0 };
+    const managed = totals.total || ((totals.ok || 0) + (totals.outdated || 0) + (totals.missing || 0));
+    const outdated = (totals.outdated || 0) + (totals.missing || 0);
+    const sources = summary && summary.categories
+      ? Object.keys(summary.categories).filter(c => {
+          const cc = summary.categories[c] || {};
+          return (cc.outdated || 0) + (cc.missing || 0) > 0;
+        })
+      : [];
+    const last = runs[0] || null;
+    const stale = ui.staleness(last ? last.started_at : null);
+    const checkedRel = last
+      ? stale.label.replace(tr("overview.staleness_prefix", "Last run:") + " ", "")
+      : tr("overview.staleness_never", "never");
+
+    // ---- Answer Zone (above the fold) --------------------------------
+    const isClear = outdated === 0;
+    const answerText = isClear
+      ? `${tr("overview.answer_clear", "Everything is up to date")} · ${managed} ${tr("overview.answer_packages", "packages")} · ${tr("overview.answer_checked", "checked")} ${checkedRel}`
+      : `${outdated} ${tr("overview.answer_updates", "updates available")}${sources.length ? " · " + sources.join(", ") : ""} · ${tr("overview.answer_checked", "checked")} ${checkedRel}`;
+
+    // Primary action — SAME body the old data-quick buttons posted:
+    //   clear  → {profile:"quick"}  (read-only check, no sudo)
+    //   work   → {profile:"safe"}   (safe update)
+    const primaryBody = isClear ? { profile: "quick" } : { profile: "safe" };
+    const primaryLabel = isClear
+      ? tr("overview.action_2_quick", "Check for updates")
+      : tr("overview.action_3_safe", "Update all safely");
+    const runPrimary = async () => {
       try {
-        const h = await api.get("/health");
-        const components = (h && typeof h.components === "object") ? h.components : {};
-        for (const name of Object.keys(components)) {
-          const raw = String(components[name] || "");
-          let badge = "ok";
-          if (raw.startsWith("degraded"))                              badge = "degraded";
-          else if (raw.startsWith("warn"))                             badge = "warn";
-          else if (raw.startsWith("error"))                            badge = "error";
-          else if (raw.startsWith("missing") || raw.startsWith("unavailable"))
-                                                                       badge = "missing";
+        const r = await startRunWithSudo(primaryBody);
+        ui.show("run");
+        ui.attachStream(r.run_id);
+        const sb = $("#stop-btn"); if (sb) sb.disabled = false;
+        ui.status(`run ${r.run_id} started`);
+      } catch (err) { ui.status(String(err)); }
+    };
+    const primaryBtn = AC.Button({
+      variant: "primary", label: primaryLabel, onClick: runPrimary,
+    });
+
+    const answer = AC.Banner({
+      tone: isClear ? "ok" : "warn",
+      text: answerText,
+      actions: primaryBtn,
+    });
+
+    // ---- KpiStrip ----------------------------------------------------
+    // Health: "<ok>/<total>" from /health components rollup (the 12 rows
+    // move OFF the page into a drawer, opened by clicking this StatPair).
+    // /health/check carries the numeric score; /health carries the
+    // per-component map we surface in the drawer.
+    let hComps = {};
+    try {
+      const hc = await api.get("/health");
+      hComps = (hc && typeof hc.components === "object") ? hc.components : {};
+    } catch { hComps = {}; }
+    const compNames = Object.keys(hComps);
+    const compTotal = compNames.length;
+    const compOk = compNames.filter(n => {
+      const raw = String(hComps[n] || "");
+      return !(raw.startsWith("error") || raw.startsWith("degraded") ||
+               raw.startsWith("missing") || raw.startsWith("unavailable") ||
+               raw.startsWith("warn"));
+    }).length;
+    const healthAllOk = compTotal > 0 && compOk === compTotal;
+    const healthStatus = compTotal === 0 ? "neutral" : (healthAllOk ? "ok" : "warn");
+
+    const openHealthDrawer = () => {
+      const list = document.createElement("div");
+      list.className = "asc-health-list";
+      if (compTotal === 0) {
+        list.appendChild(
+          AC.EmptyState({
+            glyph: "✓",
+            title: tr("overview.all_systems", "All systems operational"),
+          })
+        );
+      } else {
+        compNames.forEach(n => {
+          const raw = String(hComps[n] || "");
+          let st = "ok";
+          if (raw.startsWith("error")) st = "err";
+          else if (raw.startsWith("degraded") || raw.startsWith("warn")) st = "warn";
+          else if (raw.startsWith("missing") || raw.startsWith("unavailable")) st = "neutral";
           const colon = raw.indexOf(":");
           const detail = colon >= 0 ? raw.slice(colon + 1).trim() : "";
-          host.appendChild(mkRow(name, detail, badge));
-          rendered++;
-        }
-      } catch (_e) {
-        // Network / adapter mismatch — fall through to /preflight legacy shape.
-      }
-
-      if (rendered === 0) {
-        try {
-          const p2 = await api.get("/preflight");
-          const items = Array.isArray(p2 && p2.items) ? p2.items : [];
-          if (p2 && p2.needs_reboot) {
-            const banner = document.createElement("b");
-            banner.textContent = tr("overview.reboot_pending") || "Reboot pending";
-            host.appendChild(banner);
+          const row = document.createElement("div");
+          row.className = "asc-health-row";
+          const nm = document.createElement("span");
+          nm.className = "asc-health-row__name";
+          nm.textContent = n;
+          row.appendChild(nm);
+          if (detail) {
+            const dt = document.createElement("code");
+            dt.className = "asc-health-row__detail";
+            dt.textContent = detail;
+            row.appendChild(dt);
           }
-          if (items.length) {
-            for (const i of items) {
-              host.appendChild(mkRow(i.tool || "?", "", i.present ? "ok" : "missing"));
-              rendered++;
-            }
-          }
-        } catch (_e) { /* nothing more we can do */ }
+          row.appendChild(AC.StatusPill({ status: st, label: raw.split(":")[0] || st }));
+          list.appendChild(row);
+        });
       }
+      AC.Drawer.open({
+        title: tr("overview.health", "System health"),
+        body: list,
+      });
+    };
 
-      if (rendered === 0) {
-        const label = tr("overview.all_systems") || "All systems operational";
-        host.appendChild(mkRow(label, "", "ok"));
-      }
-    } catch (e) { $("#preflight").textContent = String(e); }
-    if (window.ASCENDO_EDITION !== "basic") {
-      try {
-        const g = await api.get("/git/status");
-        $("#git-status").innerHTML = `branch <code>${g.branch || "(unknown)"}</code> ` +
-          (g.dirty ? "<span class='badge warn'>dirty</span>" : "<span class='badge ok'>clean</span>") +
-          ` <span class="dim">↑${g.ahead} ↓${g.behind}</span>`;
-      } catch (e) { $("#git-status").textContent = String(e); }
+    const lastStatus = last
+      ? ((last.status || "").toLowerCase() === "success" ? "ok"
+          : (last.status || "").toLowerCase() === "failed" ? "err" : "warn")
+      : "neutral";
+
+    const kpis = AC.KpiStrip([
+      {
+        value: managed,
+        label: tr("overview.kpi_managed", "Managed"),
+        status: "neutral",
+      },
+      {
+        value: outdated,
+        label: tr("overview.kpi_outdated", "Outdated"),
+        status: outdated === 0 ? "ok" : "warn",
+      },
+      {
+        value: last ? checkedRel : tr("overview.no_runs", "No runs yet"),
+        label: tr("overview.last_run", "Last run"),
+        status: lastStatus,
+      },
+      {
+        value: compTotal ? `${compOk} / ${compTotal}` : "—",
+        label: tr("overview.health", "Health"),
+        status: healthStatus,
+        onClick: openHealthDrawer,
+      },
+    ]);
+
+    // ---- Timeline (last ~5 runs) -------------------------------------
+    let recent;
+    if (!runs.length) {
+      recent = AC.Card({
+        title: tr("overview.recent_runs", "Recent runs"),
+        children: AC.EmptyState({
+          glyph: "✓",
+          title: tr("overview.no_runs", "No runs yet"),
+          line: tr("overview.no_runs_line", "Run a check to see activity here."),
+          action: AC.Button({
+            variant: "secondary",
+            label: tr("overview.action_2_quick", "Check for updates"),
+            onClick: runPrimary,
+          }),
+        }),
+      });
     } else {
-      // Hide the entire #git-status card in basic edition.
-      const card = $("#git-status");
-      if (card) {
-        const cardWrap = card.closest(".card");
-        if (cardWrap) cardWrap.style.display = "none";
-      }
+      const rows = runs.slice(0, 5).map(r => {
+        const rs = (r.status || "").toLowerCase();
+        const st = rs === "success" ? "ok" : rs === "failed" ? "err"
+                 : rs === "skipped" ? "neutral" : "warn";
+        const relRun = ui.staleness(r.started_at).label
+          .replace(tr("overview.staleness_prefix", "Last run:") + " ", "");
+        return {
+          time: relRun,
+          label: (r.profile || tr("overview.run_label", "run")) +
+                 (r.dry_run ? " · " + tr("run.dry_run", "dry run") : ""),
+          status: st,
+          statusLabel: r.status || "?",
+          onOpen: () => {
+            if (typeof ui.openRunDrawer === "function" && window.shell &&
+                typeof window.shell.openDrawer === "function") {
+              ui.openRunDrawer(r);
+            } else {
+              window.open("/runs/" + encodeURIComponent(r.id) + "/report",
+                          "_blank", "noopener");
+            }
+          },
+        };
+      });
+      recent = AC.Card({
+        title: tr("overview.recent_runs", "Recent runs"),
+        children: AC.Timeline(rows),
+      });
     }
-    // Inventory charts (slow scan, runs after the rest paints).
-    // Forward {refresh: true} so post-apply repaint actually busts the
-    // backend cache + repaints the donut/bar charts with new totals.
-    ui.loadInventoryDashboard({ refresh });
-    ui.loadHealth();
+
+    // ---- compose -----------------------------------------------------
+    AC.mount(root, [answer, kpis, recent]);
   },
 
   // -- SVG donut + bar charts (pure DOM, no chart libs) -----------------

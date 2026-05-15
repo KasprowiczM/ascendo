@@ -286,7 +286,21 @@
   }
 
   // ── MobileBottomNav ───────────────────────────────────────────────────
+  // M2: the rewritten shell.js now OWNS the mobile bottom tab bar (router
+  // + nav). These two functions are neutralized to no-ops to stop the
+  // duplicate nav (two fixed bottom bars fighting). The rest of this file
+  // (select upgrades, run stepper, history cards) is unaffected.
   function mountBottomNav() {
+    return;
+  }
+
+  function syncBottomNav() {
+    return;
+  }
+
+  /* eslint-disable no-unreachable */
+  // Dead code below kept for reference (M2 disabled — see no-ops above).
+  function _legacyMountBottomNav() {
     if (D.getElementById("bottom-nav")) return;
     var src = D.querySelectorAll("#nav .nav-link");
     if (!src.length) return;
@@ -315,18 +329,18 @@
       nav.appendChild(b);
     });
     D.body.appendChild(nav);
-    syncBottomNav();
+    _legacySyncBottomNav();
     // Mirror the sidebar active state (shell.js toggles .active on #nav).
     var navHost = D.getElementById("nav");
     if (navHost) {
-      new MutationObserver(syncBottomNav).observe(navHost, {
+      new MutationObserver(_legacySyncBottomNav).observe(navHost, {
         subtree: true, attributes: true, attributeFilter: ["class"],
       });
     }
-    window.addEventListener("hashchange", syncBottomNav);
+    window.addEventListener("hashchange", _legacySyncBottomNav);
   }
 
-  function syncBottomNav() {
+  function _legacySyncBottomNav() {
     var active = D.querySelector("#nav .nav-link.active");
     var dest = active ? active.dataset.dest : "";
     D.querySelectorAll(".bottom-nav-btn").forEach(function (b) {
@@ -336,6 +350,7 @@
       else b.removeAttribute("aria-current");
     });
   }
+  /* eslint-enable no-unreachable */
 
   // ── Run Center → 3-step progressive reveal ────────────────────────────
   function enhanceRunForm() {

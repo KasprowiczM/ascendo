@@ -373,6 +373,11 @@ def create_app(
             # UI redesign DOM layer (Sesja 75): runtime node reorg
             # (Tools chat-primacy, Runs/Settings IA). Loaded last.
             ("ui-redesign.js", "application/javascript"),
+            # M4: component foundation. components.css is .asc-* only
+            # (tokens, no !important); components.js defines window.AC.
+            # Served so the Dashboard rebuild can mount AC primitives.
+            ("components.css", "text/css"),
+            ("components.js", "application/javascript"),
             # P0: layout-editor assets removed from the served whitelist.
             # The drag-reorder "Edit layout" power tool + always-visible
             # drag handles were leaking into the default end-user surface.
