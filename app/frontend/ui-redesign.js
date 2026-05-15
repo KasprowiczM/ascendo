@@ -84,9 +84,139 @@
     v.dataset.rdReorg = "1";
   }
 
-  // Registry of per-view reorgs. Each is idempotent. Runs/Settings IA
-  // restructures slot in here next.
-  const REORGS = [reorgTools];
+  // ── Settings (Settings → General): the long single-grid card stack
+  //    gets a sticky local-nav (segmented "jump to" rail) so it's
+  //    navigable instead of a blind scroll. We do NOT hide/move the
+  //    cards (form handlers are id/name based and must stay reachable)
+  //    — we only assign each card an id and inject a nav that
+  //    smooth-scrolls to it. Platform/edition-gated cards (hidden via
+  //    .adapter-hide-macos / data-edition-only) are excluded from the
+  //    rail so e.g. macOS never lists "Windows service".
+  function reorgSettings() {
+    const v = document.getElementById("view-settings");
+    if (!v || v.classList.contains("hidden")) return; // build only when active
+    const form = v.querySelector("#settings-form") || v;
+    const grid = form.querySelector(".grid");
+    if (!grid) return;
+
+    const items = [];
+    [...grid.children].forEach((card, i) => {
+      if (!card.classList || !card.classList.contains("card")) return;
+      const h = card.querySelector("h3");
+      if (!h) return;
+      if (!card.id) {
+        const slug = h.textContent.trim().toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        card.id = "rd-set-" + (slug || i);
+      }
+      // Excluded if platform/edition gating collapsed it.
+      const cs = getComputedStyle(card);
+      if (card.hidden || cs.display === "none" || card.offsetParent === null) return;
+      items.push({ id: card.id, label: h.textContent.trim() });
+    });
+
+    // Rebuild each visit (gating can change after Platform.applyTo).
+    const old = v.querySelector(".rd-settings-nav");
+    if (old) old.remove();
+    if (items.length < 2) return;
+
+    const nav = document.createElement("nav");
+    nav.className = "rd-settings-nav";
+    nav.setAttribute("aria-label", trOr("shell.settings.title", "Settings"));
+    items.forEach((it) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = it.label;
+      b.addEventListener("click", () => {
+        const t = document.getElementById(it.id);
+        if (!t) return;
+        t.scrollIntoView({ behavior: "smooth", block: "start" });
+        t.classList.remove("rd-flash");
+        void t.offsetWidth; // restart the flash animation
+        t.classList.add("rd-flash");
+      });
+      nav.appendChild(b);
+    });
+    form.parentNode.insertBefore(nav, form);
+  }
+
+  // ── Runs (Runs → History): client-side status filter chips above the
+  //    table. Pure post-processing of app.js's rendered rows (toggles
+  //    <tr> hidden by the row's .st-pill class in the Status column);
+  //    a MutationObserver re-applies the active filter whenever
+  //    loadHistory() rebuilds the tbody. Zero changes to app.js.
+  function reorgRunsFilter() {
+    const v = document.getElementById("view-history");
+    const tbl = document.getElementById("history-table");
+    if (!v || !tbl) return;
+
+    function statusIdx() {
+      const ths = [...tbl.querySelectorAll("thead th")];
+      const i = ths.findIndex(
+        (t) => (t.getAttribute("data-i18n") || "") === "history.status"
+      );
+      return i < 0 ? 2 : i;
+    }
+    // The History table renders status as <span class="badge <status>">
+    // (NOT the st-pill scheme the inventory tables use). Read the status
+    // keyword from the badge in the Status column.
+    function rowStatus(tr, idx) {
+      const cell = tr.children[idx];
+      if (!cell) return "";
+      const b = cell.querySelector(".badge");
+      if (b) {
+        const k = [...b.classList].find((c) => c !== "badge");
+        return (k || b.textContent || "").trim().toLowerCase();
+      }
+      return cell.textContent.trim().toLowerCase();
+    }
+    function applyFilter() {
+      const want = v.dataset.rdFilter || "";
+      const idx = statusIdx();
+      tbl.querySelectorAll("tbody tr").forEach((tr) => {
+        tr.hidden = want ? rowStatus(tr, idx) !== want : false;
+      });
+    }
+
+    if (!v.querySelector(".rd-filterbar")) {
+      // key = status keyword the badge class carries ("" = All).
+      const defs = [
+        ["", trOr("history.f_all", "All")],
+        ["success", trOr("history.f_success", "Success")],
+        ["partial", trOr("history.f_partial", "Partial")],
+        ["failed", trOr("history.f_failed", "Failed")],
+        ["running", trOr("history.f_running", "Running")],
+      ];
+      const bar = document.createElement("div");
+      bar.className = "rd-filterbar";
+      defs.forEach(([key, label], i) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "rd-chip" + (i === 0 ? " active" : "");
+        b.textContent = label;
+        b.addEventListener("click", () => {
+          bar.querySelectorAll(".rd-chip").forEach((x) =>
+            x.classList.remove("active"));
+          b.classList.add("active");
+          v.dataset.rdFilter = key;
+          applyFilter();
+        });
+        bar.appendChild(b);
+      });
+      tbl.parentNode.insertBefore(bar, tbl);
+    }
+
+    const tb = tbl.querySelector("tbody");
+    if (tb && !tb.dataset.rdObserved) {
+      new MutationObserver(() => applyFilter())
+        .observe(tb, { childList: true });
+      tb.dataset.rdObserved = "1";
+    }
+    applyFilter();
+  }
+
+  // Registry of per-view reorgs. Each is idempotent.
+  const REORGS = [reorgTools, reorgSettings, reorgRunsFilter];
 
   function runAll() {
     REORGS.forEach((fn) => {
