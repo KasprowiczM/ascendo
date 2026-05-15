@@ -3176,13 +3176,23 @@ const ui = {
     const kpis = $("#insights-kpis");
     if (kpis && window.AC) {
       const lastSt = (rows[0].status || "").toLowerCase();
+      // Relative last-run (consistent with the Dashboard KPI strip) —
+      // an absolute timestamp is too long for the KPI cell and
+      // 3-line-wraps at tablet/mobile widths.
+      let lastRel;
+      try {
+        const st = ui.staleness(rows[0].started_at);
+        lastRel = st && st.label
+          ? st.label.replace(tr("overview.staleness_prefix", "Last run:") + " ", "")
+          : ui.fmtTime(rows[0].started_at);
+      } catch { lastRel = ui.fmtTime(rows[0].started_at); }
       AC.mount(kpis, AC.KpiStrip([
         { value: total, label: tr("shell.ins.total_runs","Total runs"), status: "neutral" },
         { value: `${successPct}%`, label: tr("shell.ins.success_rate","Success rate"),
           status: successPct >= 90 ? "ok" : successPct >= 60 ? "warn" : "err" },
         { value: avg ? fmtDur(avg) : "—", label: tr("shell.ins.avg_duration","Avg duration"),
           status: "neutral" },
-        { value: ui.fmtTime(rows[0].started_at), label: tr("shell.ins.last_run","Last run"),
+        { value: lastRel, label: tr("shell.ins.last_run","Last run"),
           status: lastSt === "success" || lastSt === "ok" ? "ok"
                 : lastSt === "failed" || lastSt === "error" ? "err"
                 : lastSt === "partial" ? "warn" : "neutral" },

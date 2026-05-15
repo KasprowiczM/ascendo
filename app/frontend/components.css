@@ -106,6 +106,30 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-4);
 }
+/* Long values (relative time / timestamps) must never 3-line-wrap or
+   dominate the strip. Keep the value to <=2 graceful lines. */
+.asc-stat__value {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+/* Tablet/intermediate: the 4-up strip has no room for a long
+   "31 minutes ago" / timestamp value below ~1080px → reflow to 2-up
+   and step the value size down a notch so it stays balanced.
+   (The existing ≤768 rule keeps 2-up on phones; this closes the
+   769–1080 gap that left it stuck at 4-up and cramped.) */
+@media (max-width: 1080px) {
+  .asc-kpi {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3) var(--space-5);
+  }
+  .asc-stat__value {
+    font-size: var(--fs-2xl);
+  }
+}
+@media (max-width: 520px) {
+  .asc-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .asc-stat__value { font-size: var(--fs-xl); }
+}
 
 /* ---- StatusPill -------------------------------------- */
 .asc-pill {
