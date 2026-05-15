@@ -370,9 +370,9 @@ def create_app(
             # zero DOM/JS — reversible by removing this entry + the
             # <link> in index.html.
             ("ui-redesign.css", "text/css"),
-            # UI redesign DOM layer (Sesja 75): runtime node reorg
-            # (Tools chat-primacy, Runs/Settings IA). Loaded last.
-            ("ui-redesign.js", "application/javascript"),
+            # ui-redesign.js REMOVED (Sesja 76 / M1): its runtime node
+            # reorg + shadow router was superseded by the M2 shell.js
+            # which owns the router. File deleted; not served.
             # M4: component foundation. components.css is .asc-* only
             # (tokens, no !important); components.js defines window.AC.
             # Served so the Dashboard rebuild can mount AC primitives.

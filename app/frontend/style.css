@@ -2084,41 +2084,12 @@ button.is-refreshing::before {
 }
 
 /* ============================================================================
- * Settings page layout (Sesja 71d). The global `.grid` rule packs cards
- * as 220-px-min columns which makes 6-7 cards on a wide monitor — most
- * of them with tiny content and the AI cards starved of horizontal
- * space (provider tiles end up stacked vertically). Switch to a
- * deterministic 12-column grid where each card claims a known span.
+ * Settings page layout — SUPERSEDED by M4 (HANDOFF Sesja 76). The
+ * Sesja-71d 12-column span grid (mismatched card heights + dead voids)
+ * is replaced by the single-column grouped form in `ui-redesign.css`
+ * (`#view-settings #settings-form .grid`, flex column @ 760px). The
+ * AI inner-grid reflow rules below are still in force.
  * ========================================================================== */
-
-#view-settings .grid {
-    display: grid;
-    grid-template-columns: repeat(12, minmax(0, 1fr));
-    gap: 1rem;
-    align-items: start;
-}
-#view-settings .grid > .card {
-    grid-column: span 4;
-    min-width: 0;
-    margin-bottom: 0;
-}
-/* The AI cards have wide content (6 backend tiles, 7 provider tiles,
- * 3-step wizard). Give them half a row each on >1400px screens; full
- * row below that so the inner grids reflow to 3+ columns. */
-#settings-ai-backends,
-#settings-ai-apikey {
-    grid-column: span 6;
-}
-@media (max-width: 1400px) {
-    #view-settings .grid > .card        { grid-column: span 6; }
-    #settings-ai-backends,
-    #settings-ai-apikey                 { grid-column: span 12; }
-}
-@media (max-width: 768px) {
-    #view-settings .grid > .card,
-    #settings-ai-backends,
-    #settings-ai-apikey                 { grid-column: span 12; }
-}
 
 /* The provider grid now has more room — let it breathe to 3-4 columns
  * on wide AI cards. */

@@ -48,9 +48,8 @@
   <!-- M4: component foundation (window.AC primitives). Loaded AFTER
        ui-redesign.css so .asc-* rules win by source order. -->
   <link rel="stylesheet" href="/components.css" />
-  <!-- P0: layout-editor disabled — the "Edit layout" drag tool + always-on
-       drag handles leaked into the default end-user surface. -->
-  <!-- <link rel="stylesheet" href="/layout-editor.css" /> -->
+  <!-- M1 (Sesja 76): layout-editor.css deleted (drag-reorder power
+       tool, never part of the default end-user surface). -->
 
 </head>
 <body class="layout-shell">
@@ -1583,12 +1582,8 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
   <!-- Touch-first UI kit (Sesja 74): no-dropdown progressive disclosure,
        mobile bottom nav, run stepper, responsive history cards. -->
   <script defer src="/ui-components.js"></script>
-  <!-- P0/M2: ui-redesign.js disabled — the M2 shell.js owns the router +
-       IA; the shadow renderer caused a double Insights fetch + node
-       reorg fighting the new shell. CSS (ui-redesign.css) stays. -->
-  <!-- <script defer src="/ui-redesign.js"></script> -->
-  <!-- P0: layout-editor.js disabled — drag-reorder power tool removed from
-       the default end-user surface (was injecting "Edit layout" + handles). -->
-  <!-- <script src="/layout-editor.js"></script> -->
+  <!-- M1 (Sesja 76): ui-redesign.js + layout-editor.js deleted. The M2
+       shell.js owns the router/IA; ui-redesign.js's shadow renderer is
+       gone. ui-redesign.css (P0 + M4 rules) stays and is still linked. -->
 </body>
 </html>

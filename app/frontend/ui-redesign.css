@@ -164,80 +164,11 @@
 #history-table tbody tr[hidden] { display: none; }
 
 /* ────────────────────────────────────────────────────────────
-   9. Settings local-nav (ui-redesign.js reorgSettings) — sticky
-   segmented "jump to" rail over the long single-grid card stack.
+   9–10. REMOVED (HANDOFF Sesja 76 / M1). The `.rd-*` rules
+   (settings local-nav, scroll flash, history filter chips) were
+   only ever created by `ui-redesign.js`, which the M2 `shell.js`
+   replaced and which is no longer loaded. Orphan CSS deleted.
    ──────────────────────────────────────────────────────────── */
-.rd-settings-nav {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 var(--space-4);
-  padding: 8px 0;
-  background: var(--bg);
-}
-.rd-settings-nav button {
-  background: var(--bg-elev);
-  color: var(--fg-muted);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  padding: 4px 11px;
-  font-size: 0.78rem;
-  font-weight: var(--fw-medium);
-  cursor: pointer;
-  width: auto;
-  margin: 0;
-  transition: border-color var(--dur-1) var(--ease-out),
-              color var(--dur-1) var(--ease-out);
-}
-.rd-settings-nav button:hover {
-  color: var(--fg);
-  border-color: var(--border-strong);
-}
-/* Scroll-target flash when a nav item is clicked. */
-.rd-flash {
-  animation: rd-flash 1.1s var(--ease-out);
-}
-@keyframes rd-flash {
-  0%, 30% { box-shadow: 0 0 0 2px var(--accent); }
-  100%    { box-shadow: 0 0 0 0 transparent; }
-}
-
-/* ────────────────────────────────────────────────────────────
-   10. Runs → History status-filter chips (reorgRunsFilter).
-   ──────────────────────────────────────────────────────────── */
-.rd-filterbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 var(--space-3);
-}
-.rd-chip {
-  background: var(--bg-elev);
-  color: var(--fg-muted);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  padding: 4px 12px;
-  font-size: 0.78rem;
-  font-weight: var(--fw-medium);
-  cursor: pointer;
-  width: auto;
-  margin: 0;
-  transition: border-color var(--dur-1) var(--ease-out),
-              color var(--dur-1) var(--ease-out);
-}
-.rd-chip:hover { color: var(--fg); border-color: var(--border-strong); }
-.rd-chip.active {
-  background: var(--accent-soft);
-  color: var(--fg);
-  border-color: var(--accent);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .rd-flash { animation: none; }
-}
 
 /* ────────────────────────────────────────────────────────────
    11. Horizontal-chip controls (operator request): a handful of
