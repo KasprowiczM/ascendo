@@ -7,6 +7,29 @@
 
 ---
 
+## Status — shipped 2026-05-15 (HANDOFF Sesja 76)
+
+**P0, M2, M3, and M4 (all five screens) shipped + M1 dead-code
+consolidation done.** Every screen was independently verified live
+(cache-busted reload + hard DOM assertions + 0 console errors) before
+its commit.
+
+| Phase | Status | Commit |
+|-------|--------|--------|
+| Deliverables (Audit/Blueprint/Plan) | ✅ shipped | `cc3b9d6` |
+| P0 (Q1–Q7) | ✅ shipped | `7fc776f` |
+| M2 own the shell + M3 `components.js` | ✅ shipped | `c77b2e5` |
+| M4 Dashboard | ✅ shipped | `b3a5767` |
+| M4 Library | ✅ shipped | `b005ddd` |
+| M4 Runs | ✅ shipped | `c505f04` |
+| M4 Insights | ✅ shipped | `1cc5cb2` |
+| M4 Settings | ✅ shipped | `66bb1ac` |
+| M1 dead-code consolidation | ✅ shipped | this session |
+| **M1 full single-sheet CSS collapse** | ⏳ deferred | screens still consume legacy `.card`/`.grid`/`.st-*`; needs per-screen migration + multi-breakpoint re-verification — a separate high-regression pass |
+| Per-locale i18n split (`i18n.js` → JSON) | ⏳ P1 deferred | tracked below |
+
+---
+
 ## 1. Strategic decision: consolidate, don't re-skin
 
 The audit's root cause is **layering**. Therefore the #1 rule of this plan:

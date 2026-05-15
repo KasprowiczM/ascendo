@@ -6,6 +6,108 @@
 
 ---
 
+## Sesja 76 (2026-05-15) — Full UX/UI redesign: P0 + owned shell + component system + all five screens rebuilt
+
+Operator brief: a complete product/UX/UI/frontend architecture review +
+redesign — premium SaaS, modern/minimal/calm, dashboard-first, strong
+hierarchy; explicitly **no** gradient sludge, bloated cards, weak
+spacing, too-many-accents, noisy shadows, centered-everything, or
+"3 feature cards" thinking. Three markdown deliverables first, then
+execute. One continuous session on `main` (no branches per CLAUDE.md).
+
+### Diagnosis (why the UI felt off)
+
+The SPA was **three stacked redesign layers fighting each other**:
+`style.css` + `ui-redesign.css` + `layout-editor.css`, the hash router
+patched in three places, plus a shadow renderer. Strategy chosen:
+**consolidate, don't re-skin**. New work lives behind a `.asc-`
+component namespace so it can't lose a cascade war with the legacy
+sheets, and the router is *owned* by one module instead of patched.
+The `colors_and_type.css` token set was the one healthy layer — kept
+verbatim and everything new is tokens-only.
+
+### Three deliverables (committed `cc3b9d6`)
+
+- `ASCENDO-UX-UI-AUDIT.md` — severity-rated, file-referenced audit.
+- `ASCENDO-REDESIGN-BLUEPRINT.md` — target IA + per-screen specs
+  (§6.1 Dashboard, §6.2 Runs, §6.3 Library, §6.4 Insights, §6.5
+  Settings, §6.6 shared detail drawer, §7 answer-first principle).
+- `ASCENDO-IMPLEMENTATION-PLAN.md` — P0 (Q1–Q7) → M1 (CSS collapse)
+  → M2 (own the shell) → M3 (`components.js`) → M4 (screen rebuilds).
+
+### Execution order + commit table
+
+Plan ordering is P0→M1→M2→M3→M4, but **M1 (full CSS collapse) was
+deliberately deferred to last** — collapsing the legacy sheets before
+the screens migrate would regress every screen. So: P0 → M2 → M3 → M4
+(all five screens) → then M1 dead-code consolidation once nothing
+depends on the dead layers.
+
+| Commit | Milestone | What |
+|--------|-----------|------|
+| `cc3b9d6` | Deliverables | Audit + Blueprint + Implementation Plan |
+| `7fc776f` | P0 | Layout-editor link/script off + removed from `_spa_assets`; scripts `defer`; answer-first (`#answer-updates` to top of Overview); one canonical status string; mobile clip guards in `ui-redesign.css` |
+| `c77b2e5` | M2 + M3 | `shell.js` **owns** the router (one `ui.show`, one `hashchange`, body-attached fixed bottom nav, no shadow renderer) + `components.js`/`components.css` define `window.AC` (`Card/StatPair/StatusPill/KpiStrip/Button/EmptyState/Banner/Skeleton/Timeline/Drawer`, `.asc-` namespaced, XSS-safe, tokens-only) |
+| `b3a5767` | M4 Dashboard | Answer-first `AC.Banner` + `AC.KpiStrip` + recent-runs `AC.Timeline`; `#overview-root` rebuilt via `AC.*` |
+| `b005ddd` | M4 Library | Apps/Sources/Tools rebuilt on AC; quiet filter chips (only-active accented), stacked name/desc, mobile stacked-cards; +28 `lib.*` i18n keys |
+| `c505f04` | M4 Runs | Two-choice Start (Safe primary / Quick quiet) + `Advanced ▸`; **legacy 3-step wizard removed** (audit Critical I2 — `#run-form` parked in a hidden sink so FormData/handlers stay intact); live RunPanel with Stop always reachable; History → `AC.Timeline`; Scheduled = `AC.EmptyState` + reused schedule form. SSE-coupled path (`startRunWithSudo`→`attachStream`→`#run-stream`/`#stop-btn`/`#run-detail-panel`) verified intact via a live read-only Quick check |
+| `1cc5cb2` | M4 Insights | `AC.KpiStrip` (semantic status dots, matches Dashboard); Run-trends "Status" label bug fixed → Successful/Partial/Failed; Duration trend forced **single-hue** (one accent, non-success de-emphasized via opacity — no random amber/red); Operational-notes card removed (§6.4 — documentation, not analytics); header desc destale |
+| `66bb1ac` | M4 Settings | Single-column grouped form at a 760px measure replacing the Sesja-71d 12-col span grid (mismatched heights + voids); **sticky** dirty-gated Save row (`#view-settings > div:has(#settings-saved-flash)`) keeping the existing submit handler + "Saved ✓" flash; CSS-only scoped append to `ui-redesign.css`, zero JS/markup/handler risk |
+| (this) | M1 + docs | Dead-code consolidation (see below) + HANDOFF/PLAN/deliverable updates |
+
+### Verification discipline (the safeguard that paid off)
+
+Per `superpowers:verification-before-completion`: **every** screen was
+independently verified live BEFORE its commit — cache-busted `?v=`
+query reload (a `#hash`-only nav does *not* refetch the document),
+hard DOM assertions via `browser_evaluate` (not screenshots alone,
+not agent self-reports), plus a viewport screenshot and a 0-console-
+error check. This caught real defects every single time an agent was
+used: Dashboard shipped raw i18n keys; Library shipped all-solid-lime
+chips + run-together Sources text + clipped mobile table; Runs shipped
+the un-removed 3-step wizard + a stray idle Stop + solid-lime choices;
+Settings' first sticky selector matched the wrong element (Save row is
+a sibling *after* `#settings-form`, not a child). All sent back / fixed
+and re-verified clean before commit.
+
+### M1 — dead-code consolidation (this commit)
+
+With all five screens migrated, the dead layers are finally safe to
+retire. **Provably-dead only** (no load-bearing legacy CSS deleted —
+screens still use `.card`/`.grid`/`.st-*` from `style.css`; a full
+single-sheet collapse remains a future pass): removed the
+disabled+unloaded `ui-redesign.js` (router/shadow renderer the M2
+shell replaced) + its `_spa_assets` entry + the orphaned `.rd-*` CSS
+that only it drove; removed the superseded Sesja-71d `#view-settings
+.grid` 12-col blocks in `style.css` (now overridden by the M4
+single-column rule); deleted the untracked disabled
+`layout-editor.{css,js}`. All five screens + mobile re-verified clean
+afterward.
+
+### i18n / parity
+
+`scripts/check-i18n-parity.py` green throughout — 1109 EN == 1109 PL
+(net +3 keys: `shell.ins.t_success/_partial/_failed` ×EN+PL; `lib.*`
+and run keys added earlier in M4 with twin EN/PL blocks).
+
+### Carry-forward
+
+- **Full CSS collapse to a single sheet** is the remaining M1 stretch
+  goal — deferred deliberately. Screens still consume legacy
+  `style.css`/`ui-redesign.css` selectors (`.card`, `.grid`, `.st-*`,
+  buttons). A real collapse means migrating those to `.asc-` /
+  tokens screen-by-screen with full multi-breakpoint re-verification
+  per screen — a separate, high-regression-risk session, not a
+  drive-by.
+- Per-locale i18n split (`i18n.js` → `en.json`/`pl.json`) remains P1
+  in the plan.
+- The shared detail `Drawer` (blueprint §6.6) is wired (`AC.Drawer`)
+  and used by Dashboard health + Runs history; converting Insights
+  "Recent failures" Report links from `target=_blank` to the drawer
+  is an optional polish (current links work, non-regressing).
+
+---
+
 ## Sesja 74 (2026-05-15) — Touch-first responsive UI + light-theme overhaul + interaction QA + pip-verify fix
 
 One continuous design+engineering session on `main` (no branches per

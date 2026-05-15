@@ -1,29 +1,41 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-15 (sesja 74) — **Touch-first responsive UI
+> Last updated: 2026-05-15 (sesja 76) — **Full UX/UI redesign:
+> P0 + owned shell + component system + all five screens rebuilt.**
+> Nine commits on `main`. Diagnosis: the SPA was three stacked
+> redesign layers fighting each other (`style.css` +
+> `ui-redesign.css` + `layout-editor.css`), a thrice-patched router,
+> and a shadow renderer. Strategy: **consolidate, don't re-skin** —
+> new work behind a `.asc-` component namespace (can't lose a
+> cascade war), router *owned* by one `shell.js`, `colors_and_type.css`
+> tokens kept verbatim. Three deliverables (`ASCENDO-UX-UI-AUDIT.md`,
+> `ASCENDO-REDESIGN-BLUEPRINT.md`, `ASCENDO-IMPLEMENTATION-PLAN.md`,
+> `cc3b9d6`). Executed P0 (`7fc776f`) → M2+M3 owned shell +
+> `window.AC` component system (`c77b2e5`) → M4 all five screens:
+> Dashboard (`b3a5767`), Library (`b005ddd`), Runs (`c505f04` —
+> legacy 3-step wizard removed, SSE path verified intact via a live
+> read-only Quick check), Insights (`1cc5cb2` — KpiStrip, single-hue
+> Duration chart, notes removed), Settings (`66bb1ac` —
+> single-column grouped form + sticky dirty-gated Save replacing the
+> 12-col mismatched grid). Then M1 dead-code consolidation
+> (unloaded `ui-redesign.js` + orphaned `.rd-*` CSS + superseded
+> Sesja-71d settings grid + disabled `layout-editor.*` removed).
+> **Every screen independently verified live (cache-busted reload +
+> hard DOM assertions + 0 console errors) BEFORE its commit** — that
+> discipline caught a real defect on every agent-built screen.
+> i18n 1109/1109 EN+PL throughout. Full single-sheet CSS collapse
+> deferred (screens still consume legacy `.card`/`.grid`/`.st-*` —
+> a separate high-regression pass). See HANDOFF Sesja 76.
+>
+> Previous milestone (sesja 74) — **Touch-first responsive UI
 > + light-theme overhaul + interaction QA + pip-verify fix.** Five
-> bodies of work on `main`, pure progressive enhancement on the
-> existing router/AppShell (zero router/SSE/form rewrites; dark theme
-> byte-for-byte). (1) New `ui-components.js`: every `<select>` → an
-> accessible no-dropdown control (segmented / choice-card /
-> searchable list, native select kept value-synced for FormData), a
-> 5-destination mobile bottom nav, Run Center 3-step progressive
-> reveal, History → tappable mobile cards, 44px touch floor. (2)
-> Light-theme retune in `colors_and_type.css` + scoped reinforcement:
-> real 3-tier surface ramp (`--paper-base/-nested/-card/-sunk` +
-> `--bg-nested`), darker muted/faint + borders, lime-700 fg accent,
-> and a bright-fill vs `--*-text` semantic split so badges/errors
-> pass WCAG-AA on tint. (3) Production interaction QA across 11
-> routes (0 console errors, all handlers real) + 2 Major fixes: Help
-> TOC anchors no longer hijacked by the hash router; Run "Stop"
-> auto-reveals so it's reachable mid-run. (4) macOS `pip verify`
-> brew-owned candidate fix — `uv` no longer false-fails verify
-> (`partial → success`). (5) Mobile header dead-band root cause: a
-> flex bug (`.app-header-text flex:1 1 320px` → 320px height in the
-> mobile column) opened a ~288px void; fixed → `.app-header` 439px →
-> 59–99px, first content on Runs 616px → 274px. i18n 1060/1060
-> EN+PL; 41/41 pip+verify tests; verified live 375–1440px. See
-> HANDOFF Sesja 74.
+> bodies of work on `main`, pure progressive enhancement
+> (zero router/SSE/form rewrites; dark theme byte-for-byte):
+> no-dropdown controls + mobile bottom nav + progressive Run Center;
+> light-theme contrast/hierarchy retune; 11-route interaction QA +
+> Help-TOC + Run-Stop fixes; macOS pip-verify brew-owned fix; mobile
+> header dead-band root-cause flex fix. i18n 1060/1060. See HANDOFF
+> Sesja 74.
 >
 > Previous milestone (sesja 73) — **Operator bug batch +
 > major UX/IA refactor (5-destination AppShell).** 7-item bug batch
