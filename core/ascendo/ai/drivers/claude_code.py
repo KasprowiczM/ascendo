@@ -14,6 +14,7 @@ from ._base import (
     SubprocessHang,
     discover_binary,
     run_streaming,
+    sanitized_env,
 )
 
 DEFAULT_BIN = "claude"
@@ -46,7 +47,7 @@ class ClaudeCodeBackend(Backend):
                 [self._cached_path or self.bin_name, "-p", "say ok",
                  "--output-format", "stream-json", "--verbose"],
                 capture_output=True, text=True, timeout=10.0, check=False,
-                env={**os.environ},
+                env=sanitized_env(),
             )
             return res.returncode == 0
         except subprocess.TimeoutExpired:

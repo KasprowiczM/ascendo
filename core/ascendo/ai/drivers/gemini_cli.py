@@ -27,6 +27,7 @@ from ._base import (
     SubprocessHang,
     discover_binary,
     run_streaming,
+    sanitized_env,
 )
 
 DEFAULT_BIN = "gemini"
@@ -57,7 +58,7 @@ class GeminiCliBackend(Backend):
                  "--output-format", "stream-json", "--skip-trust"],
                 capture_output=True, text=True, timeout=15.0, check=False,
                 cwd=tempfile.gettempdir(),
-                env={**os.environ},
+                env=sanitized_env(neutral_cwd=tempfile.gettempdir()),
             )
             return res.returncode == 0
         except subprocess.TimeoutExpired:

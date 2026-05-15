@@ -2,9 +2,59 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 import subprocess
 from collections.abc import AsyncIterator
+
+
+# Env vars that come from the host shell but interfere with the
+# bundled CLIs. opencode (and a couple of the others) silently exits
+# 0 with empty stdout when `CLAUDECODE=1` etc. are present in the
+# environment — Node-side telemetry/integration code branches into a
+# different code path. Drop the lot at the subprocess boundary so the
+# driver behaves the same whether the dashboard was launched from a
+# vanilla shell or from inside Claude Code / Cowork / Sentry tracing.
+_SCRUB_ENV_PREFIXES = (
+    "CLAUDE_",
+    "CLAUDECODE",
+    "CLAUDE_CODE_",
+    "ANTHROPIC_",       # Don't leak claude-code's bearer tokens to other CLIs
+    "AI_AGENT",
+    "BAGGAGE",
+    "SENTRY_",
+)
+
+
+def sanitized_env(
+    extra: dict[str, str] | None = None,
+    *,
+    neutral_cwd: str | None = None,
+) -> dict[str, str]:
+    """Return a copy of os.environ with host-shell pollution stripped.
+
+    Drivers spawn third-party CLIs that don't care about (and sometimes
+    misbehave on) the env vars Claude Code / Cowork / IDE integrations
+    inject. We keep PATH, HOME, locale + provider-specific vars and drop
+    the rest of the noise. ``extra`` overlays at the end.
+
+    ``neutral_cwd``: when provided, also overrides ``PWD`` + ``OLDPWD``
+    in the returned env. opencode 1.x (and possibly others) reads PWD
+    from env even when the caller passes ``cwd=`` to subprocess.exec —
+    if PWD still points at the dashboard's repo, opencode tries to load
+    it as a workspace and silently hangs. Pass the same value you pass
+    to subprocess.exec's ``cwd`` arg.
+    """
+    env = {
+        k: v for k, v in os.environ.items()
+        if not any(k == p.rstrip("_") or k.startswith(p) for p in _SCRUB_ENV_PREFIXES)
+    }
+    if neutral_cwd is not None:
+        env["PWD"] = neutral_cwd
+        env["OLDPWD"] = neutral_cwd
+    if extra:
+        env.update(extra)
+    return env
 
 
 class SubprocessFailure(Exception):
@@ -56,7 +106,9 @@ async def run_streaming(
 
     ``cwd`` lets the caller pin a working directory (e.g. so Claude Code
     doesn't auto-load whatever repo the dashboard happens to be running
-    from). ``env`` mirrors subprocess semantics — None inherits.
+    from). ``env`` defaults to :func:`sanitized_env` so host-shell pollution
+    (CLAUDE_*, CLAUDECODE, ANTHROPIC_*, BAGGAGE) doesn't break the CLI's
+    own Node/Bun runtime. Pass an explicit dict to override.
     """
     proc = await asyncio.create_subprocess_exec(
         *argv,
@@ -64,7 +116,10 @@ async def run_streaming(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         cwd=cwd,
-        env=env,
+        # `neutral_cwd=cwd` also rewrites PWD/OLDPWD in env so opencode
+        # (and any other CLI that reads PWD ignoring subprocess.cwd)
+        # doesn't pick the host dashboard's repo as a workspace.
+        env=env if env is not None else sanitized_env(neutral_cwd=cwd),
     )
     if stdin_text and proc.stdin:
         proc.stdin.write(stdin_text.encode("utf-8"))

@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
+# codex-cli 0.128 emits stream-json with thread.started → turn.started →
+# item.completed (item.type=agent_message) → turn.completed events.
+# Ascendo driver invokes `codex exec --json --skip-git-repo-check <prompt>`.
 set -e
 case "${FIXTURE_CASE:-success}" in
-  version) echo "codex 0.5.0"; exit 0 ;;
-  auth_probe_ok) printf '{"type":"text","text":"ok"}\n'; exit 0 ;;
+  version) echo "codex-cli 0.128.0"; exit 0 ;;
+  auth_probe_ok)
+    printf '{"type":"thread.started","thread_id":"t1"}\n'
+    printf '{"type":"turn.started"}\n'
+    printf '{"type":"item.completed","item":{"type":"agent_message","text":"ok"}}\n'
+    printf '{"type":"turn.completed"}\n'
+    exit 0 ;;
   auth_expired) echo "Error: chatgpt login expired" >&2; exit 1 ;;
   crash) exit 137 ;;
   hang) sleep 600 ;;
   success|*)
-    printf '{"type":"text","text":"Hello"}\n'
-    printf '{"type":"text","text":" world"}\n'
-    printf '{"type":"done"}\n'
+    printf '{"type":"thread.started","thread_id":"t1"}\n'
+    printf '{"type":"turn.started"}\n'
+    printf '{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"Hello world"}}\n'
+    printf '{"type":"turn.completed","usage":{"output_tokens":2}}\n'
     exit 0 ;;
 esac

@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
+# opencode 1.14 emits step_start → text → finish events when invoked with
+# `opencode run --pure --format json`. Each event is a single JSON line.
+# The `part.text` field on `type=text` carries the user-visible token stream.
 set -e
 case "${FIXTURE_CASE:-success}" in
-  version) echo "opencode 1.14.41"; exit 0 ;;
-  auth_probe_ok) echo "ok"; exit 0 ;;
+  version) echo "opencode 1.14.50"; exit 0 ;;
+  auth_probe_ok)
+    printf '{"type":"step_start","timestamp":0,"sessionID":"s1","part":{}}\n'
+    printf '{"type":"text","timestamp":0,"part":{"text":"ok"}}\n'
+    exit 0 ;;
   auth_expired) echo "Error: no provider configured" >&2; exit 1 ;;
   crash) exit 137 ;;
   hang) sleep 600 ;;
   success|*)
-    printf "Hello"
-    printf " world\n"
+    printf '{"type":"step_start","timestamp":0,"sessionID":"s1","part":{}}\n'
+    printf '{"type":"text","timestamp":0,"part":{"text":"Hello world"}}\n'
     exit 0 ;;
 esac
