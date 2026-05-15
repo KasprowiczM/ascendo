@@ -271,35 +271,99 @@
       return;
     }
     if (form.dataset.rdRun === "1") return;
-
-    function activate(i) {
-      steps.forEach((s, n) => s.classList.toggle("rd-active", n === i));
-      try { steps[i].scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" }); }
-      catch (_) {}
-      const focusable = steps[i].querySelector(
-        "input,select,button,textarea,.u-opt");
-      if (focusable) try { focusable.focus({ preventScroll: true }); } catch (_) {}
-    }
-
+    // Keep ui-components' NATIVE progressive reveal (step N appears only
+    // when you advance — operator wants that restored). CSS wraps the
+    // form as one big card with the active step as an inner card. We
+    // only relabel Continue→"Next →" and inject a "← Back" that
+    // re-reveals the previous step by clicking its head (prior steps
+    // are is-done, not is-locked, so ui-components' own head handler
+    // reveals them — no closure access needed).
     steps.forEach((step, i) => {
       const next = step.querySelector(".u-step-next");
-      if (next) {
-        next.textContent = trOr("uikit.next", "Next →");
-        next.addEventListener("click", () => activate(Math.min(i + 1, steps.length - 1)));
-      }
+      if (next) next.textContent = trOr("uikit.next", "Next →");
       if (i > 0 && !step.querySelector(".rd-step-back")) {
         const back = document.createElement("button");
         back.type = "button";
         back.className = "rd-step-back";
         back.textContent = trOr("uikit.back", "← Back");
-        back.addEventListener("click", () => activate(i - 1));
-        // Sit it next to the Next button (or at the end of the step).
+        back.addEventListener("click", () => {
+          const prevHead = steps[i - 1].querySelector(".u-step-head");
+          if (prevHead) prevHead.click();
+        });
         if (next && next.parentNode) next.parentNode.insertBefore(back, next);
         else step.appendChild(back);
       }
     });
-    steps[0].classList.add("rd-active");
     form.dataset.rdRun = "1";
+  }
+
+  // ── Runs → Scheduled: turn the flat "Add or replace schedule" form
+  //    into a 3-step wizard (What · When · Options) inside one big
+  //    card, progressive with Back/Next. All fields stay inside
+  //    <form id="schedule-form"> so FormData + app.js's submit handler
+  //    keep working byte-for-byte (we only re-parent existing nodes).
+  function reorgScheduleForm() {
+    const form = document.getElementById("schedule-form");
+    if (!form || form.dataset.rdSched === "1") return;
+    const kids = [...form.children];
+    const byHas = (sel) =>
+      kids.find((k) => k.querySelector && k.querySelector(sel));
+    const lblName = byHas("#schedule-f-name");
+    const lblExpr = byHas("#schedule-f-expr");
+    const lblProf = byHas("#schedule-f-profile");
+    const lblEn = byHas("#schedule-f-enabled");
+    const lblDesc = byHas("#schedule-f-desc");
+    const btns = form.querySelector(".schedule-form-buttons");
+    if (!lblName || !lblExpr || !btns) return; // shape unexpected → leave
+
+    function go(n) {
+      [s1, s2, s3].forEach((s, i) => s.classList.toggle("rd-on", i + 1 === n));
+    }
+    function mkStep(n, title, nodes, withNext) {
+      const s = document.createElement("div");
+      s.className = "rd-sched-step" + (n === 1 ? " rd-on" : "");
+      const head = document.createElement("div");
+      head.className = "rd-sched-head";
+      const num = document.createElement("span");
+      num.className = "rd-sched-num";
+      num.textContent = String(n);
+      const ttl = document.createElement("span");
+      ttl.textContent = title;
+      head.appendChild(num);
+      head.appendChild(ttl);
+      s.appendChild(head);
+      nodes.filter(Boolean).forEach((x) => s.appendChild(x)); // moves nodes
+      const nav = document.createElement("div");
+      nav.className = "rd-sched-nav";
+      if (n > 1) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "rd-step-back";
+        b.textContent = trOr("uikit.back", "← Back");
+        b.addEventListener("click", () => go(n - 1));
+        nav.appendChild(b);
+      }
+      if (withNext) {
+        const nx = document.createElement("button");
+        nx.type = "button";
+        nx.className = "u-step-next";
+        nx.textContent = trOr("uikit.next", "Next →");
+        nx.addEventListener("click", () => go(n + 1));
+        nav.appendChild(nx);
+      }
+      s.appendChild(nav);
+      return s;
+    }
+    const s1 = mkStep(1, trOr("schedule.step_what", "What"),
+      [lblName, lblProf], true);
+    const s2 = mkStep(2, trOr("schedule.step_when", "When"),
+      [lblExpr], true);
+    const s3 = mkStep(3, trOr("schedule.step_options", "Options"),
+      [lblEn, lblDesc, btns], false);
+    form.appendChild(s1);
+    form.appendChild(s2);
+    form.appendChild(s3);
+    form.dataset.rdSched = "1";
   }
 
   // ── Settings: the "Profile templates" card is empty on most machines
@@ -548,7 +612,7 @@
   // Registry of per-view reorgs. Each is idempotent.
   const REORGS = [
     reorgTools, reorgSettings, reorgRunsFilter, reorgOverview, reorgLibrary,
-    reorgRunCenter, reorgProfilesPanel,
+    reorgRunCenter, reorgProfilesPanel, reorgScheduleForm,
   ];
 
   function runAll() {

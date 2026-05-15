@@ -275,12 +275,14 @@ select[name="scheduler_profile"] + .u-choice .u-opt {
   width: auto !important;
   flex: 0 0 auto;
   margin: 0 !important;
-  padding: 6px 12px !important;
+  min-height: 0 !important;        /* kill the 44px .u-opt touch floor */
+  padding: 4px 12px !important;    /* match the History .rd-chip height */
   min-width: 0;
+  line-height: 1.3;
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   background: var(--bg-elev);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
 }
 #cats-add-cat + .u-choice .u-opt.is-selected,
 #ui-theme-select + .u-choice .u-opt.is-selected,
@@ -328,54 +330,39 @@ select[name="scheduler_profile"] + .u-choice .u-opt.is-selected {
 .cats-add-widget #cats-add-out { flex: 1 1 100%; margin: 0; }
 
 /* ────────────────────────────────────────────────────────────
-   13. Run Center: the Sesja-74 stepper is one tall column. Lay the
-   3 steps as side-by-side cards (wrap to a stack on mobile) with
-   all steps visible; ui-redesign.js adds Back + relabels Next.
+   13. Run Center: keep ui-components' NATIVE progressive stepper
+   (all 3 step heads always show; the active step expands, done/
+   locked steps collapse to just their head — operator wants
+   "pick step 1 → step 2 appears" restored). Present it as ONE big
+   card with each step an inner card; compact the buttons. We do
+   NOT override the stepper's show/hide — native behaviour drives
+   the progression.
    ──────────────────────────────────────────────────────────── */
 #run-form {
-  display: flex !important;
-  flex-flow: row wrap;
-  gap: var(--space-4);
-  align-items: flex-start;
+  display: block;
+  background: var(--bg-elev) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  padding: var(--space-4) !important;
 }
 #run-form .u-step {
-  display: flex !important;
-  flex-direction: column;
-  align-self: flex-start !important;
-  flex: 1 1 280px;
-  min-width: 240px;
-  background: var(--bg-elev);
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: var(--space-4);
-  opacity: 1;
+  padding: 10px var(--space-4);
+  margin: 0 0 8px;
 }
-/* Force-show steps the stepper would hide while "locked". */
-#run-form .u-step.is-locked,
-#run-form .u-step.is-done { display: flex !important; opacity: 1; }
-/* The stepper also display:none's the *content* of any non-active
-   step — so steps 2/3 (incl. the Start button in the action bar)
-   were invisible. Force every step's content visible since all 3
-   cards are now shown side by side. */
-#run-form .u-step > .u-step-head { display: flex !important; }
-#run-form .u-step > label { display: flex !important; flex-direction: column; }
-#run-form .u-step > label.inline {
-  flex-direction: row; align-items: center; gap: 6px;
-}
-#run-form .u-step > .u-run-summary { display: block !important; }
-#run-form .u-step > .u-action-bar { display: flex !important; gap: 6px; }
-#run-form .u-step > .u-step-next,
-#run-form .u-step > .rd-step-back { display: inline-block !important; }
-#run-form .u-step.rd-active {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-#run-form .u-step-head { cursor: default; }
+#run-form .u-step:last-of-type { margin-bottom: 0; }
+#run-form .u-step.is-active { border-color: var(--accent); }
+/* Compact wizard buttons (operator: fix button heights here too). */
 #run-form .u-step-next,
-#run-form .rd-step-back {
+#run-form .rd-step-back,
+#run-form .u-action-bar button {
   width: auto;
-  margin: var(--space-3) 4px 0 0;
-  align-self: flex-start;
+  min-height: 0;
+  margin: var(--space-3) 6px 0 0;
+  padding: 5px 14px;
+  font-size: 0.82rem;
 }
 #run-form .rd-step-back {
   background: var(--bg-elev);
@@ -383,10 +370,87 @@ select[name="scheduler_profile"] + .u-choice .u-opt.is-selected {
   border: 1px solid var(--border);
 }
 #run-form .rd-step-back:hover { color: var(--fg); border-color: var(--border-strong); }
-#run-form .u-action-bar { margin-top: auto; }
-@media (max-width: 860px) {
-  #run-form { flex-direction: column; }
-  #run-form .u-step { flex: 1 1 100%; }
+/* Scope the action-bar flex to the ACTIVE step only — a broader
+   #run-form .u-action-bar rule out-specifies the stepper's native
+   ".u-step.is-locked > :not(.u-step-head){display:none}" and would
+   keep the Start/Stop bar (step 3) visible while locked. */
+#run-form .u-step.is-active .u-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ────────────────────────────────────────────────────────────
+   16. Runs → Scheduled: "Add or replace schedule" 3-step wizard
+   (ui-redesign.js reorgScheduleForm). One big card; only the
+   active step shows; compact buttons. Inline display:grid on the
+   form is overridden so steps stack cleanly.
+   ──────────────────────────────────────────────────────────── */
+#schedule-form {
+  display: block !important;
+  grid-template-columns: none !important;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+.rd-sched-step {
+  display: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+.rd-sched-step.rd-on { display: block; }
+.rd-sched-step label { display: block; margin: 0 0 10px; }
+.rd-sched-step input[type="text"],
+.rd-sched-step input:not([type]) { width: 100%; }
+.rd-sched-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-weight: var(--fw-semibold);
+  font-size: 0.9rem;
+}
+.rd-sched-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.75rem;
+  font-weight: var(--fw-bold);
+  flex: 0 0 auto;
+}
+.rd-sched-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--space-3);
+}
+.rd-sched-nav button,
+#schedule-form .schedule-form-buttons button {
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 5px 14px;
+  font-size: 0.82rem;
+}
+.rd-sched-nav .rd-step-back {
+  background: var(--bg-elev);
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+}
+#schedule-form .schedule-form-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 10px;
 }
 
 /* ────────────────────────────────────────────────────────────
