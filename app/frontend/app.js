@@ -3172,14 +3172,22 @@ const ui = {
       ? Math.round(durs.reduce((a,b)=>a+b,0)/durs.length) : 0;
     const fmtDur = (s) => s >= 60 ? `${Math.floor(s/60)}m${Math.round(s%60)}s` : `${s}s`;
 
-    // KPIs
+    // KPIs — standardized on the shared AC.KpiStrip (matches Dashboard).
     const kpis = $("#insights-kpis");
-    if (kpis) kpis.innerHTML = `<div class="kpi-row">
-      <div class="kpi"><span class="kpi-label">${tr("shell.ins.total_runs","Total runs")}</span><span class="kpi-value">${total}</span></div>
-      <div class="kpi"><span class="kpi-label">${tr("shell.ins.success_rate","Success rate")}</span><span class="kpi-value">${successPct}%</span></div>
-      <div class="kpi"><span class="kpi-label">${tr("shell.ins.avg_duration","Avg duration")}</span><span class="kpi-value">${avg?fmtDur(avg):"-"}</span></div>
-      <div class="kpi"><span class="kpi-label">${tr("shell.ins.last_run","Last run")}</span><span class="kpi-value" style="font-size:1rem">${ui.fmtTime(rows[0].started_at)}</span></div>
-    </div>`;
+    if (kpis && window.AC) {
+      const lastSt = (rows[0].status || "").toLowerCase();
+      AC.mount(kpis, AC.KpiStrip([
+        { value: total, label: tr("shell.ins.total_runs","Total runs"), status: "neutral" },
+        { value: `${successPct}%`, label: tr("shell.ins.success_rate","Success rate"),
+          status: successPct >= 90 ? "ok" : successPct >= 60 ? "warn" : "err" },
+        { value: avg ? fmtDur(avg) : "—", label: tr("shell.ins.avg_duration","Avg duration"),
+          status: "neutral" },
+        { value: ui.fmtTime(rows[0].started_at), label: tr("shell.ins.last_run","Last run"),
+          status: lastSt === "success" || lastSt === "ok" ? "ok"
+                : lastSt === "failed" || lastSt === "error" ? "err"
+                : lastSt === "partial" ? "warn" : "neutral" },
+      ]));
+    }
 
     // Trends: status mix as proportional bars.
     const trendsEl = $("#insights-trends");
@@ -3191,9 +3199,9 @@ const ui = {
           <span class="ins-muted" style="min-width:46px;text-align:right">${n} · ${pct}%</span></li>`;
       };
       trendsEl.innerHTML = `<ul class="ins-list">
-        ${seg(tr("history.status","Success"), ok, "ok")}
-        ${seg("partial", partial.length, "warn")}
-        ${seg("failed", failed.length, "err")}
+        ${seg(tr("shell.ins.t_success","Successful"), ok, "ok")}
+        ${seg(tr("shell.ins.t_partial","Partial"), partial.length, "warn")}
+        ${seg(tr("shell.ins.t_failed","Failed"), failed.length, "err")}
       </ul>`;
     }
 
@@ -3229,9 +3237,8 @@ const ui = {
           let s = 0;
           try { s = Math.max(0,(new Date(r.ended_at)-new Date(r.started_at))/1000); } catch {}
           const h = Math.max(3, Math.round((s/max)*60));
-          const c = r.status === "failed" ? "var(--err)"
-                  : r.status === "partial" ? "var(--warn)" : "var(--accent)";
-          return `<span title="${ui.fmtTime(r.started_at)} · ${fmtDur(Math.round(s))}" style="flex:1;height:${h}px;background:${c};border-radius:2px"></span>`;
+          const okRun = r.status !== "failed" && r.status !== "partial";
+          return `<span title="${ui.fmtTime(r.started_at)} · ${fmtDur(Math.round(s))} · ${r.status||"ok"}" style="flex:1;height:${h}px;background:var(--accent);border-radius:2px;opacity:${okRun?1:0.45}"></span>`;
         }).join("") + `</div>`;
     }
 
@@ -3256,25 +3263,9 @@ const ui = {
       }
     }
 
-    // Operational notes — platform-aware. NVIDIA guidance is structurally
-    // impossible to emit on macOS: Platform.copy() resolves
-    // platform.macos.* which has no driver line, and the explicit
-    // drivers_note is gated on Platform.allow('nvidia').
-    const notesEl = $("#insights-notes");
-    if (notesEl && window.Platform) {
-      const P = window.Platform;
-      const blocks = [];
-      const ops = P.copy("ops_note", "");
-      if (ops) blocks.push(`<p class="ins-muted">${ops}</p>`);
-      const reboot = P.copy("reboot_note", "");
-      if (reboot) blocks.push(`<p class="ins-muted">${reboot}</p>`);
-      if (P.allow("nvidia")) {
-        const dn = P.copy("drivers_note", "");
-        if (dn) blocks.push(`<p class="ins-note-os">${P.label} · drivers</p><p class="ins-muted">${dn}</p>`);
-      }
-      notesEl.innerHTML =
-        `<p class="ins-note-os">${P.label}</p>` + blocks.join("");
-    }
+    // Operational notes intentionally removed from Insights (blueprint
+    // §6.4 — that prose is documentation, not analytics; it now lives
+    // under Settings → Support).
   },
 
   async loadRunDetail(runId, targetEl) {

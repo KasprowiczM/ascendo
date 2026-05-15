@@ -49,7 +49,7 @@ window.I18N = {
       },
       insights: {
         title: "Insights",
-        desc:  "Trends, failures, and operational notes across your runs.",
+        desc:  "Trends, failure patterns, and duration analysis across your runs.",
         cta:   "Open Latest Report",
       },
       settings: {
@@ -114,6 +114,9 @@ window.I18N = {
         success_rate:    "Success rate",
         avg_duration:    "Avg duration",
         last_run:        "Last run",
+        t_success:       "Successful",
+        t_partial:       "Partial",
+        t_failed:        "Failed",
         no_failures:     "No failures in the recent window. Clean operations.",
         no_changes:      "No package changes recorded recently.",
         failed_in:       "failed in",
@@ -1268,7 +1271,7 @@ window.I18N = {
       },
       insights: {
         title: "Analizy",
-        desc:  "Trendy, błędy i uwagi operacyjne z uruchomień.",
+        desc:  "Trendy, wzorce błędów i analiza czasu trwania z uruchomień.",
         cta:   "Otwórz ostatni raport",
       },
       settings: {
@@ -1333,6 +1336,9 @@ window.I18N = {
         success_rate:    "Wskaźnik sukcesu",
         avg_duration:    "Średni czas",
         last_run:        "Ostatnie uruchomienie",
+        t_success:       "Udane",
+        t_partial:       "Częściowe",
+        t_failed:        "Nieudane",
         no_failures:     "Brak błędów w ostatnim oknie. Czyste operacje.",
         no_changes:      "Brak ostatnio zarejestrowanych zmian pakietów.",
         failed_in:       "błąd w",
