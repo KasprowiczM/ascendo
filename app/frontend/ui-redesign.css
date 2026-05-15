@@ -821,3 +821,47 @@ select[name="scheduler_profile"] + .u-choice .u-opt.is-selected {
 @media (prefers-reduced-motion: reduce) {
   #aitools-library-list .aitools-prompt { transition: none; }
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   P0 — audit fixes (ASCENDO-IMPLEMENTATION-PLAN.md). Scoped, reversible:
+   delete this whole block to revert. Lives in ui-redesign.css to match
+   the current (pre-consolidation) architecture; P1/M1 folds it into the
+   single app.css.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Q4 — one elevation truth. The footer #sudo-indicator
+   ("Administrator not authorized" / "sudo not cached") contradicted the
+   authoritative sidebar #platform-status ("macOS · admin"). Hide the
+   contradicting pill; the sidebar Platform string is the single source.
+   #status-line stays (it's transient action feedback, not an elevation
+   claim). */
+#sudo-indicator { display: none !important; }
+
+/* Q5 — kill duplicate page titles. The 5-destination shell header
+   already states the screen name; the legacy per-view <h2> repeats it.
+   (a) Pure-text title h2 with no embedded action → hide entirely.
+   (b) Title-as-span in an h2 that also carries a Refresh/action button →
+       hide only the redundant text, keep the action row reachable.
+   :has()/:not(:has()) already relied on elsewhere in this file. */
+.view > h2[data-i18n$=".title"]:not(:has(button)):not(:has(.secondary)) {
+  display: none;
+}
+.view > h2 > span[data-i18n$=".title"] { display: none; }
+
+/* Q7 — the relocated "Available updates" card is the answer, so it reads
+   as the lead element: stronger containment + a larger heading. No new
+   accent (the Quick-actions lime stack is still present until P3, so we
+   do NOT add lime here and worsen the accent budget). */
+#answer-updates { border: 1px solid var(--border-strong); }
+#answer-updates > h3 { font-size: var(--fs-lg); margin: 0 0 var(--space-3); }
+
+/* Q3 — mobile clip guard. Desktop intentionally caps the System-Health
+   list (.card:has(.health-row){max-height:360px}) so it doesn't stretch
+   its row mates — keep that on desktop. On a single-column phone that cap
+   just clips content; let cards size to content and let the page scroll.
+   Also drop the overview min-height floor on mobile so short cards don't
+   force odd sizing. */
+@media (max-width: 768px) {
+  .card:has(.health-row) { max-height: none; overflow: visible; }
+  #view-overview .card { min-height: 0; }
+}

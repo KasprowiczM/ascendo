@@ -45,6 +45,10 @@
        loaded LAST so it wins by source order. Removing this line +
        /ui-redesign.css restores the previous look byte-for-byte. -->
   <link rel="stylesheet" href="/ui-redesign.css" />
+  <!-- P0: layout-editor disabled — the "Edit layout" drag tool + always-on
+       drag handles leaked into the default end-user surface. -->
+  <!-- <link rel="stylesheet" href="/layout-editor.css" /> -->
+
 </head>
 <body class="layout-shell">
   <!-- Mobile topbar (hidden on desktop) - hamburger + brand only.
@@ -207,7 +211,14 @@
           </ul>
         </details>
       </section>
-      <div class="grid">
+      <!-- P0: answer-first — the product's core question ("is anything out
+           of date?") is now the first thing on the home screen, above the
+           fold, before any cards/charts. app.js fills #inv-updates by id. -->
+      <div class="card answer-card" id="answer-updates">
+        <h3 data-i18n="overview.available_updates">Available updates</h3>
+        <div id="inv-updates">…</div>
+      </div>
+      <div class="grid" data-layout-id="overview-main">
         <div class="card">
           <h3 data-i18n="overview.last_run">Last run</h3>
           <div id="last-run">…</div>
@@ -273,10 +284,8 @@
           <h3 data-i18n="overview.per_category">Per category</h3>
           <div id="inv-bars">…</div>
         </div>
-        <div class="card" style="grid-column: 1 / -1">
-          <h3 data-i18n="overview.available_updates">Available updates</h3>
-          <div id="inv-updates">…</div>
-        </div>
+        <!-- P0: "Available updates" moved to the top of #view-overview
+             (answer-first). Single #inv-updates now lives in #answer-updates. -->
       </div>
     </section>
 
@@ -920,7 +929,7 @@
         </details>
       </section>
       <form id="settings-form">
-        <div class="grid">
+        <div class="grid" data-layout-id="settings-main">
           <div class="card">
             <h3 data-i18n="settings.defaults">Defaults</h3>
             <label><span data-i18n="settings.default_profile">Default profile</span>
@@ -1766,17 +1775,21 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
     </form>
   </dialog>
 
-  <script src="/icons.js"></script>
-  <script src="/i18n.js"></script>
-  <script src="/platform.js"></script>
-  <script src="/app.js"></script>
-  <script src="/shell.js"></script>
+  <!-- P0: `defer` — non-blocking parse; execution order preserved
+       (icons → i18n → platform → app → shell → ui-components → ui-redesign)
+       and still before DOMContentLoaded, so shell's router patch is safe. -->
+  <script defer src="/icons.js"></script>
+  <script defer src="/i18n.js"></script>
+  <script defer src="/platform.js"></script>
+  <script defer src="/app.js"></script>
+  <script defer src="/shell.js"></script>
   <!-- Touch-first UI kit (Sesja 74): no-dropdown progressive disclosure,
-       mobile bottom nav, run stepper, responsive history cards. Loaded
-       LAST so it can progressively enhance the fully-wired DOM. -->
-  <script src="/ui-components.js"></script>
-  <!-- UI redesign DOM layer (Sesja 75) — runtime node reorg, loaded last.
-       Remove this line + /ui-redesign.js to revert. -->
-  <script src="/ui-redesign.js"></script>
+       mobile bottom nav, run stepper, responsive history cards. -->
+  <script defer src="/ui-components.js"></script>
+  <!-- UI redesign DOM layer (Sesja 75) — runtime node reorg. -->
+  <script defer src="/ui-redesign.js"></script>
+  <!-- P0: layout-editor.js disabled — drag-reorder power tool removed from
+       the default end-user surface (was injecting "Edit layout" + handles). -->
+  <!-- <script src="/layout-editor.js"></script> -->
 </body>
 </html>

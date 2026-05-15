@@ -373,6 +373,11 @@ def create_app(
             # UI redesign DOM layer (Sesja 75): runtime node reorg
             # (Tools chat-primacy, Runs/Settings IA). Loaded last.
             ("ui-redesign.js", "application/javascript"),
+            # P0: layout-editor assets removed from the served whitelist.
+            # The drag-reorder "Edit layout" power tool + always-visible
+            # drag handles were leaking into the default end-user surface.
+            # Re-enable by restoring these two entries + the <link>/<script>
+            # in index.html.
             ("favicon.svg", "image/svg+xml"),
         )
         # Cache policy: ``no-cache`` forces the browser to revalidate via
