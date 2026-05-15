@@ -3221,16 +3221,41 @@ const ui = {
       if (!failed.length) {
         failEl.innerHTML = `<p class="ins-muted">${tr("shell.ins.no_failures","No failures in the recent window.")}</p>`;
       } else {
-        failEl.innerHTML = `<ul class="ins-list">` + failed.slice(0,8).map(r => {
+        const top = failed.slice(0, 8);
+        failEl.innerHTML = `<ul class="ins-list">` + top.map((r, i) => {
           const cats = (r.summary && r.summary.phases || [])
             .filter(p => p.summary && p.summary.err > 0)
             .map(p => p.category);
           const where = cats.length
             ? `${tr("shell.ins.failed_in","failed in")} ${[...new Set(cats)].join(", ")}` : "";
-          return `<li><span class="st-pill st-err">${r.profile||"run"}</span>
+          return `<li class="ins-row" data-run="${i}" role="button" tabindex="0">
+            <span class="st-pill st-err">${r.profile||"run"}</span>
             <span class="ins-muted" style="flex:1">${ui.fmtTime(r.started_at)} ${where}</span>
             <a class="ins-muted" href="/runs/${encodeURIComponent(r.id)}/report" target="_blank" rel="noopener">${tr("shell.ins.view_report","Report")}</a></li>`;
         }).join("") + `</ul>`;
+        // §6.6: route a failed-run row through the SAME shared drawer
+        // Dashboard recent-runs + Runs history use (ui.openRunDrawer),
+        // with the new-tab report as the non-regressing fallback. The
+        // inner Report <a> keeps its native new-tab behaviour.
+        const openFail = (r) => {
+          if (typeof ui.openRunDrawer === "function" && window.shell) ui.openRunDrawer(r);
+          else window.open("/runs/" + encodeURIComponent(r.id) + "/report", "_blank", "noopener");
+        };
+        failEl.addEventListener("click", (e) => {
+          if (e.target.closest("a")) return; // let the Report link open normally
+          const li = e.target.closest("li[data-run]");
+          if (!li) return;
+          const r = top[+li.getAttribute("data-run")];
+          if (r) openFail(r);
+        });
+        failEl.addEventListener("keydown", (e) => {
+          if (e.key !== "Enter" && e.key !== " ") return;
+          const li = e.target.closest("li[data-run]");
+          if (!li) return;
+          e.preventDefault();
+          const r = top[+li.getAttribute("data-run")];
+          if (r) openFail(r);
+        });
       }
     }
 

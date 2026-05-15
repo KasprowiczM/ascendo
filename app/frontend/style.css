@@ -2528,6 +2528,15 @@ button.is-refreshing::before {
   font-size: 0.85rem;
 }
 .ins-list li:last-child { border-bottom: 0; }
+/* §6.6: a failed-run row opens the shared run-detail drawer — give it
+   a clickable affordance consistent with the Runs/Dashboard timeline
+   rows. Scoped to .ins-row so the static trend rows are unaffected. */
+.ins-row { cursor: pointer; border-radius: var(--radius-sm, 6px); }
+.ins-row:hover { background: var(--bg-nested, var(--bg-elev)); }
+.ins-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .ins-bar-track {
   height: 6px; border-radius: 999px; background: var(--bg-sunk);
   overflow: hidden; flex: 1;
