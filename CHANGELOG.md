@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Touch-first responsive UI kit (Sesja 74)
+
+- New `app/frontend/ui-components.js`: **no native dropdowns anywhere**
+  — every `<select>` is upgraded at runtime to an accessible
+  segmented control, choice-card group, or searchable progressive
+  list (native select kept value-synced so `FormData`/`.value`/
+  `change` listeners are unchanged).
+- **Mobile bottom tab bar** (5 destinations, ≤768px), Run Center
+  **3-step progressive reveal** (Profile → Options → Confirm) with a
+  sticky mobile action bar, and a **tappable mobile card** layout for
+  the History table.
+- 44px minimum touch targets, `:focus-visible`, keyboard radiogroup
+  navigation, `prefers-reduced-motion`. New `uikit.*` i18n namespace
+  (EN+PL parity **1060/1060**).
+
+### Changed — Light theme contrast & hierarchy (Sesja 74)
+
+- Retuned the light token set (`colors_and_type.css`): a real 3-tier
+  surface ramp (`--paper-base/-nested/-card/-sunk` + new
+  `--bg-nested`), darker muted/faint text + borders, `--accent-strong`
+  → lime-700 (AA as fg accent). Identity preserved (cool-grey + lime).
+- New `--ok/warn/err/info-text` tokens split bright semantic *fills*
+  from WCAG-AA semantic *text on tint* (light-mode badges/inline
+  errors/diagnostics were ~2:1 before). **Dark theme unchanged**
+  (tokens mapped back to the bright primitives).
+- Responsive header density: eliminated a ~288px mobile dead-band
+  (root cause: `.app-header-text` flex-basis becoming a forced height
+  in the mobile column layout); `.app-header` 439px → 59–99px on a
+  390-wide phone; demoted the redundant per-view `<h2>` to a compact
+  section label; token-only spacing tiers for mobile/tablet/desktop.
+
+### Fixed — interaction QA + pip verify (Sesja 74)
+
+- **Help table-of-contents links** no longer get hijacked by the hash
+  router (they were throwing the user back to Dashboard); they now
+  scroll to the section and leave the route untouched.
+- **Run Center "Stop"** is now always reachable during an active run
+  (was hidden inside the collapsed progressive-disclosure step).
+- macOS `pip verify` now defers **all** brew-owned formulas (not just
+  pip/setuptools/wheel) to brew, so `uv` is no longer reported as a
+  verify failure against the PyPI candidate — pip verify
+  `partial → success`.
+
 ### Changed — UX/IA refactor: 5-destination AppShell (Sesja 73)
 
 - **Navigation reorganised** from 10–13 flat sidebar items into **5

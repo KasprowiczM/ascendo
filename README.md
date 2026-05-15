@@ -42,7 +42,11 @@ in place — every script is idempotent.
 The **CLI + Web** path is the recommended install for everyone — the web
 dashboard is a thin browser UI driven by the same Python core the CLI
 uses (it imports `ascendo_<os>` directly), so installing the CLI gives
-you both for free. Pre-built native desktop installers (`.dmg` / `.msi` /
+you both for free. The dashboard is **touch-first and fully responsive**
+(375px phone → desktop): a 5-destination layout, no dropdown menus
+(visible segmented / choice-card pickers with progressive reveal), a
+mobile bottom tab bar, ≥44px tap targets, and high-contrast **light +
+dark** themes. Pre-built native desktop installers (`.dmg` / `.msi` /
 `.deb` standalone bundles) are **dev-only** today; see "Desktop installer
 status" below.
 

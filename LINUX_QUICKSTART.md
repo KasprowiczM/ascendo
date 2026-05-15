@@ -118,6 +118,24 @@ Display/Language/Font are in the **⚙ Preferences** popover (top-right
 of the page header). The sidebar footer shows an OS status pill
 (e.g. `Linux · sudo`).
 
+## 2.7 · Touch-first responsive UI (Sesja 74)
+
+The dashboard is mobile-first and fully responsive (375px → desktop),
+shared across Linux / macOS / Windows:
+
+- **No native dropdowns** — profile / theme / language / scope are
+  visible segmented buttons or choice cards; long lists (Logs) get a
+  searchable list. Choosing one option reveals the next inline.
+- **Phones / tablets:** 5-destination bottom tab bar; Run Center walks
+  Profile → Options → Confirm; History becomes tappable cards (tap →
+  run drawer); all tap targets ≥44px.
+- **Light theme** retuned for strong daylight contrast and clear
+  card/section separation; dark stays the primary surface and is
+  unchanged.
+- Help table-of-contents links now scroll to the section instead of
+  bouncing you to Dashboard; Run **Stop** is always reachable during
+  an active run.
+
 ## 3 · See what's installed (Library → Sources)
 
 The **Library → Sources** view shows one row per source:

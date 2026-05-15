@@ -4050,6 +4050,29 @@ document.addEventListener("click", e => {
   ui.show(a.dataset.view);
 });
 
+// In-page anchor links (Help "table of contents": <a href="#help-install">…).
+// Without this, the hash-routing layer in shell.js sees an unknown
+// "#help-install" token, fails to resolve it to a destination, and throws
+// the user back to Dashboard. Intercept these doc anchors: scroll to the
+// target section and leave the route hash untouched. Scoped to the
+// `#help-*` ids that actually exist in the Help article so real route
+// links (which carry data-view or dest/tab tokens) are never affected.
+document.addEventListener("click", e => {
+  const a = e.target.closest('a[href^="#help-"]');
+  if (!a) return;
+  const id = a.getAttribute("href").slice(1);
+  const target = document.getElementById(id);
+  if (!target) return;
+  e.preventDefault();
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+  // Move focus for keyboard users without a tabindex side-effect lingering.
+  const prev = target.getAttribute("tabindex");
+  target.setAttribute("tabindex", "-1");
+  target.focus({ preventScroll: true });
+  if (prev === null) target.removeAttribute("tabindex");
+  else target.setAttribute("tabindex", prev);
+}, true);
+
 // B4 — Apply confirmation modal (mirrors bin/run-apply.ps1 gating).
 // Resolves true only when the user types the literal string "apply" and
 // clicks Confirm. Native <dialog> handles Esc/backdrop/focus-trap. Falls

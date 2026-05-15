@@ -361,6 +361,10 @@ def create_app(
             # before app.js; shell wires the 5-destination nav after it.
             ("platform.js", "application/javascript"),
             ("shell.js", "application/javascript"),
+            # Touch-first UI kit (Sesja 74): progressive-enhancement layer
+            # loaded after shell.js (no-dropdown controls, mobile bottom
+            # nav, run stepper, responsive history cards).
+            ("ui-components.js", "application/javascript"),
             ("favicon.svg", "image/svg+xml"),
         )
         # Cache policy: ``no-cache`` forces the browser to revalidate via

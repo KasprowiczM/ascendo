@@ -153,6 +153,25 @@ description, and a single primary action (e.g. **Start Run**).
 | Help / About | **Settings → Help / About** |
 | Hosts / Sync / Logs | dev-edition only (Settings / Insights) |
 
+### Touch, mobile & themes
+
+The dashboard is touch-first and fully responsive (375px phone →
+desktop):
+
+- **No dropdown menus anywhere.** Profile / theme / language / scope
+  pickers are visible **segmented buttons or choice cards**; long
+  lists (e.g. Logs) become a searchable list. Pick one option and the
+  next relevant choices reveal in place.
+- **Phones** get a bottom tab bar for the 5 destinations; the Run
+  Center walks you through **Profile → Options → Confirm** one step at
+  a time; the History table becomes tappable cards (tap a card for the
+  run drawer). All controls are ≥44px tap targets.
+- **Light & dark themes** (⚙ Preferences → Theme; `dark` is the
+  default). Light mode has strong contrast and clear card/section
+  separation for daylight use; dark is the primary surface.
+- Keyboard: arrow keys move within segmented controls, `Tab`/`Enter`
+  everywhere, visible focus rings, reduced-motion respected.
+
 ---
 
 ## 4. Scan for what's outdated

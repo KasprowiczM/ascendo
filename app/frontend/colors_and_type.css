@@ -69,8 +69,21 @@
   --paper-900: #131A2E;     /* deepest cool, used as inverse of paper-50 in dark mode */
   --paper-100: #DDE1EA;     /* sunken (inputs, code-block bg in light) */
   --paper-50:  #E3E6EE;     /* slight lift from base */
-  --paper-25:  #EDEFF4;     /* PRIMARY light surface — was warm cream, now cool grey */
-  --paper-0:   #F5F7FB;     /* elev cards, top of stack */
+  --paper-25:  #EDEFF4;     /* legacy light surface (kept for any direct refs) */
+  --paper-0:   #F5F7FB;     /* legacy elev (kept for any direct refs) */
+
+  /* Light-mode surface ramp — engineered cool grey, retuned for a clearly
+     readable 3-tier lift (page recedes, cards lift, panels sit between).
+     The old paper-25→paper-0 gap (#EDEFF4→#F5F7FB) was ~3 L* — cards
+     barely separated from the page. These widen it without going harsh. */
+  --paper-base:   #E6E9F1;  /* page bg — quiet, recedes behind content */
+  --paper-nested: #F1F3F8;  /* secondary / nested panels (between page+card) */
+  --paper-card:   #FCFCFE;  /* primary card — clean, clearly lifted */
+  --paper-sunk:   #DBDFEA;  /* inputs / light code — clearly recessed */
+  /* Mid inks for stronger light helper text (old fg-muted = ink-400 was
+     readable but fg-faint = ink-300 failed on dense pages). */
+  --ink-450: #3A4166;       /* light muted helper — strong, ~8:1 on card */
+  --ink-350: #5C637F;       /* light faint — tertiary metadata only */
 
   /* Lime — primary accent ("ascending signal", terminal cursor) */
   --lime-700: #6B8C12;
@@ -85,49 +98,68 @@
   --blaze-500: #FF6A3D;
   --blaze-300: #FFB593;
 
-  /* Status — muted, professional (no Tailwind clichés) */
+  /* Status — muted, professional (no Tailwind clichés).
+     Two roles, deliberately split:
+       --status-*       BRIGHT — fills, bars, dots, alert backgrounds.
+                        Correct on dark; correct as a fill on light.
+       --status-*-text  ACCESSIBLE — the same hue darkened so it passes
+                        WCAG AA as TEXT on a light tinted surface
+                        (badges, inline errors, diagnostics). The old
+                        light theme used the bright values as text →
+                        amber-on-cream was ~2:1 (fails).
+       --status-*-bg    Tints — deepened a step so light badges/alerts
+                        have real presence (still subtle, not loud). */
   --status-ok:    #3EBF7A;     /* moss, not emerald */
-  --status-ok-bg: #E5F5EC;
+  --status-ok-bg: #DCF0E4;
+  --status-ok-text: #1A7042;
   --status-warn:    #E0A82E;   /* amber-ochre */
-  --status-warn-bg: #FBF1DA;
+  --status-warn-bg: #F8EAC8;
+  --status-warn-text: #8A5A06;
   --status-err:    #DC4B43;    /* terracotta */
-  --status-err-bg: #FBE6E4;
+  --status-err-bg: #F8DEDB;
+  --status-err-text: #B0322B;
   --status-info:    #4A7BC9;
-  --status-info-bg: #E2EBF8;
+  --status-info-bg: #DAE6F6;
+  --status-info-text: #2F5DA8;
 }
 
 /* ────────────────────────────────────────────────────────────
    2. SEMANTICS — light theme (default)
    ──────────────────────────────────────────────────────────── */
 :root {
-  /* Surfaces */
-  --bg:        var(--paper-25);
-  --bg-elev:   var(--paper-0);     /* cards above bg */
-  --bg-sunk:   var(--paper-100);   /* code blocks, inputs */
+  /* Surfaces — retuned for a visible 3-tier stack in daylight.
+     page (recedes) < nested panel < card (lifts). bg-sunk is the
+     recessed layer for inputs / light code. */
+  --bg:        var(--paper-base);
+  --bg-elev:   var(--paper-card);     /* cards — clearly above bg */
+  --bg-nested: var(--paper-nested);   /* secondary / nested panels */
+  --bg-sunk:   var(--paper-sunk);     /* inputs, light code blocks */
   --bg-inverse: var(--ink-800);
 
-  /* Foreground (3 levels) */
+  /* Foreground (3 levels) — muted + faint pulled darker so dense
+     helper copy on Settings/Runs is comfortably readable. */
   --fg:        var(--ink-800);
-  --fg-muted:  var(--ink-400);
-  --fg-faint:  var(--ink-300);
-  --fg-inverse: var(--paper-25);
+  --fg-muted:  var(--ink-450);
+  --fg-faint:  var(--ink-350);
+  --fg-inverse: var(--paper-card);
 
-  /* Borders */
-  --border:        rgba(11, 16, 32, 0.10);
-  --border-strong: rgba(11, 16, 32, 0.18);
+  /* Borders / dividers — one step darker than the old soft 0.10 so
+     cards, rows and grouped sections actually contain their content. */
+  --border:        rgba(11, 16, 32, 0.16);
+  --border-strong: rgba(11, 16, 32, 0.28);
   --border-focus:  var(--ink-800);
 
   /* Accent */
   --accent:        var(--lime-400);
   --accent-ink:    var(--ink-900);     /* foreground on accent */
-  --accent-soft:   var(--lime-100);
-  --accent-strong: var(--lime-600);
+  --accent-soft:   var(--lime-200);    /* selected/active tint — stronger */
+  --accent-strong: var(--lime-700);    /* fg accent — AA on light (was lime-600, ~2.9:1) */
 
-  /* Status */
-  --ok: var(--status-ok);     --ok-bg: var(--status-ok-bg);
-  --warn: var(--status-warn); --warn-bg: var(--status-warn-bg);
-  --err: var(--status-err);   --err-bg: var(--status-err-bg);
-  --info: var(--status-info); --info-bg: var(--status-info-bg);
+  /* Status — bright fill + accessible text, see primitives note. */
+  --ok:   var(--status-ok);   --ok-bg:   var(--status-ok-bg);   --ok-text:   var(--status-ok-text);
+  --warn: var(--status-warn); --warn-bg: var(--status-warn-bg); --warn-text: var(--status-warn-text);
+  --err:  var(--status-err);  --err-bg:  var(--status-err-bg);  --err-text:  var(--status-err-text);
+  --info: var(--status-info); --info-bg: var(--status-info-bg); --info-text: var(--status-info-text);
 
   /* Code surface (always dark, regardless of theme — the terminal stays a terminal) */
   --code-bg:  var(--ink-900);
@@ -139,6 +171,7 @@
 :root[data-theme="dark"] {
   --bg:        var(--ink-900);
   --bg-elev:   var(--ink-800);
+  --bg-nested: var(--ink-700);
   --bg-sunk:   var(--ink-700);
   --bg-inverse: var(--paper-25);
 
@@ -157,11 +190,19 @@
   --warn-bg: rgba(224, 168, 46, 0.14);
   --err-bg:  rgba(220, 75, 67, 0.14);
   --info-bg: rgba(74, 123, 201, 0.14);
+  /* On dark surfaces the bright status hues are already accessible as
+     text — keep the dark theme byte-for-byte by mapping *-text back to
+     the bright primitives. */
+  --ok-text:   var(--status-ok);
+  --warn-text: var(--status-warn);
+  --err-text:  var(--status-err);
+  --info-text: var(--status-info);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     --bg:        var(--ink-900);
     --bg-elev:   var(--ink-800);
+    --bg-nested: var(--ink-700);
     --bg-sunk:   var(--ink-700);
     --bg-inverse: var(--paper-25);
     --fg:        var(--paper-0);
@@ -172,6 +213,10 @@
     --border-strong: rgba(214, 217, 227, 0.18);
     --border-focus:  var(--lime-400);
     --accent-soft:   rgba(200, 255, 75, 0.14);
+    --ok-text:   var(--status-ok);
+    --warn-text: var(--status-warn);
+    --err-text:  var(--status-err);
+    --info-text: var(--status-info);
   }
 }
 

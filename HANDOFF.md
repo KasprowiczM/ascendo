@@ -6,6 +6,151 @@
 
 ---
 
+## Sesja 74 (2026-05-15) — Touch-first responsive UI + light-theme overhaul + interaction QA + pip-verify fix
+
+One continuous design+engineering session on `main` (no branches per
+CLAUDE.md). Five bodies of work, each audited live in a real browser via
+Playwright (0 console errors throughout). The frontend is vanilla JS (no
+framework) so everything is progressive enhancement layered on the
+existing `ui.show()` router + `shell.js` AppShell — **zero router/SSE/
+form-handler rewrites**, fully reversible, dark theme kept byte-for-byte.
+
+### Part 1 — Touch-first / no-dropdown / progressive-disclosure kit
+
+New `app/frontend/ui-components.js` (loaded after `shell.js`,
+whitelisted in `core/ascendo/dashboard/app.py` `_spa_assets`):
+
+- **Every `<select>` app-wide** is upgraded at runtime to an accessible
+  control — `SegmentedControl` (≤4 short opts), `ChoiceCardGroup`
+  (descriptive / >4), or a searchable progressive **list** (>8, e.g.
+  Logs' 200 runs). The native `<select>` stays in the DOM
+  (visually-hidden, `aria-hidden`, value-synced) so `new FormData`,
+  `.value`, `.options.length` and existing `change` listeners keep
+  working unchanged. MutationObservers re-render on dynamic option
+  repopulation + language switch; roving-tabindex radiogroup keyboard.
+- **MobileBottomNav** — 5-destination tab bar (≤768px) wired to
+  `ui.show`, active state mirrors the sidebar; hidden ≥769px.
+- **Run Center → 3-step progressive reveal** (Profile → Options →
+  Confirm) with a mobile sticky action bar; submit handler untouched.
+- **History table → tappable stacked cards** on mobile (`data-label`
+  driven), whole row opens the existing run drawer.
+- CSS: `style.css` "Touch-first UI kit" block — segmented/choice
+  controls, collapsing step accordion, bottom nav, 44px touch-target
+  floor (`pointer:coarse`), `:focus-visible`, `prefers-reduced-motion`.
+- i18n: new `uikit.*` namespace, **EN + PL parity 1060 == 1060**
+  (`scripts/check-i18n-parity.py`). Sync card hardcoded-Polish
+  fallbacks aligned to the English-default convention.
+
+### Part 2 — Light-theme contrast / hierarchy overhaul
+
+`colors_and_type.css` + a scoped `:root[data-theme="light"]`
+reinforcement block in `style.css`. Identity preserved (cool-grey
+paper + lime accent — the system deliberately moved off warm cream):
+
+- New light surface ramp `--paper-base/-nested/-card/-sunk` → a real
+  3-tier stack (was a ~3 L\* page-vs-card gap). `--bg-nested` token
+  added (mapped back to ink-700 in dark so dark is unchanged).
+- `--fg-muted/-faint` pulled darker (`--ink-450/-350`); borders one
+  step darker (`.10/.18 → .16/.28`); `--accent-strong` lime-600 →
+  **lime-700** (AA as fg accent, was ~2.9:1).
+- **Semantic split:** `--ok/warn/err/info` stay bright (fills/bars/
+  dots/alerts); new `--*-text` tokens are WCAG-AA-on-tint and used for
+  badge/inline-error/diagnostic text in light (amber-on-cream was
+  ~2:1, failed). Dark maps `--*-text` back to the bright primitives.
+- Component reinforcement: card/section containment, recessed inputs,
+  intentional disabled styling (legible, not 0.4 wash),
+  selected/active = tint + border + text + weight, helper text faint→
+  muted, status pills get real tinted chips, save-flash/fetch-error
+  visibility. **Dark theme verified byte-for-byte unchanged.**
+
+### Part 3 — Interaction QA audit (production QA) + 2 Major fixes
+
+Live + code audit of every interactive control across 11 routes.
+Verdict: plumbing fundamentally healthy — 0 console errors, 0 failed
+fetches, all handlers real (quick actions genuinely `POST /runs/async`
+202, settings save 200, no dead/mock controls). Two real **Major**
+defects (both side-effects of the Sesja 73/74 IA refactor) fixed:
+
+- **Help "Spis treści" TOC links** (`<a href="#help-install">` ×11)
+  were hijacked by the hash router → threw the user to Dashboard.
+  Fix (`app/frontend/app.js`): capture-phase handler for
+  `a[href^="#help-"]` → `scrollIntoView` + focus, route hash
+  untouched. Scoped so real route links are unaffected.
+- **Run Center "Stop"** was moved into the collapsed step-3 by the
+  progressive stepper → unreachable mid-run (`offsetParent:null`).
+  Fix (`app/frontend/ui-components.js`): observe `#stop-btn[disabled]`;
+  the instant a run is live, auto-reveal the confirm step so Stop is
+  always reachable (manual-setup progressive disclosure preserved).
+
+### Part 4 — pip verify brew-owned candidate fix (macOS)
+
+Operator-reported: `uv` candidate wrong in **pip verify**. Root cause
+(systematic-debugging): last run `f615fcba` showed check/plan/apply all
+defer brew-owned `uv` (target=installed `0.11.13`, up_to_date) but
+`adapters/macos/scripts/pip/verify.sh` only carried the narrow
+`brew:pip|setuptools|wheel` guard — it judged brew-owned `uv` against
+the **PyPI** candidate `0.11.14` → `uv` `failed` → whole pip verify
+`partial`. Fix: mirror `apply.sh`'s general `brew:*` →
+`ascendo_pip_brew_owns` deferral into `verify.sh`. Reproduced
+before/after: pip verify `partial → success`, uv `0.11.14 → 0.11.13`,
+0 failed. **41 pip/verify tests pass**, no regressions.
+
+### Part 5 — Responsive header density (root-cause flex fix)
+
+Operator-reported (3rd session): large empty band below the navbar on
+mobile. **Root cause was not spacing** — `.app-header-text { flex: 1 1
+320px }` (correct 320px min-*width* for the desktop row layout) becomes
+a forced ~320px **height** when `.app-header-main` switches to
+`flex-direction: column` on mobile, opening a **~288px void** between
+subtitle and action row. `.app-header` measured **439px tall** on a
+390-wide phone. Fix (`style.css`, scoped ≤768): `.app-header-text {
+flex: 0 0 auto; width: 100% }`. Plus a token-only header-density pass:
+demoted the redundant per-view `<h2>` to a compact section label
+(embedded buttons preserved), tighter `.app-header` rhythm, 2-line
+subtitle clamp, coherent 44px action row, tablet/desktop card+section
+spacing tiers. Measured: `.app-header` **439px → 59–99px**, void
+**288px → 0**, first content on Runs **616px → 274px** (~40% of an
+844px viewport reclaimed). Verified at 390 / 834 / 1280; desktop+tablet
+row layout untouched (fix correctly scoped).
+
+### Files changed
+
+```
+NEW:  app/frontend/ui-components.js
+M:    app/frontend/style.css            (kit + light reinforcement + header density)
+M:    app/frontend/colors_and_type.css  (light tokens + *-text + bg-nested)
+M:    app/frontend/i18n.js              (uikit.* EN+PL, 1060/1060 parity)
+M:    app/frontend/index.html           (ui-components.js script + Sync EN fallbacks)
+M:    app/frontend/app.js               (Help TOC anchor handler)
+M:    core/ascendo/dashboard/app.py     (ui-components.js in _spa_assets)
+M:    adapters/macos/scripts/pip/verify.sh (brew-owned deferral parity)
+```
+
+### Verification summary
+
+- i18n parity **1060 EN == 1060 PL**.
+- **41/41** pip + verify tests pass; macOS pip verify `success` (was
+  `partial`); `bash -n` clean.
+- Playwright live across 375–1440: 11/11 routes resolve, correct
+  active-nav, single visible view, **0 console errors**, 0 failed
+  fetches. Mobile dead-band eliminated; touch targets ≥44px;
+  segmented-control keyboard works; History drawer + sub-tabs +
+  quick-run plumbing + theme switch + backend cards confirmed.
+- Dark theme byte-for-byte unchanged (token + scoped overrides).
+
+### Carry-forward
+
+- Manual run via the 3-step form still requires Continue×2 to reach
+  Start (intended progressive disclosure) — recommend a quick manual
+  confirm on real long runs that Stop halts via `POST /runs/active/stop`.
+- Ubuntu/Windows pip `verify` scripts have their own brew-skip logic;
+  not in this run's evidence — flag if a parity audit is wanted.
+- Per-page internal layouts (deep Library/Insights/Settings
+  restructure) remain a future pass; this session delivered the
+  cross-cutting system + the highest-priority pages.
+
+---
+
 ## Sesja 73 (2026-05-15) — Operator bug batch + major UX/IA refactor (5-destination AppShell)
 
 Two bodies of work in one session, both on `main` (no branches per

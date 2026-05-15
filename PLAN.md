@@ -1,25 +1,41 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-15 (sesja 73) — **Operator bug batch +
-> major UX/IA refactor (5-destination AppShell).** Two bodies of
-> work on `main`. Part 1: 7-item bug batch from run e2d0fffb —
-> SPA asset `Cache-Control: no-cache` (schedule-icon staleness),
-> `ASCENDO_SAFE_MODE` exit-95 gate so safe runs stop opening apps,
-> ZIP support in `_web_install_dmg` (Codex), explicit rm-rf-before-cp
-> (Ledger/Warp locked-bundle), inventory `delete_row` eviction for
-> uninstalled apps (Cursor/Opera/Notion), pip uv → `up_to_date` not
-> Deferred, and the History-tab `tr` shadowing/`i18n.t` typo fix
-> (blank History → 195 rows). Part 2: 10-item flat nav → **5
-> workflow destinations** (Dashboard / Library / Runs / Insights /
-> Settings) with segmented sub-tabs, a per-page header (title +
-> desc + one primary CTA), a Preferences popover, a new
-> `platform.js` abstraction (NVIDIA structurally excluded on macOS
-> across JS + i18n + CSS), `shell.js` AppShell wrapping `ui.show()`
-> with zero router rewrites, a new Insights surface, simplified
-> 5-column History + run-detail drawer, and premium empty states.
-> 397 macOS + 35 contract tests pass; 1045/1045 EN+PL i18n
-> parity; verified live via Playwright (0 console errors, 0 NVIDIA
-> hits across all 10 macOS routes). See HANDOFF Sesja 73.
+> Last updated: 2026-05-15 (sesja 74) — **Touch-first responsive UI
+> + light-theme overhaul + interaction QA + pip-verify fix.** Five
+> bodies of work on `main`, pure progressive enhancement on the
+> existing router/AppShell (zero router/SSE/form rewrites; dark theme
+> byte-for-byte). (1) New `ui-components.js`: every `<select>` → an
+> accessible no-dropdown control (segmented / choice-card /
+> searchable list, native select kept value-synced for FormData), a
+> 5-destination mobile bottom nav, Run Center 3-step progressive
+> reveal, History → tappable mobile cards, 44px touch floor. (2)
+> Light-theme retune in `colors_and_type.css` + scoped reinforcement:
+> real 3-tier surface ramp (`--paper-base/-nested/-card/-sunk` +
+> `--bg-nested`), darker muted/faint + borders, lime-700 fg accent,
+> and a bright-fill vs `--*-text` semantic split so badges/errors
+> pass WCAG-AA on tint. (3) Production interaction QA across 11
+> routes (0 console errors, all handlers real) + 2 Major fixes: Help
+> TOC anchors no longer hijacked by the hash router; Run "Stop"
+> auto-reveals so it's reachable mid-run. (4) macOS `pip verify`
+> brew-owned candidate fix — `uv` no longer false-fails verify
+> (`partial → success`). (5) Mobile header dead-band root cause: a
+> flex bug (`.app-header-text flex:1 1 320px` → 320px height in the
+> mobile column) opened a ~288px void; fixed → `.app-header` 439px →
+> 59–99px, first content on Runs 616px → 274px. i18n 1060/1060
+> EN+PL; 41/41 pip+verify tests; verified live 375–1440px. See
+> HANDOFF Sesja 74.
+>
+> Previous milestone (sesja 73) — **Operator bug batch +
+> major UX/IA refactor (5-destination AppShell).** 7-item bug batch
+> from run e2d0fffb (SPA no-cache, `ASCENDO_SAFE_MODE` exit-95 gate,
+> ZIP `_web_install_dmg`, rm-rf-before-cp, inventory `delete_row`
+> eviction, pip uv → `up_to_date`, History `tr`-shadowing typo →
+> 195 rows) + 10-item flat nav → **5 workflow destinations** with
+> segmented sub-tabs, per-page header, Preferences popover,
+> `platform.js` (NVIDIA excluded on macOS), `shell.js` AppShell
+> wrapping `ui.show()` with zero router rewrites, Insights surface,
+> simplified History + run-detail drawer. 397 macOS + 35 contract
+> tests; 1045/1045 i18n parity. See HANDOFF Sesja 73.
 >
 > Previous milestone (sesja 72) — **Operator polish: node
 > version target + pip+brew render + Schedule icon + System Health

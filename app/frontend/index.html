@@ -588,9 +588,9 @@
           <h3 data-i18n="sync.git">Git</h3>
           <div id="sync-git">…</div>
           <p class="dim" style="font-size:0.82rem;margin:0.4rem 0">
-            <b data-i18n="sync.hint_fetch_b">Fetch</b><span data-i18n="sync.hint_fetch"> - pobiera zmiany z origin bez modyfikacji Twojej kopii. Bezpieczne, czytelne info.</span><br>
-            <b data-i18n="sync.hint_pull_b">Pull (ff-only)</b><span data-i18n="sync.hint_pull"> - fetch + fast-forward merge tylko gdy local jest czysty. Zatrzymuje się przy konflikcie.</span><br>
-            <b data-i18n="sync.hint_push_b">Push</b><span data-i18n="sync.hint_push"> - wysyła Twoje commity do origin (nigdy --force). Wymaga remote write access.</span>
+            <b data-i18n="sync.hint_fetch_b">Fetch</b><span data-i18n="sync.hint_fetch"> - pulls remote changes without modifying your working copy. Safe, read-only info.</span><br>
+            <b data-i18n="sync.hint_pull_b">Pull (ff-only)</b><span data-i18n="sync.hint_pull"> - fetch + fast-forward merge only when local is clean. Stops on conflict.</span><br>
+            <b data-i18n="sync.hint_push_b">Push</b><span data-i18n="sync.hint_push"> - sends your commits to origin (never --force). Requires remote write access.</span>
           </p>
           <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
             <button id="git-fetch-btn" data-i18n="sync.btn_fetch">Fetch</button>
@@ -602,8 +602,8 @@
           <h3 data-i18n="sync.cloud">Cloud overlay (dev-sync)</h3>
           <div id="sync-cloud">…</div>
           <p class="dim" style="font-size:0.82rem;margin:0.4rem 0">
-            <b data-i18n="sync.hint_dry_b">Export (dry-run)</b><span data-i18n="sync.hint_dry"> - pokazuje co zostałoby zapisane do chmury, BEZ wpływu na pliki.</span><br>
-            <b data-i18n="sync.hint_real_b">Export (real)</b><span data-i18n="sync.hint_real"> - wykonuje rzeczywisty zapis prywatnego overlay (.env.local, klucze) do skonfigurowanej chmury.</span>
+            <b data-i18n="sync.hint_dry_b">Export (dry-run)</b><span data-i18n="sync.hint_dry"> - shows what would be written to the cloud, WITHOUT touching files.</span><br>
+            <b data-i18n="sync.hint_real_b">Export (real)</b><span data-i18n="sync.hint_real"> - performs the real write of the private overlay (.env.local, keys) to the configured cloud.</span>
           </p>
           <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
             <button id="sync-export-dry-btn" data-i18n="sync.btn_export_dry">Export (dry-run)</button>
@@ -1767,5 +1767,9 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
   <script src="/platform.js"></script>
   <script src="/app.js"></script>
   <script src="/shell.js"></script>
+  <!-- Touch-first UI kit (Sesja 74): no-dropdown progressive disclosure,
+       mobile bottom nav, run stepper, responsive history cards. Loaded
+       LAST so it can progressively enhance the fully-wired DOM. -->
+  <script src="/ui-components.js"></script>
 </body>
 </html>

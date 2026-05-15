@@ -60,14 +60,26 @@ while IFS='|' read -r DISPLAY PKG METHOD DESC; do
         *) continue ;;
     esac
 
-    # Brew-managed pip/setuptools/wheel cannot be self-upgraded by pip
-    # (no RECORD file). check.sh reclassifies those to up_to_date and
-    # pins LATEST=INSTALLED; verify.sh has to apply the same rule, else
-    # `pip 26.1 -> 26.1.1` looks like a verify failure on a green run.
+    # Brew-managed packages must not be judged against the PyPI candidate:
+    #   * pip/setuptools/wheel on brew Python have no RECORD file
+    #     (Homebrew bottles them) so pip self-upgrade is impossible.
+    #   * any other brew-owned formula (e.g. uv) is deferred to brew so
+    #     pip never shadows /opt/homebrew/bin/<pkg>.
+    # check.sh / plan.sh / apply.sh all pin the candidate to the installed
+    # version for these (Sesja 50/72/73). verify.sh MUST mirror the SAME
+    # two-tier guard — without the general brew-owned branch a brew-
+    # deferred package whose PyPI release is newer (uv: 0.11.13 installed,
+    # 0.11.14 on PyPI) is wrongly reported as a verify failure, dragging
+    # an otherwise-green pip verify to `partial`.
     if [ -n "$INSTALLED" ] && [ -n "$LATEST" ] && [ "$INSTALLED" != "$LATEST" ]; then
         case "$(_ascendo_pip_flavour "$PIP_BIN"):$PKG" in
             brew:pip|brew:setuptools|brew:wheel)
                 LATEST="$INSTALLED"
+                ;;
+            brew:*)
+                if ascendo_pip_brew_owns "$PKG"; then
+                    LATEST="$INSTALLED"
+                fi
                 ;;
         esac
     fi
