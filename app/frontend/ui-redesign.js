@@ -215,8 +215,151 @@
     applyFilter();
   }
 
+  // ── Overview: swap the Quick-actions and Last-run cards (operator
+  //    wants actions before the run summary). One-time DOM node swap.
+  function reorgOverview() {
+    const v = document.getElementById("view-overview");
+    if (!v || v.dataset.rdSwap === "1") return;
+    const grid = v.querySelector(".grid");
+    if (!grid) return;
+    const lastRun = (grid.querySelector("#last-run") || {}).closest
+      ? grid.querySelector("#last-run").closest(".card") : null;
+    const qaEl = grid.querySelector("[data-quick]") ||
+      grid.querySelector("#action-1-inventory");
+    const qa = qaEl ? qaEl.closest(".card") : null;
+    if (!lastRun || !qa || lastRun === qa) return;
+    const ph = document.createComment("rd-swap");
+    qa.replaceWith(ph);
+    lastRun.replaceWith(qa);
+    ph.replaceWith(lastRun);
+    v.dataset.rdSwap = "1";
+  }
+
+  // ── Library → Sources: rename the category select's blank option to
+  //    "All categories" (selecting it searches every category) and let
+  //    ui-components rebuild the control with the new label. CSS lays
+  //    the upgraded control out as a horizontal wrapping chip row.
+  function reorgLibrary() {
+    const sel = document.getElementById("cats-add-cat");
+    if (!sel) return;
+    const o = sel.querySelector('option[value=""]');
+    if (!o) return;
+    const want = trOr("categories.f_all", "All categories");
+    if (o.textContent.trim() === want) return;
+    o.textContent = want;
+    sel.setAttribute("aria-label", want);
+    if (window.Uikit && typeof Uikit.upgradeSelect === "function") {
+      Uikit.upgradeSelect(sel);
+    }
+  }
+
+  // ── Run Center: ui-components.js (Sesja 74) turns #run-form into a
+  //    single-column progressive stepper. Operator wants the 3 steps as
+  //    horizontal cards (wrap on mobile) with Back/Next. CSS lays them
+  //    out + force-shows all 3; here we relabel Continue→Next, inject a
+  //    Back button into steps 2/3, and drive a visual "current step"
+  //    highlight + scroll (decoupled from ui-components' reveal closure).
+  function reorgRunCenter() {
+    const form = document.getElementById("run-form");
+    if (!form) return;
+    const steps = [...form.querySelectorAll(".u-step")];
+    if (steps.length < 2) { // stepper not built yet — retry once
+      if (!form.dataset.rdRunRetry) {
+        form.dataset.rdRunRetry = "1";
+        setTimeout(reorgRunCenter, 120);
+      }
+      return;
+    }
+    if (form.dataset.rdRun === "1") return;
+
+    function activate(i) {
+      steps.forEach((s, n) => s.classList.toggle("rd-active", n === i));
+      try { steps[i].scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" }); }
+      catch (_) {}
+      const focusable = steps[i].querySelector(
+        "input,select,button,textarea,.u-opt");
+      if (focusable) try { focusable.focus({ preventScroll: true }); } catch (_) {}
+    }
+
+    steps.forEach((step, i) => {
+      const next = step.querySelector(".u-step-next");
+      if (next) {
+        next.textContent = trOr("uikit.next", "Next →");
+        next.addEventListener("click", () => activate(Math.min(i + 1, steps.length - 1)));
+      }
+      if (i > 0 && !step.querySelector(".rd-step-back")) {
+        const back = document.createElement("button");
+        back.type = "button";
+        back.className = "rd-step-back";
+        back.textContent = trOr("uikit.back", "← Back");
+        back.addEventListener("click", () => activate(i - 1));
+        // Sit it next to the Next button (or at the end of the step).
+        if (next && next.parentNode) next.parentNode.insertBefore(back, next);
+        else step.appendChild(back);
+      }
+    });
+    steps[0].classList.add("rd-active");
+    form.dataset.rdRun = "1";
+  }
+
+  // ── Settings: the "Profile templates" card is empty on most machines
+  //    ("No templates in config/profiles/."). Replace that dead space
+  //    with a useful "Common tasks" one-click run card. Reuses the
+  //    existing delegated [data-quick] handler in app.js so the buttons
+  //    actually fire runs. Re-injects if loadSettings() repaints it.
+  const COMMON_TASKS = [
+    ["quick_check", '{"profile":"quick"}'],
+    ["safe_update", '{"profile":"safe"}'],
+    ["full_dry", '{"profile":"full","dry_run":true}'],
+    ["cleanup", '{"profile":"full","phase":"cleanup"}'],
+  ];
+  function paintCommonTasks(wrap) {
+    if (wrap.querySelector(".rd-common-tasks")) return;
+    wrap.innerHTML = "";
+    const intro = document.createElement("p");
+    intro.className = "dim";
+    intro.style.cssText = "margin:0 0 8px;font-size:0.8rem";
+    intro.textContent = trOr("profiles.common_hint",
+      "No saved templates — common one-click runs instead:");
+    wrap.appendChild(intro);
+    const row = document.createElement("div");
+    row.className = "rd-common-tasks";
+    COMMON_TASKS.forEach(([key, quick]) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "secondary";
+      b.setAttribute("data-quick", quick);
+      b.textContent = trOr("profiles.task_" + key,
+        key.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase()));
+      row.appendChild(b);
+    });
+    wrap.appendChild(row);
+  }
+  function maybePaint(wrap) {
+    // Paint only when there are no real templates and we haven't
+    // already injected. Real templates ([data-profile-import]) win.
+    if (wrap.querySelector("[data-profile-import]")) return;
+    if (wrap.querySelector(".rd-common-tasks")) return;
+    if (!/no templates/i.test(wrap.textContent || "") &&
+        wrap.children.length > 0) return;
+    paintCommonTasks(wrap);
+  }
+  function reorgProfilesPanel() {
+    const wrap = document.getElementById("profiles-list");
+    if (!wrap) return;
+    maybePaint(wrap);
+    if (!wrap.dataset.rdObserved) {
+      new MutationObserver(() => maybePaint(wrap))
+        .observe(wrap, { childList: true });
+      wrap.dataset.rdObserved = "1";
+    }
+  }
+
   // Registry of per-view reorgs. Each is idempotent.
-  const REORGS = [reorgTools, reorgSettings, reorgRunsFilter];
+  const REORGS = [
+    reorgTools, reorgSettings, reorgRunsFilter, reorgOverview, reorgLibrary,
+    reorgRunCenter, reorgProfilesPanel,
+  ];
 
   function runAll() {
     REORGS.forEach((fn) => {

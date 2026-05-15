@@ -240,6 +240,174 @@
 }
 
 /* ────────────────────────────────────────────────────────────
+   11. Horizontal-chip controls (operator request): a handful of
+   ui-components-upgraded <select>s render as a tall vertical card
+   stack. Force these specific ones into a compact horizontal,
+   wrapping chip row — variant-agnostic so it works whether
+   ui-components picked segmented or cards.
+   ──────────────────────────────────────────────────────────── */
+#cats-add-cat + .u-choice,
+#ui-theme-select + .u-choice,
+#ui-language-select + .u-choice,
+#profile-select + .u-choice,
+#only-select + .u-choice,
+#run-form select[name="phase"] + .u-choice,
+select[name="default_profile"] + .u-choice,
+select[name="ui_language"] + .u-choice,
+#schedule-f-profile + .u-choice,
+select[name="scheduler_profile"] + .u-choice {
+  display: flex !important;
+  flex-flow: row wrap !important;
+  gap: 6px !important;
+  align-items: stretch;
+  width: 100%;
+}
+#cats-add-cat + .u-choice .u-opt,
+#ui-theme-select + .u-choice .u-opt,
+#ui-language-select + .u-choice .u-opt,
+#profile-select + .u-choice .u-opt,
+#only-select + .u-choice .u-opt,
+#run-form select[name="phase"] + .u-choice .u-opt,
+select[name="default_profile"] + .u-choice .u-opt,
+select[name="ui_language"] + .u-choice .u-opt,
+#schedule-f-profile + .u-choice .u-opt,
+select[name="scheduler_profile"] + .u-choice .u-opt {
+  width: auto !important;
+  flex: 0 0 auto;
+  margin: 0 !important;
+  padding: 6px 12px !important;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-elev);
+  font-size: 0.82rem;
+}
+#cats-add-cat + .u-choice .u-opt.is-selected,
+#ui-theme-select + .u-choice .u-opt.is-selected,
+#ui-language-select + .u-choice .u-opt.is-selected,
+#profile-select + .u-choice .u-opt.is-selected,
+#only-select + .u-choice .u-opt.is-selected,
+#run-form select[name="phase"] + .u-choice .u-opt.is-selected,
+select[name="default_profile"] + .u-choice .u-opt.is-selected,
+select[name="ui_language"] + .u-choice .u-opt.is-selected,
+#schedule-f-profile + .u-choice .u-opt.is-selected,
+select[name="scheduler_profile"] + .u-choice .u-opt.is-selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--fg);
+}
+#cats-add-cat + .u-choice .u-opt-desc,
+#ui-theme-select + .u-choice .u-opt-desc {
+  display: none;
+}
+
+/* ────────────────────────────────────────────────────────────
+   12. Library → Sources add-to-config widget: was a tall stack
+   with lots of whitespace. Lay it out as a tight wrapping row
+   (category chips on their own line, package input + button on
+   the next), killing the vertical waste.
+   ──────────────────────────────────────────────────────────── */
+.cats-add-widget {
+  display: flex !important;
+  flex-flow: row wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 var(--space-3) !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+}
+.cats-add-widget > #cats-add-cat,
+.cats-add-widget > .u-choice { flex: 1 1 100%; }
+.cats-add-widget #cats-add-pkg {
+  flex: 1 1 220px;
+  min-width: 160px;
+  margin: 0;
+}
+.cats-add-widget #cats-add-btn { flex: 0 0 auto; width: auto; margin: 0; }
+.cats-add-widget #cats-add-out { flex: 1 1 100%; margin: 0; }
+
+/* ────────────────────────────────────────────────────────────
+   13. Run Center: the Sesja-74 stepper is one tall column. Lay the
+   3 steps as side-by-side cards (wrap to a stack on mobile) with
+   all steps visible; ui-redesign.js adds Back + relabels Next.
+   ──────────────────────────────────────────────────────────── */
+#run-form {
+  display: flex !important;
+  flex-flow: row wrap;
+  gap: var(--space-4);
+  align-items: flex-start;
+}
+#run-form .u-step {
+  display: flex !important;
+  flex-direction: column;
+  align-self: flex-start !important;
+  flex: 1 1 280px;
+  min-width: 240px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  opacity: 1;
+}
+/* Force-show steps the stepper would hide while "locked". */
+#run-form .u-step.is-locked,
+#run-form .u-step.is-done { display: flex !important; opacity: 1; }
+/* The stepper also display:none's the *content* of any non-active
+   step — so steps 2/3 (incl. the Start button in the action bar)
+   were invisible. Force every step's content visible since all 3
+   cards are now shown side by side. */
+#run-form .u-step > .u-step-head { display: flex !important; }
+#run-form .u-step > label { display: flex !important; flex-direction: column; }
+#run-form .u-step > label.inline {
+  flex-direction: row; align-items: center; gap: 6px;
+}
+#run-form .u-step > .u-run-summary { display: block !important; }
+#run-form .u-step > .u-action-bar { display: flex !important; gap: 6px; }
+#run-form .u-step > .u-step-next,
+#run-form .u-step > .rd-step-back { display: inline-block !important; }
+#run-form .u-step.rd-active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+#run-form .u-step-head { cursor: default; }
+#run-form .u-step-next,
+#run-form .rd-step-back {
+  width: auto;
+  margin: var(--space-3) 4px 0 0;
+  align-self: flex-start;
+}
+#run-form .rd-step-back {
+  background: var(--bg-elev);
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+}
+#run-form .rd-step-back:hover { color: var(--fg); border-color: var(--border-strong); }
+#run-form .u-action-bar { margin-top: auto; }
+@media (max-width: 860px) {
+  #run-form { flex-direction: column; }
+  #run-form .u-step { flex: 1 1 100%; }
+}
+
+/* ────────────────────────────────────────────────────────────
+   14. Settings → "Common tasks" card (replaces the empty Profile
+   templates list). One-click run shortcuts.
+   ──────────────────────────────────────────────────────────── */
+.rd-common-tasks {
+  display: flex;
+  flex-flow: row wrap;
+  gap: 6px;
+}
+.rd-common-tasks button {
+  width: auto;
+  margin: 0;
+  flex: 1 1 calc(50% - 6px);
+  min-width: 110px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+}
+
+/* ────────────────────────────────────────────────────────────
    6. AI chat — production-grade layout from the existing markup.
    Structure already present: #aitools-grid → [conversations rail |
    #aitools-main (#aitools-thread + #aitools-input-row) | library
