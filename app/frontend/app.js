@@ -2755,33 +2755,265 @@ const ui = {
     }
   },
 
+  // M4 Runs Start tab (blueprint §6.2). Renders into #run-root: either
+  // the two large choices (Safe update / Quick check) + an Advanced
+  // drawer, OR — when a run is active — a RunPanel header whose Stop is
+  // always visible (the original #stop-btn element relocated here; its
+  // module-load click listener follows the element). The live SSE output
+  // (#run-progress / #run-stream / #run-detail-panel / #live-log-wrap)
+  // is rendered, unchanged, by the existing attachStream + runDetail
+  // below this header — this method only owns the choice/panel chrome.
+  //
+  // Reuses the EXACT existing flow: confirm modal is implicit in
+  // startRunWithSudo (sudo gate), then ui.attachStream(run_id). Bodies
+  // match what the old wizard / data-quick posted:
+  //   Safe update  → {profile:"safe"}   (mutating → sudo prompt)
+  //   Quick check  → {profile:"quick"}  (read-only → no sudo)
+  //   Advanced     → the kept #run-form, re-parented into an AC.Drawer,
+  //                  submitting via its original #run-form submit handler.
   async loadRunCenter() {
     if (!$("#profile-select").options.length) {
-      const profs = (await api.get("/profiles")).profiles;
-      const sel = $("#profile-select");
-      for (const p of profs) {
-        const opt = document.createElement("option");
-        opt.value = p.id;
-        opt.textContent = p.description ? `${p.id} - ${p.description}` : (p.label && p.label !== p.id ? `${p.id} - ${p.label}` : p.id);
-        sel.appendChild(opt);
-      }
-      const cats = (await api.get("/categories")).categories;
-      const onlySel = $("#only-select");
-      for (const c of cats) {
-        const opt = document.createElement("option");
-        opt.value = c.id;
-        opt.textContent = c.display_name;
-        onlySel.appendChild(opt);
-      }
+      try {
+        const profs = (await api.get("/profiles")).profiles;
+        const sel = $("#profile-select");
+        for (const p of profs) {
+          const opt = document.createElement("option");
+          opt.value = p.id;
+          opt.textContent = p.description ? `${p.id} - ${p.description}` : (p.label && p.label !== p.id ? `${p.id} - ${p.label}` : p.id);
+          sel.appendChild(opt);
+        }
+        const cats = (await api.get("/categories")).categories;
+        const onlySel = $("#only-select");
+        for (const c of cats) {
+          const opt = document.createElement("option");
+          opt.value = c.id;
+          opt.textContent = c.display_name;
+          onlySel.appendChild(opt);
+        }
+      } catch {}
     }
-    // Existing active run?
+    // Existing active run? Reconnect the live stream (unchanged) and
+    // paint the active RunPanel header instead of the choice pair.
+    let activeRun = null;
     try {
       const a = (await api.get("/runs/active")).active;
       if (a && !a.finished) {
+        activeRun = a;
         ui.attachStream(a.run_id);
-        $("#stop-btn").disabled = false;
+        const sb0 = $("#stop-btn"); if (sb0) sb0.disabled = false;
       }
     } catch {}
+    ui._renderRunStart(activeRun);
+  },
+
+  // Paint #run-root. activeRun != null → RunPanel header (Stop always
+  // visible). Else → the two large choices + Advanced drawer.
+  // A permanently-offscreen holder that owns #run-form (and the nested
+  // #stop-btn) whenever they're not actively mounted in the visible
+  // RunPanel / Advanced drawer. Inline display:none beats the legacy
+  // style.css form#run-form rules (incl. the ui-components stepper kit
+  // [data-uikit-stepper]) so the deleted 3-step wizard NEVER paints
+  // inline on the idle Start view (audit Critical I2 + defects 1 & 2).
+  _runFormSink() {
+    let sink = document.getElementById("run-form-sink");
+    if (!sink) {
+      sink = document.createElement("div");
+      sink.id = "run-form-sink";
+      sink.style.display = "none";
+      const v = document.getElementById("view-run");
+      if (v) v.appendChild(sink);
+    }
+    return sink;
+  },
+  // Park #run-form (+ its #stop-btn) back in the hidden sink. Used on
+  // idle render and on Advanced-drawer close so neither the legacy
+  // stepper nor Stop is ever visible without an active run.
+  _parkRunForm() {
+    const form = $("#run-form");
+    const sink = ui._runFormSink();
+    if (form && form.parentElement !== sink) {
+      form.hidden = true;
+      form.style.display = "none";
+      sink.appendChild(form);
+    }
+    const stopBtn = $("#stop-btn");
+    if (stopBtn && form && stopBtn.parentElement !== form) {
+      form.appendChild(stopBtn);
+    }
+  },
+
+  _renderRunStart(activeRun) {
+    const AC = window.AC;
+    const root = $("#run-root");
+    if (!root || !AC) return;
+    // Rescue the ORIGINAL #stop-btn + #run-form before AC.mount clears
+    // #run-root. They carry module-load listeners bound by element
+    // reference; destroying the nodes would silently break Stop / the
+    // Advanced submit. Park them in the hidden sink between renders.
+    ui._parkRunForm();
+    const stopBtn = $("#stop-btn");
+
+    if (activeRun) {
+      // ---- live RunPanel header (Stop ALWAYS visible) ----------------
+      const head = document.createElement("div");
+      head.className = "asc-runpanel__head";
+      const meta = document.createElement("div");
+      meta.className = "asc-runpanel__meta";
+      meta.appendChild(AC.StatusPill({
+        status: "warn",
+        label: tr("runs.running", "Running"),
+      }));
+      const sub = document.createElement("span");
+      sub.className = "asc-runpanel__sub";
+      sub.textContent =
+        (activeRun.profile || tr("overview.run_label", "run")) +
+        (activeRun.dry_run ? " · " + tr("run.dry_run", "dry run") : "");
+      meta.appendChild(sub);
+      head.appendChild(meta);
+      // Relocate the ORIGINAL #stop-btn (keeps its module-load click
+      // listener → POST /runs/active/stop). Lives in the always-visible
+      // panel header, never inside a collapsed disclosure (kills the
+      // Sesja-74 "Stop unreachable" bug by construction).
+      if (stopBtn) {
+        stopBtn.classList.add("asc-btn", "asc-btn--danger");
+        stopBtn.disabled = false;
+        head.appendChild(stopBtn);
+      }
+      const panel = AC.Card({
+        tone: "warn",
+        title: tr("runs.active_title", "Live run"),
+        children: head,
+      });
+      AC.mount(root, panel);
+      return;
+    }
+
+    // ---- idle: two large choices + Advanced ------------------------
+    // Custom two-line choice buttons styled via design tokens (inline,
+    // no CSS-file edits). Title = bold own line (var(--fg)); desc =
+    // muted second line (var(--fg-muted)) with a clear gap (defect 3).
+    // Accent budget (defect 4): Safe = the ONE primary accent fill;
+    // Quick = quiet (transparent + var(--border) + var(--fg)).
+    const choices = document.createElement("div");
+    choices.style.display = "grid";
+    choices.style.gap = "var(--space-3)";
+
+    const startProfile = async (profile) => {
+      try {
+        const r = await startRunWithSudo({ profile });
+        ui.attachStream(r.run_id);
+        const sb = $("#stop-btn"); if (sb) sb.disabled = false;
+        ui.status(`run ${r.run_id} started`);
+        ui._renderRunStart({ run_id: r.run_id, profile, finished: false });
+      } catch (err) { ui.status(String(err)); }
+    };
+
+    const mkChoice = (titleText, descText, isPrimary, onClick) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.style.display = "block";
+      b.style.width = "100%";
+      b.style.textAlign = "left";
+      b.style.padding = "var(--space-4)";
+      b.style.borderRadius = "var(--radius-sm)";
+      b.style.cursor = "pointer";
+      b.style.appearance = "none";
+      b.style.transition = "background var(--dur-2) var(--ease-out)";
+      if (isPrimary) {
+        b.style.background = "var(--accent)";
+        b.style.color = "var(--accent-ink)";
+        b.style.border = "1px solid var(--accent)";
+        b.addEventListener("mouseenter", () => {
+          b.style.background = "var(--accent-strong)";
+          b.style.borderColor = "var(--accent-strong)";
+        });
+        b.addEventListener("mouseleave", () => {
+          b.style.background = "var(--accent)";
+          b.style.borderColor = "var(--accent)";
+        });
+      } else {
+        b.style.background = "transparent";
+        b.style.color = "var(--fg)";
+        b.style.border = "1px solid var(--border)";
+        b.addEventListener("mouseenter", () => {
+          b.style.background = "var(--bg-nested)";
+        });
+        b.addEventListener("mouseleave", () => {
+          b.style.background = "transparent";
+        });
+      }
+      const t = document.createElement("span");
+      t.textContent = titleText;
+      t.style.display = "block";
+      t.style.font = "var(--fw-semibold) var(--fs-md) / 1.3 var(--font-sans)";
+      const d = document.createElement("span");
+      d.textContent = descText;
+      d.style.display = "block";
+      d.style.marginTop = "var(--space-2)";
+      d.style.font = "var(--fw-regular) var(--fs-sm) / 1.45 var(--font-sans)";
+      d.style.color = isPrimary ? "var(--accent-ink)" : "var(--fg-muted)";
+      d.style.opacity = isPrimary ? "0.82" : "1";
+      b.appendChild(t);
+      b.appendChild(d);
+      b.addEventListener("click", onClick);
+      return b;
+    };
+
+    choices.appendChild(mkChoice(
+      tr("runs.safe_title", "Safe update"),
+      tr("runs.safe_desc", "Check, plan, and apply available updates across all sources."),
+      true, () => startProfile("safe")));
+    choices.appendChild(mkChoice(
+      tr("runs.quick_title", "Quick check"),
+      tr("runs.quick_desc", "Read-only sweep — find what's outdated without changing anything."),
+      false, () => startProfile("quick")));
+
+    // Advanced ▸ — opens an AC.Drawer holding the KEPT #run-form
+    // (profile / categories / phase / dry-run). The form's original
+    // submit handler + selects are reused unchanged; we borrow it from
+    // the hidden sink for the power case and return it on drawer close
+    // so it never paints inline on the idle view (defects 1 & 2).
+    const advBtn = AC.Button({
+      variant: "ghost",
+      label: tr("runs.advanced", "Advanced ▸"),
+      onClick: () => {
+        const form = $("#run-form");
+        const holder = document.createElement("div");
+        holder.className = "asc-advanced";
+        if (form) {
+          form.hidden = false;
+          form.style.display = "";
+          holder.appendChild(form);
+        }
+        AC.Drawer.open({
+          title: tr("runs.advanced_title", "Advanced run"),
+          body: holder,
+        });
+        // AC.Drawer has no close callback — observe its root's `hidden`
+        // attribute so when the user closes the drawer (scrim / Esc /
+        // Close), #run-form is returned to the hidden sink and never
+        // lingers visible on the idle Start view.
+        try {
+          const droot = document.querySelector(".asc-drawer-root");
+          if (droot && !droot._runFormObserved) {
+            droot._runFormObserved = true;
+            const obs = new MutationObserver(() => {
+              if (droot.hasAttribute("hidden")) {
+                try { ui._parkRunForm(); } catch {}
+              }
+            });
+            obs.observe(droot, { attributes: true, attributeFilter: ["hidden"] });
+          }
+        } catch {}
+      },
+    });
+
+    const card = AC.Card({
+      title: tr("runs.start_title", "Start a run"),
+      action: advBtn,
+      children: choices,
+    });
+    AC.mount(root, card);
   },
 
   // Format a run's wall-clock duration as "3m17s" / "42s" / "-".
@@ -2794,72 +3026,63 @@ const ui = {
     } catch { return "-"; }
   },
 
+  // M4 Runs History (blueprint §6.2): an AC.Timeline (relative time ·
+  // profile · result StatusPill · open → run drawer). Same
+  // /runs?limit=200 data call; reuses ui.openRunDrawer for the detail
+  // slide-over. AC.Skeleton while loading, AC.EmptyState when none.
   async loadHistory() {
-    const [rows, eta] = await Promise.all([
-      api.get("/runs?limit=200").then(d => d.runs).catch(() => []),
-      api.get("/telemetry/eta").catch(() => ({profiles:{}})),
-    ]);
-    const tbl   = $("#history-table");
-    const tb    = $("#history-table tbody");
-    const empty = $("#history-empty");
-    const etaEl = $("#history-eta");
+    const AC = window.AC;
+    const root = $("#history-root");
+    if (!root || !AC) return;
+    AC.mount(root, AC.Card({
+      title: tr("history.title", "History"),
+      children: AC.Skeleton({ rows: 6, variant: "rows" }),
+    }));
 
-    // ── Empty state: action-oriented, with run anatomy ───────────────────
+    const rows = await api.get("/runs?limit=200")
+      .then(d => d.runs).catch(() => []);
+
     if (!rows || rows.length === 0) {
-      if (tbl) tbl.hidden = true;
-      if (etaEl) etaEl.textContent = "";
-      if (empty) {
-        empty.hidden = false;
-        empty.innerHTML = `
-          <span class="empty-state-icon">${(window.ICONS && window.ICONS.run) || ""}</span>
-          <h3 class="empty-state-title">${tr("shell.empty.history_title","No runs yet")}</h3>
-          <p class="empty-state-body">${tr("shell.empty.history_body","")}</p>
-          <button type="button" class="app-cta" id="history-empty-cta">${tr("shell.empty.history_cta","Start your first run")}</button>
-          <div class="empty-state-anatomy">
-            <h4>${tr("shell.empty.history_anatomy_title","Anatomy of a run")}</h4>
-            <p>${tr("shell.empty.history_anatomy","")}</p>
-          </div>`;
-        const cta = $("#history-empty-cta");
-        if (cta) cta.addEventListener("click", () => ui.show("runs/start"));
-      }
+      AC.mount(root, AC.Card({
+        title: tr("history.title", "History"),
+        children: AC.EmptyState({
+          glyph: "✓",
+          title: tr("shell.empty.history_title", "No runs yet"),
+          line: tr("shell.empty.history_body", ""),
+          action: AC.Button({
+            variant: "secondary",
+            label: tr("shell.empty.history_cta", "Start your first run"),
+            onClick: () => ui.show("runs/start"),
+          }),
+        }),
+      }));
       return;
     }
-    if (tbl) tbl.hidden = false;
-    if (empty) empty.hidden = true;
 
-    // ETA strip (kept — useful, low-weight context line).
-    const etaTxt = Object.entries(eta.profiles||{}).map(([prof, p]) =>
-      `<span class="badge ${p.ok_pct>=90?"ok":p.ok_pct>=70?"warn":"fail"}">${prof}</span> avg ${Math.round(p.avg_seconds/60)}m, p90 ${Math.round(p.p90_seconds/60)}m, ${p.ok_pct}% ok (${p.samples})`
-    ).join(" · ");
-    if (etaEl) etaEl.innerHTML = etaTxt
-      ? `Based on history: ${etaTxt}` : "";
+    const tlRows = rows.map(r => {
+      const rs = (r.status || "").toLowerCase();
+      const st = (rs === "success" || rs === "ok") ? "ok"
+               : (rs === "failed" || rs === "error") ? "err"
+               : rs === "skipped" ? "neutral" : "warn";
+      const rel = ui.staleness(r.started_at).label
+        .replace(tr("overview.staleness_prefix", "Last run:") + " ", "");
+      const label = (r.profile || tr("overview.run_label", "run")) +
+        (r.dry_run ? " · " + tr("run.dry_run", "dry run") : "") +
+        (r.source === "cli" ? " · cli" : "") +
+        " · " + ui._runDuration(r);
+      return {
+        time: rel,
+        label: label,
+        status: st,
+        statusLabel: r.status || "?",
+        onOpen: () => ui.openRunDrawer(r),
+      };
+    });
 
-    // ── Simplified default: Started · Profile · Status · Duration ·
-    // Details. Phases / reboot / run-id are progressive-disclosure now —
-    // they live in the run-detail drawer, not in five extra columns the
-    // user has to scan past on every visit.
-    tb.innerHTML = "";
-    for (const r of rows) {
-      const row = document.createElement("tr");
-      const srcTag = r.source === "cli"
-        ? ` <span class="st-pill st-info" title="Imported from CLI run">cli</span>`
-        : "";
-      row.innerHTML = `
-        <td>${ui.fmtTime(r.started_at)}</td>
-        <td>${r.profile || "-"}${r.dry_run ? " <span class='dim'>(dry)</span>":""}${srcTag}</td>
-        <td>${ui.badge(r.status)}</td>
-        <td class="duration">${ui._runDuration(r)}</td>
-        <td></td>`;
-      const detailsCell = row.lastElementChild;
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "history-details-btn";
-      btn.textContent = tr("shell.detail.title", "Details");
-      btn.setAttribute("aria-haspopup", "dialog");
-      btn.addEventListener("click", () => ui.openRunDrawer(r));
-      detailsCell.appendChild(btn);
-      tb.appendChild(row);
-    }
+    AC.mount(root, AC.Card({
+      title: tr("history.title", "History"),
+      children: AC.Timeline(tlRows),
+    }));
   },
 
   // Right-side slide-over with the technical detail the History table
@@ -3642,6 +3865,14 @@ const ui = {
       ui.status(`run ${runId} ${status}${ms ? ` (${(ms/1000).toFixed(1)}s)` : ""}`);
       const stopBtn = $("#stop-btn"); if (stopBtn) stopBtn.disabled = true;
       fill.style.width = "100%"; es.close();
+      // M4: run finished — return #run-root to the choice pair (the
+      // live SSE panels below stay rendered with the final state).
+      try {
+        if (typeof ui._renderRunStart === "function" &&
+            document.getElementById("run-root")) {
+          ui._renderRunStart(null);
+        }
+      } catch {}
       // Lock the live stream bar at 100% and surface the terminal
       // verdict in the "currently processing" line.
       setStreamProgress(100, `${status}${ms ? ` (${(ms/1000).toFixed(1)}s)` : ""}`);
@@ -4526,6 +4757,9 @@ document.addEventListener("click", async e => {
     ui.attachStream(r.run_id);
     $("#stop-btn").disabled = false;
     ui.status(`run ${r.run_id} started`);
+    if (typeof ui._renderRunStart === "function") {
+      ui._renderRunStart({ run_id: r.run_id, profile: body.profile, finished: false });
+    }
   } catch (err) { ui.status(String(err)); }
 });
 
@@ -4550,6 +4784,17 @@ $("#run-form").addEventListener("submit", async e => {
     ui.attachStream(r.run_id);
     $("#stop-btn").disabled = false;
     ui.status(`run ${r.run_id} started`);
+    // M4: the form lives inside the Advanced drawer when submitted
+    // there. Return it to the hidden sink (never visible inline),
+    // close the drawer, and paint the active RunPanel so Stop is
+    // reachable.
+    try {
+      if (typeof ui._parkRunForm === "function") ui._parkRunForm();
+      if (window.AC && window.AC.Drawer) window.AC.Drawer.close();
+    } catch {}
+    if (typeof ui._renderRunStart === "function") {
+      ui._renderRunStart({ run_id: r.run_id, profile: body.profile, finished: false });
+    }
   } catch (err) { ui.status(String(err)); }
 });
 

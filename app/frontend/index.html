@@ -219,21 +219,19 @@
 
     <!-- Run Center -->
     <section id="view-run" class="view hidden">
-      <h2 data-i18n="run.title">Run Center</h2>
-      <section class="tab-help card" style="margin-bottom:1rem">
-        <p data-i18n="run.help_summary"></p>
-        <details style="margin-top:0.5rem">
-          <summary data-i18n="run.help_details_label"></summary>
-          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
-            <li><b data-i18n="run.help_li1_b"></b> <span data-i18n="run.help_li1_t"></span></li>
-            <li><b data-i18n="run.help_li2_b"></b> <span data-i18n="run.help_li2_t"></span></li>
-            <li><b data-i18n="run.help_li3_b"></b> <span data-i18n="run.help_li3_t"></span></li>
-            <li><b data-i18n="run.help_li4_b"></b> <span data-i18n="run.help_li4_t"></span></li>
-            <li><b data-i18n="run.help_li5_b"></b> <span data-i18n="run.help_li5_t"></span></li>
-          </ul>
-        </details>
-      </section>
-      <form id="run-form">
+      <!-- M4 Runs (blueprint §6.2): the choice pair OR the live RunPanel
+           header (with the always-visible Stop) is rendered here by
+           ui.loadRunCenter / ui._renderRunStart. The deleted 3-step
+           wizard heading + "How do I start a run?" disclosure are gone.
+           #run-form below is KEPT (hidden) because its submit handler +
+           #profile-select / #only-select are bound by element reference
+           at module load; the Advanced drawer re-parents it so the
+           existing handler keeps working unchanged. #stop-btn is KEPT
+           here (module-load click listener binds by reference) and is
+           relocated into the always-visible RunPanel header by JS so the
+           Sesja-74 "Stop unreachable" bug is impossible by construction. -->
+      <div id="run-root"></div>
+      <form id="run-form" hidden style="display:none">
         <label><span data-i18n="run.profile">Profile</span>
           <select name="profile" id="profile-select"></select>
         </label>
@@ -346,33 +344,12 @@
       </details>
     </section>
 
-    <!-- History -->
+    <!-- History — M4 Runs (blueprint §6.2): one #history-root filled by
+         the rewritten ui.loadHistory with an AC.Timeline. Deleted the
+         <h2>, the "What info is in History?" disclosure and the
+         5-column table wall. Same /runs?limit=200 data call. -->
     <section id="view-history" class="view hidden">
-      <h2 data-i18n="history.title">History</h2>
-      <section class="tab-help card" style="margin-bottom:1rem">
-        <p data-i18n="history.help_summary"></p>
-        <details style="margin-top:0.5rem">
-          <summary data-i18n="history.help_details_label"></summary>
-          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
-            <li><b data-i18n="history.help_li1_b"></b> <span data-i18n="history.help_li1_t"></span></li>
-            <li><b data-i18n="history.help_li2_b"></b> <span data-i18n="history.help_li2_t"></span></li>
-            <li><b data-i18n="history.help_li3_b"></b> <span data-i18n="history.help_li3_t"></span></li>
-            <li><b data-i18n="history.help_li4_b"></b> <span data-i18n="history.help_li4_t"></span></li>
-          </ul>
-        </details>
-      </section>
-      <p id="history-eta" class="dim" style="font-size:0.82rem"></p>
-      <div id="history-empty" class="empty-state" hidden></div>
-      <table id="history-table">
-        <thead><tr>
-          <th data-i18n="history.started">Started</th>
-          <th data-i18n="history.profile">Profile</th>
-          <th data-i18n="history.status">Status</th>
-          <th data-i18n="shell.detail.duration">Duration</th>
-          <th data-i18n="shell.detail.title">Details</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
+      <div id="history-root"></div>
     </section>
 
     <!-- Logs -->
@@ -656,27 +633,24 @@
       </table>
     </section>
 
-    <!-- Schedule (Sesja 67) -->
+    <!-- Schedule (Sesja 67) — M4 Runs (blueprint §6.2): reshelled into
+         asc-card containers only. Deleted the <h2> + the
+         "schedule help" disclosure. Every functional id is kept exactly
+         so loadSchedule / scheduleSubmit / scheduleEdit / scheduleRemove
+         / scheduleTrigger and their endpoints work unchanged. -->
     <section id="view-schedule" class="view hidden">
-      <h2 data-i18n="schedule.title">Schedule</h2>
-      <section class="tab-help card" style="margin-bottom:1rem">
-        <p data-i18n="schedule.help_summary"></p>
-        <details style="margin-top:0.5rem">
-          <summary data-i18n="schedule.help_details_label"></summary>
-          <ul style="margin:0.5rem 0 0 1.2rem;padding:0">
-            <li><b data-i18n="schedule.help_li1_b"></b> <span data-i18n="schedule.help_li1_t"></span></li>
-            <li><b data-i18n="schedule.help_li2_b"></b> <span data-i18n="schedule.help_li2_t"></span></li>
-            <li><b data-i18n="schedule.help_li3_b"></b> <span data-i18n="schedule.help_li3_t"></span></li>
-            <li><b data-i18n="schedule.help_li4_b"></b> <span data-i18n="schedule.help_li4_t"></span></li>
-          </ul>
-        </details>
-      </section>
-
-      <div class="card" style="margin-bottom:1rem">
-        <h3 data-i18n="schedule.list_title">Active schedules</h3>
+      <section class="asc-card asc-card--default" style="margin-bottom:1rem">
+        <header class="asc-card__head">
+          <h2 class="asc-card__title" data-i18n="schedule.list_title">Active schedules</h2>
+          <div class="asc-card__action">
+            <button id="schedule-refresh-btn" type="button" class="asc-btn asc-btn--ghost"
+                    data-i18n="schedule.refresh">Refresh</button>
+          </div>
+        </header>
+        <div class="asc-card__body">
         <p id="schedule-list-empty" class="dim" data-i18n="schedule.list_empty"
            style="margin:0.5rem 0">No schedules yet — use the form below to create one.</p>
-        <table id="schedule-table" style="width:100%;margin-top:0.5rem;display:none">
+        <table id="schedule-table" class="asc-table" style="width:100%;margin-top:0.5rem;display:none">
           <thead><tr>
             <th data-i18n="schedule.col_name">Name</th>
             <th data-i18n="schedule.col_expr">When</th>
@@ -686,12 +660,14 @@
           </tr></thead>
           <tbody></tbody>
         </table>
-        <button id="schedule-refresh-btn" class="btn" type="button" style="margin-top:0.5rem"
-                data-i18n="schedule.refresh">Refresh</button>
-      </div>
+        </div>
+      </section>
 
-      <div class="card">
-        <h3 data-i18n="schedule.add_title">Add or replace a schedule</h3>
+      <section class="asc-card asc-card--default">
+        <header class="asc-card__head">
+          <h2 class="asc-card__title" data-i18n="schedule.add_title">Add or replace a schedule</h2>
+        </header>
+        <div class="asc-card__body">
         <p class="dim" data-i18n="schedule.add_hint" style="margin:0.3rem 0 1rem">
           Submitting an existing name updates the schedule in place.
         </p>
@@ -729,7 +705,8 @@
             <span id="schedule-form-status" class="dim" style="margin-left:auto;align-self:center"></span>
           </div>
         </form>
-      </div>
+        </div>
+      </section>
     </section>
 
     <!-- Settings -->

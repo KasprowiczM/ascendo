@@ -680,6 +680,17 @@ window.I18N = {
       no_items: "(no items in this category)",
       refresh:  "Refresh",
     },
+    runs: {
+      start_title:    "Start a run",
+      safe_title:     "Safe update",
+      safe_desc:      "Check, plan, and apply available updates across all sources.",
+      quick_title:    "Quick check",
+      quick_desc:     "Read-only sweep — find what's outdated without changing anything.",
+      advanced:       "Advanced ▸",
+      advanced_title: "Advanced run",
+      running:        "Running",
+      active_title:   "Live run",
+    },
     run: {
       title:   "Run Center",
       raw_log_label: "Raw event log (click to expand)",
@@ -2058,6 +2069,17 @@ window.I18N = {
 
 
 
+    },
+    runs: {
+      start_title:    "Uruchom",
+      safe_title:     "Bezpieczna aktualizacja",
+      safe_desc:      "Sprawdź, zaplanuj i zastosuj dostępne aktualizacje ze wszystkich źródeł.",
+      quick_title:    "Szybkie sprawdzenie",
+      quick_desc:     "Przegląd tylko do odczytu — znajdź nieaktualne bez wprowadzania zmian.",
+      advanced:       "Zaawansowane ▸",
+      advanced_title: "Uruchomienie zaawansowane",
+      running:        "W toku",
+      active_title:   "Uruchomienie na żywo",
     },
     run: {
       title:   "Centrum uruchamiania",
