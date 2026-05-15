@@ -865,3 +865,68 @@ select[name="scheduler_profile"] + .u-choice .u-opt.is-selected {
   .card:has(.health-row) { max-height: none; overflow: visible; }
   #view-overview .card { min-height: 0; }
 }
+
+/* ==========================================================================
+   M4 — Settings: single-column grouped form + sticky Save (blueprint §6.5)
+
+   Replaces the Sesja-71d 12-column span grid (style.css ~2094/2223) which
+   produced mismatched card heights + dead voids (AI cards towering while
+   Defaults sat tiny). §6.5: "a single-column form list of grouped Cards,
+   each content-driven height. No 12-col mismatched grid, no drag handles."
+   layout-editor.js/css are already disabled (P0); the redundant
+   <h2 data-i18n="settings.title"> is already hidden by the P0 title rule.
+   ui-redesign.css loads after style.css → this wins; !important pins it
+   against the existing media-query !important on `.grid`.
+   ========================================================================== */
+#view-settings #settings-form .grid {
+  display: flex !important;
+  flex-direction: column !important;
+  grid-template-columns: none !important;
+  align-items: stretch !important;
+  gap: var(--space-4, 16px);
+  max-width: 760px;          /* readable form measure, not full-bleed */
+  margin: 0;
+}
+#view-settings #settings-form .grid > .card,
+#view-settings #settings-form #settings-ai-backends,
+#view-settings #settings-form #settings-ai-apikey {
+  grid-column: auto !important;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  /* content-driven height — no forced stretch, no min-height floor */
+  align-self: stretch;
+}
+
+/* Sticky Save: the submit button + "Saved ✓" flash live in a <div> that
+   is a sibling AFTER #settings-form (a direct child of #view-settings),
+   not inside the form. Pin THAT row to the bottom of the scroll area so
+   Save is always reachable on the long form. Existing submit handler +
+   flash untouched (§6.5: "keep the Saved ✓ flash — it's good"). */
+#view-settings > div:has(#settings-saved-flash) {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 12px);
+  max-width: 760px;
+  margin-top: var(--space-3, 12px);
+  padding: var(--space-3, 12px) 0;
+  background: linear-gradient(
+    to top,
+    var(--bg, #0c0e0c) 72%,
+    color-mix(in srgb, var(--bg, #0c0e0c) 80%, transparent)
+  );
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+
+/* Tighten the help-disclosure prefix so it reads as a quiet hint, not a
+   group card competing with the real settings groups. */
+#view-settings .tab-help.card {
+  max-width: 760px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0 0 var(--space-2, 8px);
+}
