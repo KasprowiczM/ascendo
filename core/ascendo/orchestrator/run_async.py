@@ -302,6 +302,12 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
     # Key by (category, name); value carries the row + the priority of
     # the phase that produced it. Higher-priority phases overwrite.
     best: dict[tuple[str, str], tuple[int, dict[str, Any]]] = {}
+    # Keys whose underlying bundle is gone — registry entries left over
+    # after the user uninstalled the .app. Apply phase emits these as
+    # ``skipped`` + zero versions; we delete them from inventory.db so
+    # the SPA doesn't keep showing "Cursor (not installed)" forever
+    # (Sesja 73).
+    uninstalled: set[tuple[str, str, str]] = set()
 
     for sidecar_path in list_run_sidecars(run_dir):
         try:
@@ -362,6 +368,31 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
             # instead of creating a phantom sibling.
             item_id = _normalize_item_id(item_id_raw, str(name))
 
+            key = (category, str(name), item_id)
+
+            # Uninstalled-from-disk detector: apply phase emits a
+            # ``skipped`` row with no version info when the registry
+            # entry's bundle is no longer present on disk (Cursor /
+            # Opera / Notion / etc. after the user trashes the .app).
+            # Drop it from the candidate set AND remember the key so
+            # we evict any existing row from inventory.db after the
+            # upsert pass. Restricted to the apply phase so that a
+            # cleanup-phase no-op for the same key doesn't accidentally
+            # delete a legitimate row.
+            if (
+                phase == "apply"
+                and raw_status == "skipped"
+                and not installed
+                and not candidate
+            ):
+                uninstalled.add(key)
+                # Don't emit this row — let the delete pass clean it up.
+                # Pop any earlier (lower-priority) emission of the same
+                # key so a stale check__web.json "up_to_date" doesn't
+                # win and re-insert the uninstalled app.
+                best.pop(key, None)
+                continue
+
             row = {
                 "category": category,
                 "name": str(name),
@@ -372,7 +403,6 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
                 "source_type": category,
                 "vendor": getattr(item, "vendor", None),
             }
-            key = (category, str(name), item_id)
             existing = best.get(key)
             if existing is None or priority >= existing[0]:
                 best[key] = (priority, row)
@@ -399,10 +429,29 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
     # source authoritative for the FULL set. Post-run sidecars only carry
     # the items each phase saw; we upsert those and leave the rest alone.
     try:
-        return inventory_db.bulk_upsert(rows)
+        flushed = inventory_db.bulk_upsert(rows)
     except Exception:  # noqa: BLE001
         _log.exception("inventory_db: post-run flush failed")
         return 0
+
+    # Sesja 73: evict registry entries whose underlying bundle was
+    # uninstalled between runs. Apply emits these as skipped+no-versions;
+    # without an explicit delete they linger in inventory.db forever and
+    # the SPA keeps painting "Cursor (not installed)" on every page load.
+    if uninstalled and hasattr(inventory_db, "delete_row"):
+        for cat, name, item_id in uninstalled:
+            try:
+                inventory_db.delete_row(cat, name, item_id)
+            except Exception:  # noqa: BLE001
+                _log.exception(
+                    "inventory_db: failed to evict uninstalled row "
+                    "(%s, %s, %s)",
+                    cat,
+                    name,
+                    item_id,
+                )
+
+    return flushed
 
 
 async def start_run_async(

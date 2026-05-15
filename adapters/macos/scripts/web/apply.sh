@@ -38,6 +38,17 @@ if [ -z "$RUN_ID" ] || [ -z "$TRIGGER" ] || [ -z "$PROFILE_NAME" ] || [ -z "$OUT
     exit 2
 fi
 
+# Sesja 73: ``safe`` (and ``quick``) profiles must run silently — operator
+# reported builtin/squirrel handlers opening Inkscape / Notion / Ledger
+# during a routine safe-update. Export ASCENDO_SAFE_MODE so the handlers
+# can skip user-visible ``open -a`` calls and emit ``skipped`` with a
+# manual-action message instead. Full profile still allows the
+# in-process updater dance.
+case "$PROFILE_NAME" in
+    safe|quick) export ASCENDO_SAFE_MODE="true" ;;
+    *)          export ASCENDO_SAFE_MODE="false" ;;
+esac
+
 REG_PATH="${ASCENDO_WEB_REGISTRY_PATH:-$ADAPTER_CONFIG/web_apps.toml}"
 USER_REG="${ASCENDO_WEB_USER_REGISTRY_PATH:-$HOME/.config/ascendo/web_apps.toml}"
 [ -f "$USER_REG" ] || USER_REG=""
@@ -256,6 +267,25 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
         *)            false ;;
     esac
     rc=$?
+
+    # Sesja 73 sentinel: exit 95 from a handler means "intentionally
+    # skipped in safe-mode" (would have called ``open -a`` to surface
+    # the app's in-app updater, but PROFILE_NAME=safe → silent). Use a
+    # stderr tail as the user-facing message.
+    if [ $rc -eq 95 ]; then
+        tail_msg=""
+        if [ -s "$err_log" ]; then
+            tail_msg=$(/usr/bin/tail -n 6 "$err_log" | /usr/bin/awk 'NF{print}' | /usr/bin/head -c 800)
+        fi
+        json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
+        if [ -n "$tail_msg" ]; then
+            json_add_message "info" "${SLUG}: ${tail_msg}"
+        else
+            json_add_message "info" "${SLUG}: skipped in safe mode — launch the app manually to let its built-in updater apply ${CAND:-the new version}"
+        fi
+        COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+        continue
+    fi
 
     if [ $rc -eq 0 ]; then
         case "$HANDLER" in

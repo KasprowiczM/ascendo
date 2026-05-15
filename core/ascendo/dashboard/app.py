@@ -336,7 +336,13 @@ def create_app(
 
         @app.get("/", include_in_schema=False)
         async def _spa_index() -> FileResponse:
-            return FileResponse(frontend_dir / "index.html")
+            # No-cache the HTML too so a fresh git pull is picked up even
+            # if the browser already has the old icons.js/app.js bytes
+            # cached. The asset routes below carry the same header.
+            return FileResponse(
+                frontend_dir / "index.html",
+                headers={"Cache-Control": "no-cache, must-revalidate"},
+            )
 
         # Each top-level asset gets an explicit handler so the SPA's
         # absolute paths (``/style.css``, ``/app.js``...) resolve without
@@ -351,8 +357,20 @@ def create_app(
             ("colors_and_type.css", "text/css"),
             ("i18n.js", "application/javascript"),
             ("icons.js", "application/javascript"),
+            # AppShell IA refactor (Sesja 73): platform abstraction loads
+            # before app.js; shell wires the 5-destination nav after it.
+            ("platform.js", "application/javascript"),
+            ("shell.js", "application/javascript"),
             ("favicon.svg", "image/svg+xml"),
         )
+        # Cache policy: ``no-cache`` forces the browser to revalidate via
+        # If-None-Match / If-Modified-Since on every load (FastAPI's
+        # FileResponse already emits ETag + Last-Modified). After a
+        # ``git pull`` the file mtime changes → 200 + fresh body; otherwise
+        # 304 + cached body. Belt-and-suspenders against stale icons.js /
+        # app.js bites users see across deploys.
+        _SPA_ASSET_HEADERS = {"Cache-Control": "no-cache, must-revalidate"}
+
         for asset_name, media_type in _spa_assets:
             asset_path = frontend_dir / asset_name
             if not asset_path.exists():
@@ -364,7 +382,11 @@ def create_app(
                 _media: str = media_type,
             ):
                 async def _serve_asset() -> FileResponse:
-                    return FileResponse(_path, media_type=_media)
+                    return FileResponse(
+                        _path,
+                        media_type=_media,
+                        headers=_SPA_ASSET_HEADERS,
+                    )
                 return _serve_asset
 
             app.add_api_route(

@@ -476,32 +476,74 @@ _web_verify_signature() {
     /usr/sbin/spctl --assess --type execute --verbose "$app_path" 2>&1
 }
 
-# _web_install_dmg <slug> <dmg_url> <app_path>
-# Full pipeline: download -> mount -> spctl -> cp -R -> xattr strip -> unmount.
-# Re-tries cp -R with sudo -A on EACCES (askpass-cached elevation, the same
-# pattern used by mas + softwareupdate apply scripts).
+# _web_install_dmg <slug> <archive_url> <app_path>
+# Full pipeline: download -> mount/extract -> spctl -> remove-old + cp -R
+# -> xattr strip -> unmount. Re-tries cp -R with sudo -A on EACCES
+# (askpass-cached elevation, the same pattern used by mas + softwareupdate
+# apply scripts).
+#
+# Sesja 73: now ALSO handles .zip archives (Codex / opencode publish a
+# ZIP in their Sparkle appcast, not a DMG; previously hdiutil silently
+# failed with exit 21 and no diagnostic). Format detected via
+# ``/usr/bin/file -b`` so vendors who serve the archive with the wrong
+# extension still work.
 _web_install_dmg() {
     local slug="$1" url="$2" app_path="$3"
-    local dmg="$ASCENDO_WEB_CACHE_DIR/${slug}.dmg"
+    local archive="$ASCENDO_WEB_CACHE_DIR/${slug}.archive"
     local mount_point=""
+    local extract_dir=""
     local rc=0
 
-    _web_download "$url" "$dmg" || return 20
+    _web_download "$url" "$archive" || return 20
 
-    mount_point=$(/usr/bin/hdiutil attach -nobrowse -plist "$dmg" 2>/dev/null \
-        | /usr/bin/grep -oE '/Volumes/[^<]+' \
-        | /usr/bin/head -n 1)
-    [ -z "$mount_point" ] && return 21
+    local archive_type
+    archive_type=$(/usr/bin/file -b "$archive" 2>/dev/null)
+    local is_zip="false"
+    case "$archive_type" in
+        *"Zip archive"*|*"Java archive"*)
+            is_zip="true"
+            ;;
+    esac
+    case "$url" in
+        *.zip|*.ZIP) is_zip="true" ;;
+    esac
 
     local src_app
-    src_app=$(/bin/ls -d "$mount_point"/*.app 2>/dev/null | /usr/bin/head -n 1)
+    if [ "$is_zip" = "true" ]; then
+        extract_dir="$ASCENDO_WEB_CACHE_DIR/${slug}.extract"
+        /bin/rm -rf "$extract_dir" 2>/dev/null || true
+        /bin/mkdir -p "$extract_dir"
+        # `ditto -x -k` is Apple's canonical ZIP extractor — preserves
+        # resource forks + extended attributes, unlike `unzip(1)`.
+        if ! /usr/bin/ditto -x -k "$archive" "$extract_dir" 2>/dev/null; then
+            printf 'ZIP extract failed for %s\n' "$slug" >&2
+            return 21
+        fi
+        # The ZIP may contain the .app at the top level or inside a single
+        # parent directory — search up to two levels deep.
+        src_app=$(/usr/bin/find "$extract_dir" -maxdepth 2 -name '*.app' -type d 2>/dev/null | /usr/bin/head -n 1)
+    else
+        mount_point=$(/usr/bin/hdiutil attach -nobrowse -plist "$archive" 2>/dev/null \
+            | /usr/bin/grep -oE '/Volumes/[^<]+' \
+            | /usr/bin/head -n 1)
+        if [ -z "$mount_point" ]; then
+            printf 'hdiutil attach failed for %s (archive: %s)\n' "$slug" "$archive_type" >&2
+            return 21
+        fi
+        src_app=$(/bin/ls -d "$mount_point"/*.app 2>/dev/null | /usr/bin/head -n 1)
+    fi
+
     if [ -z "$src_app" ]; then
-        /usr/bin/hdiutil detach -force "$mount_point" >/dev/null 2>&1 || true
+        [ -n "$mount_point" ] && /usr/bin/hdiutil detach -force "$mount_point" >/dev/null 2>&1 || true
+        [ -n "$extract_dir" ] && /bin/rm -rf "$extract_dir" 2>/dev/null || true
+        printf 'no .app bundle found inside archive for %s\n' "$slug" >&2
         return 22
     fi
 
     if ! _web_verify_signature "$src_app" >/dev/null 2>&1; then
-        /usr/bin/hdiutil detach -force "$mount_point" >/dev/null 2>&1 || true
+        [ -n "$mount_point" ] && /usr/bin/hdiutil detach -force "$mount_point" >/dev/null 2>&1 || true
+        [ -n "$extract_dir" ] && /bin/rm -rf "$extract_dir" 2>/dev/null || true
+        printf 'spctl signature check rejected %s\n' "$slug" >&2
         return 23
     fi
 
@@ -511,19 +553,38 @@ _web_install_dmg() {
 
     local target_dir
     target_dir="$(dirname "$app_path")"
-    if ! /bin/cp -R "$src_app" "$target_dir/" 2>/dev/null; then
-        # _ascendo_sudo (ascendo_json.sh) picks -A vs plain sudo by env so
-        # the TTY-PAM / Touch-ID-only flow works alongside the SPA-askpass
-        # flow. apply.sh has already called _ascendo_sudo_warm so creds
-        # are hot.
-        if ! _ascendo_sudo /bin/cp -R "$src_app" "$target_dir/"; then
-            rc=24
+
+    # Sesja 73: explicit remove-then-copy. Plain ``cp -R src dst/`` leaves
+    # stale files behind when the new bundle has fewer items than the old
+    # one, and worse: when a running app's bundle is locked the cp can
+    # report exit 0 while NOT actually replacing the binary (Ledger Live /
+    # Warp silent-refusal pattern). Removing first forces a real bundle
+    # swap and surfaces any permission / lock failure as a hard error.
+    if [ -e "$app_path" ]; then
+        if ! /bin/rm -rf "$app_path" 2>/dev/null; then
+            if ! _ascendo_sudo /bin/rm -rf "$app_path"; then
+                printf 'failed to remove existing bundle at %s (is the app running?)\n' "$app_path" >&2
+                rc=24
+            fi
+        fi
+    fi
+    if [ $rc -eq 0 ]; then
+        if ! /bin/cp -R "$src_app" "$target_dir/" 2>/dev/null; then
+            # _ascendo_sudo (ascendo_json.sh) picks -A vs plain sudo by env so
+            # the TTY-PAM / Touch-ID-only flow works alongside the SPA-askpass
+            # flow. apply.sh has already called _ascendo_sudo_warm so creds
+            # are hot.
+            if ! _ascendo_sudo /bin/cp -R "$src_app" "$target_dir/"; then
+                printf 'cp -R failed for %s -> %s/\n' "$src_app" "$target_dir" >&2
+                rc=24
+            fi
         fi
     fi
 
     /usr/bin/xattr -dr com.apple.quarantine "$app_path" 2>/dev/null || true
 
-    /usr/bin/hdiutil detach -force "$mount_point" >/dev/null 2>&1 || true
+    [ -n "$mount_point" ] && /usr/bin/hdiutil detach -force "$mount_point" >/dev/null 2>&1 || true
+    [ -n "$extract_dir" ] && /bin/rm -rf "$extract_dir" 2>/dev/null || true
     return $rc
 }
 

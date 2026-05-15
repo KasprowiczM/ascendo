@@ -2,6 +2,24 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+// Top-level i18n helper. Sesja 73: previously several call sites used
+// bare ``tr(k)`` or ``i18n.t(k, fb)`` — neither resolved at module scope
+// because the local ``function tr`` defined later inside an IIFE never
+// reached the top-level ``ui`` object, and ``i18n`` is not a real
+// symbol (the History tab + Schedule tab both broke with
+// "i18n is not defined" / "tr is not a function"). Capture the
+// i18n.js-exported lookup ONCE here so module-scope callers can use
+// ``tr(key, fb)`` without colliding with the function-declaration hoist
+// that would otherwise overwrite ``window.tr``.
+const _i18nLookup = window.tr;
+const tr = (key, fallback) => {
+  if (typeof _i18nLookup === "function") {
+    const out = _i18nLookup(key);
+    if (out) return out;
+  }
+  return fallback != null ? fallback : key;
+};
+
 const api = {
   async get(path) {
     const r = await fetch(path);
@@ -2456,73 +2474,274 @@ const ui = {
     } catch {}
   },
 
+  // Format a run's wall-clock duration as "3m17s" / "42s" / "-".
+  _runDuration(r) {
+    if (!r.started_at || !r.ended_at) return "-";
+    try {
+      const a = new Date(r.started_at), b = new Date(r.ended_at);
+      const sec = Math.max(0, Math.round((b - a) / 1000));
+      return sec >= 60 ? `${Math.floor(sec/60)}m${sec%60}s` : `${sec}s`;
+    } catch { return "-"; }
+  },
+
   async loadHistory() {
     const [rows, eta] = await Promise.all([
-      api.get("/runs?limit=200").then(d => d.runs),
+      api.get("/runs?limit=200").then(d => d.runs).catch(() => []),
       api.get("/telemetry/eta").catch(() => ({profiles:{}})),
     ]);
-    // Header line: shows expected duration for each profile based on history.
+    const tbl   = $("#history-table");
+    const tb    = $("#history-table tbody");
+    const empty = $("#history-empty");
+    const etaEl = $("#history-eta");
+
+    // ── Empty state: action-oriented, with run anatomy ───────────────────
+    if (!rows || rows.length === 0) {
+      if (tbl) tbl.hidden = true;
+      if (etaEl) etaEl.textContent = "";
+      if (empty) {
+        empty.hidden = false;
+        empty.innerHTML = `
+          <span class="empty-state-icon">${(window.ICONS && window.ICONS.run) || ""}</span>
+          <h3 class="empty-state-title">${tr("shell.empty.history_title","No runs yet")}</h3>
+          <p class="empty-state-body">${tr("shell.empty.history_body","")}</p>
+          <button type="button" class="app-cta" id="history-empty-cta">${tr("shell.empty.history_cta","Start your first run")}</button>
+          <div class="empty-state-anatomy">
+            <h4>${tr("shell.empty.history_anatomy_title","Anatomy of a run")}</h4>
+            <p>${tr("shell.empty.history_anatomy","")}</p>
+          </div>`;
+        const cta = $("#history-empty-cta");
+        if (cta) cta.addEventListener("click", () => ui.show("runs/start"));
+      }
+      return;
+    }
+    if (tbl) tbl.hidden = false;
+    if (empty) empty.hidden = true;
+
+    // ETA strip (kept — useful, low-weight context line).
     const etaTxt = Object.entries(eta.profiles||{}).map(([prof, p]) =>
       `<span class="badge ${p.ok_pct>=90?"ok":p.ok_pct>=70?"warn":"fail"}">${prof}</span> avg ${Math.round(p.avg_seconds/60)}m, p90 ${Math.round(p.p90_seconds/60)}m, ${p.ok_pct}% ok (${p.samples})`
     ).join(" · ");
-    $("#history-eta").innerHTML = etaTxt
-      ? `Based on history: ${etaTxt}`
-      : "<span class='dim'>No prior runs to compute ETA from yet.</span>";
-    const tb = $("#history-table tbody");
+    if (etaEl) etaEl.innerHTML = etaTxt
+      ? `Based on history: ${etaTxt}` : "";
+
+    // ── Simplified default: Started · Profile · Status · Duration ·
+    // Details. Phases / reboot / run-id are progressive-disclosure now —
+    // they live in the run-detail drawer, not in five extra columns the
+    // user has to scan past on every visit.
     tb.innerHTML = "";
     for (const r of rows) {
-      const tr = document.createElement("tr");
-      const phaseSummary = r.summary && r.summary.phases
-        ? `${r.summary.phases.length} phase(s)` : "-";
-      let durStr = "-";
-      if (r.started_at && r.ended_at) {
-        try {
-          const a = new Date(r.started_at), b = new Date(r.ended_at);
-          const sec = Math.max(0, Math.round((b - a) / 1000));
-          durStr = sec >= 60 ? `${Math.floor(sec/60)}m${sec%60}s` : `${sec}s`;
-        } catch {}
-      }
+      const row = document.createElement("tr");
       const srcTag = r.source === "cli"
         ? ` <span class="st-pill st-info" title="Imported from CLI run">cli</span>`
         : "";
-      tr.innerHTML = `
+      row.innerHTML = `
         <td>${ui.fmtTime(r.started_at)}</td>
         <td>${r.profile || "-"}${r.dry_run ? " <span class='dim'>(dry)</span>":""}${srcTag}</td>
         <td>${ui.badge(r.status)}</td>
-        <td class="duration">${durStr}</td>
-        <td>${phaseSummary}</td>
-        <td>${r.needs_reboot ? "yes" : "-"}</td>
-        <td><a href="#logs" data-run="${r.id}">${r.id}</a></td>`;
-      // Sesja 66: link to /runs/{id}/report (human-readable REPORT.md).
-      // Audit found endpoint exists at runs.py:458 but UI never linked it.
-      // Use DOM methods (not innerHTML) so the run id can't introduce XSS.
-      const lastCell = tr.lastElementChild;
-      if (lastCell) {
-        lastCell.appendChild(document.createTextNode(" "));
-        const reportA = document.createElement("a");
-        reportA.href = "/runs/" + encodeURIComponent(r.id) + "/report";
-        reportA.target = "_blank";
-        reportA.rel = "noopener";
-        reportA.className = "dim history-report-link";
-        reportA.title = i18n.t("history.view_report", "View report");
-        reportA.textContent = "\u{1F4C4}";  // 📄 page icon
-        lastCell.appendChild(reportA);
-      }
-      tb.appendChild(tr);
+        <td class="duration">${ui._runDuration(r)}</td>
+        <td></td>`;
+      const detailsCell = row.lastElementChild;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "history-details-btn";
+      btn.textContent = tr("shell.detail.title", "Details");
+      btn.setAttribute("aria-haspopup", "dialog");
+      btn.addEventListener("click", () => ui.openRunDrawer(r));
+      detailsCell.appendChild(btn);
+      tb.appendChild(row);
     }
-    $$("a[data-run]").forEach(a => a.addEventListener("click", e => {
-      e.preventDefault();
-      const runId = a.dataset.run;
-      if (window.ASCENDO_EDITION === "basic") {
-        // Inline-expand the row's logs instead of switching to the Logs view
-        // (which is hidden in basic edition).
-        const parentTr = a.closest("tr");
-        if (parentTr) ui.toggleHistoryLogsRow(parentTr, runId);
-      } else {
-        ui.show("logs");
-        ui.loadRunDetail(runId);
+  },
+
+  // Right-side slide-over with the technical detail the History table
+  // used to splay across columns: phases, reboot, run id, plus the
+  // strong actions (full report, logs). Replaces the old 7-column wall.
+  openRunDrawer(r) {
+    const phases = (r.summary && r.summary.phases)
+      ? r.summary.phases.length : (Array.isArray(r.phases) ? r.phases.length : 0);
+    const esc = (s) => String(s == null ? "" : s)
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const html = `
+      <dl>
+        <dt>${tr("shell.detail.started","Started")}</dt>
+        <dd>${esc(ui.fmtTime(r.started_at))}</dd>
+        <dt>${tr("shell.detail.ended","Ended")}</dt>
+        <dd>${esc(r.ended_at ? ui.fmtTime(r.ended_at) : "-")}</dd>
+        <dt>${tr("shell.detail.duration","Duration")}</dt>
+        <dd>${esc(ui._runDuration(r))}</dd>
+        <dt>${tr("shell.detail.profile","Profile")}</dt>
+        <dd>${esc(r.profile || "-")}${r.dry_run ? " (dry-run)" : ""}</dd>
+        <dt>${tr("shell.detail.status","Status")}</dt>
+        <dd>${ui.badge(r.status)}</dd>
+        <dt>${tr("shell.detail.phases","Phases")}</dt>
+        <dd>${phases || "-"}</dd>
+        <dt>${tr("shell.detail.reboot","Reboot required")}</dt>
+        <dd>${r.needs_reboot ? "yes" : "no"}</dd>
+        <dt>${tr("shell.detail.runid","Run ID")}</dt>
+        <dd><code>${esc(r.id)}</code></dd>
+      </dl>
+      <div class="drawer-actions">
+        <a class="app-cta" href="/runs/${encodeURIComponent(r.id)}/report"
+           target="_blank" rel="noopener">${tr("shell.detail.open_report","Open full report")}</a>
+        <button type="button" class="history-details-btn" id="drawer-logs-btn">${tr("shell.detail.open_logs","View logs")}</button>
+      </div>`;
+    if (window.shell && typeof window.shell.openDrawer === "function") {
+      window.shell.openDrawer(html);
+      const lb = document.getElementById("drawer-logs-btn");
+      if (lb) lb.addEventListener("click", () => {
+        window.shell.closeDrawer();
+        if (window.ASCENDO_EDITION === "basic") {
+          // Logs view is dev-only; surface report instead.
+          window.open("/runs/" + encodeURIComponent(r.id) + "/report",
+                       "_blank", "noopener");
+        } else {
+          ui.show("insights/logs");
+          if (typeof ui.loadRunDetail === "function") ui.loadRunDetail(r.id);
+        }
+      });
+    }
+  },
+
+  // ── Insights: observability assembled from existing /runs data ────────
+  async loadInsights() {
+    const rows = await api.get("/runs?limit=200")
+      .then(d => d.runs || []).catch(() => []);
+    const bodyEl  = $("#insights-body");
+    const emptyEl = $("#insights-empty");
+
+    if (!rows.length) {
+      if (bodyEl) bodyEl.hidden = true;
+      if (emptyEl) {
+        emptyEl.hidden = false;
+        emptyEl.innerHTML = `
+          <span class="empty-state-icon">${(window.ICONS && window.ICONS.history) || ""}</span>
+          <h3 class="empty-state-title">${tr("shell.empty.insights_title","Nothing to analyze yet")}</h3>
+          <p class="empty-state-body">${tr("shell.empty.insights_body","")}</p>
+          <button type="button" class="app-cta" id="insights-empty-cta">${tr("shell.empty.insights_cta","Start a run")}</button>`;
+        const c = $("#insights-empty-cta");
+        if (c) c.addEventListener("click", () => ui.show("runs/start"));
       }
-    }));
+      return;
+    }
+    if (bodyEl) bodyEl.hidden = false;
+    if (emptyEl) emptyEl.hidden = true;
+
+    const total = rows.length;
+    const ok = rows.filter(r => r.status === "success" || r.status === "ok").length;
+    const failed = rows.filter(r => r.status === "failed" || r.status === "error");
+    const partial = rows.filter(r => r.status === "partial");
+    const successPct = total ? Math.round((ok / total) * 100) : 0;
+    const durs = rows.map(r => {
+      if (!r.started_at || !r.ended_at) return null;
+      try { return Math.max(0,(new Date(r.ended_at)-new Date(r.started_at))/1000); }
+      catch { return null; }
+    }).filter(v => v != null);
+    const avg = durs.length
+      ? Math.round(durs.reduce((a,b)=>a+b,0)/durs.length) : 0;
+    const fmtDur = (s) => s >= 60 ? `${Math.floor(s/60)}m${Math.round(s%60)}s` : `${s}s`;
+
+    // KPIs
+    const kpis = $("#insights-kpis");
+    if (kpis) kpis.innerHTML = `<div class="kpi-row">
+      <div class="kpi"><span class="kpi-label">${tr("shell.ins.total_runs","Total runs")}</span><span class="kpi-value">${total}</span></div>
+      <div class="kpi"><span class="kpi-label">${tr("shell.ins.success_rate","Success rate")}</span><span class="kpi-value">${successPct}%</span></div>
+      <div class="kpi"><span class="kpi-label">${tr("shell.ins.avg_duration","Avg duration")}</span><span class="kpi-value">${avg?fmtDur(avg):"-"}</span></div>
+      <div class="kpi"><span class="kpi-label">${tr("shell.ins.last_run","Last run")}</span><span class="kpi-value" style="font-size:1rem">${ui.fmtTime(rows[0].started_at)}</span></div>
+    </div>`;
+
+    // Trends: status mix as proportional bars.
+    const trendsEl = $("#insights-trends");
+    if (trendsEl) {
+      const seg = (label, n, cls) => {
+        const pct = total ? Math.round((n/total)*100) : 0;
+        return `<li><span style="min-width:74px">${label}</span>
+          <span class="ins-bar-track"><span class="ins-bar-fill" style="width:${pct}%;background:var(--${cls})"></span></span>
+          <span class="ins-muted" style="min-width:46px;text-align:right">${n} · ${pct}%</span></li>`;
+      };
+      trendsEl.innerHTML = `<ul class="ins-list">
+        ${seg(tr("history.status","Success"), ok, "ok")}
+        ${seg("partial", partial.length, "warn")}
+        ${seg("failed", failed.length, "err")}
+      </ul>`;
+    }
+
+    // Recent failures.
+    const failEl = $("#insights-failures");
+    if (failEl) {
+      if (!failed.length) {
+        failEl.innerHTML = `<p class="ins-muted">${tr("shell.ins.no_failures","No failures in the recent window.")}</p>`;
+      } else {
+        failEl.innerHTML = `<ul class="ins-list">` + failed.slice(0,8).map(r => {
+          const cats = (r.summary && r.summary.phases || [])
+            .filter(p => p.summary && p.summary.err > 0)
+            .map(p => p.category);
+          const where = cats.length
+            ? `${tr("shell.ins.failed_in","failed in")} ${[...new Set(cats)].join(", ")}` : "";
+          return `<li><span class="st-pill st-err">${r.profile||"run"}</span>
+            <span class="ins-muted" style="flex:1">${ui.fmtTime(r.started_at)} ${where}</span>
+            <a class="ins-muted" href="/runs/${encodeURIComponent(r.id)}/report" target="_blank" rel="noopener">${tr("shell.ins.view_report","Report")}</a></li>`;
+        }).join("") + `</ul>`;
+      }
+    }
+
+    // Duration trend — last 12 runs as sparkline bars.
+    const durEl = $("#insights-duration");
+    if (durEl) {
+      const last = rows.slice(0,12).reverse();
+      const max = Math.max(1, ...last.map(r => {
+        try { return (new Date(r.ended_at)-new Date(r.started_at))/1000; }
+        catch { return 0; }
+      }));
+      durEl.innerHTML = `<div style="display:flex;align-items:flex-end;gap:4px;height:64px">` +
+        last.map(r => {
+          let s = 0;
+          try { s = Math.max(0,(new Date(r.ended_at)-new Date(r.started_at))/1000); } catch {}
+          const h = Math.max(3, Math.round((s/max)*60));
+          const c = r.status === "failed" ? "var(--err)"
+                  : r.status === "partial" ? "var(--warn)" : "var(--accent)";
+          return `<span title="${ui.fmtTime(r.started_at)} · ${fmtDur(Math.round(s))}" style="flex:1;height:${h}px;background:${c};border-radius:2px"></span>`;
+        }).join("") + `</div>`;
+    }
+
+    // Recent changes — runs that actually upgraded something.
+    const chEl = $("#insights-changes");
+    if (chEl) {
+      const changed = rows.filter(r => {
+        const ph = (r.summary && r.summary.phases) || [];
+        return ph.some(p => p.phase === "apply" && p.summary && p.summary.ok > 0);
+      }).slice(0, 6);
+      if (!changed.length) {
+        chEl.innerHTML = `<p class="ins-muted">${tr("shell.ins.no_changes","No package changes recorded recently.")}</p>`;
+      } else {
+        chEl.innerHTML = `<ul class="ins-list">` + changed.map(r => {
+          const applied = (r.summary.phases||[])
+            .filter(p => p.phase === "apply")
+            .reduce((a,p)=>a+((p.summary&&p.summary.ok)||0),0);
+          return `<li><span class="ins-muted" style="flex:1">${ui.fmtTime(r.started_at)}</span>
+            <span class="st-pill st-ok">${applied} applied</span>
+            <a class="ins-muted" href="/runs/${encodeURIComponent(r.id)}/report" target="_blank" rel="noopener">${tr("shell.ins.view_report","Report")}</a></li>`;
+        }).join("") + `</ul>`;
+      }
+    }
+
+    // Operational notes — platform-aware. NVIDIA guidance is structurally
+    // impossible to emit on macOS: Platform.copy() resolves
+    // platform.macos.* which has no driver line, and the explicit
+    // drivers_note is gated on Platform.allow('nvidia').
+    const notesEl = $("#insights-notes");
+    if (notesEl && window.Platform) {
+      const P = window.Platform;
+      const blocks = [];
+      const ops = P.copy("ops_note", "");
+      if (ops) blocks.push(`<p class="ins-muted">${ops}</p>`);
+      const reboot = P.copy("reboot_note", "");
+      if (reboot) blocks.push(`<p class="ins-muted">${reboot}</p>`);
+      if (P.allow("nvidia")) {
+        const dn = P.copy("drivers_note", "");
+        if (dn) blocks.push(`<p class="ins-note-os">${P.label} · drivers</p><p class="ins-muted">${dn}</p>`);
+      }
+      notesEl.innerHTML =
+        `<p class="ins-note-os">${P.label}</p>` + blocks.join("");
+    }
   },
 
   async loadRunDetail(runId, targetEl) {
@@ -2676,12 +2895,12 @@ const ui = {
     };
     if (!table || !tbody || !empty) return;
 
-    setStatus(i18n.t("schedule.loading", "Loading…"), "dim");
+    setStatus(tr("schedule.loading", "Loading…"), "dim");
     let resp;
     try {
       resp = await api.get("/scheduler/list");
     } catch (e) {
-      setStatus(i18n.t("schedule.unavailable",
+      setStatus(tr("schedule.unavailable",
         "Scheduling not available on this adapter."), "warn");
       table.style.display = "none";
       empty.style.display = "";
@@ -2698,19 +2917,23 @@ const ui = {
       table.style.display = "";
       empty.style.display = "none";
       for (const it of items) {
-        const tr = document.createElement("tr");
+        // ``row`` not ``tr`` — see the History-tab fix above; a local
+        // ``tr`` element shadows the i18n helper and turns every
+        // ``tr("schedule.…")`` call into "tr is not a function",
+        // blanking the whole Schedule list (Sesja 73).
+        const row = document.createElement("tr");
         // Use DOM-safe construction; schedule names are user-typed and
         // could otherwise carry HTML when echoed by a misbehaving backend.
         const cells = [
           it.name || "",
           it.expression || "",
           it.profile || "",
-          it.enabled ? (i18n.t("schedule.yes", "yes")) : (i18n.t("schedule.no", "no")),
+          it.enabled ? (tr("schedule.yes", "yes")) : (tr("schedule.no", "no")),
         ];
         for (const c of cells) {
           const td = document.createElement("td");
           td.textContent = c;
-          tr.appendChild(td);
+          row.appendChild(td);
         }
         const actTd = document.createElement("td");
         const actGroup = document.createElement("div");
@@ -2719,26 +2942,26 @@ const ui = {
         trigBtn.type = "button";
         trigBtn.className = "secondary";
         trigBtn.style.fontSize = "0.78rem";
-        trigBtn.textContent = i18n.t("schedule.trigger_now", "Run now");
+        trigBtn.textContent = tr("schedule.trigger_now", "Run now");
         trigBtn.addEventListener("click", () => ui.scheduleTrigger(it.name));
         const delBtn = document.createElement("button");
         delBtn.type = "button";
         delBtn.className = "secondary";
         delBtn.style.fontSize = "0.78rem";
-        delBtn.textContent = i18n.t("schedule.delete", "Delete");
+        delBtn.textContent = tr("schedule.delete", "Delete");
         delBtn.addEventListener("click", () => ui.scheduleRemove(it.name));
         const editBtn = document.createElement("button");
         editBtn.type = "button";
         editBtn.className = "secondary";
         editBtn.style.fontSize = "0.78rem";
-        editBtn.textContent = i18n.t("schedule.edit", "Edit");
+        editBtn.textContent = tr("schedule.edit", "Edit");
         editBtn.addEventListener("click", () => ui.scheduleEdit(it));
         actGroup.appendChild(trigBtn);
         actGroup.appendChild(editBtn);
         actGroup.appendChild(delBtn);
         actTd.appendChild(actGroup);
-        tr.appendChild(actTd);
-        tbody.appendChild(tr);
+        row.appendChild(actTd);
+        tbody.appendChild(row);
       }
     }
 
@@ -2785,18 +3008,18 @@ const ui = {
       description: (document.getElementById("schedule-f-desc") || {}).value || null,
     };
     if (!body.name.trim() || !body.expression.trim()) {
-      setStatus(i18n.t("schedule.err_required", "Name and expression are required."), "fail");
+      setStatus(tr("schedule.err_required", "Name and expression are required."), "fail");
       return;
     }
-    setStatus(i18n.t("schedule.saving", "Saving…"), "dim");
+    setStatus(tr("schedule.saving", "Saving…"), "dim");
     try {
       const r = await api.post("/scheduler/install", body);
       if (!r || r.ok === false) {
-        setStatus((r && r.error) || i18n.t("schedule.err_save",
+        setStatus((r && r.error) || tr("schedule.err_save",
           "Save failed."), "fail");
         return;
       }
-      setStatus(i18n.t("schedule.saved", "Saved."), "ok");
+      setStatus(tr("schedule.saved", "Saved."), "ok");
       ui._loaded.schedule = false;
       ui.loadSchedule();
     } catch (e) {
@@ -2806,13 +3029,13 @@ const ui = {
 
   async scheduleRemove(name) {
     if (!name) return;
-    const msg = i18n.t("schedule.confirm_delete",
+    const msg = tr("schedule.confirm_delete",
       "Delete schedule {name}?").replace("{name}", name);
     if (!confirm(msg)) return;
     try {
       const r = await api.post("/scheduler/remove", {name});
       if (!r || r.ok === false) {
-        alert((r && r.error) || i18n.t("schedule.err_delete",
+        alert((r && r.error) || tr("schedule.err_delete",
           "Delete failed."));
         return;
       }
@@ -2828,11 +3051,11 @@ const ui = {
     try {
       const r = await api.post("/scheduler/trigger", {name});
       if (!r || r.ok === false) {
-        alert((r && r.error) || i18n.t("schedule.err_trigger",
+        alert((r && r.error) || tr("schedule.err_trigger",
           "Trigger failed."));
         return;
       }
-      alert(i18n.t("schedule.triggered",
+      alert(tr("schedule.triggered",
         "Triggered '{name}' once.").replace("{name}", name));
     } catch (e) {
       alert(String(e).slice(0, 200));

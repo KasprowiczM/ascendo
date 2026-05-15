@@ -521,6 +521,116 @@ def test_post_run_flush_is_upsert_only(tmp_path: Path) -> None:
 
 
 
+def test_delete_row_removes_single_row_by_pk(tmp_path: Path) -> None:
+    """Sesja 73: ``delete_row(category, name, item_id)`` evicts one row.
+
+    Used by the post-run flush when an apply sidecar reports a registry
+    entry whose underlying bundle was uninstalled (Cursor / Opera /
+    Notion). Must NOT delete sibling rows in the same category.
+    """
+    db_path = tmp_path / "inv.db"
+    db = InventoryDB(db_path)
+    db.bulk_upsert(
+        [
+            {"category": "web", "name": "web:cursor", "item_id": "",
+             "installed": None, "candidate": None, "status": "skipped"},
+            {"category": "web", "name": "web:obsidian", "item_id": "",
+             "installed": "1.5", "candidate": "1.5", "status": "up_to_date"},
+        ],
+    )
+    assert db.count(category="web") == 2
+
+    deleted = db.delete_row("web", "web:cursor", "")
+    assert deleted == 1
+    rows = db.query(category="web")
+    names = {r["name"] for r in rows}
+    assert names == {"web:obsidian"}, (
+        f"delete_row should have evicted only cursor; got {sorted(names)}"
+    )
+
+    # No-op when row already gone.
+    deleted = db.delete_row("web", "web:cursor", "")
+    assert deleted == 0
+
+
+def test_post_run_flush_evicts_uninstalled_rows(tmp_path: Path) -> None:
+    """Sesja 73: apply phase emits ``status=skipped`` with no version
+    for registry entries whose bundle is missing on disk (operator
+    uninstalled Cursor but kept it in ``web_apps.toml``). The post-run
+    flush MUST delete the matching inventory row so the SPA stops
+    showing "Cursor (not installed)" forever.
+    """
+    import json
+    from ascendo.orchestrator.run_async import _flush_run_to_inventory_db
+
+    db_path = tmp_path / "inv.db"
+    db = InventoryDB(db_path)
+    # Seed: cursor was in inventory from an earlier live-scan, obsidian
+    # is a regular installed app.
+    db.bulk_upsert(
+        [
+            {"category": "web", "name": "web:cursor", "item_id": "",
+             "installed": "0.5.0", "candidate": "0.5.0", "status": "up_to_date"},
+            {"category": "web", "name": "web:obsidian", "item_id": "",
+             "installed": "1.5.0", "candidate": "1.5.0", "status": "up_to_date"},
+        ],
+    )
+    assert db.count(category="web") == 2
+
+    # Build an apply__web.json that says "cursor is gone" (status=skipped,
+    # no current/target version — the exact shape apply.sh emits for the
+    # not_installed_or_path_mismatch branch).
+    fixture = (
+        Path(__file__).resolve().parent.parent
+        / "fixtures" / "sidecars" / "ascendo_v1_apply_winget.json"
+    )
+    payload = json.loads(fixture.read_text(encoding="utf-8"))
+    payload["category"] = "web"
+    payload["phase"] = "apply"
+    payload["items"] = [
+        {
+            **payload["items"][0],
+            "id": "web:cursor",
+            "name": "web:cursor",
+            "category": "web",
+            "source": {"type": "web"},
+            "current_version": None,
+            "target_version": None,
+            "resolved_version": None,
+            "status": "skipped",
+        },
+        {
+            **payload["items"][0],
+            "id": "web:obsidian",
+            "name": "web:obsidian",
+            "category": "web",
+            "source": {"type": "web"},
+            "current_version": "1.5.0",
+            "target_version": "1.5.0",
+            "status": "up_to_date",
+        },
+    ]
+    payload["summary"] = {
+        "total": 2, "success": 0, "up_to_date": 1,
+        "failed": 0, "skipped": 1, "planned": 0, "partial": 0, "triggered": 0,
+    }
+    payload["status"] = "success"
+
+    run_dir = tmp_path / "runs" / "evict-test"
+    run_dir.mkdir(parents=True)
+    (run_dir / "apply__web.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    _flush_run_to_inventory_db(run_dir, db)
+
+    rows = db.query(category="web")
+    names = {r["name"] for r in rows}
+    assert "web:cursor" not in names, (
+        "Post-run flush should have evicted the uninstalled cursor row; "
+        f"DB still has {sorted(names)}"
+    )
+    assert "web:obsidian" in names, "Sibling installed row must survive eviction"
+
+
 def test_inventory_db_does_not_leak_file_descriptors(tmp_path: Path) -> None:
     """Regression: every InventoryDB call must close its sqlite3 connection.
 

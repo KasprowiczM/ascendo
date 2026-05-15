@@ -381,11 +381,20 @@ release_feed_apply() {
     [ -z "$timeout" ] && timeout=8
 
     if [ -z "$download_path" ] && [ -z "$download_asset_pattern" ]; then
-        # No download path configured — open the app so it can self-update
+        # No download path configured — vendor only exposes a check
+        # feed; the actual install path runs inside the app. Open it
+        # in ``full`` profile so the in-app updater can do its thing.
+        # In ``safe`` profile (Sesja 73) we stay silent — the user
+        # asked for silent updates, so we emit ``skipped`` with a
+        # manual-action message.
         local app_path display_name
         display_name=$(printf '%s' "$cfg" | _rf_get "display_name")
         app_path=$(printf '%s' "$cfg" | _rf_get "app_path")
         [ -z "$app_path" ] && app_path="/Applications/${display_name}.app"
+        if [ "${ASCENDO_SAFE_MODE:-false}" = "true" ]; then
+            echo "no direct download URL — launch the app and use its built-in updater to install the new version" >&2
+            return 95
+        fi
         /usr/bin/env open -a "$app_path"
         return 0
     fi

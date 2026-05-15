@@ -116,11 +116,17 @@ apply_pip() {
     # noise. Skip with a clear explanation.
     case "$(_ascendo_pip_flavour "$PIP_BIN"):$_pkg" in
         brew:pip|brew:setuptools|brew:wheel)
+            # Emit ``up_to_date`` not ``skipped`` — brew owns the formula, so
+            # from pip's perspective there is nothing actionable. ``skipped``
+            # routes into REPORT.md's "Deferred" section, which the operator
+            # reads as failure (Sesja 73). The info message is preserved
+            # for sidecar audit but doesn't move the row off the
+            # already-up-to-date list.
             local _new
             _new="$(ascendo_pip_installed_version "$_pkg")"
-            json_add_item "$_display" "$_new" "$_new" "skipped" "pip" "pip"
+            json_add_item "$_display" "$_new" "$_new" "up_to_date" "pip" "pip"
             json_add_message "info" \
-                "skipped pip-self-upgrade of '$_pkg' on brew Python (installed without RECORD; run 'brew upgrade python' to bump)"
+                "pip-self-upgrade of '$_pkg' deferred — managed by Homebrew on brew Python (run 'brew upgrade python' to bump)"
             return
             ;;
         brew:*)
@@ -130,13 +136,15 @@ apply_pip() {
             # link step — every subsequent `brew upgrade <pkg>` then fails
             # with "Target already exists" because pip occupies the path
             # (operator-reported uv 0.11.12→0.11.13 collision). Defer to
-            # brew silently.
+            # brew silently. Status is ``up_to_date`` not ``skipped`` so the
+            # row appears under "Already up-to-date" instead of "Deferred"
+            # in REPORT.md (Sesja 73).
             if ascendo_pip_brew_owns "$_pkg"; then
                 local _new
                 _new="$(ascendo_pip_installed_version "$_pkg")"
-                json_add_item "$_display" "$_new" "$_new" "skipped" "pip" "pip"
+                json_add_item "$_display" "$_new" "$_new" "up_to_date" "pip" "pip"
                 json_add_message "info" \
-                    "skipped pip upgrade of '$_pkg' — brew also owns this formula; upgrade flows through brew (preserves /opt/homebrew/bin/$_pkg)"
+                    "'$_pkg' managed by Homebrew (run 'brew upgrade $_pkg' to bump; pip defers to preserve /opt/homebrew/bin/$_pkg)"
                 return
             fi
             ;;

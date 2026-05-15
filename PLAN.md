@@ -1,17 +1,35 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-14 (sesja 72) — **Operator polish: node
+> Last updated: 2026-05-15 (sesja 73) — **Operator bug batch +
+> major UX/IA refactor (5-destination AppShell).** Two bodies of
+> work on `main`. Part 1: 7-item bug batch from run e2d0fffb —
+> SPA asset `Cache-Control: no-cache` (schedule-icon staleness),
+> `ASCENDO_SAFE_MODE` exit-95 gate so safe runs stop opening apps,
+> ZIP support in `_web_install_dmg` (Codex), explicit rm-rf-before-cp
+> (Ledger/Warp locked-bundle), inventory `delete_row` eviction for
+> uninstalled apps (Cursor/Opera/Notion), pip uv → `up_to_date` not
+> Deferred, and the History-tab `tr` shadowing/`i18n.t` typo fix
+> (blank History → 195 rows). Part 2: 10-item flat nav → **5
+> workflow destinations** (Dashboard / Library / Runs / Insights /
+> Settings) with segmented sub-tabs, a per-page header (title +
+> desc + one primary CTA), a Preferences popover, a new
+> `platform.js` abstraction (NVIDIA structurally excluded on macOS
+> across JS + i18n + CSS), `shell.js` AppShell wrapping `ui.show()`
+> with zero router rewrites, a new Insights surface, simplified
+> 5-column History + run-detail drawer, and premium empty states.
+> 397 macOS + 35 contract tests pass; 1045/1045 EN+PL i18n
+> parity; verified live via Playwright (0 console errors, 0 NVIDIA
+> hits across all 10 macOS routes). See HANDOFF Sesja 73.
+>
+> Previous milestone (sesja 72) — **Operator polish: node
 > version target + pip+brew render + Schedule icon + System Health
 > badges + Settings alignment.** Six concrete issues from operator
 > audit fixed. Node 26.1.0 on Current track no longer reads "cur >
 > tgt" (now shows tgt=26.1.0 not 24.15.0 LTS). pip+brew "skipped"
 > entries now render as "managed by Homebrew" in REPORT.md.
-> Sidebar Schedule link shows a calendar icon. Schedule form is
-> compact (max-width 720 px) with inline action buttons. System
-> Health card now renders 12 component rows with coloured status
-> badges from /health rollup (was: empty card with one tiny "ok"
-> pill from empty /preflight). Settings cards align via stretch
-> grid. 958/958 EN+PL i18n parity. See HANDOFF Sesja 72.
+> Sidebar Schedule link shows a calendar icon. System Health card
+> renders 12 component rows with coloured status badges. 958/958
+> EN+PL i18n parity. See HANDOFF Sesja 72.
 >
 > Previous milestone (sesja 71f) — **Inventory + web bundle
 > resolution + version normalization.** Operator's full-apply run

@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — UX/IA refactor: 5-destination AppShell (Sesja 73)
+
+- **Navigation reorganised** from 10–13 flat sidebar items into **5
+  workflow destinations**: Dashboard, Library (Sources/Apps/Tools),
+  Runs (Start/Scheduled/History), Insights (Trends + dev Logs),
+  Settings (General/Help/About + dev Hosts/Sync). Old hashes
+  (`#schedule`, `#apps`, …) auto-resolve so existing bookmarks keep
+  working.
+- **Per-page header** with title, one-line description, and a single
+  primary action. Language/Theme/Font moved into a compact
+  **Preferences popover** (same control IDs — no behavioural change).
+- **New `platform.js`** OS abstraction layer (`Platform.os / allow /
+  supportsNvidia / elevationTerm / copy`). NVIDIA driver UI + copy is
+  structurally excluded on macOS across JS, i18n, and CSS layers.
+- **New `shell.js`** AppShell (sidebar, header, segmented sub-tabs,
+  Preferences popover, run-detail drawer) — wraps `ui.show()` with no
+  rewrite of the SSE/runs/AI router.
+- **New Insights** surface: run trends, recent failures, duration
+  sparkline, recent changes, platform-aware operational notes
+  (assembled from existing `/runs` data — no new backend).
+- **History simplified** to 5 default columns (Started · Profile ·
+  Status · Duration · Run details); phases/reboot/run-id moved into a
+  right-side detail drawer. Premium action-oriented empty state.
+- New `shell.*` + `platform.*` i18n namespaces (EN + PL parity:
+  1045 == 1045).
+
+### Fixed — operator bug batch (run e2d0fffb, Sesja 73)
+
+- SPA assets now send `Cache-Control: no-cache, must-revalidate` so a
+  `git pull` is picked up without a manual hard-reload (fixes the
+  "schedule icon not applied" staleness).
+- `safe`/`quick` profile web apply no longer opens apps to the
+  foreground — `ASCENDO_SAFE_MODE` + exit-95 sentinel routes
+  builtin/squirrel/omaha/release_feed to a silent `skipped` with a
+  manual-action message.
+- Codex update fixed: `_web_install_dmg` now handles ZIP archives
+  (Sparkle appcast served a `.zip`, not a `.dmg`) via `ditto`.
+- Ledger Live / Warp silent-install refusal now surfaces as a real
+  error: explicit `rm -rf` before `cp -R` exposes a locked running
+  bundle instead of a false success.
+- Uninstalled apps (Cursor/Opera/Notion/Notion-Calendar) are now
+  evicted from inventory via `InventoryDB.delete_row` during the
+  post-run flush instead of lingering forever.
+- `pip uv` (and brew-owned pip-self) now report `up_to_date` instead
+  of landing in REPORT.md's "Deferred" section.
+- **History tab fixed** — a Sesja-66 `i18n.t` typo plus a `tr`
+  variable shadowing the i18n helper threw mid-loop and left the
+  table blank; also fixed the identical bug in the Schedule list.
+
 ### Planned
 
 M6 — security audit (T1-T7 per ADR-0005), code signing across all three

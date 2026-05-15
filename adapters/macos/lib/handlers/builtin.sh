@@ -89,6 +89,17 @@ builtin_apply() {
         display_name=$(/usr/bin/printf '%s' "$cfg" | _builtin_get display_name)
         app_path="/Applications/${display_name}.app"
     fi
+    # Sesja 73: in ``safe`` profile, don't launch the app — the operator
+    # explicitly chose silent updates. apply.sh maps exit 95 to a
+    # ``skipped`` row + manual-action info message.
+    if [ "${ASCENDO_SAFE_MODE:-false}" = "true" ]; then
+        if [ -n "$update_url" ]; then
+            echo "manual update path — launch the app and use Help → Check for Updates (${update_url})" >&2
+        else
+            echo "manual update path — launch the app and use Help → Check for Updates" >&2
+        fi
+        return 95
+    fi
     /usr/bin/env open -a "$app_path"
     if [ -n "$update_url" ]; then
         echo "Open the app's Help menu and run Check for Updates ($update_url)" >&2

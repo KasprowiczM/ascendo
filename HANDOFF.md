@@ -6,6 +6,130 @@
 
 ---
 
+## Sesja 73 (2026-05-15) — Operator bug batch + major UX/IA refactor (5-destination AppShell)
+
+Two bodies of work in one session, both on `main` (no branches per
+CLAUDE.md). Part 1 = a seven-item operator bug batch surfaced by run
+`e2d0fffb`. Part 2 = a full information-architecture refactor:
+10–13 flat sidebar items → **5 workflow destinations** with sub-tabs,
+a per-page header, a platform abstraction layer, and a new Insights
+surface — built *on top of* the existing router with zero rewrites of
+the SSE/runs/AI wiring.
+
+### Part 1 — operator bug batch (run e2d0fffb audit)
+
+Dispatched 5 parallel read-only Explore agents (per
+`dispatching-parallel-agents`), then fixed inline (HANDOFF Sesja 70
+lesson: subagents thrash on this repo's huge auto-loaded docs).
+
+| Symptom | Root cause | Fix |
+|---|---|---|
+| Schedule icon "not applied" | Browser cached pre-Sesja-72 `icons.js`; file on disk was correct | `Cache-Control: no-cache, must-revalidate` on every SPA asset + `/` in `core/ascendo/dashboard/app.py` so browsers always revalidate via ETag/Last-Modified after a `git pull` |
+| Web apps opening during a *safe* run | `builtin.sh:92`, `squirrel.sh:89`, `omaha.sh:371`, `release_feed.sh:389` unconditionally `open -a` to trigger in-app updaters | New `ASCENDO_SAFE_MODE` export in `scripts/web/apply.sh` + exit-95 sentinel → all four handlers return 95 in `safe`/`quick`; apply.sh maps that to a `skipped` row with a manual-action message. Full profile still allows the in-process updater dance. |
+| Codex `handler exit 21` (empty msg) | Codex Sparkle appcast publishes a **ZIP**, not a DMG; `hdiutil attach` silently failed → `mount_point` empty → 21 with no stderr | Extended `_web_install_dmg` (`lib/ascendo_web.sh`) with ZIP detection (`file -b` + URL suffix) + `ditto -x -k` extraction path; every failure mode now prints a diagnostic to stderr |
+| Ledger Live + Warp "apply reported success but version unchanged" | `cp -R` over a running app's locked bundle returns 0 without replacing it | Same `_web_install_dmg` rewrite now does explicit `rm -rf "$app_path"` **before** `cp -R`; a locked-bundle removal fails loudly ("is the app running?") so apply.sh records the real reason |
+| Cursor / Opera / Notion / Notion-Calendar stuck in inventory after uninstall | apply emits `status=skipped` + null versions; `_flush_run_to_inventory_db` upserted them and the SPA kept reading them back | `run_async._flush_run_to_inventory_db` now detects apply-phase `skipped`+no-versions and **deletes** the matching row via new `InventoryDB.delete_row(category, name, item_id)` |
+| `pip uv` shown as a "Deferred" failure | apply emitted `status=skipped` for brew-owned formulas; `report.py` files any `skipped` under Deferred | `scripts/pip/apply.sh` now emits `up_to_date` (info message preserved for audit) for brew-owned (`uv` / pip-self) — lands under "Already up-to-date" |
+| MEGAsync running | Already handled — `deferred_app_in_use` → "was running… quit MEGAsync and re-run apply" via `report.py:524`. No code change. |
+| **History tab blank** (operator follow-up) | Sesja 66 typo: `i18n.t(...)` (no such global; convention is `tr`) **+** a local `const tr = document.createElement("tr")` shadowing the i18n helper inside the loop → `ReferenceError` / `tr is not a function` aborted the loop with 0 rows. Same bug in the Schedule list loop. | Added a top-level `tr(key,fb)` helper in `app.js` (captures `window.tr` once, no hoist collision); replaced 14 `i18n.t(...)` typos; renamed the shadowing DOM var `tr` → `row` in `loadHistory` + `loadSchedule`. Verified live: History renders 195 rows, 0 console errors. |
+
+Tests: `+test_delete_row_*` / `+test_post_run_flush_evicts_uninstalled_rows`
+(inventory_db) and `+test_*_safe_mode_skips_open_and_returns_95`
+(squirrel/builtin). **397 macOS adapter + 35 contract pass**, zero
+regressions; only the pre-existing apply_report grouping failure
+(unrelated, documented since Sesja 43).
+
+### Part 2 — UX/IA refactor: 5-destination AppShell
+
+Operator brief: collapse the 10-item flat nav into a coherent,
+workflow-driven control plane. Three parallel read-only Explore
+agents mapped the router / markup-CSS / i18n-platform model exactly;
+implementation done inline (decisive, low-risk — the existing
+delegated `a[data-view]` → `ui.show()` is preserved as the
+foundation).
+
+**New IA (old → new):**
+
+| Old | New |
+|---|---|
+| Overview | **Dashboard** (single page) |
+| Categories / Apps / AI-Tools | **Library** → Sources · Apps · Tools |
+| Run Center / Schedule / History | **Runs** → Start · Scheduled · History |
+| *(new)* trends/failures/duration/notes | **Insights** → Trends · *(Logs dev)* |
+| Settings / Help / About / Hosts / Sync | **Settings** → General · Help · About · *(Hosts/Sync dev)* |
+
+**New files**
+
+- `app/frontend/platform.js` — OS abstraction. `Platform.os / is /
+  allow(feature) / supportsNvidia / elevationTerm / copy(key) /
+  applyTo(root)`. Reads `<html data-adapter>` lazily so it tracks the
+  live `/version` value. **`supportsNvidia` is false on macOS and
+  unknown** — the single JS guard layered on top of the existing CSS
+  `adapter-hide-macos` defense.
+- `app/frontend/shell.js` — AppShell. IA model + reverse-map,
+  **wraps `ui.show()`** (no app.js router edit), renders the header
+  (title/desc/one primary CTA), segmented sub-tab rail, Preferences
+  popover (the three switcher buttons keep their original IDs so
+  `bindSwitchers`/`injectIcons` work unchanged), run-detail drawer,
+  deep-link + back/forward + old-bookmark resolution.
+
+**Changed**
+
+- `index.html` — 13-link nav → 5 destinations; new `#app-header`
+  (title/desc/CTA/Preferences/OS-status + sub-tab rail); new
+  `#view-insights`; right-side run-detail `#run-drawer`; History
+  thead 7→5 columns; `platform.js`/`shell.js` script tags.
+- `i18n.js` — `+shell.*` + `+platform.*` namespaces (EN **and** PL);
+  removed NVIDIA wording from macOS + cross-platform copy. Parity
+  enforced: **1045 EN == 1045 PL** (`check-i18n-parity.py`).
+- `style.css` — header, segmented sub-tabs, Preferences popover,
+  empty-state, run-detail drawer, Insights grid, OS status pill,
+  responsive (mobile drawer/stack), `:focus-visible`,
+  `prefers-reduced-motion`. All on existing design tokens.
+- `app.js` — `loadHistory` simplified to 5 columns + run-detail
+  drawer + premium action-oriented empty state (CTA + run-anatomy
+  panel); new `openRunDrawer`; new `loadInsights`
+  (KPIs/trends/failures/duration-sparkline/changes/platform-aware
+  notes — assembled from existing `/runs` data, no new backend).
+- `core/ascendo/dashboard/app.py` — registered `/platform.js` +
+  `/shell.js`; the no-cache header.
+
+**Verified live (Playwright, zero console errors):** 5 destinations
+with correct title/desc/CTA; sub-tabs with correct active state +
+edition gating (Hosts/Sync hidden on basic); deep links
+(`#runs/history`) + old bookmarks (`#schedule` → Runs/Scheduled) both
+resolve; shareable hashes; Preferences popover open/close/Esc; theme
+toggle still works from the relocated switcher; History 5 columns +
+drawer (run id/phases/report link/close); Insights renders; platform
+matrix correct on macOS/linux/windows/unknown; **NVIDIA scan across
+all 10 routes on macOS returned 0 visible hits**.
+
+### NVIDIA on macOS — confirmed excluded (three layers)
+
+1. **JS guard**: `Platform.allow('nvidia') === false` on macOS +
+   unknown; every driver/notes path gates on it.
+2. **i18n**: zero NVIDIA wording in any macOS or cross-platform key;
+   all 8 remaining `NVIDIA` strings confined to `platform.linux.*` /
+   `platform.windows.*` / `help.linux.*`. `platform.macos.drivers_note`
+   is `""`.
+3. **CSS**: existing `adapter-hide-macos` on the legacy "Update
+   NVIDIA" buttons (verified `display:none` on macOS).
+
+### Carry-forward
+
+- The legacy per-view `<h2>` (e.g. "History") is mildly redundant
+  with the new header title now; left as a low-weight secondary
+  section label because some views embed action buttons inside that
+  `<h2>` (e.g. Overview refresh) — a blanket hide would break them.
+  A safe per-view tidy is a future polish task.
+- "Active run" is surfaced inside **Runs → Start** (Run Center
+  already streams the active run inline) rather than as its own
+  sub-tab, to avoid touching the SSE subscription logic.
+- Operator action: hard-reload the dashboard once (the new no-cache
+  headers make every subsequent change auto-pick-up).
+
+---
+
 ## Sesja 72 (2026-05-14, late) — Operator polish: node target + pip+brew + Schedule layout + Overview health + icons
 
 Continuation of Sesja 71. After the inventory/web fixes from Sesja 71f

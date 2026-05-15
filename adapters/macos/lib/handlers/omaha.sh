@@ -368,6 +368,13 @@ omaha_apply() {
     display_name=$(printf '%s' "$cfg" | _omaha_get display_name)
     app_path=$(printf '%s' "$cfg" | _omaha_get app_path)
     [ -z "$app_path" ] && app_path="/Applications/${display_name}.app"
+    # Sesja 73: respect safe-mode silence. The in-process Omaha client
+    # only runs while the app is open; in silent mode we let the user
+    # decide when to launch the app.
+    if [ "${ASCENDO_SAFE_MODE:-false}" = "true" ]; then
+        echo "Omaha in-process updater — launch the app at your convenience to pick up the new version" >&2
+        return 95
+    fi
     /usr/bin/env open -a "$app_path" 2>/dev/null
     return 0
 }

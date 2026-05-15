@@ -115,21 +115,43 @@ ascendo_stop_desktop                # if you started the Tauri shell
 
 ## 3. Tour of the dashboard
 
-The Basic edition ships eight tabs in the sidebar. Top to bottom:
+The dashboard is organised as **five workflow destinations** in the
+left sidebar — each answers one question. Sub-tabs handle facets
+*inside* a destination, so you're never hunting across the nav.
 
-| Tab | What it's for |
-|-----|---------------|
-| **Overview** | Health card (per-source status), reboot banner, "last run was X ago" indicator, quick-action buttons |
-| **Categories** | One row per package source. Click to expand; per-source 5-phase buttons live here |
-| **Run Center** | Live SSE stream while a run is in progress; per-package log lines, progress bar |
-| **History** | Paginated list of past runs with their inline logs and parsed sidecars |
-| **Apps** | Per-app inventory: search, filter by source, see installed/candidate version, per-app history, exclude apps from runs |
-| **Suggestions** | Preset "rules" (security, staleness, feature-add) + an optional AI-assisted recommender |
-| **Settings** | Locale (EN / PL), light/dark theme, scheduler entries, Touch ID / askpass tweaks |
-| **About** + **Help** | Version, release notes, troubleshooting links |
+| Destination | The question it answers | Sub-tabs |
+|-------------|-------------------------|----------|
+| **Dashboard** | What's happening and what should I do next? | — (single page) |
+| **Library** | What sources, apps, and tools does Ascendo manage? | Sources · Apps · Tools |
+| **Runs** | What can I run now, what's scheduled, what ran before? | Start · Scheduled · History |
+| **Insights** | What happened, what failed, what trends matter? | Trends · *(Logs — dev edition)* |
+| **Settings** | How does Ascendo behave and how do I configure it? | General · *(Hosts/Sync — dev)* · Help · About |
 
-The **Sync**, **Hosts**, and raw-events stream are intentionally
-hidden in Basic — those surfaces ship with the dev edition only.
+Every page opens with a **header strip**: the page title, a one-line
+description, and a single primary action (e.g. **Start Run**).
+
+- **Display & preferences** (theme, language, font size) live in the
+  ⚙ Preferences popover at the top-right of the header — one compact
+  cluster instead of three buttons competing with content.
+- The sidebar footer shows an **OS status pill** (e.g. `macOS · admin
+  permission`) so you always know which platform and elevation model
+  is in effect.
+
+**Old → new map** (bookmarks still work — old hashes auto-resolve):
+
+| Old tab | Now lives at |
+|---------|--------------|
+| Overview | **Dashboard** |
+| Categories | **Library → Sources** |
+| Apps | **Library → Apps** |
+| AI Tools / Suggestions | **Library → Tools** |
+| Run Center | **Runs → Start** |
+| Schedule | **Runs → Scheduled** |
+| History | **Runs → History** |
+| *(new)* trends / failures / duration | **Insights → Trends** |
+| Settings | **Settings → General** |
+| Help / About | **Settings → Help / About** |
+| Hosts / Sync / Logs | dev-edition only (Settings / Insights) |
 
 ---
 
@@ -137,14 +159,15 @@ hidden in Basic — those surfaces ship with the dev edition only.
 
 The everyday flow:
 
-1. Open **Categories**.
+1. Open **Library → Sources**.
 2. Click any source row to expand it.
-3. Click **check** on that row. A read-only scan runs (~5–30 s); the
-   Run Center pops open with live progress.
+3. Click **check** on that row. A read-only scan runs (~5–30 s); live
+   progress streams in **Runs → Start**.
 4. When the row's "outdated" count updates, you know what's pending.
 
-You can repeat this per source, or use the **Overview → Quick actions**
-buttons to fire a multi-source sweep:
+You can repeat this per source, or use the **Dashboard → Start Run**
+header action / the Run Center quick-action chips for a multi-source
+sweep:
 
 ```
 [1] Build inventory   [2] Quick check   [3] Safe update   [4] Full dry-run   [5] Full update
@@ -168,20 +191,20 @@ prevents accidental click-throughs from changing system state.
 
 ### Per source
 
-1. Categories → row → **plan** (preview the changes)
-2. Categories → row → **apply** (modal opens; type `apply`; confirm)
-3. Watch the Run Center stream the run live
-4. When done, the Apps tab + Categories counts auto-refresh
+1. Library → Sources → row → **plan** (preview the changes)
+2. Library → Sources → row → **apply** (modal opens; type `apply`)
+3. Watch **Runs → Start** stream the run live
+4. When done, Library counts + the Apps sub-tab auto-refresh
 
 ### "Update everything"
 
-Click **Overview → 5. Full update**. Same modal, all sources at once,
-sequential apply (brew/winget first, OS updates last because of reboot
-semantics).
+Use **Dashboard → Start Run** (or the Full-update quick chip in
+**Runs → Start**). Same modal, all sources at once, sequential apply
+(brew/winget first, OS updates last because of reboot semantics).
 
 ### Dry-run first if you're nervous
 
-**Overview → 4. Full dry-run** — runs every source through `plan` only,
+The **Full dry-run** quick chip runs every source through `plan` only,
 shows you exactly what *would* change, never mutates.
 
 ### Reboot detection
@@ -197,8 +220,7 @@ the top of the dashboard. Reboot on your own schedule.
 The schedule DSL is the same on every OS — Ascendo translates it to
 launchd / Task Scheduler / systemd timers under the hood.
 
-**Sesja 67 added a dedicated Schedule tab** in the sidebar (between
-Hosts and Settings). Click **Schedule** to:
+Open **Runs → Scheduled** to:
 
 - See every active schedule in a table (Name / When / Profile / Enabled / Actions)
 - Add or replace a schedule via the form below the table
@@ -344,7 +366,7 @@ ascendo doctor --verbose             # same, with capability flags
 
 ### Rebuild the inventory cache
 
-If the Categories tab looks stale or wrong:
+If **Library → Sources** looks stale or wrong:
 
 ```bash
 ascendo_maintenance rebuild-inventory
@@ -410,7 +432,7 @@ The most common ten things people hit on a fresh install:
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | `ascendo: command not found` | Helper shims dir not on PATH | Restart your shell, or run the install one-liner again — it re-adds PATH |
-| `Categories tab is empty` | First-run inventory not yet built | Click **Overview → 1. Build inventory** or `ascendo_maintenance rebuild-inventory` |
+| `Library → Sources is empty` | First-run inventory not yet built | Click the **Build inventory** quick chip (Dashboard / Runs → Start) or `ascendo_maintenance rebuild-inventory` |
 | `Dashboard 422 errors after a git pull` | Stale browser tab | Hard reload (`Ctrl-Shift-R` / `Cmd-Shift-R`) |
 | `apply hangs at sudo prompt` (macOS) | No askpass / Touch ID configured | See [MACOS_QUICKSTART.md §6](MACOS_QUICKSTART.md) |
 | `apply fails with "exited 1"` | Insufficient privilege | Re-run from an Administrator (Windows) / sudo-cached (macOS/Linux) shell |

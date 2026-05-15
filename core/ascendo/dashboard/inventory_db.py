@@ -500,6 +500,27 @@ class InventoryDB:
             conn.execute("DELETE FROM inventory_meta")
             conn.commit()
 
+    def delete_row(self, category: str, name: str, item_id: str = "") -> int:
+        """Delete a single inventory row by composite PK.
+
+        Used by :func:`run_async._flush_run_to_inventory_db` to evict
+        registry entries whose underlying bundle was uninstalled between
+        runs (Sesja 73 — Cursor/Opera/Notion left in
+        ``web_apps.toml`` after the user removed the .app). Returns 1
+        when a row was deleted, 0 otherwise.
+        """
+        if not category or not name:
+            return 0
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM inventory_items "
+                "WHERE category = ? AND name = ? AND item_id = ?",
+                (category, name, item_id),
+            )
+            deleted = cursor.rowcount or 0
+            conn.commit()
+            return deleted
+
     # ── update history ──────────────────────────────────────────────────
 
     # Items with these statuses didn't actually change versions and so

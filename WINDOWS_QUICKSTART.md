@@ -100,9 +100,26 @@ All five are idempotent: starting an already-running dashboard is a
 no-op (logs current pid); stopping a stopped one prints `not running`
 and exits 0.
 
-## 3 · See what's installed (Categories tab)
+## 2.6 · Navigation map (updated Sesja 73)
 
-The Categories tab shows one row per source:
+The sidebar is now **5 workflow destinations** (was a 10+ flat list).
+Old bookmarks still work — old hashes auto-resolve to the new home.
+
+| You want… | Go to |
+|---|---|
+| Health, what to do next | **Dashboard** |
+| Sources / Apps / AI tools | **Library** → Sources · Apps · Tools |
+| Start a run / scheduled / history | **Runs** → Start · Scheduled · History |
+| Trends, failures, duration | **Insights** |
+| Config, Help, About | **Settings** |
+
+Display/Language/Font are in the **⚙ Preferences** popover (top-right
+of the page header). The sidebar footer shows an OS status pill
+(e.g. `Windows · Administrator`).
+
+## 3 · See what's installed (Library → Sources)
+
+The **Library → Sources** view shows one row per source:
 
 | Source | Where the data comes from | What it represents |
 |--------|---------------------------|--------------------|

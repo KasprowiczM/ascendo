@@ -43,18 +43,16 @@
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body class="layout-shell">
-  <!-- Mobile topbar (hidden on desktop) - hamburger + brand + theme/lang/font switchers -->
+  <!-- Mobile topbar (hidden on desktop) - hamburger + brand only.
+       Display/language/font controls now live in the in-page header's
+       Preferences popover (one compact utility cluster instead of three
+       buttons competing with content). -->
   <header class="topbar">
     <button id="sidebar-toggle" class="icon-btn" aria-label="Toggle menu" title="Menu"></button>
     <div class="topbar-brand">
       <img class="brand-mark brand-img brand-img--dark"  src="/assets/logo-mark.svg"       alt="" aria-hidden="true">
       <img class="brand-mark brand-img brand-img--light" src="/assets/logo-mark-light.svg" alt="" aria-hidden="true">
       <span class="brand-name">Ascendo</span>
-    </div>
-    <div class="topbar-actions">
-      <button id="lang-switcher"  class="icon-btn" aria-label="Language" title="Language"></button>
-      <button id="theme-switcher" class="icon-btn" aria-label="Theme"    title="Theme"></button>
-      <button id="font-switcher"  class="icon-btn" aria-label="Font size" title="Font size"></button>
     </div>
   </header>
 
@@ -68,34 +66,83 @@
         <span class="brand-tagline" data-i18n="brand.tagline">unified updates</span>
       </div>
     </div>
-    <nav id="nav" class="sidebar-nav">
-      <a href="#overview"   data-view="overview"   data-icon="overview"   class="nav-link active"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.overview">Overview</span></a>
-      <a href="#categories" data-view="categories" data-icon="categories" class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.categories">Categories</span></a>
-      <a href="#run"        data-view="run"        data-icon="run"        class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.run">Run Center</span></a>
-      <a href="#history"    data-view="history"    data-icon="history"    class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.history">History</span></a>
-      <a href="#logs"       data-view="logs"       data-icon="logs"       class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.logs">Logs</span></a>
-      <a href="#sync"       data-view="sync"       data-icon="sync"       class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.sync">Sync</span></a>
-      <a href="#apps"       data-view="apps"       data-icon="apps"       class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.apps">Apps</span></a>
-      <a href="#suggest"    data-view="suggest"    data-icon="suggest"    class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.suggest">Suggestions</span></a>
-      <a href="#hosts"      data-view="hosts"      data-icon="hosts"      class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.hosts">Hosts</span></a>
-      <a href="#schedule"   data-view="schedule"   data-icon="schedule"   class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.schedule">Schedule</span></a>
-      <a href="#settings"   data-view="settings"   data-icon="settings"   class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.settings">Settings</span></a>
-      <a href="#help"       data-view="help"       data-icon="help"       class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.help">Help</span></a>
-      <a href="#about"      data-view="about"      data-icon="about"      class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="nav.about">About</span></a>
+    <!-- Primary navigation — 5 workflow destinations (was 13 flat items).
+         Each <a data-view> still drives the existing ui.show() router via
+         the delegated a[data-view] click handler; data-dest lets the
+         shell highlight the right group + render its sub-tabs in the
+         page header. data-feature gates the destination by OS capability
+         (defense-in-depth on top of the CSS adapter-only-* rules). -->
+    <nav id="nav" class="sidebar-nav" aria-label="Primary">
+      <a href="#overview" data-view="overview" data-dest="dashboard" data-icon="overview"
+         class="nav-link active"><span class="nav-icon"></span><span class="nav-label" data-i18n="shell.nav.dashboard">Dashboard</span></a>
+      <a href="#categories" data-view="categories" data-dest="library" data-icon="apps"
+         class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="shell.nav.library">Library</span></a>
+      <a href="#run" data-view="run" data-dest="runs" data-icon="run"
+         class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="shell.nav.runs">Runs</span></a>
+      <a href="#insights" data-view="insights" data-dest="insights" data-icon="history"
+         class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="shell.nav.insights">Insights</span></a>
+      <a href="#settings" data-view="settings" data-dest="settings" data-icon="settings"
+         class="nav-link"><span class="nav-icon"></span><span class="nav-label" data-i18n="shell.nav.settings">Settings</span></a>
     </nav>
-    <!-- Contextual help block — populated by ui.updateSidebarHelp(view) so
-         the user always sees a 1–2 sentence "what does this menu do" hint
-         right where the menu is, instead of stealing space at the top of
-         every view. The text is sourced from the existing
-         <view>.help_summary i18n keys; no new translations required. -->
-    <div id="sidebar-help" class="sidebar-help dim" aria-live="polite"></div>
+    <!-- Kept in the DOM (hidden) so ui.updateSidebarHelp() stays a safe
+         no-op; the page header now carries the per-page description. -->
+    <div id="sidebar-help" class="sidebar-help dim" aria-live="polite" hidden></div>
     <div class="sidebar-footer">
+      <div id="platform-status" class="platform-status" aria-live="polite"></div>
       <div id="hostbadge" class="dim"></div>
     </div>
   </aside>
   <div id="sidebar-backdrop" class="sidebar-backdrop hidden" aria-hidden="true"></div>
 
   <main>
+    <!-- App header — one orientation strip per page: what this page is,
+         the single primary action, compact Preferences, OS status, and
+         (when the destination has facets) a segmented sub-tab rail.
+         Title / desc / CTA / sub-tabs are populated by shell.js per
+         route. The three switcher buttons keep their original IDs so the
+         existing bindSwitchers()/injectIcons() wiring works unchanged —
+         they just live in the Preferences popover now. -->
+    <header id="app-header" class="app-header">
+      <div class="app-header-main">
+        <div class="app-header-text">
+          <h1 id="app-header-title" class="app-header-title">Dashboard</h1>
+          <p id="app-header-desc" class="app-header-desc"></p>
+        </div>
+        <div class="app-header-actions">
+          <button id="app-header-cta" type="button" class="app-cta" hidden></button>
+          <div class="prefs">
+            <button id="prefs-toggle" type="button" class="icon-btn prefs-toggle"
+                    aria-haspopup="true" aria-expanded="false"
+                    aria-label="Display & preferences"
+                    data-i18n-title="shell.prefs.open" title="Display & preferences">
+              <span class="prefs-toggle-icon" aria-hidden="true"></span>
+            </button>
+            <div id="prefs-menu" class="prefs-menu" role="menu" hidden
+                 aria-label="Preferences">
+              <p class="prefs-menu-title" data-i18n="shell.prefs.title">Preferences</p>
+              <div class="prefs-row">
+                <span class="prefs-label" data-i18n="shell.prefs.theme">Theme</span>
+                <button id="theme-switcher" class="icon-btn" aria-label="Theme"
+                        title="Theme"></button>
+              </div>
+              <div class="prefs-row">
+                <span class="prefs-label" data-i18n="shell.prefs.language">Language</span>
+                <button id="lang-switcher" class="icon-btn" aria-label="Language"
+                        title="Language"></button>
+              </div>
+              <div class="prefs-row">
+                <span class="prefs-label" data-i18n="shell.prefs.font">Font size</span>
+                <button id="font-switcher" class="icon-btn" aria-label="Font size"
+                        title="Font size"></button>
+              </div>
+              <p class="prefs-hint dim" data-i18n="shell.prefs.theme_hint"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <nav id="app-subtabs" class="app-subtabs" aria-label="Section" hidden></nav>
+    </header>
+
     <!-- First-run wizard modal -->
     <!-- 6-step step-router. Inner content is rebuilt by ui.wizard.render()
          from a steps[] array in app.js so adding/removing a step is one
@@ -469,15 +516,14 @@
         </details>
       </section>
       <p id="history-eta" class="dim" style="font-size:0.82rem"></p>
+      <div id="history-empty" class="empty-state" hidden></div>
       <table id="history-table">
         <thead><tr>
           <th data-i18n="history.started">Started</th>
           <th data-i18n="history.profile">Profile</th>
           <th data-i18n="history.status">Status</th>
-          <th>Duration</th>
-          <th data-i18n="history.phases">Phases</th>
-          <th data-i18n="history.reboot">Reboot</th>
-          <th data-i18n="history.run_id">Run id</th>
+          <th data-i18n="shell.detail.duration">Duration</th>
+          <th data-i18n="shell.detail.title">Details</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -1619,7 +1665,56 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
         </div>
       </div>
     </section>
+
+    <!-- Insights — observability surface assembled from existing run data
+         (no new backend). Cards are populated by ui.loadInsights(). The
+         operational-notes card is platform-aware via data-platforms /
+         Platform.copy(); NVIDIA guidance is structurally impossible to
+         emit on macOS (Platform.allow('nvidia') === false there). -->
+    <section id="view-insights" class="view hidden">
+      <div id="insights-empty" class="empty-state" hidden></div>
+      <div id="insights-body" class="insights-grid">
+        <div class="card insights-kpis" id="insights-kpis"></div>
+        <div class="card">
+          <h3 data-i18n="shell.ins.trends_title">Run trends</h3>
+          <div id="insights-trends"></div>
+        </div>
+        <div class="card">
+          <h3 data-i18n="shell.ins.failures_title">Recent failures</h3>
+          <div id="insights-failures"></div>
+        </div>
+        <div class="card">
+          <h3 data-i18n="shell.ins.duration_title">Duration trend</h3>
+          <div id="insights-duration"></div>
+        </div>
+        <div class="card">
+          <h3 data-i18n="shell.ins.changes_title">Recent changes</h3>
+          <div id="insights-changes"></div>
+        </div>
+        <div class="card insights-notes">
+          <h3 data-i18n="shell.ins.notes_title">Operational notes</h3>
+          <div id="insights-notes" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
   </main>
+
+  <!-- Run detail drawer — right-side slide-over. Replaces the noisy
+       phases/reboot/run-id columns the History table used to show by
+       default. Populated by ui.openRunDrawer(runId). -->
+  <div id="run-drawer" class="drawer hidden" role="dialog" aria-modal="true"
+       aria-labelledby="run-drawer-title">
+    <div class="drawer-scrim" data-drawer-close></div>
+    <aside class="drawer-panel" tabindex="-1">
+      <header class="drawer-head">
+        <h2 id="run-drawer-title" data-i18n="shell.detail.title">Run details</h2>
+        <button type="button" class="icon-btn" data-drawer-close
+                data-i18n-title="shell.detail.close" title="Close"
+                aria-label="Close">✕</button>
+      </header>
+      <div id="run-drawer-body" class="drawer-body"></div>
+    </aside>
+  </div>
 
   <!-- Sudo modal -->
   <div id="sudo-modal" class="modal hidden">
@@ -1669,6 +1764,8 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
 
   <script src="/icons.js"></script>
   <script src="/i18n.js"></script>
+  <script src="/platform.js"></script>
   <script src="/app.js"></script>
+  <script src="/shell.js"></script>
 </body>
 </html>
