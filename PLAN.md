@@ -23,9 +23,16 @@
 > **Every screen independently verified live (cache-busted reload +
 > hard DOM assertions + 0 console errors) BEFORE its commit** — that
 > discipline caught a real defect on every agent-built screen.
-> i18n 1109/1109 EN+PL throughout. Full single-sheet CSS collapse
-> deferred (screens still consume legacy `.card`/`.grid`/`.st-*` —
-> a separate high-regression pass). See HANDOFF Sesja 76.
+> Post-merge: a full cross-breakpoint QA sweep (5 screens ×
+> 1440/834/390) found + fixed one real regression — the KpiStrip
+> had no tablet reflow so long values 3-line-wrapped at 834
+> (`7bd7b20`: `.asc-kpi` 4→2-up ramp + Insights relative last-run) —
+> and closed the last named blueprint gap, §6.6: Insights "Recent
+> failures" now open the shared `#run-drawer` like Dashboard/Runs
+> (`4490c89`). i18n 1109/1109 EN+PL throughout. Full single-sheet
+> CSS collapse + per-locale i18n split remain deliberately deferred
+> (high-regression / pure-hygiene, explicit scoped session — NOT
+> "keep going" tasks). See HANDOFF Sesja 76.
 >
 > Previous milestone (sesja 74) — **Touch-first responsive UI
 > + light-theme overhaul + interaction QA + pip-verify fix.** Five

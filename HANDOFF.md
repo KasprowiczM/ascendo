@@ -84,11 +84,29 @@ single-column rule); deleted the untracked disabled
 `layout-editor.{css,js}`. All five screens + mobile re-verified clean
 afterward.
 
+### Post-merge: cross-breakpoint QA + §6.6 (pushed)
+
+After the M1 push, a full QA sweep (all 5 screens × 1440 / 834 /
+390) ran since only 1440 + a couple mobile spot-checks had been
+deeply verified. One real regression found + fixed, plus the last
+named blueprint gap closed:
+
+| Commit | What |
+|--------|------|
+| `7bd7b20` | **KpiStrip responsive ramp.** `.asc-kpi` only reflowed ≤768px → tablet 834 stayed 4-up with no room, long values 3-line-wrapped + collided (Dashboard "31 minutes ago", Insights absolute timestamp). Added 4-up → 2-up ≤1080 → 2-up+smaller ≤520, `overflow-wrap:anywhere` + per-breakpoint value step-down (1440 unchanged). Also: Insights "Last run" KPI now uses the relative `ui.staleness()` label like Dashboard (consistency + kills the worst-wrapping string). Verified hard-DOM at 834/390, 1440 no-regression. |
+| `4490c89` | **§6.6 — Insights "Recent failures" → shared run-detail drawer.** Rows are now `role=button`/`tabindex=0` and open the same `ui.openRunDrawer` (`#run-drawer`) Dashboard recent-runs + Runs history use; inner Report `<a target=_blank>` keeps native behaviour (handler early-returns on `closest("a")`). Scoped `.ins-row` affordance. Verified live (drawer screenshot + native report tab), 0 console errors. |
+
+Everything else in the sweep (Runs all tabs, Settings, Library
+core, Insights 2×2 grid collapse) verified clean at 1440/834/390.
+Library stat-pill crowding on 2-line-desc rows at 834 noted as
+cosmetic-only (readable, not broken) — not fixed this pass.
+
 ### i18n / parity
 
 `scripts/check-i18n-parity.py` green throughout — 1109 EN == 1109 PL
 (net +3 keys: `shell.ins.t_success/_partial/_failed` ×EN+PL; `lib.*`
-and run keys added earlier in M4 with twin EN/PL blocks).
+and run keys added earlier in M4 with twin EN/PL blocks). The QA fix
++ §6.6 closure added no keys (parity unchanged).
 
 ### Carry-forward
 
@@ -98,13 +116,16 @@ and run keys added earlier in M4 with twin EN/PL blocks).
   buttons). A real collapse means migrating those to `.asc-` /
   tokens screen-by-screen with full multi-breakpoint re-verification
   per screen — a separate, high-regression-risk session, not a
-  drive-by.
+  drive-by. **Recommend NOT doing this as a "keep going" task** —
+  it produces a worse intermediate state for marginal user value;
+  needs an explicit, scoped session.
 - Per-locale i18n split (`i18n.js` → `en.json`/`pl.json`) remains P1
-  in the plan.
-- The shared detail `Drawer` (blueprint §6.6) is wired (`AC.Drawer`)
-  and used by Dashboard health + Runs history; converting Insights
-  "Recent failures" Report links from `target=_blank` to the drawer
-  is an optional polish (current links work, non-regressing).
+  in the plan (pure internal hygiene, no user-visible change).
+- **§6.6 shared detail drawer — DONE** (`4490c89`). All three
+  surfaces (Dashboard recent-runs, Runs history, Insights failures)
+  now open the shared `#run-drawer`. Nothing outstanding here.
+- Library 834 stat-pill crowding (cosmetic) is the only known
+  remaining nit — a small `.asc-srcrow` flex tweak if ever wanted.
 
 ---
 

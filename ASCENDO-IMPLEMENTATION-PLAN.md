@@ -24,9 +24,11 @@ its commit.
 | M4 Runs | ✅ shipped | `c505f04` |
 | M4 Insights | ✅ shipped | `1cc5cb2` |
 | M4 Settings | ✅ shipped | `66bb1ac` |
-| M1 dead-code consolidation | ✅ shipped | this session |
-| **M1 full single-sheet CSS collapse** | ⏳ deferred | screens still consume legacy `.card`/`.grid`/`.st-*`; needs per-screen migration + multi-breakpoint re-verification — a separate high-regression pass |
-| Per-locale i18n split (`i18n.js` → JSON) | ⏳ P1 deferred | tracked below |
+| M1 dead-code consolidation | ✅ shipped | `021e47b` |
+| Cross-breakpoint QA + KpiStrip responsive fix | ✅ shipped | `7bd7b20` |
+| §6.6 shared detail drawer (Insights failures) | ✅ shipped | `4490c89` |
+| **M1 full single-sheet CSS collapse** | ⏳ deferred (by design) | screens still consume legacy `.card`/`.grid`/`.st-*`; per-screen migration + multi-breakpoint re-verification — a separate high-regression pass that produces a worse intermediate state for marginal user value. Do NOT run as a "keep going" task; needs an explicit scoped session. |
+| Per-locale i18n split (`i18n.js` → JSON) | ⏳ P1 deferred | pure internal hygiene, no user-visible change |
 
 ---
 
