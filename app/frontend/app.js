@@ -2082,7 +2082,7 @@ const ui = {
       tr("categories.col_inst")    || "Installed",
       tr("categories.col_cand")    || "Candidate",
       tr("categories.col_status")  || "Status",
-      tr("categories.col_src")     || "Source",
+      tr("categories.col_source")  || "Source",
       tr("apps.col_in_config")     || "In config",
       tr("categories.col_act")     || "Action",
     ].forEach(label => {

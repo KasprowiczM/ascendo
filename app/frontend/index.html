@@ -41,6 +41,10 @@
        Loaded BEFORE style.css so component styles can reference them. -->
   <link rel="stylesheet" href="/colors_and_type.css" />
   <link rel="stylesheet" href="/style.css" />
+  <!-- UI redesign overlay (Sesja 75) — progressive design-system layer,
+       loaded LAST so it wins by source order. Removing this line +
+       /ui-redesign.css restores the previous look byte-for-byte. -->
+  <link rel="stylesheet" href="/ui-redesign.css" />
 </head>
 <body class="layout-shell">
   <!-- Mobile topbar (hidden on desktop) - hamburger + brand only.
@@ -1771,5 +1775,8 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
        mobile bottom nav, run stepper, responsive history cards. Loaded
        LAST so it can progressively enhance the fully-wired DOM. -->
   <script src="/ui-components.js"></script>
+  <!-- UI redesign DOM layer (Sesja 75) — runtime node reorg, loaded last.
+       Remove this line + /ui-redesign.js to revert. -->
+  <script src="/ui-redesign.js"></script>
 </body>
 </html>

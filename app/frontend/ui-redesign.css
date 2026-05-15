@@ -1,0 +1,323 @@
+/* ============================================================
+   ASCENDO — UI Redesign overlay (Sesja 75)
+   ui-redesign.css
+
+   PURPOSE
+   A progressive design-system layer loaded LAST (after style.css
+   and after ui-components.js's runtime styles). It is purely
+   additive + reversible: zero DOM changes, zero JS, no router /
+   SSE / form rewrites. Deleting this file restores the previous
+   look byte-for-byte.
+
+   It addresses the top audit findings without touching markup:
+     1. .tab-help "help card" dead-space (≈140px × 14 views)
+     2. card grid stretching to tallest sibling + wasted width
+     3. tall System-Health card forcing 3× row height
+     4. oversized Overview quick-action buttons
+     5. loose header / section vertical rhythm
+     6. weak, low-density tables
+     7. primitive AI-chat layout (no thread scroll, composer not
+        pinned, prompts as plain text)
+
+   Specificity: a few overrides use !important ONLY where an inline
+   `style=` attribute (e.g. .tab-help's `style="margin-bottom:1rem"`)
+   or a late-injected runtime <style> would otherwise win. This is
+   the same progressive-override approach the codebase already uses
+   (e.g. .adapter-hide-macos).
+   ============================================================ */
+
+/* ────────────────────────────────────────────────────────────
+   0. Density baseline — compact is the default. Tightens the
+   global vertical rhythm so content reaches the fold sooner.
+   ──────────────────────────────────────────────────────────── */
+:root { --rd-card-pad: 14px; --rd-gap: var(--space-4); }
+
+/* ────────────────────────────────────────────────────────────
+   1. THE big win — collapse the per-view "help" card.
+
+   Markup is `<section class="tab-help card" style="margin-bottom:1rem">`.
+   The `.card` class (padding 14/16 + bg + border + radius) fights the
+   compact `.tab-help` rules, and the inline margin can only be beaten
+   with !important. We strip the card chrome and reduce the resting
+   footprint from ~140px to ~26px while keeping the <details> fully
+   accessible (progressive disclosure preserved).
+   ──────────────────────────────────────────────────────────── */
+.tab-help.card {
+  padding: 4px 0 4px 10px !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-left: 2px solid var(--border) !important;
+  border-radius: 0 !important;
+  margin: 0 0 var(--space-3) !important;
+  /* #view-overview .card { min-height:124px } (Sesja 72 equal-height
+     cards) leaked onto this dual-class element — the help strip is the
+     one card that must NOT be floor-clamped. */
+  min-height: 0 !important;
+  font-size: 0.8rem;
+}
+/* The leading <p> duplicates the sidebar-help summary — drop it
+   entirely (the design intent comment in style.css already says the
+   summary now lives in the sidebar block). */
+.tab-help.card > p { display: none !important; }
+.tab-help.card > details { margin: 0 !important; }
+.tab-help.card > details > summary {
+  padding: 2px 0 !important;
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+.tab-help.card > details[open] > summary { opacity: 0.9; }
+.tab-help.card > details > ul { margin: 6px 0 4px 1.1rem !important; }
+
+/* ────────────────────────────────────────────────────────────
+   2. Card grid — stop sibling-stretch + lone-card ballooning.
+
+   `align-items:start` lets cards size to content (the System-Health
+   list no longer stretches its row mates 3×). auto-fill (not
+   auto-fit) keeps cards at their natural 260–340px instead of
+   stretching a 2-card row to 50% monsters. Matches the redesign
+   spec: mobile 1 / tablet 2 / desktop 3 / wide 4 emerges naturally
+   from the minmax track.
+   ──────────────────────────────────────────────────────────── */
+.grid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  align-items: start;
+  gap: var(--rd-gap);
+}
+/* Overview metric row reads best as compact equal tiles. */
+#view-overview .grid { gap: var(--space-3); }
+
+/* Tall data cards (System Health = a long .health-row list) scroll
+   internally instead of dictating the row height. :has() is
+   supported in every browser/WebView this dashboard runs in; if
+   absent it degrades to "no internal scroll" (harmless). */
+.card:has(.health-row) {
+  max-height: 360px;
+  overflow: auto;
+}
+.card:has(.health-row) h3,
+.card:has(.health-row) .eye {
+  position: sticky;
+  top: 0;
+  background: var(--bg-elev);
+  padding-bottom: 6px;
+  z-index: 1;
+}
+
+/* ────────────────────────────────────────────────────────────
+   3. Header + section rhythm — kill the loose vertical bands.
+   The per-view <h2> stays (some embed action buttons) but becomes
+   a compact secondary label rather than a stretched heading.
+   ──────────────────────────────────────────────────────────── */
+.app-header { margin-bottom: var(--space-4) !important; }
+.view > h2 {
+  margin: 0 0 var(--space-3) !important;
+  font-size: 1.02rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.view > h3 { margin: var(--space-4) 0 var(--space-2) !important; }
+.view { padding-bottom: var(--space-6); }
+
+/* ────────────────────────────────────────────────────────────
+   4. Compact Overview quick actions.
+   `.card button{display:block;width:100%}` made these 5 buttons
+   tall full-width slabs. Tighten height/padding without touching
+   the numbered-chip system.
+   ──────────────────────────────────────────────────────────── */
+#view-overview .card button[data-quick],
+#view-overview .card .qa-btn,
+#view-overview .card button {
+  padding: 0.42rem 0.7rem !important;
+  margin-bottom: 6px !important;
+  font-size: 0.86rem;
+  line-height: 1.2;
+}
+#view-overview .card button:last-child { margin-bottom: 0 !important; }
+
+/* ────────────────────────────────────────────────────────────
+   5. Tables — density + sticky header so long inventory lists
+   stay scannable.
+   ──────────────────────────────────────────────────────────── */
+.tbl th, .tbl td { padding: 6px 10px !important; }
+.tbl thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-elev);
+  z-index: 1;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+}
+.tbl tbody tr { line-height: 1.3; }
+/* #history-table has no .tbl class — densify it explicitly so the
+   Runs → History list scans like the inventory tables. */
+#history-table th,
+#history-table td { padding: 6px 12px !important; }
+#history-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-elev);
+  z-index: 1;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+}
+#history-table tbody tr { line-height: 1.3; }
+
+/* ────────────────────────────────────────────────────────────
+   6. AI chat — production-grade layout from the existing markup.
+   Structure already present: #aitools-grid → [conversations rail |
+   #aitools-main (#aitools-thread + #aitools-input-row) | library
+   rail]. We give it real height, scroll the thread, pin the
+   composer, and turn prompt-library text rows into interactive
+   chips. CSS-only — no JS, no DOM change.
+   ──────────────────────────────────────────────────────────── */
+/* Tools reorg (ui-redesign.js): Quick Suggestions demoted to a
+   collapsed secondary panel BELOW the now-primary chat. */
+.rd-secondary {
+  margin: var(--space-5) 0 0;
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+.rd-secondary > summary {
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: var(--fw-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--fg-muted);
+  padding: 4px 0;
+  user-select: none;
+}
+.rd-secondary > summary::-webkit-details-marker { display: none; }
+.rd-secondary > summary::before { content: "▸ "; color: var(--fg-faint); }
+.rd-secondary[open] > summary::before { content: "▾ "; }
+.rd-secondary > summary:hover { color: var(--fg); }
+.rd-secondary > * { margin-top: var(--space-3); }
+.rd-secondary > summary { margin-top: 0; }
+
+@media (min-width: 900px) {
+  /* Chat is now near the top of the view, so it can claim real height
+     without colliding with the fixed status bar. */
+  #aitools-grid {
+    height: min(660px, calc(100dvh - 250px));
+  }
+  #aitools-main {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  #aitools-thread {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--space-4);
+  }
+  #aitools-input-row {
+    position: sticky;
+    bottom: 0;
+    margin: 0;
+    padding: 10px var(--space-4) 12px;
+    background: var(--bg-elev);
+    border-top: 1px solid var(--border);
+  }
+  .aitools-rail {
+    overflow-y: auto;
+    min-height: 0;
+  }
+}
+
+/* Empty state — centered, calm, not a top-left orphan line. */
+.aitools-empty {
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+  height: 100%;
+  margin: 0;
+  text-align: center;
+  color: var(--fg-faint);
+  font-size: 0.9rem;
+}
+
+/* Prompt library: render JS-built `.aitools-prompt` rows as chips,
+   not raw text links. Grouped under <h4> category headers. */
+#aitools-library-list h4 {
+  margin: 14px 0 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--fg-faint);
+}
+#aitools-library-list h4:first-child { margin-top: 2px; }
+#aitools-library-list .aitools-prompt {
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 9px;
+  margin: 0 0 6px;
+  background: var(--bg);
+  font-size: 0.78rem;
+  line-height: 1.3;
+  color: var(--fg);
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-out),
+              background var(--dur-1) var(--ease-out);
+}
+#aitools-library-list .aitools-prompt:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Composer textarea — comfortable, auto-feel, send button stable. */
+#aitools-input {
+  resize: vertical;
+  min-height: 42px;
+  max-height: 160px;
+  border-radius: var(--radius-sm);
+}
+#aitools-shell #aitools-send { align-self: stretch; }
+
+/* Conversation rail items — tighter, clearer active state. */
+.aitools-conv-item {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+}
+
+/* ────────────────────────────────────────────────────────────
+   7. Suggestions callout — compact card, not a stretched band.
+   ──────────────────────────────────────────────────────────── */
+#suggest-list > * { max-width: none; }
+#suggest-list .card,
+#suggest-list .suggestion {
+  padding: 12px 14px;
+}
+
+/* ────────────────────────────────────────────────────────────
+   8. Responsive caps — explicit column ceilings so a wide screen
+   never stretches a card past the readable 340px target and a
+   tablet gets a clean 2-up.
+   ──────────────────────────────────────────────────────────── */
+@media (min-width: 768px) and (max-width: 1279px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1280px) and (max-width: 1599px) {
+  .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 1600px) {
+  .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+/* Overview's 4 metric tiles want 4-up earlier (they're short). */
+@media (min-width: 1180px) {
+  #view-overview > .grid:first-of-type,
+  #view-overview .grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #aitools-library-list .aitools-prompt { transition: none; }
+}

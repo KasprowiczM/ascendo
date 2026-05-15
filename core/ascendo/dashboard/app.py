@@ -365,6 +365,14 @@ def create_app(
             # loaded after shell.js (no-dropdown controls, mobile bottom
             # nav, run stepper, responsive history cards).
             ("ui-components.js", "application/javascript"),
+            # UI redesign overlay (Sesja 75): progressive design-system
+            # layer loaded LAST so it wins by source order. CSS-only,
+            # zero DOM/JS — reversible by removing this entry + the
+            # <link> in index.html.
+            ("ui-redesign.css", "text/css"),
+            # UI redesign DOM layer (Sesja 75): runtime node reorg
+            # (Tools chat-primacy, Runs/Settings IA). Loaded last.
+            ("ui-redesign.js", "application/javascript"),
             ("favicon.svg", "image/svg+xml"),
         )
         # Cache policy: ``no-cache`` forces the browser to revalidate via
