@@ -355,6 +355,196 @@
     }
   }
 
+  // ── In-app report + log viewer ────────────────────────────────────────
+  // Operator: report/logs must show INSIDE the app, not as an external
+  // browser tab. We intercept the existing report <a target="_blank">
+  // and the drawer "View logs" button (capture phase, so app.js's own
+  // window.open/navigate handler never fires) and render the content in
+  // a modal. Endpoints: GET /runs/{id}/report (text/markdown),
+  // GET /runs/{id} (sidecar list), GET /runs/{id}/phase/{cat}/{ph}/log.
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  // Minimal, injection-safe markdown → HTML. Everything is escaped
+  // first; only a known tag set is reintroduced.
+  function mdToHtml(src) {
+    const lines = String(src || "").replace(/\r\n/g, "\n").split("\n");
+    let html = "", i = 0, inUl = false, inFence = false, fence = [];
+    const closeUl = () => { if (inUl) { html += "</ul>"; inUl = false; } };
+    const inline = (t) => esc(t)
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    for (; i < lines.length; i++) {
+      const ln = lines[i];
+      if (/^```/.test(ln)) {
+        if (inFence) { html += "<pre class='rd-doc-pre'>" + esc(fence.join("\n")) + "</pre>"; fence = []; inFence = false; }
+        else { closeUl(); inFence = true; }
+        continue;
+      }
+      if (inFence) { fence.push(ln); continue; }
+      // table block: a line of | cells | followed by a |---| separator
+      if (/^\s*\|.*\|\s*$/.test(ln) && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1] || "")) {
+        closeUl();
+        const cells = (r) => r.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+        let t = "<table class='rd-doc-table'><thead><tr>";
+        cells(ln).forEach((c) => { t += "<th>" + inline(c) + "</th>"; });
+        t += "</tr></thead><tbody>";
+        i += 2;
+        for (; i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i]); i++) {
+          t += "<tr>";
+          cells(lines[i]).forEach((c) => { t += "<td>" + inline(c) + "</td>"; });
+          t += "</tr>";
+        }
+        i--;
+        html += t + "</tbody></table>";
+        continue;
+      }
+      const h = ln.match(/^(#{1,6})\s+(.*)$/);
+      if (h) { closeUl(); html += "<h" + h[1].length + " class='rd-doc-h'>" + inline(h[2]) + "</h" + h[1].length + ">"; continue; }
+      if (/^\s*[-*]\s+/.test(ln)) {
+        if (!inUl) { html += "<ul class='rd-doc-ul'>"; inUl = true; }
+        html += "<li>" + inline(ln.replace(/^\s*[-*]\s+/, "")) + "</li>";
+        continue;
+      }
+      if (/^\s*(-{3,}|_{3,})\s*$/.test(ln)) { closeUl(); html += "<hr>"; continue; }
+      if (!ln.trim()) { closeUl(); continue; }
+      closeUl();
+      html += "<p>" + inline(ln) + "</p>";
+    }
+    if (inFence) html += "<pre class='rd-doc-pre'>" + esc(fence.join("\n")) + "</pre>";
+    closeUl();
+    return html;
+  }
+
+  let _modalEsc = null;
+  function closeModal() {
+    const m = document.getElementById("rd-modal");
+    if (m) m.remove();
+    if (_modalEsc) { document.removeEventListener("keydown", _modalEsc); _modalEsc = null; }
+  }
+  function openModal(title) {
+    closeModal();
+    const m = document.createElement("div");
+    m.id = "rd-modal";
+    m.className = "rd-modal";
+    m.setAttribute("role", "dialog");
+    m.setAttribute("aria-modal", "true");
+    m.innerHTML =
+      '<div class="rd-modal-backdrop" data-rd-close></div>' +
+      '<div class="rd-modal-panel" tabindex="-1">' +
+      '<header class="rd-modal-head"><span class="rd-modal-title"></span>' +
+      '<button type="button" class="rd-modal-x" data-rd-close aria-label="Close">×</button>' +
+      '</header><div class="rd-modal-body"></div></div>';
+    m.querySelector(".rd-modal-title").textContent = title;
+    document.body.appendChild(m);
+    m.addEventListener("click", (e) => {
+      if (e.target.closest("[data-rd-close]")) closeModal();
+    });
+    _modalEsc = (e) => { if (e.key === "Escape") closeModal(); };
+    document.addEventListener("keydown", _modalEsc);
+    const panel = m.querySelector(".rd-modal-panel");
+    if (panel) panel.focus();
+    return m.querySelector(".rd-modal-body");
+  }
+
+  function showReport(runId) {
+    const body = openModal(trOr("shell.detail.open_report", "Full report"));
+    body.innerHTML = "<p class='dim'>" + esc(trOr("uikit.loading", "Loading…")) + "</p>";
+    fetch("/runs/" + encodeURIComponent(runId) + "/report")
+      .then((r) => r.ok ? r.text() : Promise.reject(r.status))
+      .then((md) => { body.className = "rd-modal-body rd-doc"; body.innerHTML = mdToHtml(md); })
+      .catch((s) => {
+        body.innerHTML = "<p class='dim'>" +
+          esc(s === 404
+            ? trOr("shell.detail.no_report", "No report — this run had no apply phase.")
+            : trOr("uikit.error", "Could not load the report.")) + "</p>";
+      });
+  }
+
+  function showLogs(runId) {
+    const body = openModal(trOr("shell.detail.open_logs", "Logs"));
+    body.innerHTML = "<p class='dim'>" + esc(trOr("uikit.loading", "Loading…")) + "</p>";
+    fetch("/runs/" + encodeURIComponent(runId))
+      .then((r) => r.ok ? r.json() : Promise.reject(r.status))
+      .then((sidecars) => {
+        const list = Array.isArray(sidecars) ? sidecars : [];
+        body.innerHTML = "";
+        const rail = document.createElement("div");
+        rail.className = "rd-log-rail";
+        const pre = document.createElement("pre");
+        pre.className = "rd-log-pre";
+        pre.textContent = trOr("logs.pick_run_hint", "Select a phase to view its log.");
+        if (!list.length) {
+          body.innerHTML = "<p class='dim'>" +
+            esc(trOr("logs.empty_state", "No logs for this run.")) + "</p>";
+          return;
+        }
+        list.forEach((sc) => {
+          const cat = sc.category || (sc.run && sc.run.category) || "?";
+          const ph = sc.phase || "?";
+          const st = sc.status || (sc.summary && sc.summary.status) || "";
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "rd-log-item";
+          b.textContent = ph + " · " + cat + (st ? "  (" + st + ")" : "");
+          b.addEventListener("click", () => {
+            rail.querySelectorAll(".rd-log-item").forEach((x) => x.classList.remove("active"));
+            b.classList.add("active");
+            pre.textContent = trOr("uikit.loading", "Loading…");
+            fetch("/runs/" + encodeURIComponent(runId) + "/phase/" +
+              encodeURIComponent(cat) + "/" + encodeURIComponent(ph) + "/log")
+              .then((r) => r.ok ? r.text() : Promise.reject(r.status))
+              .then((txt) => { pre.textContent = txt || trOr("logs.empty_state", "(empty log)"); })
+              .catch(() => { pre.textContent = trOr("uikit.error", "Could not load this log."); });
+          });
+          rail.appendChild(b);
+        });
+        const split = document.createElement("div");
+        split.className = "rd-log-split";
+        split.appendChild(rail);
+        split.appendChild(pre);
+        body.appendChild(split);
+      })
+      .catch(() => {
+        body.innerHTML = "<p class='dim'>" +
+          esc(trOr("uikit.error", "Could not load logs.")) + "</p>";
+      });
+  }
+
+  function runIdFromHref(href) {
+    const m = String(href || "").match(/\/runs\/([^/]+)\/report/);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+  function setupDocViewer() {
+    document.addEventListener("click", (e) => {
+      // In-app report (History drawer "Open full report" + Insights links)
+      const a = e.target.closest('a[href*="/runs/"][href*="/report"]');
+      if (a) {
+        const id = runIdFromHref(a.getAttribute("href"));
+        if (id) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          showReport(id);
+          return;
+        }
+      }
+      // In-app logs (drawer "View logs" — app.js binds window.open/navigate
+      // on bubble; capture + stopImmediatePropagation pre-empts it).
+      const lb = e.target.closest("#drawer-logs-btn");
+      if (lb) {
+        const sib = (lb.closest(".drawer-actions") || document)
+          .querySelector('a[href*="/runs/"][href*="/report"]');
+        const id = sib ? runIdFromHref(sib.getAttribute("href")) : null;
+        if (id) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          showLogs(id);
+        }
+      }
+    }, true); // capture
+  }
+
   // Registry of per-view reorgs. Each is idempotent.
   const REORGS = [
     reorgTools, reorgSettings, reorgRunsFilter, reorgOverview, reorgLibrary,
@@ -368,6 +558,7 @@
   }
 
   function init() {
+    setupDocViewer(); // in-app report/log modal (event-driven, view-agnostic)
     runAll(); // views are static in index.html — nodes exist even if hidden
 
     // Re-assert after navigation in case a future renderer rebuilds a

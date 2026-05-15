@@ -408,6 +408,155 @@ select[name="scheduler_profile"] + .u-choice .u-opt.is-selected {
 }
 
 /* ────────────────────────────────────────────────────────────
+   15. In-app report + log viewer modal (ui-redesign.js).
+   ──────────────────────────────────────────────────────────── */
+.rd-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+}
+.rd-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 8, 15, 0.55);
+}
+.rd-modal-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(900px, 100%);
+  max-height: min(82vh, 900px);
+  background: var(--bg-elev);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+}
+.rd-modal-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 12px var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.rd-modal-title {
+  font-weight: var(--fw-semibold);
+  font-size: 0.95rem;
+  flex: 1;
+}
+.rd-modal-x {
+  width: auto;
+  margin: 0;
+  padding: 2px 10px;
+  font-size: 1.1rem;
+  line-height: 1;
+  background: transparent;
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+}
+.rd-modal-x:hover { color: var(--fg); border-color: var(--border-strong); }
+.rd-modal-body {
+  padding: var(--space-4);
+  overflow: auto;
+  min-height: 0;
+}
+
+/* Rendered markdown report */
+.rd-doc { font-size: 0.86rem; line-height: 1.5; }
+.rd-doc .rd-doc-h { margin: 1.1em 0 0.4em; line-height: 1.25; }
+.rd-doc h1.rd-doc-h { font-size: 1.25rem; }
+.rd-doc h2.rd-doc-h { font-size: 1.08rem; }
+.rd-doc h3.rd-doc-h { font-size: 0.96rem; color: var(--fg-muted); }
+.rd-doc p { margin: 0.5em 0; }
+.rd-doc .rd-doc-ul { margin: 0.4em 0 0.6em 1.2em; }
+.rd-doc .rd-doc-ul li { margin: 0.2em 0; }
+.rd-doc code {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  background: var(--bg-sunk);
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-xs);
+}
+.rd-doc .rd-doc-pre {
+  background: var(--code-bg);
+  color: var(--code-fg);
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  font-size: 0.78rem;
+}
+.rd-doc hr { border: 0; border-top: 1px solid var(--border); margin: 1em 0; }
+.rd-doc .rd-doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  font-size: 0.82rem;
+}
+.rd-doc .rd-doc-table th,
+.rd-doc .rd-doc-table td {
+  border: 1px solid var(--border);
+  padding: 5px 9px;
+  text-align: left;
+}
+.rd-doc .rd-doc-table th {
+  background: var(--bg-nested);
+  font-weight: var(--fw-semibold);
+}
+
+/* Log viewer: phase rail + log pane */
+.rd-log-split {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr;
+  gap: var(--space-4);
+  min-height: 0;
+}
+.rd-log-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.rd-log-item {
+  width: 100%;
+  margin: 0;
+  text-align: left;
+  background: var(--bg);
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 9px;
+  font-size: 0.78rem;
+  font-family: var(--font-mono);
+}
+.rd-log-item:hover { color: var(--fg); border-color: var(--border-strong); }
+.rd-log-item.active {
+  background: var(--accent-soft);
+  color: var(--fg);
+  border-color: var(--accent);
+}
+.rd-log-pre {
+  margin: 0;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  overflow: auto;
+  max-height: 60vh;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+@media (max-width: 760px) {
+  .rd-log-split { grid-template-columns: 1fr; }
+  .rd-log-rail { max-height: 200px; flex-flow: row wrap; }
+}
+
+/* ────────────────────────────────────────────────────────────
    6. AI chat — production-grade layout from the existing markup.
    Structure already present: #aitools-grid → [conversations rail |
    #aitools-main (#aitools-thread + #aitools-input-row) | library
