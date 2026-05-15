@@ -609,10 +609,141 @@
     }, true); // capture
   }
 
+  // ── Insights: replace the flat status-bar list with two real
+  //    time-series charts (success-rate % + run count, bucketed per
+  //    day) and add a Y-axis scale to the duration trend. SVG only,
+  //    theme-aware via CSS vars. loadInsights() also writes these
+  //    elements (timing race), so a MutationObserver re-asserts our
+  //    charts whenever they get overwritten — idempotent (our render
+  //    is skipped once our marker is present, so no loop).
+  let _insRows = null, _insObs = false;
+  function _fmtDur(s) {
+    s = Math.round(s);
+    return s >= 60 ? Math.floor(s / 60) + "m" + (s % 60) + "s" : s + "s";
+  }
+  function _dayKey(iso) {
+    try { return new Date(iso).toISOString().slice(0, 10); } catch (_) { return null; }
+  }
+  function _buckets(rows) {
+    const m = new Map();
+    rows.forEach((r) => {
+      const k = _dayKey(r.started_at);
+      if (!k) return;
+      const b = m.get(k) || { total: 0, ok: 0 };
+      b.total++;
+      if (r.status === "success" || r.status === "ok") b.ok++;
+      m.set(k, b);
+    });
+    return [...m.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).slice(-14);
+  }
+  // Tiny SVG line+area chart with a 0/mid/max Y scale and end X labels.
+  function _lineChart(vals, max, unit, xa, xb, color) {
+    const W = 320, H = 96, pl = 34, pr = 8, pt = 8, pb = 18;
+    const iw = W - pl - pr, ih = H - pt - pb;
+    const n = vals.length;
+    const x = (i) => pl + (n <= 1 ? iw / 2 : (i / (n - 1)) * iw);
+    const y = (val) => pt + ih - (max ? (val / max) * ih : 0);
+    const pts = vals.map((v, i) => x(i) + "," + y(v)).join(" ");
+    const area = "M" + x(0) + "," + (pt + ih) + " L" + pts.replace(/ /g, " L") +
+      " L" + x(n - 1) + "," + (pt + ih) + " Z";
+    const grid = (gv) => '<line x1="' + pl + '" y1="' + y(gv) + '" x2="' + (W - pr) +
+      '" y2="' + y(gv) + '" class="rd-chart-grid"/>' +
+      '<text x="' + (pl - 5) + '" y="' + (y(gv) + 3) + '" class="rd-chart-yl">' + gv + unit + "</text>";
+    return '<svg class="rd-chart" viewBox="0 0 ' + W + " " + H +
+      '" preserveAspectRatio="none" role="img">' +
+      grid(0) + grid(Math.round(max / 2)) + grid(max) +
+      '<path d="' + area + '" class="rd-chart-area" style="fill:' + color + '"/>' +
+      '<polyline points="' + pts + '" class="rd-chart-line" style="stroke:' + color + '"/>' +
+      '<text x="' + pl + '" y="' + (H - 4) + '" class="rd-chart-xl">' + esc(xa) + "</text>" +
+      '<text x="' + (W - pr) + '" y="' + (H - 4) + '" class="rd-chart-xl" text-anchor="end">' + esc(xb) + "</text>" +
+      "</svg>";
+  }
+  function _barChart(items, max, fmt) {
+    // items: [{v, color, title}]; Y scale max/mid/0 + bars.
+    const W = 320, H = 96, pl = 44, pr = 8, pt = 8, pb = 18;
+    const iw = W - pl - pr, ih = H - pt - pb, n = items.length || 1;
+    const bw = (iw / n) * 0.7, gap = (iw / n) * 0.3;
+    const y = (v) => pt + ih - (max ? (v / max) * ih : 0);
+    let s = '<svg class="rd-chart rd-dur" viewBox="0 0 ' + W + " " + H +
+      '" preserveAspectRatio="none" role="img">';
+    [0, max / 2, max].forEach((gv) => {
+      s += '<line x1="' + pl + '" y1="' + y(gv) + '" x2="' + (W - pr) +
+        '" y2="' + y(gv) + '" class="rd-chart-grid"/>' +
+        '<text x="' + (pl - 6) + '" y="' + (y(gv) + 3) + '" class="rd-chart-yl">' +
+        esc(fmt(gv)) + "</text>";
+    });
+    items.forEach((it, i) => {
+      const bx = pl + i * (bw + gap) + gap / 2;
+      const by = y(it.v), bh = pt + ih - by;
+      s += '<rect x="' + bx.toFixed(1) + '" y="' + by.toFixed(1) + '" width="' +
+        bw.toFixed(1) + '" height="' + Math.max(1, bh).toFixed(1) +
+        '" rx="2" style="fill:' + it.color + '"><title>' + esc(it.title) +
+        "</title></rect>";
+    });
+    return s + "</svg>";
+  }
+  function _shortDate(k) { return k ? k.slice(5) : ""; }
+  function renderInsCharts() {
+    const t = document.getElementById("insights-trends");
+    const dEl = document.getElementById("insights-duration");
+    if (!t || !dEl || !_insRows || !_insRows.length) return;
+    if (!t.querySelector(".rd-chart")) {
+      const bk = _buckets(_insRows);
+      const xa = _shortDate(bk[0] && bk[0][0]);
+      const xb = _shortDate(bk[bk.length - 1] && bk[bk.length - 1][0]);
+      const pct = bk.map(([, b]) => (b.total ? Math.round((b.ok / b.total) * 100) : 0));
+      const cnt = bk.map(([, b]) => b.total);
+      const cmax = Math.max(1, ...cnt);
+      t.innerHTML =
+        '<div class="rd-chart-block"><div class="rd-chart-cap">' +
+        esc(trOr("shell.ins.success_rate", "Success rate")) + "</div>" +
+        _lineChart(pct, 100, "%", xa, xb, "var(--ok)") + "</div>" +
+        '<div class="rd-chart-block"><div class="rd-chart-cap">' +
+        esc(trOr("shell.ins.total_runs", "Runs")) + "</div>" +
+        _lineChart(cnt, cmax, "", xa, xb, "var(--accent)") + "</div>";
+    }
+    if (!dEl.querySelector(".rd-dur")) {
+      const last = _insRows.slice(0, 12).reverse();
+      const secs = last.map((r) => {
+        try { return Math.max(0, (new Date(r.ended_at) - new Date(r.started_at)) / 1000); }
+        catch (_) { return 0; }
+      });
+      const dmax = Math.max(1, ...secs);
+      const items = last.map((r, i) => ({
+        v: secs[i],
+        color: r.status === "failed" ? "var(--err)"
+          : r.status === "partial" ? "var(--warn)" : "var(--accent)",
+        title: (r.started_at || "") + " · " + _fmtDur(secs[i]),
+      }));
+      dEl.innerHTML = _barChart(items, dmax, (v) => _fmtDur(v));
+    }
+  }
+  function reorgInsights() {
+    const v = document.getElementById("view-insights");
+    if (!v || v.classList.contains("hidden")) return;
+    if (_insRows) { renderInsCharts(); }
+    else {
+      fetch("/runs?limit=200")
+        .then((r) => (r.ok ? r.json() : { runs: [] }))
+        .then((d) => { _insRows = d.runs || []; renderInsCharts(); })
+        .catch(() => {});
+    }
+    if (!_insObs) {
+      const t = document.getElementById("insights-trends");
+      const dEl = document.getElementById("insights-duration");
+      if (t && dEl) {
+        const mo = new MutationObserver(() => renderInsCharts());
+        mo.observe(t, { childList: true });
+        mo.observe(dEl, { childList: true });
+        _insObs = true;
+      }
+    }
+  }
+
   // Registry of per-view reorgs. Each is idempotent.
   const REORGS = [
     reorgTools, reorgSettings, reorgRunsFilter, reorgOverview, reorgLibrary,
-    reorgRunCenter, reorgProfilesPanel, reorgScheduleForm,
+    reorgRunCenter, reorgProfilesPanel, reorgScheduleForm, reorgInsights,
   ];
 
   function runAll() {
