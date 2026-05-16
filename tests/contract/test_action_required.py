@@ -13,7 +13,9 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from fastapi.testclient import TestClient
 
+from ascendo.dashboard import create_app
 from ascendo.models.host import ElevationMethod, HostInfo, OperatingSystem
 from ascendo.models.package import ItemSource, SourceType
 from ascendo.models.result import Item, ItemStatus, Message, MessageLevel, Summary
@@ -166,3 +168,33 @@ def test_every_non_silent_web_app_is_surfaced(run_dir: Path) -> None:
         f"silently missing: {expected - surfaced}"
     )
     assert "silent1" not in surfaced and "silent2" not in surfaced
+
+
+def test_action_required_endpoint(tmp_path: Path) -> None:
+    rd = tmp_path / str(_RUN_ID)
+    rd.mkdir(parents=True, exist_ok=True)
+    # write_sidecar(base_dir=tmp_path) lands it under tmp_path/<run_id>/
+    items = [
+        _item("web:obsidian", ItemStatus.SUCCESS, "1", "2"),
+        _item("web:claude", ItemStatus.SKIPPED, "1.0", "2.0"),
+    ]
+    # _web_apply writes via base_dir=run_dir.parent (== tmp_path == runs_dir)
+    _web_apply(rd, items, [
+        _msg("claude: skipped | "
+             "ASCENDO-ACTION-REQUIRED reason=self_update cur=1.0 cand=2.0"),
+    ])
+
+    app = create_app(runs_dir=tmp_path)
+    app.state.adapter = None
+    with TestClient(app) as client:
+        r = client.get(f"/runs/{_RUN_ID}/action-required")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["run_id"] == str(_RUN_ID)
+        assert body["count"] == 1
+        assert body["items"][0]["slug"] == "claude"
+        assert body["items"][0]["reason"] == "self_update"
+        assert body["items"][0]["reason_text"]
+        # Unknown run -> 404.
+        r404 = client.get("/runs/00000000-0000-0000-0000-000000000000/action-required")
+        assert r404.status_code == 404

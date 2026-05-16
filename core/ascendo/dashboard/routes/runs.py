@@ -490,6 +490,31 @@ async def get_run_report(run_id: UUID, request: Request):
     return PlainTextResponse(content=markdown, media_type="text/markdown")
 
 
+@router.get("/{run_id}/action-required")
+async def get_run_action_required(run_id: UUID, request: Request) -> dict:
+    """Phase A: the consolidated "you must open these apps" list.
+
+    Returns every web app in this run that was NOT silently updated
+    (skipped / triggered / failed) so nothing is ever silently missing.
+    404 only when the run dir does not exist; an empty list otherwise.
+    """
+    from dataclasses import asdict
+
+    from ...orchestrator.report import collect_action_required
+
+    runs_dir: Path = request.app.state.runs_dir
+    run_dir = runs_dir / str(run_id)
+    if not run_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+
+    items = collect_action_required(run_dir)
+    return {
+        "run_id": str(run_id),
+        "count": len(items),
+        "items": [asdict(a) for a in items],
+    }
+
+
 @router.get("/{run_id}", response_model=list)
 async def get_run(run_id: UUID, request: Request) -> list[dict]:
     """Return all sidecars for ``run_id`` as raw JSON dicts.
