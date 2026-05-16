@@ -441,23 +441,32 @@
 /* DEFECT 1 — inactive chips are quiet (ghost); only the selected one
    gets the accent. No solid-lime wall of chips. */
 .asc-chip {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  /* Fixed box-height so the pill never jumps at the ≤768px / coarse
+     button 44px floor (operator: "filter buttons change height on
+     mobile"). The floor is overridden for .asc-chip in style.css. */
+  min-height: 30px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong, var(--border));
   border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--fg-muted);
+  /* transparent + --fg-muted vanished on the light theme — raise the
+     surface, keep full-strength text. */
+  background: var(--bg-elev);
+  color: var(--fg);
   font: var(--fw-medium) var(--fs-sm) / 1 var(--font-sans);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out),
               color var(--dur-fast) var(--ease-out);
 }
-.asc-chip:hover { background: var(--bg-nested); color: var(--fg); }
+.asc-chip:hover { background: var(--bg-nested); border-color: var(--accent); color: var(--fg); }
 .asc-chip--on {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent-contrast, var(--bg));
+  color: var(--accent-ink);
 }
-.asc-chip--on:hover { background: var(--accent); color: var(--accent-contrast, var(--bg)); }
+.asc-chip--on:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--accent-ink); }
 
 /* DEFECT 2 — Sources row: id as a strong title, description on its
    own muted line. No run-together text. */

@@ -2691,7 +2691,7 @@ const ui = {
     const invCtrls = document.createElement("div");
     invCtrls.className = "asc-srcrow__acts";
     const rebuildBtn = AC.Button({
-      variant: "secondary",
+      variant: "primary",
       label: tr("lib.inv_rebuild", "Rebuild inventory"),
       onClick: async () => {
         rebuildBtn.disabled = true;
@@ -2705,7 +2705,7 @@ const ui = {
       },
     });
     const clearBtn = AC.Button({
-      variant: "ghost",
+      variant: "danger",
       label: tr("lib.inv_clear", "Clear inventory"),
       onClick: async () => {
         if (!window.confirm(tr("lib.inv_clear_confirm",
@@ -3471,13 +3471,20 @@ const ui = {
         try { return (new Date(r.ended_at)-new Date(r.started_at))/1000; }
         catch { return 0; }
       }));
-      durEl.innerHTML = `<div style="display:flex;align-items:flex-end;gap:4px;height:64px">` +
+      durEl.innerHTML = `<div class="ins-dur">` +
         last.map(r => {
           let s = 0;
           try { s = Math.max(0,(new Date(r.ended_at)-new Date(r.started_at))/1000); } catch {}
-          const h = Math.max(3, Math.round((s/max)*60));
-          const okRun = r.status !== "failed" && r.status !== "partial";
-          return `<span title="${ui.fmtTime(r.started_at)} · ${fmtDur(Math.round(s))} · ${r.status||"ok"}" style="flex:1;height:${h}px;background:var(--accent);border-radius:2px;opacity:${okRun?1:0.45}"></span>`;
+          const h = Math.max(4, Math.round((s/max)*70));
+          const st = (r.status||"").toLowerCase();
+          const cls = st === "failed" || st === "error" ? "err"
+                    : st === "partial" ? "warn" : "ok";
+          const dlabel = fmtDur(Math.round(s));
+          return `<div class="ins-dur__bar"
+              title="${ui.fmtTime(r.started_at)} · ${dlabel} · ${r.status||"ok"}">
+              <span class="ins-dur__fill ins-dur__fill--${cls}" style="height:${h}px"></span>
+              <span class="ins-dur__lbl">${dlabel}</span>
+            </div>`;
         }).join("") + `</div>`;
     }
 

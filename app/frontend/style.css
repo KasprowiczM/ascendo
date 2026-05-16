@@ -764,6 +764,31 @@ dialog.modal-dialog #apply-modal-confirm:disabled {
 .cc-seg-missing  { background: var(--err); }
 .cc-count { flex: 0 0 3.2rem; text-align: right; color: var(--dim); font-size: 0.8rem; }
 
+/* Insights duration trend — bars + per-bar duration labels. Colour by
+   run status (ok/warn/err) so it stays readable on the light theme
+   (the old single var(--accent) lime washed out on paper). */
+.ins-dur { display: flex; align-items: flex-end; gap: 6px; min-height: 92px; }
+.ins-dur__bar {
+  flex: 1 1 0; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.ins-dur__fill {
+  width: 100%; max-width: 34px;
+  border-radius: 3px 3px 0 0;
+}
+.ins-dur__fill--ok   { background: var(--ok); }
+.ins-dur__fill--warn { background: var(--warn); }
+.ins-dur__fill--err  { background: var(--err); }
+.ins-dur__lbl {
+  font: var(--fw-medium) 0.66rem / 1 var(--font-mono);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+@media (max-width: 520px) {
+  .ins-dur { gap: 3px; }
+  .ins-dur__lbl { font-size: 0.58rem; }
+}
+
 /* Dashboard: donut + per-category chart side by side (wraps on narrow) */
 .ov-charts { display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: flex-start; }
 .ov-charts__pie { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; }
@@ -1292,15 +1317,18 @@ td.duration, td.eta { font-family: var(--font-mono); font-size: var(--fs-xs); co
   letter-spacing: 0.04em;
 }
 .st-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; }
-.st-ok    { background: var(--ok-bg);   color: var(--ok); }
+/* Text uses the *-text tokens (AA-on-tint on light, bright on dark) —
+   bare --ok/--warn/--err were the bright FILL colours and washed out
+   as text on the light tint. Dots keep the bright fill. */
+.st-ok    { background: var(--ok-bg);   color: var(--ok-text); }
 .st-ok::before    { background: var(--ok); }
-.st-warn  { background: var(--warn-bg); color: var(--warn); }
+.st-warn  { background: var(--warn-bg); color: var(--warn-text); }
 .st-warn::before  { background: var(--warn); }
-.st-err   { background: var(--err-bg);  color: var(--err); }
+.st-err   { background: var(--err-bg);  color: var(--err-text); }
 .st-err::before   { background: var(--err); }
 .st-skip  { background: var(--bg-sunk); color: var(--fg-muted); }
 .st-skip::before  { background: var(--fg-faint); }
-.st-info  { background: var(--info-bg); color: var(--info); }
+.st-info  { background: var(--info-bg); color: var(--info-text, var(--info)); }
 .st-info::before  { background: var(--info); }
 /* M5.7: Tier-B handler kicked off vendor's async update agent. Distinct
    from success (synchronous install verified) and skipped (we did
@@ -1611,11 +1639,18 @@ button.is-refreshing::before {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 3px 10px;
-  background: var(--bg);
-  border: 1px solid var(--border);
+  /* Fixed box-height so the pill never jumps between desktop and the
+     ≤768px / coarse-pointer 44px button floor (operator: "filter
+     buttons change height on mobile"). The floor is overridden for
+     .chip below — a filter pill is not a primary tap target. */
+  min-height: 30px;
+  padding: 4px 12px;
+  /* --bg ≈ page background on the light theme → the pill vanished.
+     Raised surface + a real border + full-strength text fixes it. */
+  background: var(--bg-elev);
+  border: 1px solid var(--border-strong, var(--border));
   border-radius: var(--radius-pill, 999px);
-  color: var(--fg-muted);
+  color: var(--fg);
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: var(--fw-semibold);
@@ -1627,14 +1662,18 @@ button.is-refreshing::before {
               color var(--dur-fast, 120ms) var(--ease-out, ease-out);
 }
 .chip:hover {
+  background: var(--bg-nested);
   border-color: var(--accent);
   color: var(--fg);
 }
+/* Selected = solid accent fill (the design-system "selected" pattern).
+   The old 18%-opacity --accent-soft was invisible on light paper. */
 .chip.active {
-  background: var(--accent-soft, rgba(200, 255, 75, 0.18));
+  background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent-fg, var(--fg));
+  color: var(--accent-ink);
 }
+.chip.active .chip-count { opacity: 0.78; }
 .chip .chip-count {
   opacity: 0.7;
   font-size: 10px;
@@ -2877,6 +2916,11 @@ form#run-form[data-uikit-stepper="1"] {
   button, .secondary, .history-details-btn,
   .cat-actions button, .nav-link, .app-subtab,
   input[type="checkbox"], input[type="radio"] { min-height: 44px; }
+  /* Filter pills are compact toggles in a wrap-row, NOT primary tap
+     targets — keep their fixed 30px so they don't jump on mobile
+     (operator-reported height change). Same for status pills. */
+  .chip, .asc-chip { min-height: 30px; }
+  .asc-pill { min-height: 0; }
   .cat-actions button { font-size: 0.8rem; padding: 0.5rem 0.7rem; }
   input[type="checkbox"], input[type="radio"] {
     min-width: 22px; min-height: 22px;
