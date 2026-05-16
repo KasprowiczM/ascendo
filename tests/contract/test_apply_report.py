@@ -333,7 +333,9 @@ def test_generate_apply_report_triggered_section(run_dir: Path) -> None:
 
 
 def test_generate_apply_report_deferred_with_reason(run_dir: Path) -> None:
-    """Deferred items show a friendly reason from item-level messages."""
+    """Phase A: a web app deferred because it was in use is promoted into
+    the consolidated Action-required section (not buried in Deferred),
+    still with a friendly 'was running' reason."""
     started = datetime(2026, 5, 8, 22, 47, tzinfo=timezone.utc)
     items = [
         _build_item(
@@ -350,10 +352,13 @@ def test_generate_apply_report_deferred_with_reason(run_dir: Path) -> None:
     md = generate_apply_report(run_dir)
 
     assert md is not None
-    assert "## Deferred" in md
+    assert "## ⚠ Action required" in md
     assert "Trezor Suite" in md
-    # Friendly substitution kicked in.
+    # Friendly 'was running' reason still surfaces (now in Action required).
     assert "running" in md.lower()
+    # And it is NOT also buried in a generic Deferred section.
+    if "## Deferred" in md:
+        assert "Trezor Suite" not in md[md.index("## Deferred"):]
 
 
 def test_generate_apply_report_swallows_exceptions(tmp_path: Path) -> None:

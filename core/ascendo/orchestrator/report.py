@@ -36,6 +36,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..models.host import HostInfo
+from ..models.package import SourceType
 from ..models.result import Item, ItemStatus, Message, MessageLevel
 from ..models.run import Phase
 from ..models.sidecar import Sidecar
@@ -133,6 +134,143 @@ class _CategoryBuckets:
             + len(self.deferred)
             + len(self.failed)
         )
+
+
+# ── Action required (Phase A: the no-app-silently-missing guarantee) ─────────
+
+# Stable marker stamped by adapters/macos/scripts/web/apply.sh on every
+# safe-mode-skipped web app. Parsed deterministically (never fuzzy).
+ACTION_RE = re.compile(
+    r"ASCENDO-ACTION-REQUIRED reason=(\S+) cur=(\S+) cand=(\S+)"
+)
+
+_REASON_TEXT = {
+    "self_update": "Updates itself in the background — open it once to apply.",
+    "no_silent_path": "No silent install path — open it and use Help → Check for Updates.",
+    "probe_broken": "Ascendo can't detect a version — fix via AI Tools or update manually.",
+    "failed": "Update failed — open the app and update manually.",
+    "app_in_use": "The app was running during the update — quit it and re-run apply.",
+}
+_DEFAULT_REASON_TEXT = "Open the app and check for updates manually."
+
+
+@dataclass(frozen=True)
+class ActionItem:
+    """One web app the user must act on (was not silently updated)."""
+
+    category: str
+    name: str
+    slug: str
+    current: str
+    candidate: str
+    reason: str
+    reason_text: str
+    open_hint: str
+
+
+def _slug_of(item: Item) -> str:
+    raw = (item.id or item.name or "").strip()
+    return raw.split(":", 1)[1] if ":" in raw else raw
+
+
+def _pretty(slug: str) -> str:
+    return slug.replace("-", " ").replace("_", " ").title()
+
+
+def _status_reason(status: ItemStatus) -> str:
+    if status is ItemStatus.TRIGGERED:
+        return "self_update"
+    if status in (ItemStatus.FAILED, ItemStatus.PARTIAL):
+        return "failed"
+    if status is ItemStatus.PLANNED:
+        return "no_silent_path"
+    return "probe_broken"
+
+
+def _action_items(apply_sidecars: list[Sidecar]) -> list[ActionItem]:
+    """Every non-silent web app, deduped by slug (token wins over status)."""
+    by_slug: dict[str, ActionItem] = {}
+
+    # Pass 1 — precise, from the apply.sh deterministic token messages.
+    for sc in apply_sidecars:
+        if sc.category is not SourceType.WEB:
+            continue
+        for msg in sc.messages:
+            text = (msg.text or "").strip()
+            m = ACTION_RE.search(text)
+            if not m:
+                continue
+            reason, cur, cand = m.group(1), m.group(2), m.group(3)
+            slug = (text.split(":", 1)[0] or "").strip() or "?"
+            by_slug[slug] = ActionItem(
+                category="web",
+                name=_pretty(slug),
+                slug=slug,
+                current="" if cur == "?" else cur,
+                candidate="" if cand == "?" else cand,
+                reason=reason,
+                reason_text=_REASON_TEXT.get(reason, _DEFAULT_REASON_TEXT),
+                open_hint=f"Open {_pretty(slug)}",
+            )
+
+    # Pass 2 — guarantee: any non-silent web item with no token still
+    # surfaces (status-derived reason). Never silently missing.
+    non_silent = {
+        ItemStatus.SKIPPED, ItemStatus.TRIGGERED, ItemStatus.FAILED,
+        ItemStatus.PARTIAL, ItemStatus.MISSING, ItemStatus.PLANNED,
+    }
+    for sc in apply_sidecars:
+        if sc.category is not SourceType.WEB:
+            continue
+        for it in sc.items:
+            if it.status not in non_silent:
+                continue
+            slug = _slug_of(it)
+            if slug in by_slug:
+                continue
+            item_text = " ".join(
+                (m.text or "") for m in it.messages
+            ).lower()
+            if "in_use" in item_text or "in use" in item_text or "running" in item_text:
+                reason = "app_in_use"
+            else:
+                reason = _status_reason(it.status)
+            by_slug[slug] = ActionItem(
+                category="web",
+                name=_pretty(slug),
+                slug=slug,
+                current=(it.current_version or "").strip(),
+                candidate=(it.target_version or it.resolved_version or "").strip(),
+                reason=reason,
+                reason_text=_REASON_TEXT.get(reason, _DEFAULT_REASON_TEXT),
+                open_hint=f"Open {_pretty(slug)}",
+            )
+
+    return sorted(by_slug.values(), key=lambda a: a.name.lower())
+
+
+def collect_action_required(run_dir: Path) -> list[ActionItem]:
+    """Public: the consolidated 'you must act on these' list for a run.
+
+    Reads the run's apply sidecars and returns every web app that was
+    not silently updated. Never raises — returns ``[]`` on any error or
+    when there is no apply phase.
+    """
+    try:
+        if not run_dir.is_dir():
+            return []
+        apply_sidecars: list[Sidecar] = []
+        for path in list_run_sidecars(run_dir):
+            try:
+                sc = read_sidecar(path)
+            except Exception:  # noqa: BLE001
+                continue
+            if sc.phase is Phase.APPLY:
+                apply_sidecars.append(sc)
+        return _action_items(apply_sidecars)
+    except Exception:  # noqa: BLE001
+        _log.exception("collect_action_required failed for %s", run_dir)
+        return []
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
@@ -246,6 +384,10 @@ def _generate_apply_report_unsafe(
     n_deferred = sum(len(b.deferred) for b in buckets.values())
     n_failed = sum(len(b.failed) for b in buckets.values())
 
+    # Phase A: the consolidated "you must act on these" web list.
+    action_items = _action_items(apply_sidecars)
+    action_keys = {(a.category, a.slug) for a in action_items}
+
     # Overall result.
     if n_failed > 0 and n_upgraded > 0:
         result_label = "Mostly succeeded — some apps failed."
@@ -290,8 +432,29 @@ def _generate_apply_report_unsafe(
         headline_bits.append(f"{n_deferred} deferred")
     if n_failed:
         headline_bits.append(f"{n_failed} failed")
+    if action_items:
+        headline_bits.append(f"{len(action_items)} need you to open them")
     if headline_bits:
         lines.append("**At a glance:** " + ", ".join(headline_bits) + ".")
+        lines.append("")
+
+    # ── Action required (Phase A — promoted out of generic Deferred) ─────
+    if action_items:
+        lines.append(
+            f"## ⚠ Action required — {len(action_items)} "
+            f"{_pluralize('app', len(action_items))} need you to open them"
+        )
+        lines.append("")
+        for a in action_items:
+            ver = ""
+            if a.current or a.candidate:
+                ver = f" (`{a.current or '?'}` → `{a.candidate or '?'}`)"
+            lines.append(f"- **{a.name}**{ver} — {a.reason_text}")
+        lines.append("")
+        lines.append(
+            "Run Ascendo → AI Tools → \"Make Ascendo cover an app it's "
+            "missing\" to automate any of these."
+        )
         lines.append("")
 
     # ── What changed ────────────────────────────────────────────────────
@@ -338,14 +501,24 @@ def _generate_apply_report_unsafe(
         lines.append("")
 
     # ── Deferred ─────────────────────────────────────────────────────────
-    if n_deferred > 0:
-        lines.append(f"## Deferred ({n_deferred} {_pluralize('app', n_deferred)})")
+    # Exclude web apps already promoted into the Action-required section
+    # above so they are never double-listed / buried here.
+    deferred_rows: list[tuple[str, Item]] = []
+    for cat in _ordered_categories(buckets):
+        b = buckets[cat]
+        for item in sorted(b.deferred, key=_item_sort_key):
+            if (cat, _slug_of(item)) in action_keys:
+                continue
+            deferred_rows.append((cat, item))
+    if deferred_rows:
+        lines.append(
+            f"## Deferred ({len(deferred_rows)} "
+            f"{_pluralize('app', len(deferred_rows))})"
+        )
         lines.append("")
-        for cat in _ordered_categories(buckets):
-            b = buckets[cat]
-            for item in sorted(b.deferred, key=_item_sort_key):
-                reason = _deferral_reason(item, b.phase_messages)
-                lines.append(f"- **{_display_name(item)}** — {reason}")
+        for cat, item in deferred_rows:
+            reason = _deferral_reason(item, buckets[cat].phase_messages)
+            lines.append(f"- **{_display_name(item)}** — {reason}")
         lines.append("")
 
     # ── Failed ───────────────────────────────────────────────────────────
