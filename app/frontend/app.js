@@ -2951,6 +2951,10 @@ const ui = {
     const choices = document.createElement("div");
     choices.style.display = "grid";
     choices.style.gap = "var(--space-3)";
+    // Operator: the two choices were full-width giant blocks eating the
+    // whole section. Make them compact + side-by-side (auto-fit → 1-up
+    // only when too narrow), and add a Quick-actions row below.
+    choices.style.gridTemplateColumns = "repeat(auto-fit, minmax(220px, 1fr))";
 
     const startProfile = async (profile) => {
       try {
@@ -2968,7 +2972,7 @@ const ui = {
       b.style.display = "block";
       b.style.width = "100%";
       b.style.textAlign = "left";
-      b.style.padding = "var(--space-4)";
+      b.style.padding = "var(--space-3)";
       b.style.borderRadius = "var(--radius-sm)";
       b.style.cursor = "pointer";
       b.style.appearance = "none";
@@ -3022,6 +3026,56 @@ const ui = {
       tr("runs.quick_desc", "Read-only sweep — find what's outdated without changing anything."),
       false, () => startProfile("quick")));
 
+    // Quick-actions row (operator: "need more buttons for quick
+    // actions"). Compact AC.Buttons, both read-only / non-mutating:
+    //  • Full dry run — full pipeline in preview mode (dry_run:true →
+    //    emits "planned", changes nothing) so the user can see exactly
+    //    what a real update WOULD do, in one click.
+    //  • Build inventory — full live rescan + DB repopulate
+    //    (/inventory/db/refresh, == CLI build-inventory). The core
+    //    "build a fresh, current inventory" step, one click.
+    const quickRow = document.createElement("div");
+    quickRow.style.marginTop = "var(--space-4)";
+    const qaLabel = document.createElement("div");
+    qaLabel.textContent = tr("runs.qa_title", "Quick actions");
+    qaLabel.style.font = "var(--fw-medium) var(--fs-sm) / 1.3 var(--font-sans)";
+    qaLabel.style.color = "var(--fg-muted)";
+    qaLabel.style.marginBottom = "var(--space-2)";
+    const qaBtns = document.createElement("div");
+    qaBtns.style.display = "flex";
+    qaBtns.style.flexWrap = "wrap";
+    qaBtns.style.gap = "var(--space-2)";
+    qaBtns.appendChild(AC.Button({
+      variant: "secondary",
+      label: tr("runs.qa_dryrun", "Full dry run"),
+      onClick: async () => {
+        try {
+          const r = await startRunWithSudo({ profile: "full", dry_run: true });
+          ui.attachStream(r.run_id);
+          const sb = $("#stop-btn"); if (sb) sb.disabled = false;
+          ui.status(`run ${r.run_id} started (dry run)`);
+          ui._renderRunStart({ run_id: r.run_id, profile: "full", finished: false });
+        } catch (err) { ui.status(String(err)); }
+      },
+    }));
+    const qaBuild = AC.Button({
+      variant: "secondary",
+      label: tr("runs.qa_build", "Build inventory"),
+      onClick: async () => {
+        qaBuild.disabled = true;
+        ui.status(tr("runs.qa_building", "Building inventory…"));
+        try {
+          await api.post("/inventory/db/refresh", {});
+          frontendCache.invalidate && frontendCache.invalidate();
+          ui.status(tr("runs.qa_built", "Inventory built."));
+        } catch (e) { ui.status(String(e)); }
+        qaBuild.disabled = false;
+      },
+    });
+    qaBtns.appendChild(qaBuild);
+    quickRow.appendChild(qaLabel);
+    quickRow.appendChild(qaBtns);
+
     // Advanced ▸ — opens an AC.Drawer holding the KEPT #run-form
     // (profile / categories / phase / dry-run). The form's original
     // submit handler + selects are reused unchanged; we borrow it from
@@ -3065,7 +3119,7 @@ const ui = {
     const card = AC.Card({
       title: tr("runs.start_title", "Start a run"),
       action: advBtn,
-      children: choices,
+      children: [choices, quickRow],
     });
     AC.mount(root, card);
   },
