@@ -540,8 +540,10 @@
             </div>
           </aside>
 
-          <!-- Middle: chat thread + input -->
-          <main id="aitools-main">
+          <!-- Middle: chat thread + input. Plain div, NOT <main>: the
+               page already has one <main> landmark; a second (nested)
+               main is a WCAG landmark violation. id/CSS unchanged. -->
+          <div id="aitools-main">
             <div id="aitools-thread" aria-live="polite">
               <p class="dim aitools-empty"
                  data-i18n="aitools.empty_thread">Pick a prompt on the right, or type a question below.</p>
@@ -553,7 +555,7 @@
               <button id="aitools-send" class="primary"
                       data-i18n="aitools.send">Send</button>
             </div>
-          </main>
+          </div>
 
           <!-- Right rail: prompt library -->
           <aside id="aitools-library" class="aitools-rail">
