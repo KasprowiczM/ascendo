@@ -788,7 +788,29 @@ def _resolve_buckets(
         try:
             meta = db.get_meta(adapter_key)
             if is_fresh(meta) and db.count() > 0:
-                return _buckets_from_db(db)
+                db_buckets = _buckets_from_db(db)
+                # The DB row is whatever the last live-scan / post-run flush
+                # wrote; on its own it does NOT reflect the freshest
+                # check/apply/verify sidecar. _build_buckets_live enriches
+                # via _enrich_items (line ~673) and /apps/detect re-overlays
+                # by hand — but every caller hitting THIS fast path
+                # (/inventory, /inventory/{cat} → Library Sources "Advanced",
+                # Categories) was served raw DB rows, so candidates went
+                # blank after a check and stale versions lingered after an
+                # apply. Apply the SAME overlay here so the DB-fresh path is
+                # consistent with the live path. _latest_check_overlay walks
+                # check/apply/verify newest-first with phase priority
+                # (verify>apply>check), so this fixes both the post-check
+                # missing-candidate and post-apply stale-version bugs.
+                # excluded=set() mirrors _build_buckets_live; route handlers
+                # that need the in_config flag re-run _enrich_items with the
+                # real exclusion set (idempotent).
+                if runs_dir is not None:
+                    db_buckets = {
+                        cat: _enrich_items(items, cat, runs_dir, excluded=set())
+                        for cat, items in db_buckets.items()
+                    }
+                return db_buckets
         except Exception:  # noqa: BLE001
             _log.exception("inventory_db: read-side failure; falling back to live scan")
 
