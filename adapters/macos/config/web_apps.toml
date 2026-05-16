@@ -162,10 +162,23 @@ version_regex = "^([0-9]+\\.[0-9]+\\.[0-9]+),([0-9]+)$"
 version_replace = "\\1+\\2"
 http_timeout_s = 8
 
-# perplexity removed in M5.7.3: Perplexity Mac is a Mac App Store app
-# (Contents/_MASReceipt present); discovery filters MAS apps via the
-# receipt directory, so this web entry was dead. Updates flow through
-# the `mas` adapter, not web.
+# Perplexity desktop: the OLD ai.perplexity.mac bundle was a Mac App
+# Store app (filtered via _MASReceipt). The CURRENTLY shipped bundle is
+# ai.perplexity.macv3 — NOT MAS (no receipt), Sparkle-framework present
+# but the SUFeedURL is set programmatically at runtime (absent from
+# Info.plist) so static discovery yields an empty candidate. Registered
+# as `builtin` (Tier-B) so it is GUARANTEED to appear in the Phase-A
+# Action-required list with a clear reason instead of being silently
+# uncovered. This is the canonical Phase-C example: a user runs AI Tools
+# → "Make Ascendo cover an app it's missing", the AI iteratively
+# probe-tests a release_feed/sparkle entry and writes it to their
+# ~/.config/ascendo/web_apps.toml. Selective+AI-maintained by design.
+[[app]]
+slug = "perplexity"
+bundle_id = "ai.perplexity.macv3"
+display_name = "Perplexity"
+handler = "builtin"
+notes = "macv3 bundle (not the retired MAS ai.perplexity.mac, not ai.perplexity.comet). Sparkle SUFeedURL is runtime-injected, not in Info.plist, so no static probe. builtin keeps apply safe (safe-mode skip → Action-required list) with zero fake-silent-install risk. Promote per-machine via the Phase-C AI-config loop once a working feed URL is captured."
 
 [[app]]
 slug = "comet"

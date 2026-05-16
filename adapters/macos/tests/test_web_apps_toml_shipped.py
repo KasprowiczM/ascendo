@@ -103,3 +103,17 @@ def test_shipped_registry_ms365_uses_msupdate_handler() -> None:
     ms = reg.find("ms365")
     assert ms is not None
     assert ms.handler == "msupdate"
+
+
+def test_shipped_registry_has_perplexity_macv3_entry() -> None:
+    """Phase B (#B.2): the currently-shipped Perplexity bundle
+    (ai.perplexity.macv3, NOT the retired MAS ai.perplexity.mac, NOT
+    ai.perplexity.comet) is registered so it is guaranteed to surface
+    in the Phase-A Action-required list rather than being silently
+    uncovered. builtin handler => zero fake-silent-install risk."""
+    reg = WebRegistry.load(SHIPPED, None)
+    p = reg.find("perplexity")
+    assert p is not None
+    assert p.bundle_id == "ai.perplexity.macv3"
+    assert p.handler == "builtin"
+    assert p.enabled is True
