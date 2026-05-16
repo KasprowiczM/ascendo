@@ -237,6 +237,14 @@ dashboard-*.png
 /PLAN.md
 /DEV_SCRIPTS_README.md
 /docs/superpowers/specs/
+# 2026-05-16 web-coverage plan is part of the same gitignored working
+# channel as its spec (HANDOFF Sesja 79) — overlay-synced, not committed.
+/docs/superpowers/plans/2026-05-16-web-category-full-coverage.md
+
+# RuVector / agent local DB — regenerable, machine-local. Never commit,
+# never ship to the cloud overlay.
+/agentdb.rvf
+/agentdb.rvf.lock
 
 # Graphify output (knowledge graphs — user-specific)
 /graphify-out/
