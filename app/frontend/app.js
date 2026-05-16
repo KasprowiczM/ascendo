@@ -190,7 +190,20 @@ const sudoMgr = {
     // backend exposes `tty_available` in the status endpoint when known;
     // if missing, fall back to "always modal when no askpass" for
     // safety.
-    if (this._adapter() === "macos" && s.tty_available !== false) {
+    // pam_tid presents the macOS Touch ID *system dialog* at sudo time
+    // even when the dashboard/apply subprocess has NO controlling TTY
+    // (background `ascendo dashboard`, Tauri sidecar, .app double-click).
+    // So when Touch ID is actually wired (auth pam_tid.so in
+    // /etc/pam.d/sudo_local → /elevation/touchid/status.enabled), skip
+    // the password modal REGARDLESS of tty_available: the first apply
+    // phase's sudo gets a Touch ID prompt and the operator authenticates
+    // exactly ONCE. The old `s.tty_available !== false` gate forced the
+    // modal on every background launch even with Touch ID enabled, so
+    // the operator got the password modal AND then the Touch ID sheet —
+    // the reported double prompt. If Touch ID is NOT wired, we fall
+    // through to the password modal (parity with Windows/Ubuntu), which
+    // is exactly the requested behaviour.
+    if (this._adapter() === "macos") {
       try {
         const ti = await api.get("/elevation/touchid/status");
         if (ti && ti.enabled) return true;
