@@ -731,6 +731,9 @@ window.I18N = {
       dry_run: "Dry run",
       start:   "Start run",
       stop:    "Stop",
+      stopping: "Stopping…",
+      stop_requested: "Stop requested — finishing the current step safely, then halting.",
+      stop_none: "No active run to stop.",
       stream: {
         live:        "Live",
         idle:        "waiting for output…",
@@ -2154,6 +2157,9 @@ window.I18N = {
       dry_run: "Symulacja",
       start:   "Uruchom",
       stop:    "Zatrzymaj",
+      stopping: "Zatrzymywanie…",
+      stop_requested: "Zażądano zatrzymania — bezpiecznie kończę bieżący krok, potem przerywam.",
+      stop_none: "Brak aktywnego uruchomienia do zatrzymania.",
       stream: {
         live:        "Na żywo",
         idle:        "czekam na wynik…",

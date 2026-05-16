@@ -5514,10 +5514,56 @@ document.addEventListener("change", async e => {
 });
 
 $("#stop-btn").addEventListener("click", async () => {
+  const btn = $("#stop-btn");
+  if (btn && btn.dataset.stopping === "1") return; // ignore re-clicks
+  // Cooperative cancel halts at the next phase/manager boundary (an
+  // in-flight install is never killed mid-package). That can be many
+  // seconds out, so the click MUST acknowledge immediately — the old
+  // handler changed nothing on screen, which read as "Stop is broken".
+  const origLabel = btn ? btn.textContent : "";
+  if (btn) {
+    btn.dataset.stopping = "1";
+    btn.disabled = true;
+    btn.textContent = tr("run.stopping", "Stopping…");
+  }
+  // Flip the live RunPanel pill so the state change is unmistakable.
+  const pill = document.querySelector(
+    "#run-root .asc-runpanel__meta .asc-pill");
+  if (pill) {
+    pill.className = "asc-pill asc-pill--neutral";
+    const t = pill.querySelector(".asc-pill__txt");
+    if (t) t.textContent = tr("run.stopping", "Stopping…");
+  }
   try {
-    await api.post("/runs/active/stop");
-    ui.status("stop sent");
-  } catch (e) { ui.status(String(e)); }
+    const res = await api.post("/runs/active/stop");
+    if (res && res.ok === false) {
+      // Nothing to cancel — restore the button so it's usable again.
+      ui.status(tr("run.stop_none", "No active run to stop."));
+      if (btn) {
+        delete btn.dataset.stopping;
+        btn.disabled = false;
+        btn.textContent = origLabel;
+      }
+      return;
+    }
+    ui.status(tr("run.stop_requested",
+      "Stop requested — finishing the current step safely, then halting."));
+    if (typeof appendStreamLine === "function") {
+      try {
+        appendStreamLine(">>> " + tr("run.stop_requested",
+          "Stop requested — finishing the current step safely, then halting."));
+      } catch {}
+    }
+    // Button stays disabled+"Stopping…" until the SSE `done` event
+    // tears the panel down (attachStream done-handler).
+  } catch (e) {
+    ui.status(String(e));
+    if (btn) {
+      delete btn.dataset.stopping;
+      btn.disabled = false;
+      btn.textContent = origLabel;
+    }
+  }
 });
 
 // Sync screen buttons
