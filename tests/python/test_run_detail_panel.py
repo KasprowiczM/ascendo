@@ -122,7 +122,11 @@ class TestRunDetailPanel(unittest.TestCase):
         marker = "Run Center: Live detail panel controller"
         idx = text.find(marker)
         self.assertGreater(idx, -1, "panel controller block missing")
-        block = text[idx:]
+        # Scope to the run-detail IIFE only. Post-Sesja-70/71 the AI-Tools
+        # section that follows legitimately uses innerHTML to render
+        # Markdown; an unscoped text[idx:] would wrongly flag it.
+        end = text.find("})();", idx)
+        block = text[idx : end + 5] if end != -1 else text[idx:]
         # The whole controller block must build DOM via createElement /
         # textContent — no risky DOM-string assignment.
         for needle in (f".{HTML_PROP} =", f".{HTML_PROP}="):

@@ -72,15 +72,19 @@ def test_index_has_all_views(client):
     for vid in expected_views:
         assert f'id="{vid}"' in body, f"missing section id={vid!r}"
     nav_links = re.findall(r'data-view="([^"]+)"', body)
-    expected_short = {v.removeprefix("view-") for v in expected_views}
-    missing = expected_short - set(nav_links)
-    assert not missing, f"nav links missing for required views: {missing}"
-    assert len(nav_links) >= len(expected_views), (
-        f"expected at least {len(expected_views)} nav links, found "
+    # Post-Sesja-73 5-destination AppShell: the primary nav exposes
+    # exactly these workflow destinations. history/sync/hosts/logs still
+    # exist as <section id="view-*"> (asserted above) but are reached via
+    # hash routing, not nav links.
+    expected_nav = {"overview", "categories", "run", "insights", "settings"}
+    missing = expected_nav - set(nav_links)
+    assert not missing, f"nav links missing for required destinations: {missing}"
+    assert len(nav_links) >= len(expected_nav), (
+        f"expected at least {len(expected_nav)} nav links, found "
         f"{len(nav_links)}: {nav_links}"
     )
-    print(f"  index.html: all {len(expected_views)} required views present "
-          f"(SPA exposes {len(nav_links)} nav links total)")
+    print(f"  index.html: all required view sections present "
+          f"(nav exposes {len(nav_links)} destinations)")
 
 
 def test_static_assets(client):

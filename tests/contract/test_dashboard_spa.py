@@ -231,8 +231,10 @@ def test_spa_stub_get_endpoints_return_200(client: TestClient, path: str) -> Non
         ("/onboarding/complete", "POST", {}),
         ("/profiles/import", "POST", {}),
         ("/runs/active/stop", "POST", None),
-        ("/scheduler/install", "POST", {}),
-        ("/scheduler/remove", "POST", None),
+        # /scheduler/* graduated from stubs to real scheduler_real.py
+        # routes (Sesja 67) with required Pydantic bodies — they are no
+        # longer stub-mutation endpoints and are covered by the
+        # scheduler_real contract tests instead.
         ("/suggestions/apply", "POST", {}),
         ("/suggestions/dismiss", "POST", {}),
         ("/suggestions/test", "POST", {}),
