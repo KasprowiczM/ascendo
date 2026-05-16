@@ -1,6 +1,32 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-15 (sesja 76) — **Full UX/UI redesign:
+> Last updated: 2026-05-16 (sesja 77) — **UX polish batch: two
+> operator visual sweeps, 15 verified commits on `main`.** Carry-
+> forward + a ~25-point critique closed end to end: real cooperative
+> Stop (`f6f9af2`) + immediate Stop UX (`b66a6f2`); web/macos phantom-
+> warning + no-GUI-launch (`58a729e`); inventory Rebuild/Clear +
+> `/inventory/clear` (`09bbaa7`); selection-only Schedule builder
+> (`b7f2ada`) + Settings scheduler picker + latent 422 fix
+> (`a0b7013`); Insights donut + proportional per-category chart +
+> Dashboard pie (`a3b031b`); Runs Start = numbered 2-col step grid,
+> drivers/NVIDIA gated on Win/Ubuntu, quick-row removed (`3478fc9`);
+> Dashboard donut+cat side-by-side (`fae531d`); light-theme contrast
+> retune — chips visible + 30px no mobile jump, status-text tokens,
+> labelled status-coloured duration bars, Build=primary/Clear=danger
+> (`4379442`); Scheduled single-column 560px form + per-profile help
+> (`fd5b03c`); theme-independent brand mark visible on light AND dark
+> (`f64e5f2`); header switchers inline on tablet/desktop, gear on
+> mobile (`cd997bf`); About UX-overhaul highlight + 0 visible PL
+> raw-key leaks (`3efc133`). i18n **1157/1157 EN+PL**. Every change
+> verified live (cache-bust + DOM + screenshot + 0 console errors)
+> on BOTH themes before commit. Full close-out:
+> `docs/superpowers/specs/2026-05-16-ux-polish-batch-handoff.md`.
+> Deferred-by-policy hygiene (single-sheet CSS collapse, per-locale
+> i18n split, build step, a11y/lint, real-LLM smoke) unchanged — an
+> explicit scoped session, NOT keep-going work. Not pushed to origin
+> (15 commits ahead on local `main`; push only on explicit request).
+>
+> Previous milestone (sesja 76) — **Full UX/UI redesign:
 > P0 + owned shell + component system + all five screens rebuilt.**
 > Nine commits on `main`. Diagnosis: the SPA was three stacked
 > redesign layers fighting each other (`style.css` +
