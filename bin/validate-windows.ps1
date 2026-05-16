@@ -574,6 +574,14 @@ try {
         Test-Result "14.5 i18n EN/PL parity" $true "skipped (node not installed)"
     }
 
+    # 14.5b frontend hygiene guard (HANDOFF Sesja 77 recommendation)
+    if ($node) {
+        $hygOut = python "$aiRepoRoot\scripts\check-frontend-hygiene.py" 2>&1
+        Test-Result "14.5b frontend hygiene" ($LASTEXITCODE -eq 0) ($hygOut | Select-Object -Last 1)
+    } else {
+        Test-Result "14.5b frontend hygiene" $true "skipped (node not installed)"
+    }
+
     # 14.6-14.8: dashboard /ai/chat/* round-trip
     if (-not $SkipDashboard) {
         $aiPort = $DashboardPort + 1

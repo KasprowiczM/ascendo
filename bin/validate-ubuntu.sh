@@ -478,6 +478,13 @@ else
     result "14.5 i18n EN/PL parity" 0 "$(cat /tmp/ascendo-ai-parity.out)"
 fi
 
+# 14.5b frontend hygiene guard (HANDOFF Sesja 77 recommendation)
+if python3 "$REPO_ROOT_AI/scripts/check-frontend-hygiene.py" >/tmp/ascendo-fe-hygiene.out 2>&1; then
+    result "14.5b frontend hygiene" 1 "$(tail -1 /tmp/ascendo-fe-hygiene.out)"
+else
+    result "14.5b frontend hygiene" 0 "$(tail -3 /tmp/ascendo-fe-hygiene.out)"
+fi
+
 # 14.6 - 14.8: dashboard /ai/chat/* round-trip
 if [ "$SKIP_DASHBOARD" -ne 1 ]; then
     AI_PORT=$((DASHBOARD_PORT + 1))
