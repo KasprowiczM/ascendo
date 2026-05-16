@@ -29,7 +29,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
-from ascendo.ai.actions import dispatch_action
+from ascendo.ai.actions import WebOverrideBody, dispatch_action
 from ascendo.ai.backend import BackendResolver, TurnRegistry, TurnState, TurnStatus
 from ascendo.ai.context import build_context
 from ascendo.ai.persistence import ChatsDB
@@ -295,6 +295,22 @@ def cancel_turn(turn_id: str, request: Request) -> dict:
         raise HTTPException(status_code=404, detail="unknown turn_id")
     state.cancel_event.set()
     return {"ok": True}
+
+
+@router.post("/action/web_override")
+def post_action_web_override(body: WebOverrideBody) -> dict:
+    """Execute the add_web_override action (the endpoint
+    ALLOWED_ACTIONS already points at — previously a 404). Validates
+    the TOML snippet, runs the final-gate probe, and atomically merges
+    it into ~/.config/ascendo/web_apps.toml ONLY if both pass. On any
+    failure the user file is untouched and 422 is returned so the AI
+    can iterate. Always behind the existing confirm-the-TOML chip."""
+    from .web_config import apply_web_override
+
+    result = apply_web_override(body.slug, body.toml_snippet)
+    if not result.get("ok"):
+        raise HTTPException(status_code=422, detail=result)
+    return result
 
 
 @router.post("/action")

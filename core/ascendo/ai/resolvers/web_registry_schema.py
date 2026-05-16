@@ -40,22 +40,24 @@ handler = "github_dmg"                # sparkle | github_dmg | release_feed
                                       # | msupdate | docker | omaha
 enabled = true
 
-# Exactly one [app.<handler>] sub-table, matching `handler`:
-
-[app.github_dmg]                      # GitHub Releases DMG (Tier-A, silent)
-github_repo = "owner/repo"
+# github_dmg keys are FLAT, directly under [[app]] (NOT a subtable):
+github_repo = "owner/repo"            # when handler = "github_dmg"
 asset_pattern = "MyApp-[0-9.]+-arm64\\\\.dmg$"
 arch = "arm64"                        # or "universal"
 
-# [app.sparkle]   appcast_url = "https://.../appcast.xml"
-# [app.release_feed]
-#   url = "https://.../latest.json"   version_path = "version"
-#   download_path = "files[0].url"    # set => Tier-A silent install
-#   # (omit download_path => Tier-B: user opens the app to update)
-#   version_regex = "^v(.+)$"  version_replace = "\\\\1"  format = "json"
+# sparkle keys are also flat:    appcast_url = "https://.../appcast.xml"
+# keystone:                      ksadmin_product_id = "com.x.Y"
+
+# release_feed / msupdate / omaha use a [app.<handler>] SUBTABLE:
+[app.release_feed]                    # only when handler = "release_feed"
+url = "https://.../latest.json"
+version_path = "version"
+# download_path = "files[0].url"      # set => Tier-A silent install;
+                                      # omit => Tier-B (user opens app)
+# version_regex = "^v(.+)$"  version_replace = "\\\\1"  format = "json"
 # [app.msupdate]  app_id = "MSWD2019"
-# [app.omaha]     endpoint = "https://.../update2"  appid = "..."
-#                 protocol = "3.0"  tag = "stable"
+# [app.omaha]     endpoint = "https://.../update2"
+#                 appid = "..."  protocol = "3.0"  tag = "stable"
 ```
 Working examples live in `adapters/macos/config/web_apps.toml`.'''
 

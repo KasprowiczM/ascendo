@@ -191,6 +191,155 @@ def _probe_handler(slug: str, handler: str, cfg_json: str) -> tuple[str, str]:
         return (resolved, (proc.stderr or "")[-800:])
 
 
+# ── User-override write + merge (Phase C: the AI-config write action) ────────
+
+
+def _toml_val(v: Any) -> str:
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return str(v)
+    if isinstance(v, list):
+        return "[" + ", ".join(_toml_val(x) for x in v) + "]"
+    s = str(v).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    return f'"{s}"'
+
+
+# WebApp sub-models that serialise as their own [app.<key>] table.
+_SUBTABLES = ("release_feed", "msupdate", "omaha")
+
+
+def _dump_app(app: dict) -> str:
+    lines = ["[[app]]"]
+    for k, val in app.items():
+        if k in _SUBTABLES or isinstance(val, dict):
+            continue
+        lines.append(f"{k} = {_toml_val(val)}")
+    for sub in _SUBTABLES:
+        if isinstance(app.get(sub), dict):
+            lines.append(f"\n[app.{sub}]")
+            for k, val in app[sub].items():
+                lines.append(f"{k} = {_toml_val(val)}")
+    return "\n".join(lines)
+
+
+def _dump_registry(apps: list[dict]) -> str:
+    body = ['schema = "ascendo-web-apps/v2"', ""]
+    for a in apps:
+        body.append(_dump_app(a))
+        body.append("")
+    return "\n".join(body).rstrip() + "\n"
+
+
+def write_user_override(app: Any) -> Path:
+    """Atomic upsert (by bundle_id) of a validated WebApp into the user's
+    ~/.config/ascendo/web_apps.toml. Parse-validates the MERGED registry
+    before the temp→replace so a bad merge can never corrupt the file."""
+    import tomllib
+
+    from ascendo_macos.web_registry import WebRegistry  # type: ignore
+
+    path = _user_registry_path()
+    existing: list[dict] = []
+    if path.is_file():
+        try:
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
+            raw_apps = data.get("app", [])
+            existing = raw_apps if isinstance(raw_apps, list) else [raw_apps]
+        except Exception:  # noqa: BLE001
+            existing = []
+
+    new_app = app.model_dump(mode="json", exclude_none=True)
+    merged = [a for a in existing if a.get("bundle_id") != app.bundle_id]
+    merged.append(new_app)
+
+    # Hard gate: the merged registry MUST validate before we touch disk.
+    WebRegistry.model_validate({"schema": "ascendo-web-apps/v2", "app": merged})
+    rendered = _dump_registry(merged)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(
+        prefix=".web_apps-", suffix=".toml", dir=str(path.parent)
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(rendered)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+    return path
+
+
+def apply_web_override(slug: str, toml_snippet: str) -> dict:
+    """Validate → final-gate probe → atomic merge. The write happens
+    ONLY when validation + the gate pass; on any failure the user file
+    is left untouched and the failure is returned (the AI keeps
+    iterating). Never raises for expected failures."""
+    import tomllib
+
+    try:
+        from ascendo_macos.web_registry import WebApp  # type: ignore
+        from pydantic import ValidationError
+    except Exception:  # noqa: BLE001
+        return {"ok": False, "error": "web registry model unavailable"}
+
+    try:
+        doc = tomllib.loads(toml_snippet)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"invalid TOML: {exc}"}
+
+    raw_apps = doc.get("app")
+    if isinstance(raw_apps, list) and raw_apps:
+        candidate = raw_apps[0]
+    elif isinstance(raw_apps, dict):
+        candidate = raw_apps
+    else:
+        candidate = {k: v for k, v in doc.items() if k != "schema"}
+
+    try:
+        app = WebApp.model_validate(candidate)
+    except ValidationError as exc:
+        return {"ok": False, "error": "schema invalid", "detail": exc.errors()}
+
+    if app.slug != slug:
+        return {
+            "ok": False,
+            "error": f"slug mismatch: body says '{slug}', "
+            f"TOML says '{app.slug}'",
+        }
+
+    # Final-gate probe (skip for Tier-B handlers which have no probe).
+    probe: dict = {"skipped": True}
+    if app.handler not in _NO_PROBE_HANDLERS:
+        cfg_json = json.dumps(
+            app.model_dump(mode="json"), separators=(",", ":")
+        )
+        resolved, raw_err = _probe_handler(app.slug, app.handler, cfg_json)
+        probe = {"resolved_version": resolved, "raw": raw_err}
+        if not resolved:
+            return {
+                "ok": False,
+                "error": "probe gate failed — entry does not resolve a "
+                "version; not written",
+                "probe": probe,
+            }
+
+    try:
+        path = write_user_override(app)
+    except Exception as exc:  # noqa: BLE001
+        _log.exception("write_user_override failed")
+        return {"ok": False, "error": f"write failed: {exc}"}
+
+    return {
+        "ok": True,
+        "slug": app.slug,
+        "bundle_id": app.bundle_id,
+        "written_to": str(path),
+        "probe": probe,
+    }
+
+
 @router.post("/web/probe-entry")
 def web_probe_entry(raw: dict = Body(...)) -> dict:
     """Read-only dry-run of ONE candidate web_apps.toml entry.
