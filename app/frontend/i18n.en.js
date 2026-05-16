@@ -246,6 +246,8 @@ window.I18N.en = {
       title: "Action required — {n} app(s) need you to open them",
       subtitle: "These apps weren't updated silently — open each and check for updates inside it. Nothing was missed.",
       open: "Open",
+      open_all: "Open all {n}",
+      opened_all: "Opened all listed apps",
       fix_with_ai: "Fix with AI",
       reason_self_update: "Updates itself in the background — open it once to apply.",
       reason_no_silent_path: "No silent install path — open it and use Help → Check for Updates.",

@@ -1,6 +1,33 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-16 (sesja 79) — **Web category full
+> Last updated: 2026-05-16 (sesja 80) — **Action-required UX +
+> AI-provider-grid fix + tabular KPIs + Spotlight-noise fix.**
+> Five surgical fixes on `main`: (1) `mas.py` `_build_env` sets
+> `MAS_NO_AUTO_INDEX=1` — kills the cosmetic mas-7.x Spotlight
+> auto-indexer stderr spam (root-caused as NOT Ascendo logic).
+> (2) AI provider buttons were "missing" when navigating straight
+> to Settings — `initAiWizard()` only fired from `loadSuggestions`;
+> now also fires on the Settings view-switch (idempotent re-render).
+> (3) Action-required panel: scoped CSS so Open / Fix-with-AI sit
+> to the RIGHT of each item on tablet/desktop (override the global
+> `.card button{width:100%}`), stack full-width ≤768px; new
+> **"Open all {n}"** toolbar button (`Promise.allSettled` over
+> `POST /web/open`). (4) Overview + Insights KPI numbers now
+> `tabular-nums` so the `.asc-stat__value` figures align in a
+> column and don't jitter. (5) i18n +`action.open_all`/`opened_all`
+> EN+PL → parity 1194→**1196 EN==PL**; hygiene PASS; JS clean.
+> Verified live on the canonical `ascendo web start` :8765
+> (served assets carry every change; `/ai/providers`=7,
+> `/runs/{id}/action-required` returns real items so the new
+> toolbar renders). 185 work-touched tests green; the single
+> remaining failure is the documented pre-existing Sesja-43
+> `apply_report grouping` (proven untouched this turn). Landing
+> page ascendo.64bit.site stays un-fetchable (JS-rendered) — the
+> SPA already embeds the documented Ascendo brand
+> (lime/ink/Inter Tight/JetBrains Mono); tokens deliberately
+> NOT regressed. See HANDOFF Sesja 80.
+>
+> Previous milestone (sesja 79) — **Web category full
 > coverage shipped (Parts 0/A/B/C, 15 commits `f4881eb→223ecfc`).**
 > Guarantee: every non-silent macOS web app is now surfaced — never
 > silently — in a first-class `## ⚠ Action required` REPORT.md

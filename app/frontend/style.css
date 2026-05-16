@@ -3268,3 +3268,37 @@ form#run-form[data-uikit-stepper="1"] {
    reads as an orphaned band. */
 .app-header + .view > :first-child,
 .app-header ~ .view > h2:first-child { margin-top: 0; }
+
+/* === Action-required panel (Sesja 79/80) ===========================
+   #action-required-panel is a .card, so the global
+   `.card button { width:100% }` (line ~274) would make Open / Fix
+   buttons span the whole row. On tablet/desktop we want the buttons
+   to the RIGHT of each item; on phones they stack full-width. */
+#action-required-panel .action-toolbar {
+  display: flex; justify-content: flex-end; margin: 0.4rem 0 0.8rem;
+}
+#action-required-panel .action-row {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.55rem 0; border-top: 1px solid var(--border);
+}
+#action-required-panel .action-row:first-of-type { border-top: 0; }
+#action-required-panel .action-meta {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem;
+}
+#action-required-panel .action-reason { white-space: normal; }
+#action-required-panel .action-buttons {
+  flex: 0 0 auto; display: flex; gap: 0.5rem;
+}
+#action-required-panel .action-buttons button,
+#action-required-panel .action-toolbar button {
+  display: inline-flex; width: auto; min-width: 96px;
+  margin-bottom: 0; white-space: nowrap;
+}
+@media (max-width: 768px) {
+  #action-required-panel .action-row { flex-direction: column; align-items: stretch; }
+  #action-required-panel .action-buttons { width: 100%; }
+  #action-required-panel .action-buttons button { flex: 1 1 0; }
+  #action-required-panel .action-toolbar { justify-content: stretch; }
+  #action-required-panel .action-toolbar button { flex: 1 1 0; width: 100%; }
+}

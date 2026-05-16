@@ -79,6 +79,12 @@
   font: var(--fw-bold) var(--fs-3xl) / var(--lh-tight) var(--font-sans);
   letter-spacing: var(--tr-tight);
   color: var(--fg);
+  /* Tabular figures so the Overview (Managed / Outdated) and Insights
+     (Total runs / …) KPI numbers align in a column and don't jitter
+     width as values change. Inter Tight ships proportional digits by
+     default; tnum switches to monospaced figures. */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 .asc-stat__dot {
   width: var(--space-2);

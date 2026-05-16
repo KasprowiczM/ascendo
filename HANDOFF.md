@@ -6,6 +6,133 @@
 
 ---
 
+## Sesja 80 (2026-05-16) — Action-required UX + AI-grid fix + tabular KPIs + Spotlight noise
+
+Operator request (verbatim, abridged): *"put open and fix with ai
+button to the right of each item on Tablet/Desktop resolutions.
+create also one button to open all the apps listed at once. check
+the last runs logs, fix any warning with index in spotlight... often
+api key providers (the buttons with different providers) are missing,
+check it. use ascend font for numbers in overview (managed, outdated)
+and insights numbers. look at the design system + ascendo.64bit.site
+landing page and match it. translate, docs, commit, push, dev-sync
+export, handoff, make it testable in production on ubuntu+windows."*
+
+One continuous session on `main` (no branches per CLAUDE.md).
+Root-caused all four items with parallel read-only `Explore`
+subagents (HANDOFF lesson: subagents thrash on this repo's
+auto-loaded docs — investigate with read-only agents, implement
+inline). Five surgical fixes:
+
+### 1 — Spotlight auto-indexer noise (NOT Ascendo logic)
+
+The logs subagent traced the `"Found a likely App Store app that is
+not indexed in Spotlight … Indexing now"` multi-line warning to
+**mas 7.x** itself: after every `mas upgrade` it runs a Spotlight
+auto-indexer and prints that block to stderr for EVERY installed MAS
+app, not just the upgraded one. Purely cosmetic — the upgrade
+succeeds. mas documents `MAS_NO_AUTO_INDEX` as the suppression knob.
+Fix: `MasManager._build_env` now does `env.setdefault(
+"MAS_NO_AUTO_INDEX", "1")` for all phases (doesn't clobber an
+operator-provided value). +2 regression tests in
+`test_mas_manager_smoke.py` (suppresses by default; respects an
+operator override). No behaviour change to the upgrade itself.
+
+### 2 — AI provider buttons "missing" on Settings
+
+`#ai-provider-grid` lives in `#view-settings`, but
+`ui.initAiWizard()` was only ever fired from `loadSuggestions()`
+(the AI Tools / Suggestions view). Navigating **straight to
+Settings** left the provider grid empty — exactly the
+operator-reported "api key providers missing". Fix
+(`app.js` view-switch block): also call `ui.initAiWizard()` on the
+Settings view-switch. It's idempotent (the `initialized` flag makes
+it re-render-only after the first call) so firing every Settings
+visit is safe. Verified live: `/ai/providers` returns 7
+(anthropic/openai/google/openrouter/ollama/lm_studio/litellm) — the
+grid now populates the moment Settings opens.
+
+### 3 — Action-required: buttons-right + Open-all
+
+`#action-required-panel` is a `.card`, so the global
+`.card button { width:100% }` (style.css:274) forced Open /
+Fix-with-AI to span the whole row. Added a scoped CSS block
+(`#action-required-panel .action-row` = flex row, `.action-meta`
+`flex:1 1 auto`, `.action-buttons` `flex:0 0 auto` + `width:auto`),
+so on tablet/desktop the two buttons sit to the RIGHT of each item;
+`@media (max-width:768px)` stacks them full-width. New **"Open all
+{n}"** toolbar button (rendered only when `count > 1`) does
+`Promise.allSettled` over `POST /web/open` for every listed slug.
++`action.open_all` / `action.opened_all` i18n (EN+PL).
+Verified live on three recent runs (`count` 8 / 34 / 5 — all >1 so
+the toolbar renders; endpoint returns real `{slug,reason}` items).
+
+### 4 — Tabular KPI numbers
+
+`.asc-stat__value` (the big number in Overview "Managed / Outdated"
+KpiStrip and Insights "Total runs / …" KpiStrip) gained
+`font-variant-numeric: tabular-nums; font-feature-settings:"tnum" 1`
+in `components.css` so figures align in a column and don't jitter
+width as values change. (There is no separate "Ascend" font — the
+brand is Inter Tight + JetBrains Mono per the design system; Inter
+Tight ships `tnum`, so this is the correct, brand-consistent reading
+of "use [tabular] font for numbers".)
+
+### 5 — Design system / landing page
+
+`Ascendo_Design_System/` audited: the SPA already loads
+`colors_and_type.css` (the canonical token sheet) and uses
+lime/ink + Inter Tight / JetBrains Mono throughout (Sesja 10
+adoption, unchanged). `ascendo.64bit.site` is a fully JS-rendered
+page — `WebFetch` returns only the title, no usable token values.
+**Decision: do NOT guess/regress brand tokens.** The app already
+conforms to the documented design system; inventing colours from an
+un-fetchable page would be a regression, not an improvement.
+
+### Verification
+
+- i18n parity **1196 EN == 1196 PL** (`check-i18n-parity.py`);
+  `check-frontend-hygiene.py` **PASS**; `node --check` clean on
+  app.js + both locale files.
+- Dashboard live (canonical `ascendo web start` :8765, pid 83231):
+  served `app.js` carries `open_all` + the Settings `initAiWizard`
+  guard + `action-toolbar`; served `components.css` carries
+  `tabular-nums`; served `style.css` carries the scoped
+  action-required block. `/version`=200, `/ai/providers`=7,
+  `/runs/{id}/action-required` returns real items.
+- Regression: **185 work-touched tests green** (133 contract+frontend
+  + 52 macOS mas/adapter smoke). The single failure
+  (`test_generate_apply_report_groups_categories`) is the documented
+  pre-existing Sesja-43 `apply_report grouping` bug — proven
+  untouched this turn (`report.py`/`runs.py`/`web_config.py` clean;
+  only the 5 frontend files + mas.py changed).
+
+### Files changed
+
+```
+M adapters/macos/ascendo_macos/managers/mas.py        (_build_env: MAS_NO_AUTO_INDEX)
+M adapters/macos/tests/test_mas_manager_smoke.py      (+2 regression tests)
+M app/frontend/app.js                                 (Settings initAiWizard guard + Open-all)
+M app/frontend/components.css                          (.asc-stat__value tabular-nums)
+M app/frontend/style.css                               (scoped #action-required-panel layout)
+M app/frontend/i18n.en.js / i18n.pl.js                 (+action.open_all/opened_all)
+M PLAN.md / HANDOFF.md
+```
+
+### Carry-forward / cross-OS
+
+- All SPA changes live in `app/frontend/` served by the OS-agnostic
+  core dashboard → Ubuntu + Windows operators get the
+  action-required layout, Open-all, Settings AI-grid fix, and
+  tabular KPIs by `git pull` + dashboard restart, no adapter work.
+- `mas.py` change is macOS-only and inert elsewhere (Ubuntu/Windows
+  adapters have no `MasManager`).
+- The pre-existing Sesja-43 `apply_report grouping` failure +
+  Windows-only `test_service_endpoints` remain the only documented
+  reds; out of scope here.
+
+---
+
 ## Sesja 79 (2026-05-16) — Web category full coverage (Parts 0/A/B/C)
 
 Operator brief: audit which macOS `web`-category apps are

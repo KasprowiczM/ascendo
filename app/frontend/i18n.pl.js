@@ -285,6 +285,8 @@ window.I18N.pl = {
       title: "Wymagane działanie — {n} aplikacji wymaga otwarcia",
       subtitle: "Te aplikacje nie zostały zaktualizowane po cichu — otwórz każdą i sprawdź aktualizacje w niej. Nic nie zostało pominięte.",
       open: "Otwórz",
+      open_all: "Otwórz wszystkie ({n})",
+      opened_all: "Otwarto wszystkie wymienione aplikacje",
       fix_with_ai: "Napraw z AI",
       reason_self_update: "Aktualizuje się sama w tle — otwórz ją raz, aby zastosować.",
       reason_no_silent_path: "Brak cichej instalacji — otwórz ją i użyj Pomoc → Sprawdź aktualizacje.",

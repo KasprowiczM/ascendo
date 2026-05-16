@@ -346,6 +346,13 @@ const ui = {
     if (view === "sync"       && !ui._loaded.sync)       { ui._loaded.sync = true;       ui.loadSync(); }
     if (view === "settings"   && !ui._loaded.settings)   { ui._loaded.settings = true;   ui.loadSettings(); }
     if (view === "settings") { try { window.aitoolsBackends && window.aitoolsBackends.load(); } catch {} }
+    // The AI provider grid (#ai-provider-grid) lives in the Settings
+    // view, but initAiWizard() was historically only fired from
+    // loadSuggestions(). Navigating straight to Settings left the
+    // provider buttons empty ("api key providers missing"). Fire it
+    // here too — it's idempotent (re-render-only via the `initialized`
+    // flag) so calling it every Settings visit is safe.
+    if (view === "settings") { try { if (typeof ui.initAiWizard === "function") ui.initAiWizard(); } catch {} }
     if (view === "hosts"      && !ui._loaded.hosts)      { ui._loaded.hosts = true;      ui.loadHosts(); }
     if (view === "schedule"   && !ui._loaded.schedule)   { ui._loaded.schedule = true;   ui.loadSchedule(); }
     if (view === "apps"       && !ui._loaded.apps)       { ui._loaded.apps = true;       ui.loadApps(); }
@@ -1652,6 +1659,24 @@ const ui = {
       "action.subtitle",
       "These apps weren't updated silently — open each and check for updates. Nothing was missed.");
     panel.appendChild(sub);
+
+    if (items.length > 1) {
+      const bar = document.createElement("div");
+      bar.className = "action-toolbar";
+      const openAll = document.createElement("button");
+      openAll.className = "secondary";
+      openAll.textContent = tr("action.open_all", "Open all").replace(
+        "{n}", String(items.length));
+      openAll.addEventListener("click", async () => {
+        openAll.disabled = true;
+        await Promise.allSettled(
+          items.map(it => api.post("/web/open", { slug: it.slug })));
+        openAll.disabled = false;
+        ui.status(tr("action.opened_all", "Opened all listed apps"));
+      });
+      bar.appendChild(openAll);
+      panel.appendChild(bar);
+    }
 
     const REASON_KEY = {
       self_update: "action.reason_self_update",
