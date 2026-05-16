@@ -127,14 +127,19 @@ def test_help_panel_structure():
 
 def test_help_i18n_keys_exist():
     """All data-i18n keys in help panels must exist in both EN and PL."""
-    html_path = Path(__file__).parent.parent / "app" / "frontend" / "index.html"
-    i18n_path = Path(__file__).parent.parent / "app" / "frontend" / "i18n.js"
+    fe = Path(__file__).parent.parent / "app" / "frontend"
+    html_path = fe / "index.html"
 
     with open(html_path, encoding="utf-8") as f:
         html_content = f.read()
 
-    with open(i18n_path, encoding="utf-8") as f:
-        i18n_content = f.read()
+    # Sesja 78: locale data split into i18n.en.js + i18n.pl.js. Concat
+    # both so the existing "appears twice (EN+PL)" occurrence logic
+    # below holds (1 per file × 2 files).
+    i18n_content = (
+        (fe / "i18n.en.js").read_text(encoding="utf-8")
+        + (fe / "i18n.pl.js").read_text(encoding="utf-8")
+    )
 
     # Extract all data-i18n keys from help panels
     help_keys = set()

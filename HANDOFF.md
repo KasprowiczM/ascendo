@@ -6,6 +6,67 @@
 
 ---
 
+## Sesja 78 (2026-05-16) — Per-locale i18n split (sync-preserving)
+
+Operator: "do the per locale split". Executed the #27-plan's
+recommended hygiene item — splitting the 2916-line `i18n.js` monolith
+into per-locale data files so EN/PL diffs never collide and the
+duplicate-key class of bug (Sesja 77 `11d9e04`) is structurally harder.
+
+### What changed
+
+- **`app/frontend/i18n.en.js`** (new) — `window.I18N = window.I18N ||
+  {}; window.I18N.en = {…}` (the EN data, ex-lines 9–1276).
+- **`app/frontend/i18n.pl.js`** (new) — same shape for `.pl`
+  (ex-lines 1277–2848).
+- **`app/frontend/i18n.js`** (rewritten, 2916→74 lines) — loader/
+  helpers ONLY: `tr` / `applyI18n` / `detectLanguage` / `applyTheme`
+  + a `window.I18N = window.I18N || {}` guard.
+- **The sync trap avoided:** NOT JSON+fetch (would race first paint).
+  Both data files are plain JS loaded via `<script defer>` ordered
+  **before** `i18n.js` and `app.js` — `defer` preserves document
+  order, so `window.I18N.{en,pl}` exist synchronously before any
+  `tr()` call. Zero behaviour change.
+
+### Consumers updated (the real blast radius)
+
+`index.html` (2 script tags before i18n.js); `app.py` `_spa_assets`
+(+i18n.en.js +i18n.pl.js — **a stale dashboard process served 404s
+for them until restart; caught + fixed during live verify**);
+`scripts/check-i18n-parity.py` + `scripts/check-frontend-hygiene.py`
+(node-eval both data files); and 5 tests that read i18n.js as text —
+`test_i18n_parity.py` (aitools namespace now 1×/file), `test_per_tab_
+help.py`, `test_frontend.py` (PL strings asserted from /i18n.pl.js),
+`test_frontend_smoke.py`, `test_run_detail_panel.py` (concat both data
+files so the ">=2 EN+PL occurrence" logic holds), `test_dashboard_spa.py`
+(+/i18n.en.js +/i18n.pl.js asset coverage).
+
+### Verification
+
+- `node --check` all 3 files; parity **1174 == 1174** (unchanged →
+  data moved intact, zero loss); `check-frontend-hygiene.py` PASS.
+- All split-touched tests pass. The 4 failures encountered
+  (`test_index_has_all_views`, `test_all_views_have_help_panels`,
+  `test_app_js_run_detail_block_uses_safe_dom`, 2× scheduler-stub
+  422) are pre-existing stale expectations from the Sesja-73/76 nav
+  redesign + the documented scheduler-stub — each asserts on code
+  this split did not touch.
+- **Live (after dashboard restart):** `/i18n.{en,pl,}.js` all 200;
+  `window.I18N.{en,pl}` populated (29 namespaces each); `tr()` →
+  "Overview"/"Przegląd"; **0 visible raw-key leaks** sweeping 8
+  destinations (incl. #logs) in EN AND PL; 0 console errors; PL
+  dashboard screenshot confirmed.
+
+### Carry-forward
+
+- `scripts/inject_help_keys.py` (a legacy one-off generator, not in
+  CI/test path) still targets the old `i18n.js`; left as-is — note
+  it would need pointing at the data files if ever re-run.
+- Remaining hygiene per the #27 plan unchanged: single-sheet CSS
+  collapse (multi-session, staged); build step = won't-do by design.
+
+---
+
 ## Sesja 77 (2026-05-16) — UX polish batch (two operator visual sweeps) + hygiene session
 
 One continuous session on `main` (no branches). Three operator

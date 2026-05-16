@@ -1647,6 +1647,11 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
        (icons → i18n → platform → app → shell → ui-components → ui-redesign)
        and still before DOMContentLoaded, so shell's router patch is safe. -->
   <script defer src="/icons.js"></script>
+  <!-- Per-locale i18n data (Sesja 78 split). defer preserves document
+       order, so window.I18N.{en,pl} exist before i18n.js's helpers and
+       before app.js calls tr() — fully synchronous, no fetch race. -->
+  <script defer src="/i18n.en.js"></script>
+  <script defer src="/i18n.pl.js"></script>
   <script defer src="/i18n.js"></script>
   <script defer src="/platform.js"></script>
   <script defer src="/app.js"></script>

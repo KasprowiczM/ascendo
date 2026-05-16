@@ -54,7 +54,9 @@ def test_spa_index_html_served_at_root(client: TestClient) -> None:
         ("/style.css", "{"),  # any rule body
         # Design-system tokens. Must load before style.css per index.html.
         ("/colors_and_type.css", "--accent"),
-        ("/i18n.js", ""),
+        ("/i18n.en.js", "window.I18N.en"),
+        ("/i18n.pl.js", "window.I18N.pl"),
+        ("/i18n.js", "window.tr"),
         ("/icons.js", ""),
         ("/favicon.svg", "<svg"),
     ],

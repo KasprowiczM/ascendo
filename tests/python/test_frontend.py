@@ -94,13 +94,20 @@ def test_static_assets(client):
                "loadHistory", "loadSettings", "loadSync", "loadHosts",
                "attachStream", "sudoMgr", "bootstrap"):
         assert fn in js, f"app.js missing symbol: {fn}"
-    r = assert_200(client, "/i18n.js")
-    i18n = r.text
+    # Sesja 78: i18n.js is now loader/helpers only; locale DATA moved
+    # to /i18n.en.js + /i18n.pl.js (all three served + defer-ordered).
+    i18n = assert_200(client, "/i18n.js").text
     for sym in ("window.I18N", "window.tr", "window.applyI18n",
-                "window.applyTheme", "window.detectLanguage",
-                '"pl"', "Ustawienia", "Polski"):
+                "window.applyTheme", "window.detectLanguage", '"pl"'):
         assert sym in i18n, f"i18n.js missing symbol: {sym!r}"
-    print("  style.css + app.js + i18n.js: structural OK")
+    i18n_en = assert_200(client, "/i18n.en.js").text
+    assert "window.I18N.en" in i18n_en, "i18n.en.js missing window.I18N.en"
+    assert "Settings" in i18n_en, "i18n.en.js missing EN data"
+    i18n_pl = assert_200(client, "/i18n.pl.js").text
+    assert "window.I18N.pl" in i18n_pl, "i18n.pl.js missing window.I18N.pl"
+    for sym in ("Ustawienia", "Polski"):
+        assert sym in i18n_pl, f"i18n.pl.js missing PL string: {sym!r}"
+    print("  style.css + app.js + i18n.{,en,pl}.js: structural OK")
 
 
 def test_api_contract(client):

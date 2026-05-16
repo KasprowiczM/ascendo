@@ -355,6 +355,10 @@ def create_app(
             # Design system tokens (colors, type, spacing, radii, shadows,
             # motion). Must load before style.css per index.html.
             ("colors_and_type.css", "text/css"),
+            # Per-locale i18n split (Sesja 78): data in i18n.{en,pl}.js,
+            # loader/helpers in i18n.js. All three served + defer-ordered.
+            ("i18n.en.js", "application/javascript"),
+            ("i18n.pl.js", "application/javascript"),
             ("i18n.js", "application/javascript"),
             ("icons.js", "application/javascript"),
             # AppShell IA refactor (Sesja 73): platform abstraction loads

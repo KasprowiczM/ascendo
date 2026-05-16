@@ -31,14 +31,20 @@ def test_i18n_en_pl_parity() -> None:
 
 
 def test_aitools_namespace_in_both_locales() -> None:
-    """Quick targeted check: the new aitools.* namespace must exist in both."""
-    src = (
-        Path(__file__).resolve().parent.parent.parent
-        / "app" / "frontend" / "i18n.js"
-    ).read_text(encoding="utf-8")
-    # Each locale block declares aitools as a top-level namespace, so the
-    # pattern appears twice in the file (once per locale).
-    assert src.count("\n    aitools: {") == 2, (
-        f"expected aitools: namespace in both locales, "
-        f"found {src.count(chr(10) + '    aitools: {')}"
+    """Quick targeted check: the new aitools.* namespace must exist in both.
+
+    Sesja 78: locale data is split into i18n.en.js / i18n.pl.js — the
+    namespace now appears once per data file (was twice in the old
+    monolith).
+    """
+    fe = Path(__file__).resolve().parent.parent.parent / "app" / "frontend"
+    en = (fe / "i18n.en.js").read_text(encoding="utf-8")
+    pl = (fe / "i18n.pl.js").read_text(encoding="utf-8")
+    assert en.count("\n    aitools: {") == 1, (
+        f"expected aitools: namespace in i18n.en.js, "
+        f"found {en.count(chr(10) + '    aitools: {')}"
+    )
+    assert pl.count("\n    aitools: {") == 1, (
+        f"expected aitools: namespace in i18n.pl.js, "
+        f"found {pl.count(chr(10) + '    aitools: {')}"
     )

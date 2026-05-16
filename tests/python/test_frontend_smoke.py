@@ -87,7 +87,12 @@ class TestFrontendSmoke(unittest.TestCase):
         self.assertIn("applyThemePref", text)
 
     def test_i18n_pl_en_parity(self):
-        text = (ROOT / "i18n.js").read_text(encoding="utf-8")
+        # Sesja 78: locale data split into i18n.en.js + i18n.pl.js;
+        # concat both so the >=2 (EN+PL) occurrence logic still holds.
+        text = (
+            (ROOT / "i18n.en.js").read_text(encoding="utf-8")
+            + (ROOT / "i18n.pl.js").read_text(encoding="utf-8")
+        )
         new_keys = [
             "apply.modal.title",
             "apply.modal.confirm",

@@ -29,7 +29,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = ROOT / "app" / "frontend"
-I18N_PATH = FRONTEND / "i18n.js"
+# Sesja 78: locale data split out of i18n.js into per-locale files.
+I18N_DATA_PATHS = (FRONTEND / "i18n.en.js", FRONTEND / "i18n.pl.js")
 HTML_FILES = [FRONTEND / "index.html"]
 JS_FILES = [
     FRONTEND / "app.js",
@@ -61,9 +62,12 @@ def _load_i18n() -> dict:
     node = shutil.which("node")
     if not node:
         raise SystemExit("node binary not on PATH; install Node >= 18")
+    requires = "".join(
+        f"require({json.dumps(str(p))});" for p in I18N_DATA_PATHS
+    )
     script = (
         "const window={};"
-        f"require({json.dumps(str(I18N_PATH))});"
+        f"{requires}"
         "process.stdout.write(JSON.stringify(window.I18N));"
     )
     r = subprocess.run(

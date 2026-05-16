@@ -1,6 +1,18 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-16 (sesja 77) — **UX polish batch: two
+> Last updated: 2026-05-16 (sesja 78) — **Per-locale i18n split
+> done.** `i18n.js` monolith → `i18n.en.js` + `i18n.pl.js` (data,
+> `window.I18N.{en,pl}`) + thin `i18n.js` (tr/applyI18n/
+> detectLanguage/applyTheme). Sync-preserving (plain JS, `<script
+> defer>` ordered before app.js — NOT async fetch), so zero
+> behaviour change. All consumers updated (index.html, app.py
+> `_spa_assets`, parity + hygiene scripts, 5 i18n-text tests).
+> Parity 1174==1174 (data moved intact); hygiene PASS; live EN+PL
+> 0 raw-key leaks across 8 destinations, 0 console errors. Remaining
+> deferred hygiene: single-sheet CSS collapse (multi-session,
+> staged); build step = won't-do by design. See HANDOFF Sesja 78.
+>
+> Previous milestone (sesja 77) — **UX polish batch: two
 > operator visual sweeps, 15 verified commits on `main`.** Carry-
 > forward + a ~25-point critique closed end to end: real cooperative
 > Stop (`f6f9af2`) + immediate Stop UX (`b66a6f2`); web/macos phantom-

@@ -21,9 +21,10 @@ import sys
 from pathlib import Path
 
 
-I18N_PATH = (
-    Path(__file__).resolve().parent.parent / "app" / "frontend" / "i18n.js"
-)
+_FRONTEND = Path(__file__).resolve().parent.parent / "app" / "frontend"
+# Sesja 78: locale DATA is split into i18n.en.js + i18n.pl.js (i18n.js
+# is now loader/helpers only). Eval both data files to rebuild I18N.
+I18N_DATA_PATHS = (_FRONTEND / "i18n.en.js", _FRONTEND / "i18n.pl.js")
 
 
 def _flatten(obj: dict, prefix: str = "") -> set[str]:
@@ -39,13 +40,16 @@ def _flatten(obj: dict, prefix: str = "") -> set[str]:
 
 
 def _load_via_node() -> dict:
-    """Spawn node to evaluate i18n.js + dump window.I18N as JSON."""
+    """Spawn node to evaluate the locale data files + dump I18N as JSON."""
     node = shutil.which("node")
     if not node:
         raise SystemExit("node binary not on PATH; install Node ≥ 18 to run parity check")
+    requires = "".join(
+        f"require({json.dumps(str(p))});" for p in I18N_DATA_PATHS
+    )
     script = (
         "const window={};"
-        f"require({json.dumps(str(I18N_PATH))});"
+        f"{requires}"
         "process.stdout.write(JSON.stringify(window.I18N));"
     )
     r = subprocess.run(
