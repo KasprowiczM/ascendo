@@ -88,3 +88,12 @@ title.pl = "Które aplikacje web mają zepsute sondy aktualizacji?"
 starter_prompt.en = "Look at my recent web check phases. Which apps return empty or failed candidate versions consistently?"
 starter_prompt.pl = "Przejrzyj moje ostatnie fazy sprawdzania web. Które aplikacje konsekwentnie zwracają puste lub błędne wersje?"
 context_tags = ["latest_failed_sidecar", "outdated_apps"]
+
+[[entries]]
+id = "cover_missing_app"
+group = "customize"
+title.en = "Make Ascendo cover an app it's missing on this Mac"
+title.pl = "Spraw, by Ascendo objęło aplikację, której brakuje na tym Macu"
+starter_prompt.en = "Look at the apps not silently covered on THIS machine. Pick one I name (or the most useful), propose a web_apps.toml entry using the correct v2 schema, then emit an `ascendo-action` web_probe to dry-run it. Read the probe result and revise until it resolves a real version. When it works, give me the final entry as an add_web_override action chip to confirm — never write the file without my confirmation."
+starter_prompt.pl = "Przejrzyj aplikacje nieobjęte cichą aktualizacją na TYM komputerze. Wybierz wskazaną przeze mnie (lub najbardziej przydatną), zaproponuj wpis web_apps.toml w poprawnym schemacie v2, następnie wyemituj akcję `ascendo-action` web_probe, aby go przetestować. Odczytaj wynik sondy i poprawiaj, aż zwróci prawdziwą wersję. Gdy zadziała, podaj finalny wpis jako akcję add_web_override do potwierdzenia — nigdy nie zapisuj pliku bez mojego potwierdzenia."
+context_tags = ["web_registry_schema"]
