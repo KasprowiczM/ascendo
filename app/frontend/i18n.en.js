@@ -242,6 +242,15 @@ window.I18N.en = {
       drop:     "Drop a bundle here, or click to choose",
       restored: "Bundle restored. Reload the page.",
     },
+    insights: {
+      title: "Insights",
+      help_summary: "Trends, failures, and timing across your recent runs — read-only analytics assembled from run history.",
+      help_details_label: "What's on the Insights view? Click to expand",
+      help_li1_b: "KPI strip", help_li1_t: "At-a-glance counts: last run status, apps tracked, outdated, and how long ago the last run finished.",
+      help_li2_b: "Inventory status & per-category", help_li2_t: "A donut of up-to-date vs outdated plus a proportional per-source breakdown.",
+      help_li3_b: "Run trends & duration", help_li3_t: "Successful / partial / failed over recent runs and a single-hue duration sparkline.",
+      help_li4_b: "Recent failures", help_li4_t: "The latest failed items; click a row to open the shared run-detail drawer.",
+    },
     apps: {
       title: "Apps",
       help_summary: "Track which installed apps are managed by Ascendo and which are excluded from automatic updates.",

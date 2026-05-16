@@ -281,6 +281,15 @@ window.I18N.pl = {
       drop:     "Upuść paczkę tutaj lub kliknij aby wybrać",
       restored: "Paczka przywrócona. Odśwież stronę.",
     },
+    insights: {
+      title: "Statystyki",
+      help_summary: "Trendy, błędy i czasy z ostatnich uruchomień — analityka tylko do odczytu z historii uruchomień.",
+      help_details_label: "Co jest w widoku Statystyki? Kliknij, aby rozwinąć",
+      help_li1_b: "Pasek KPI", help_li1_t: "Skrót: status ostatniego uruchomienia, śledzone aplikacje, nieaktualne i jak dawno zakończyło się ostatnie uruchomienie.",
+      help_li2_b: "Status inwentarza i wg kategorii", help_li2_t: "Pierścień aktualne vs nieaktualne plus proporcjonalny podział wg źródła.",
+      help_li3_b: "Trendy i czas trwania", help_li3_t: "Udane / częściowe / nieudane w ostatnich uruchomieniach oraz jednobarwny wykres czasu.",
+      help_li4_b: "Ostatnie błędy", help_li4_t: "Najnowsze nieudane pozycje; kliknij wiersz, aby otworzyć współdzieloną szufladę szczegółów uruchomienia.",
+    },
     apps: {
       title: "Aplikacje",
       help_summary: "Śledź które zainstalowane aplikacje są zarządzane przez Ascendo i które są wykluczone z automatycznych aktualizacji.",
