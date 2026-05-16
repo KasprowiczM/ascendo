@@ -522,6 +522,16 @@
 .asc-adv__phases { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
 /* ---- Responsive -------------------------------------- */
+/* DEFECT 4 — Sources row tablet band: at <=1080 a wide-stat row
+   (e.g. brew) can't fit name+stats+Advanced on one line, so it wraps
+   Advanced; margin-left:auto then strands it alone ~444px far-right
+   with a tall dead gap (brew 115px vs ~70px elsewhere). Un-pin acts
+   so a wrapped Advanced sits compact under the stats instead of
+   stranded right. Desktop (>=1081) + mobile (<=768) untouched. */
+@media (max-width: 1080px) and (min-width: 769px) {
+  .asc-srcrow__acts { margin-left: 0; }
+}
+
 @media (max-width: 768px) {
   .asc-kpi {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -562,4 +572,47 @@
   }
   .asc-table td.asc-table__sel { display: none; }
   .asc-table__act { justify-content: flex-end; }
+}
+
+/* ---- Dashboard overview mount ------------------------ */
+/* DEFECT B — #overview-root mounts AC.Banner + AC.KpiStrip + AC.Timeline
+   as bare siblings (app.js loadOverview) with NO container rule, so the
+   answer banner sat flush against the KPI numbers with zero breathing
+   room. Give the mount a single section rhythm. */
+#overview-root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* ---- RunPanel (live run header) ---------------------- */
+/* DEFECT I — .asc-runpanel__head/__meta/__sub are built in app.js but
+   had NO stylesheet rule, so the "Running" pill, the profile sub-label,
+   and the relocated #stop-btn were jammed together with no gap/padding
+   (looked cramped + ugly). Lay the header out: meta on the left, Stop
+   pushed to the right, comfortable spacing, wraps cleanly on narrow. */
+.asc-runpanel__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-2) 0;
+}
+.asc-runpanel__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.asc-runpanel__sub {
+  font: var(--fs-sm) / var(--lh-snug) var(--font-sans);
+  color: var(--fg-muted);
+}
+.asc-runpanel__head #stop-btn,
+.asc-runpanel__head .asc-btn--danger {
+  margin-left: auto;
+}
+@media (max-width: 768px) {
+  .asc-runpanel__head #stop-btn,
+  .asc-runpanel__head .asc-btn--danger { margin-left: 0; flex: 1 1 100%; }
 }

@@ -3032,8 +3032,14 @@ form#run-form[data-uikit-stepper="1"] {
   .app-header-actions {
     width: 100%; justify-content: flex-start; gap: var(--space-2);
   }
+  /* DEFECT A — on mobile the CTA had flex:1 1 auto inside a width:100%
+     actions row, so "Start Run" stretched full-width and the label
+     wrapped to a 2nd line (looked terrible). Keep it its natural
+     desktop size, never grow, never wrap. 44px touch target preserved
+     via min-height + padding. */
   .app-cta {
-    flex: 1 1 auto; min-height: 44px;
+    flex: 0 0 auto; width: auto; white-space: nowrap;
+    min-height: 44px;
     display: inline-flex; align-items: center; justify-content: center;
     padding: var(--space-2) var(--space-4);
   }
