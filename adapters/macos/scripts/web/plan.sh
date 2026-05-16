@@ -208,14 +208,15 @@ while [ "$i" -lt "$WORK_IDX" ]; do
             if ! _version_gt "$LATEST" "$INSTALLED"; then
                 continue   # up-to-date
             fi
-            if [ $IS_RUNNING -eq 1 ]; then
-                json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "skipped" "web" "$HANDLER"
-                json_add_message "info" "${SLUG}: deferred_app_in_use"
-                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
-            else
-                json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "planned" "web" "$HANDLER"
-                COUNT_PLANNED=$((COUNT_PLANNED + 1))
-            fi
+            # An outdated item is PLANNED regardless of whether the app
+            # is currently running. "plan" = what apply will attempt;
+            # deferral-because-running is an apply-phase outcome that the
+            # Phase-A Action-required surface now reports. This keeps
+            # plan consistent with check (both say `planned` for an
+            # outdated app) — fixes the megasync check=planned /
+            # plan=skipped inconsistency.
+            json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "planned" "web" "$HANDLER"
+            COUNT_PLANNED=$((COUNT_PLANNED + 1))
             ;;
         msupdate)
             # msupdate binary missing -> manager not available; skip
