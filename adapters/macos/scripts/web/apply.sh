@@ -38,16 +38,24 @@ if [ -z "$RUN_ID" ] || [ -z "$TRIGGER" ] || [ -z "$PROFILE_NAME" ] || [ -z "$OUT
     exit 2
 fi
 
-# Sesja 73: ``safe`` (and ``quick``) profiles must run silently — operator
-# reported builtin/squirrel handlers opening Inkscape / Notion / Ledger
-# during a routine safe-update. Export ASCENDO_SAFE_MODE so the handlers
-# can skip user-visible ``open -a`` calls and emit ``skipped`` with a
-# manual-action message instead. Full profile still allows the
-# in-process updater dance.
-case "$PROFILE_NAME" in
-    safe|quick) export ASCENDO_SAFE_MODE="true" ;;
-    *)          export ASCENDO_SAFE_MODE="false" ;;
-esac
+# Web update policy (operator request): NEVER auto-launch an app's GUI
+# during apply — that "pops windows all over the place" with no control.
+# So ASCENDO_SAFE_MODE is forced true for EVERY profile (was: only
+# safe|quick). Effect:
+#   - Silent handlers (keystone / sparkle / github_dmg DMG-path /
+#     msupdate / docker) still update in place, no GUI.
+#   - GUI-only handlers (builtin / squirrel / release_feed + omaha
+#     fallback) return 95 instead of `open -a`; apply collects these
+#     into ONE aggregated "needs manual update" list (see the rc==95
+#     branch + the end-of-run summary) so the user opens them
+#     deliberately from a single SPA list, not N popping windows.
+# Override with ASCENDO_WEB_ALLOW_GUI=1 to restore the old per-app
+# in-process updater dance (power users / debugging only).
+if [ "${ASCENDO_WEB_ALLOW_GUI:-0}" = "1" ]; then
+    export ASCENDO_SAFE_MODE="false"
+else
+    export ASCENDO_SAFE_MODE="true"
+fi
 
 REG_PATH="${ASCENDO_WEB_REGISTRY_PATH:-$ADAPTER_CONFIG/web_apps.toml}"
 USER_REG="${ASCENDO_WEB_USER_REGISTRY_PATH:-$HOME/.config/ascendo/web_apps.toml}"
@@ -93,6 +101,12 @@ COUNT_FAILED=0
 COUNT_SKIPPED=0
 COUNT_PLANNED=0
 COUNT_UPTODATE=0
+# Registry entries whose app isn't installed on this Mac. Collected and
+# reported ONCE at the end (not as N recurring skipped-items + warnings
+# every run — the operator uninstalled these and doesn't want to be
+# told about each, every run). run_async eviction removes their DB rows.
+NOT_INSTALLED_SLUGS=""
+NOT_INSTALLED_COUNT=0
 
 # Sesja 47 perf fix: parallel probe phase, then sequential dispatch.
 # The probe step (HTTP) parallelizes safely; the actual install step
@@ -143,17 +157,21 @@ for k, v in fields.items():
             INSTALLED=$(_web_installed_version "$APP_PATH")
         fi
     fi
-    # Pre-fix this `continue` silently dropped any registered slug whose
-    # APP_PATH didn't resolve to a real CFBundleShortVersionString. The
-    # operator then saw plan reporting "7 apps to upgrade" but apply only
-    # actually doing 1 — the other 6 vanished without diagnostic.
-    # Common causes: app moved out of /Applications, registry path wrong,
-    # app not actually installed (registry-only entry). Emit `skipped`
-    # with explicit reason so the row appears in the sidecar.
+    # App not resolvable on disk (uninstalled, moved out of
+    # /Applications, registry-only entry). Sesja-71f learned a bare
+    # silent `continue` hides real "plan said 7, apply did 1" drift, so
+    # we still record it — but AGGREGATED into one end-of-run line
+    # instead of a per-app skipped-item + info-warning every single run
+    # (the operator-reported "web apply keeps warning about apps I no
+    # longer have"). No sidecar item is emitted; run_async's eviction
+    # drops the stale inventory.db row so the SPA stops painting it.
     if [ -z "$INSTALLED" ]; then
-        json_add_item "web:${SLUG}" "" "" "skipped" "web" "$HANDLER"
-        json_add_message "info" "${SLUG}: not_installed (bundle '${BUNDLE_ID:-?}' not found on disk; registry expected '${APP_PATH}' — remove from registry if you don't use this app)"
-        COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+        if [ -z "$NOT_INSTALLED_SLUGS" ]; then
+            NOT_INSTALLED_SLUGS="$SLUG"
+        else
+            NOT_INSTALLED_SLUGS="${NOT_INSTALLED_SLUGS}, ${SLUG}"
+        fi
+        NOT_INSTALLED_COUNT=$((NOT_INSTALLED_COUNT + 1))
         continue
     fi
 
@@ -335,6 +353,11 @@ done
 # Clean up temp work artefacts (keep the sidecar)
 rm -rf "$RESULTS_DIR" "$INDICES_FILE" 2>/dev/null
 
+# One aggregated, non-spammy line for registry entries whose app isn't
+# installed (was: N recurring skipped-rows + N warnings every run).
+if [ "$NOT_INSTALLED_COUNT" -gt 0 ]; then
+    json_add_message "info" "${NOT_INSTALLED_COUNT} registry app(s) not installed on this Mac (skipped, not an error): ${NOT_INSTALLED_SLUGS}. Remove from web_apps.toml if you don't use them."
+fi
 if [ "$DRY_RUN" = "true" ]; then
     json_add_message "info" "web apply (dry-run): ${COUNT_PLANNED} planned, ${COUNT_SKIPPED} skipped"
 else
