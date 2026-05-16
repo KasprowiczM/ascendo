@@ -1934,14 +1934,26 @@ const ui = {
       });
     }
 
-    // ---- Inventory status pie (the donut the operator asked back) ----
+    // ---- Inventory status: donut + per-category chart side by side ---
     let pieCard = null;
+    const haveCats = !!(summary && summary.categories &&
+      Object.keys(summary.categories).length);
     if (managed > 0) {
+      const wrap = document.createElement("div");
+      wrap.className = "ov-charts";
       const pieHost = document.createElement("div");
       pieHost.id = "overview-status-pie";
+      pieHost.className = "ov-charts__pie";
+      wrap.appendChild(pieHost);
+      if (haveCats) {
+        const catHost = document.createElement("div");
+        catHost.id = "overview-percat";
+        catHost.className = "ov-charts__cat";
+        wrap.appendChild(catHost);
+      }
       pieCard = AC.Card({
         title: tr("overview.status_title", "Inventory status"),
-        children: pieHost,
+        children: wrap,
       });
     }
 
@@ -1958,6 +1970,9 @@ const ui = {
         { label: tr("shell.ins.lbl_missing", "missing"),
           value: totals.missing || 0,  color: "var(--err)"  },
       ]);
+      if (haveCats) {
+        ui.renderCatChart("overview-percat", summary.categories);
+      }
     }
   },
 

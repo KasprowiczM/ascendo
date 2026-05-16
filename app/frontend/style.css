@@ -764,6 +764,15 @@ dialog.modal-dialog #apply-modal-confirm:disabled {
 .cc-seg-missing  { background: var(--err); }
 .cc-count { flex: 0 0 3.2rem; text-align: right; color: var(--dim); font-size: 0.8rem; }
 
+/* Dashboard: donut + per-category chart side by side (wraps on narrow) */
+.ov-charts { display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: flex-start; }
+.ov-charts__pie { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; }
+.ov-charts__cat { flex: 1 1 320px; min-width: 0; }
+@media (max-width: 720px) {
+  .ov-charts { gap: var(--space-4); }
+  .ov-charts__pie { flex: 1 1 100%; }
+}
+
 /* Ã¢ÂÂÃ¢ÂÂ Inventory table Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 .inv-table { font-size: 0.85rem; }
 .inv-table td { padding: 0.3rem 0.6rem; }
