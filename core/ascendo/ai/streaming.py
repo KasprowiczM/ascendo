@@ -15,11 +15,12 @@ column. This mirrors Task 13's parse_actions contract.
 """
 from __future__ import annotations
 
+import json
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from time import time
 
-from .actions import parse_actions
+from .actions import is_auto_fireable, parse_actions
 from .backend import Backend, Chunk, Message, TurnRegistry, TurnState, TurnStatus
 
 
@@ -35,6 +36,7 @@ async def run_turn(
     template_id: str | None = None,
     context_tags: list[str] | None = None,
     state: TurnState | None = None,
+    auto_action_runner: Callable[[dict], dict] | None = None,
 ) -> AsyncIterator[Chunk]:
     """Execute one chat turn end-to-end, yielding chunks for SSE relay.
 
@@ -83,56 +85,103 @@ async def run_turn(
     final_status: str = "success"
     # Count of action proposals already emitted as SSE events so we don't
     # re-emit the same fence on every subsequent token (Task 20).
-    emitted_actions = 0
+    # Phase C.4: bounded self-correction loop. With no auto_action_runner
+    # (every existing caller) this runs EXACTLY ONCE — behaviour is
+    # byte-for-byte unchanged. With a runner, a read-only low-risk
+    # `web_probe` action proposed by the model is auto-executed
+    # server-side, its result fed back, and the model re-prompted, up to
+    # _MAX_PASSES total, so it self-corrects an entry until it resolves.
+    _MAX_PASSES = 3
+    pass_n = 0
+    while True:
+        pass_n += 1
+        emitted_actions = 0
 
-    try:
-        async for chunk in backend.stream(
-            system=full_system,
-            messages=history,
-            cancel_event=state.cancel_event,
+        try:
+            async for chunk in backend.stream(
+                system=full_system,
+                messages=history,
+                cancel_event=state.cancel_event,
+            ):
+                if chunk.type == "token":
+                    if chunk.content:
+                        buffer.append(chunk.content)
+                    yield chunk
+                    # Incremental action detection: re-parse the running
+                    # buffer and emit any newly-completed fence as an
+                    # action_proposal so the SPA renders chips DURING
+                    # streaming. parse_actions is a closed-fence regex.
+                    actions_so_far, _ = parse_actions("".join(buffer))
+                    while emitted_actions < len(actions_so_far):
+                        proposal = actions_so_far[emitted_actions]
+                        emitted_actions += 1
+                        yield Chunk(type="action_proposal", action=proposal)
+                elif chunk.type == "done":
+                    final_status = chunk.status or "success"
+                    tokens_out_total = chunk.tokens_out or (
+                        len("".join(buffer)) // 4
+                    )
+                    yield chunk
+                    break
+                elif chunk.type == "error":
+                    error = chunk.error
+                    final_status = "error"
+                    yield chunk
+                elif chunk.type in (
+                    "action_proposal", "context_trimmed", "meta"
+                ):
+                    yield chunk
+        except Exception as exc:  # noqa: BLE001 - boundary handler
+            error = str(exc)
+            final_status = "error"
+            yield Chunk(type="error", error=error)
+            yield Chunk(type="done", status="error")
+
+        assistant_text = "".join(buffer)
+        actions, cleaned = parse_actions(assistant_text)
+
+        chats_db.append_message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=cleaned,
+            actions=actions or None,
+            tokens_in=tokens_in_estimate,
+            tokens_out=tokens_out_total,
+        )
+
+        # Decide whether to auto-fire + re-prompt. Strictly gated:
+        # runner present, last pass succeeded, under the pass cap, and
+        # the model proposed at least one read-only low-risk action.
+        if (
+            auto_action_runner is None
+            or final_status != "success"
+            or pass_n >= _MAX_PASSES
         ):
-            if chunk.type == "token":
-                if chunk.content:
-                    buffer.append(chunk.content)
-                yield chunk
-                # Incremental action detection: re-parse the running buffer
-                # and emit any newly-completed fence as an action_proposal
-                # chunk so the SPA renders chips DURING streaming, not only
-                # after `done`. parse_actions is a closed-fence regex, so
-                # half-typed fences don't fire prematurely.
-                actions_so_far, _ = parse_actions("".join(buffer))
-                while emitted_actions < len(actions_so_far):
-                    proposal = actions_so_far[emitted_actions]
-                    emitted_actions += 1
-                    yield Chunk(type="action_proposal", action=proposal)
-            elif chunk.type == "done":
-                final_status = chunk.status or "success"
-                tokens_out_total = chunk.tokens_out or (len("".join(buffer)) // 4)
-                yield chunk
-                break
-            elif chunk.type == "error":
-                error = chunk.error
-                final_status = "error"
-                yield chunk
-            elif chunk.type in ("action_proposal", "context_trimmed", "meta"):
-                yield chunk
-    except Exception as exc:  # noqa: BLE001 - boundary handler
-        error = str(exc)
-        final_status = "error"
-        yield Chunk(type="error", error=error)
-        yield Chunk(type="done", status="error")
-
-    assistant_text = "".join(buffer)
-    actions, cleaned = parse_actions(assistant_text)
-
-    chats_db.append_message(
-        conversation_id=conversation_id,
-        role="assistant",
-        content=cleaned,
-        actions=actions or None,
-        tokens_in=tokens_in_estimate,
-        tokens_out=tokens_out_total,
-    )
+            break
+        auto = [a for a in actions if is_auto_fireable(a.get("id", ""))]
+        if not auto:
+            break
+        for a in auto:
+            try:
+                result = auto_action_runner(a)
+            except Exception as exc:  # noqa: BLE001 - never abort the turn
+                result = {"ok": False, "error": str(exc)}
+            # Visible in the activity log — auto-fired, not silent.
+            yield Chunk(
+                type="action_result",
+                action={"id": a.get("id"), "result": result},
+            )
+            tool_text = json.dumps(
+                {"action": a.get("id"), "result": result}
+            )[:2000]
+            chats_db.append_message(
+                conversation_id=conversation_id,
+                role="tool_result",
+                content=tool_text,
+            )
+            history.append(Message(role="tool_result", content=tool_text))
+        # Fresh buffer for the re-prompt pass.
+        buffer = []
 
     if final_status == "cancelled":
         state.status = TurnStatus.CANCELLED

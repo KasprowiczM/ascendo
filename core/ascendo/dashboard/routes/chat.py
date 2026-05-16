@@ -219,6 +219,25 @@ async def post_chat(body: PostChat, request: Request) -> dict:
     streams = _chat_streams(request)
     streams[turn_id] = queue
 
+    def _web_probe_runner(action: dict) -> dict:
+        """Execute ONLY the read-only web_probe action server-side
+        (Phase C.4). is_auto_fireable already gates this to web_probe;
+        this stays defensive + converts route exceptions to a result
+        the model can read + revise from."""
+        if action.get("id") != "web_probe":
+            return {"ok": False, "error": "not auto-fireable"}
+        from fastapi import HTTPException
+
+        from .web_config import web_probe_entry
+
+        try:
+            return web_probe_entry(raw=action.get("body") or {})
+        except HTTPException as exc:
+            return {"ok": False, "error": "invalid entry",
+                    "detail": exc.detail}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
     async def _producer() -> None:
         try:
             async for chunk in run_turn(
@@ -232,6 +251,7 @@ async def post_chat(body: PostChat, request: Request) -> dict:
                 template_id=body.template_id,
                 context_tags=body.context_tags,
                 state=state,
+                auto_action_runner=_web_probe_runner,
             ):
                 await queue.put(chunk)
         finally:

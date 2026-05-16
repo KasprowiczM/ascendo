@@ -237,3 +237,98 @@ async def test_run_turn_does_not_double_emit_actions(tmp_path):
     proposals = [c for c in seen if c.type == "action_proposal"]
     ids = [p.action["id"] for p in proposals if p.action]
     assert ids == ["run_check", "run_plan"]
+
+
+# ── C.4: scoped read-only auto-fire ──────────────────────────────────────────
+
+class _ProbeThenAnswerBackend(Backend):
+    """Pass 1: propose a web_probe action. Pass 2 (after a tool_result is
+    in history): emit a final answer with no action."""
+
+    name = "fake"
+    bin_name = None
+
+    def is_available(self) -> bool:
+        return True
+
+    def is_authenticated(self) -> bool:
+        return True
+
+    def model_info(self) -> dict[str, str]:
+        return {"backend": "fake", "model": "test"}
+
+    async def stream(self, *, system, messages, cancel_event):
+        has_tool = any(getattr(m, "role", "") == "tool_result" for m in messages)
+        if not has_tool:
+            fence = (
+                '```ascendo-action\n'
+                '{"id":"web_probe","verb":"POST","path":"/web/probe-entry",'
+                '"body":{"slug":"x"}}\n```'
+            )
+            yield Chunk(type="token", content="probing " + fence)
+            yield Chunk(type="done", status="success", tokens_out=3)
+        else:
+            yield Chunk(type="token", content="done, it works")
+            yield Chunk(type="done", status="success", tokens_out=3)
+
+
+@pytest.mark.asyncio
+async def test_auto_fire_runs_readonly_action_and_reprompts(tmp_path):
+    from ascendo.ai.persistence import ChatsDB
+    from ascendo.ai.streaming import run_turn
+
+    chats = ChatsDB(tmp_path / "c.db")
+    cid = chats.create_conversation(backend="fake", locale="en")
+    calls: list[dict] = []
+
+    def runner(action: dict) -> dict:
+        calls.append(action)
+        return {"ok": True, "resolved_version": "1.2.3"}
+
+    chunks = []
+    async for c in run_turn(
+        backend=_ProbeThenAnswerBackend(),
+        conversation_id=cid,
+        user_message="cover my app",
+        system_prompt="sys",
+        context_blob="ctx",
+        chats_db=chats,
+        registry=TurnRegistry(),
+        auto_action_runner=runner,
+    ):
+        chunks.append(c)
+
+    # The probe was auto-fired exactly once, then the model re-prompted
+    # and finished (bounded; not 3x).
+    assert len(calls) == 1
+    assert calls[0]["id"] == "web_probe"
+    results = [c for c in chunks if c.type == "action_result"]
+    assert len(results) == 1
+    assert results[0].action["result"]["resolved_version"] == "1.2.3"
+
+
+@pytest.mark.asyncio
+async def test_mutating_action_is_not_auto_fired(tmp_path):
+    from ascendo.ai.persistence import ChatsDB
+    from ascendo.ai.streaming import run_turn
+
+    chats = ChatsDB(tmp_path / "c.db")
+    cid = chats.create_conversation(backend="fake", locale="en")
+    fence = (
+        '```ascendo-action\n{"id":"run_apply","verb":"POST",'
+        '"path":"/runs/async","body":{}}\n```'
+    )
+    calls = []
+    async for _ in run_turn(
+        backend=FakeBackend(tokens=["go " + fence]),
+        conversation_id=cid,
+        user_message="apply everything",
+        system_prompt="s",
+        context_blob="c",
+        chats_db=chats,
+        registry=TurnRegistry(),
+        auto_action_runner=lambda a: calls.append(a) or {"ok": True},
+    ):
+        pass
+    # run_apply is mutating => never auto-fired; stays propose-only.
+    assert calls == []

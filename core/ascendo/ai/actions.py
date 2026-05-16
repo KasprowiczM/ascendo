@@ -42,6 +42,13 @@ class EmptyBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ProbeEntryBody(BaseModel):
+    # A candidate web_apps.toml entry (validated downstream against the
+    # macOS WebApp model by /web/probe-entry). Permissive here so the
+    # AI can pass any handler shape; the route does the real validation.
+    model_config = ConfigDict(extra="allow")
+
+
 class WebOverrideBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     slug: str = Field(pattern=r"^[a-z0-9-]+$")
@@ -78,7 +85,25 @@ ALLOWED_ACTIONS: dict[str, tuple[str, str, type[BaseModel]]] = {
     "add_web_override":  ("POST", "/ai/chat/action/web_override", WebOverrideBody),
     "edit_skip_list":    ("POST", "/ai/chat/action/skip_list",    SkipListBody),
     "open_view":         ("local", "navigate",                    OpenViewBody),
+    # Phase C: read-only candidate-entry dry-run for the AI-config loop.
+    "web_probe":         ("POST", "/web/probe-entry",             ProbeEntryBody),
 }
+
+
+# ── Action metadata (Phase C.4: scoped read-only auto-fire) ──────────────────
+# Only entries that are BOTH read_only AND risk="low" may be
+# auto-executed server-side during a turn (the documented Task-18
+# extension). Everything else stays propose -> user-confirms -> fire.
+# Default for any unlisted action: mutating, not auto-fireable.
+ACTION_META: dict[str, dict] = {
+    "web_probe": {"read_only": True, "risk": "low"},
+}
+
+
+def is_auto_fireable(action_id: str) -> bool:
+    """True only for read-only, low-risk actions (currently web_probe)."""
+    m = ACTION_META.get(action_id or "")
+    return bool(m and m.get("read_only") and m.get("risk") == "low")
 
 
 # ============================ Fence parser ============================

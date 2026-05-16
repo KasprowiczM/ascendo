@@ -28,7 +28,8 @@ class Chunk(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal[
-        "token", "action_proposal", "context_trimmed", "done", "error", "meta",
+        "token", "action_proposal", "action_result",
+        "context_trimmed", "done", "error", "meta",
     ]
     content: str | None = None
     action: dict | None = None
