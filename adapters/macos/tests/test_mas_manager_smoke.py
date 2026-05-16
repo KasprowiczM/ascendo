@@ -262,3 +262,19 @@ def _minimal_sidecar(phase: Phase, run_id):
                     "skipped": 0, "planned": 0, "partial": 0},
         "items": [], "messages": [],
     }
+
+
+def test_build_env_suppresses_mas_spotlight_auto_index(monkeypatch):
+    """mas 7.x prints a noisy Spotlight-not-indexed warning for every
+    installed MAS app on each upgrade. _build_env must set
+    MAS_NO_AUTO_INDEX=1 (all phases) to suppress it."""
+    monkeypatch.delenv("MAS_NO_AUTO_INDEX", raising=False)
+    m = _make_manager()
+    for phase in (Phase.CHECK, Phase.PLAN, Phase.APPLY, Phase.VERIFY,
+                  Phase.CLEANUP):
+        assert m._build_env(phase).get("MAS_NO_AUTO_INDEX") == "1"
+
+
+def test_build_env_does_not_clobber_operator_mas_no_auto_index(monkeypatch):
+    monkeypatch.setenv("MAS_NO_AUTO_INDEX", "0")
+    assert _make_manager()._build_env(Phase.APPLY)["MAS_NO_AUTO_INDEX"] == "0"

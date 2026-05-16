@@ -237,6 +237,14 @@ class MasManager(IPackageManager):
         the dashboard.
         """
         env = dict(os.environ)
+        # mas 7.x runs a Spotlight auto-indexer after every upgrade and
+        # prints a noisy multi-line "Found a likely App Store app that is
+        # not indexed in Spotlight … Indexing now" warning for EVERY
+        # installed MAS app (not just the upgraded one). It is purely
+        # cosmetic — the upgrade itself succeeds — and mas documents this
+        # exact env var as the suppression mechanism. Set it (don't
+        # clobber an operator-provided value).
+        env.setdefault("MAS_NO_AUTO_INDEX", "1")
         if phase is Phase.APPLY and self._elevation.has_password_registered():
             helper = self._elevation.askpass_path()
             if helper is not None:
