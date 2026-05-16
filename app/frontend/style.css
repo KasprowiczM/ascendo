@@ -1403,6 +1403,96 @@ button.action-numbered.is-busy .action-chip::after {
   animation: ascendo-spin 0.7s linear infinite;
 }
 
+/* ── Runs: numbered big-button grid (Start tab) ───────────────────────
+   Two columns of numbered steps. Columns are flex 1 1 280px so they sit
+   side-by-side on tablet/desktop and stack (left then right → numeric
+   order preserved) on mobile. Each step is a circled number + title +
+   one-line desc. Contrast holds on both themes: the number circle is
+   bordered/tonal for normal steps, accent-filled for the one primary
+   step (Full update) which is the single accent in the section. */
+.asc-runsteps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.asc-runsteps__col {
+  flex: 1 1 280px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.asc-runstep {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--fg);
+  cursor: pointer;
+  appearance: none;
+  transition: background var(--dur-2) var(--ease-out),
+              border-color var(--dur-2) var(--ease-out);
+}
+.asc-runstep:hover { background: var(--bg-nested); border-color: var(--border-strong, var(--accent)); }
+.asc-runstep:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.asc-runstep__num {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent-strong);
+  color: var(--accent-strong);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  line-height: 1;
+}
+.asc-runstep__body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.asc-runstep__title {
+  font: var(--fw-semibold) var(--fs-md) / 1.3 var(--font-sans);
+  color: var(--fg);
+}
+.asc-runstep__desc {
+  font: var(--fw-regular) var(--fs-sm) / 1.45 var(--font-sans);
+  color: var(--fg-muted);
+}
+/* Primary = the single accent in the section (Full update). */
+.asc-runstep--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.asc-runstep--primary:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+.asc-runstep--primary .asc-runstep__num {
+  border-color: var(--accent-ink);
+  color: var(--accent-ink);
+}
+.asc-runstep--primary .asc-runstep__title { color: var(--accent-ink); }
+.asc-runstep--primary .asc-runstep__desc { color: var(--accent-ink); opacity: 0.82; }
+.asc-runstep.is-busy { opacity: 0.7; pointer-events: none; }
+.asc-runstep.is-busy .asc-runstep__num::after {
+  content: "";
+  display: block;
+  width: 12px; height: 12px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: ascendo-spin 0.7s linear infinite;
+}
+@media (max-width: 768px) {
+  .asc-runstep { padding: var(--space-3); }
+}
+
 /* Refresh button spinner — applies to any .secondary refresh button via
    the .is-refreshing modifier the JS toggles. */
 button.is-refreshing::before {

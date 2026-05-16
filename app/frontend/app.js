@@ -3020,139 +3020,121 @@ const ui = {
       return;
     }
 
-    // ---- idle: two large choices + Advanced ------------------------
-    // Custom two-line choice buttons styled via design tokens (inline,
-    // no CSS-file edits). Title = bold own line (var(--fg)); desc =
-    // muted second line (var(--fg-muted)) with a clear gap (defect 3).
-    // Accent budget (defect 4): Safe = the ONE primary accent fill;
-    // Quick = quiet (transparent + var(--border) + var(--fg)).
-    const choices = document.createElement("div");
-    choices.style.display = "grid";
-    choices.style.gap = "var(--space-3)";
-    // Operator: the two choices were full-width giant blocks eating the
-    // whole section. Make them compact + side-by-side (auto-fit → 1-up
-    // only when too narrow), and add a Quick-actions row below.
-    choices.style.gridTemplateColumns = "repeat(auto-fit, minmax(220px, 1fr))";
-
-    const startProfile = async (profile) => {
+    // ---- idle: numbered big-button grid + Advanced -----------------
+    // Operator spec: two columns of numbered steps in a fixed mental
+    // order. Left col 1·2·3, right col 4·5 (+6·7 drivers/NVIDIA on
+    // Windows/Ubuntu). Each step = a circled number + title + desc.
+    // The separate "Quick actions" row is removed (folded into steps).
+    const startAndShow = async (body, label) => {
       try {
-        const r = await startRunWithSudo({ profile });
+        const r = await startRunWithSudo(body);
         ui.attachStream(r.run_id);
         const sb = $("#stop-btn"); if (sb) sb.disabled = false;
-        ui.status(`run ${r.run_id} started`);
-        ui._renderRunStart({ run_id: r.run_id, profile, finished: false });
+        ui.status(`run ${r.run_id} started${label ? " (" + label + ")" : ""}`);
+        ui._renderRunStart({
+          run_id: r.run_id,
+          profile: body.profile ||
+            (body.categories ? body.categories.join(",") : "run"),
+          dry_run: !!body.dry_run,
+          finished: false,
+        });
       } catch (err) { ui.status(String(err)); }
     };
+    const startProfile = (profile) => startAndShow({ profile });
 
-    const mkChoice = (titleText, descText, isPrimary, onClick) => {
+    const grid = document.createElement("div");
+    grid.className = "asc-runsteps";
+    const colL = document.createElement("div");
+    colL.className = "asc-runsteps__col";
+    const colR = document.createElement("div");
+    colR.className = "asc-runsteps__col";
+
+    const mkStep = (num, titleText, descText, variant, onClick) => {
       const b = document.createElement("button");
       b.type = "button";
-      b.style.display = "block";
-      b.style.width = "100%";
-      b.style.textAlign = "left";
-      b.style.padding = "var(--space-3)";
-      b.style.borderRadius = "var(--radius-sm)";
-      b.style.cursor = "pointer";
-      b.style.appearance = "none";
-      b.style.transition = "background var(--dur-2) var(--ease-out)";
-      if (isPrimary) {
-        b.style.background = "var(--accent)";
-        b.style.color = "var(--accent-ink)";
-        b.style.border = "1px solid var(--accent)";
-        b.addEventListener("mouseenter", () => {
-          b.style.background = "var(--accent-strong)";
-          b.style.borderColor = "var(--accent-strong)";
-        });
-        b.addEventListener("mouseleave", () => {
-          b.style.background = "var(--accent)";
-          b.style.borderColor = "var(--accent)";
-        });
-      } else {
-        b.style.background = "transparent";
-        b.style.color = "var(--fg)";
-        b.style.border = "1px solid var(--border)";
-        b.addEventListener("mouseenter", () => {
-          b.style.background = "var(--bg-nested)";
-        });
-        b.addEventListener("mouseleave", () => {
-          b.style.background = "transparent";
-        });
-      }
+      b.className = "asc-runstep" +
+        (variant === "primary" ? " asc-runstep--primary" : "");
+      const numEl = document.createElement("span");
+      numEl.className = "asc-runstep__num";
+      numEl.textContent = String(num);
+      numEl.setAttribute("aria-hidden", "true");
+      const bodyEl = document.createElement("span");
+      bodyEl.className = "asc-runstep__body";
       const t = document.createElement("span");
+      t.className = "asc-runstep__title";
       t.textContent = titleText;
-      t.style.display = "block";
-      t.style.font = "var(--fw-semibold) var(--fs-md) / 1.3 var(--font-sans)";
       const d = document.createElement("span");
+      d.className = "asc-runstep__desc";
       d.textContent = descText;
-      d.style.display = "block";
-      d.style.marginTop = "var(--space-2)";
-      d.style.font = "var(--fw-regular) var(--fs-sm) / 1.45 var(--font-sans)";
-      d.style.color = isPrimary ? "var(--accent-ink)" : "var(--fg-muted)";
-      d.style.opacity = isPrimary ? "0.82" : "1";
-      b.appendChild(t);
-      b.appendChild(d);
-      b.addEventListener("click", onClick);
+      bodyEl.appendChild(t);
+      bodyEl.appendChild(d);
+      b.appendChild(numEl);
+      b.appendChild(bodyEl);
+      b.setAttribute("aria-label",
+        `${tr("runs.step_aria", "Step")} ${num}: ${titleText}`);
+      b.addEventListener("click", () => {
+        if (b.classList.contains("is-busy")) return;
+        onClick(b);
+      });
       return b;
     };
 
-    choices.appendChild(mkChoice(
-      tr("runs.safe_title", "Safe update"),
-      tr("runs.safe_desc", "Check, plan, and apply available updates across all sources."),
-      true, () => startProfile("safe")));
-    choices.appendChild(mkChoice(
-      tr("runs.quick_title", "Quick check"),
-      tr("runs.quick_desc", "Read-only sweep — find what's outdated without changing anything."),
-      false, () => startProfile("quick")));
-
-    // Quick-actions row (operator: "need more buttons for quick
-    // actions"). Compact AC.Buttons, both read-only / non-mutating:
-    //  • Full dry run — full pipeline in preview mode (dry_run:true →
-    //    emits "planned", changes nothing) so the user can see exactly
-    //    what a real update WOULD do, in one click.
-    //  • Build inventory — full live rescan + DB repopulate
-    //    (/inventory/db/refresh, == CLI build-inventory). The core
-    //    "build a fresh, current inventory" step, one click.
-    const quickRow = document.createElement("div");
-    quickRow.style.marginTop = "var(--space-4)";
-    const qaLabel = document.createElement("div");
-    qaLabel.textContent = tr("runs.qa_title", "Quick actions");
-    qaLabel.style.font = "var(--fw-medium) var(--fs-sm) / 1.3 var(--font-sans)";
-    qaLabel.style.color = "var(--fg-muted)";
-    qaLabel.style.marginBottom = "var(--space-2)";
-    const qaBtns = document.createElement("div");
-    qaBtns.style.display = "flex";
-    qaBtns.style.flexWrap = "wrap";
-    qaBtns.style.gap = "var(--space-2)";
-    qaBtns.appendChild(AC.Button({
-      variant: "secondary",
-      label: tr("runs.qa_dryrun", "Full dry run"),
-      onClick: async () => {
-        try {
-          const r = await startRunWithSudo({ profile: "full", dry_run: true });
-          ui.attachStream(r.run_id);
-          const sb = $("#stop-btn"); if (sb) sb.disabled = false;
-          ui.status(`run ${r.run_id} started (dry run)`);
-          ui._renderRunStart({ run_id: r.run_id, profile: "full", finished: false });
-        } catch (err) { ui.status(String(err)); }
-      },
-    }));
-    const qaBuild = AC.Button({
-      variant: "secondary",
-      label: tr("runs.qa_build", "Build inventory"),
-      onClick: async () => {
-        qaBuild.disabled = true;
+    // 1 — Build inventory (read-only rescan + DB repopulate)
+    colL.appendChild(mkStep(1,
+      tr("runs.build_title", "Build inventory"),
+      tr("runs.build_desc", "Rescan every source and refresh the local inventory cache. No changes to your system."),
+      null, async (b) => {
+        b.classList.add("is-busy");
         ui.status(tr("runs.qa_building", "Building inventory…"));
         try {
           await api.post("/inventory/db/refresh", {});
           frontendCache.invalidate && frontendCache.invalidate();
           ui.status(tr("runs.qa_built", "Inventory built."));
         } catch (e) { ui.status(String(e)); }
-        qaBuild.disabled = false;
-      },
-    });
-    qaBtns.appendChild(qaBuild);
-    quickRow.appendChild(qaLabel);
-    quickRow.appendChild(qaBtns);
+        b.classList.remove("is-busy");
+      }));
+    // 2 — Quick check (read-only)
+    colL.appendChild(mkStep(2,
+      tr("runs.quick_title", "Quick check"),
+      tr("runs.quick_desc", "Read-only sweep — find what's outdated without changing anything."),
+      null, () => startProfile("quick")));
+    // 3 — Safe update
+    colL.appendChild(mkStep(3,
+      tr("runs.safe_title", "Safe update"),
+      tr("runs.safe_desc", "Check, plan, and apply available updates across all sources."),
+      null, () => startProfile("safe")));
+
+    // 4 — Full dry run (preview, mutates nothing)
+    colR.appendChild(mkStep(4,
+      tr("runs.fulldry_title", "Full dry run"),
+      tr("runs.fulldry_desc", "Run the full pipeline in preview mode — shows exactly what a real update would do, changes nothing."),
+      null, () => startAndShow({ profile: "full", dry_run: true },
+        tr("run.dry_run", "dry run"))));
+    // 5 — Full update (the single primary accent)
+    colR.appendChild(mkStep(5,
+      tr("runs.full_title", "Full update"),
+      tr("runs.full_desc", "Check, plan, and apply everything including drivers. Asks for elevation."),
+      "primary", () => startProfile("full")));
+
+    // 6·7 — drivers + NVIDIA, Windows/Ubuntu only (as it used to be).
+    // macOS: Platform.allow() is false → these never render.
+    let stepN = 6;
+    if (window.Platform && Platform.allow("drivers")) {
+      colR.appendChild(mkStep(stepN++,
+        tr("runs.drivers_title", "Update drivers"),
+        tr("runs.drivers_desc", "Apply pending firmware / hardware driver updates."),
+        null, () => startAndShow({ categories: ["drivers"] })));
+    }
+    if (window.Platform && Platform.allow("nvidia")) {
+      colR.appendChild(mkStep(stepN++,
+        tr("runs.nvidia_title", "Update NVIDIA"),
+        tr("runs.nvidia_desc", "Upgrade the held NVIDIA driver. Confirms first — DKMS rebuilds can fail."),
+        null, () => startAndShow(
+          { categories: ["drivers"], extra_args: ["--nvidia"] })));
+    }
+
+    grid.appendChild(colL);
+    grid.appendChild(colR);
 
     // Advanced ▸ — opens an AC.Drawer holding the KEPT #run-form
     // (profile / categories / phase / dry-run). The form's original
@@ -3197,7 +3179,7 @@ const ui = {
     const card = AC.Card({
       title: tr("runs.start_title", "Start a run"),
       action: advBtn,
-      children: [choices, quickRow],
+      children: [grid],
     });
     AC.mount(root, card);
   },
