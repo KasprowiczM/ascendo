@@ -6,6 +6,72 @@
 
 ---
 
+## Sesja 77 (2026-05-16) — UX polish batch (two operator visual sweeps) + hygiene session
+
+One continuous session on `main` (no branches). Three operator
+requests, run as a prioritised, verified, incrementally-committed
+queue. **Every change verified live in the running dashboard
+(cache-busted reload + hard DOM assertions via the preview MCP +
+screenshots + 0-console-errors + i18n parity) on BOTH themes BEFORE
+its commit.** 22 commits pushed (`3700b45 → fe42165`).
+
+### Part 1+2 — carry-forward + two operator visual sweeps (23 tasks)
+
+| Commit | Tasks | What |
+|--------|-------|------|
+| `f6f9af2` | #4 | real cooperative Stop (runner `should_cancel`, run_async `cancel_event`, `/runs/active/stop`→`request_cancel`) |
+| `58a729e` | #2 #6a | web/macos: aggregate one phantom-app message + never auto-launch app GUIs (ASCENDO_SAFE_MODE) |
+| `09bbaa7` | #6b | inventory Rebuild/Clear + `POST /inventory/clear` |
+| `8c26fcc`/`b7f2ada` | #10 #11 | (superseded) compact Runs + selection-only Schedule builder |
+| `a3b031b` | #9 | Insights donut + proportional per-category chart + Dashboard pie |
+| `b66a6f2` | #4 | Stop button immediate feedback |
+| `a0b7013` | #11 | Settings scheduler selection-only + profile explainer; fixed latent `/scheduler/install` 422 |
+| `3478fc9` | #16 | Runs Start = numbered 2-col step grid; drivers/NVIDIA gated Win/Ubuntu; quick-row removed |
+| `fae531d` | #14 | Dashboard donut+cat side-by-side |
+| `4379442` | #15 #19 #20 #21 | light-theme contrast: chips visible + 30px no mobile-jump, `.st-*` text tokens, labelled status-coloured duration bars, Build=primary/Clear=danger |
+| `fd5b03c` | #17 #18 | Runs/Scheduled single-column 560px form + per-profile help |
+| `f64e5f2` | #13 | theme-independent brand mark (lime chip + ink ring) visible light AND dark |
+| `cd997bf` | #22 | header switchers inline ≥769px, gear+popover ≤768px (CSS-only) |
+| `3efc133`/`30093ce` | #23 | About "UX overhaul" highlight EN+PL; PLAN Sesja-77 header |
+
+All 23 operator tasks (#1–#23) closed; the earlier
+#1/#3/#5/#7/#8 fixes were committed before this doc window.
+
+### Part 3 — hygiene session (#24–#27)
+
+| Commit | Task | What |
+|--------|------|------|
+| `11d9e04` | #24 | New `scripts/check-frontend-hygiene.py` (parity + referenced-but-missing keys + hardcoded-hex review). **It immediately caught a real latent bug the parity script structurally could not**: a DUPLICATE `logs:` key in BOTH locales (JS last-wins) silently shadowed 12 keys — the Logs view rendered raw `logs.title`/`logs.help_*` in EN AND PL; parity passed because symmetrically broken. Merged EN + replaced a separately-corrupted PL `logs:` block; parity 1157→**1174==1174**; verified live PL renders translated. |
+| `afa4fb8` | #25 | a11y audit (SPA already clean — all controls named, inputs labelled, alt present, lang correct). Fixed the one real WCAG issue: nested `<main id=aitools-main>` → plain div (single landmark). Verified `main`-count=1. |
+| `fe42165` | #26 | `scripts/smoke-ai-chat.sh` — drives the full `/ai/chat` surface end-to-end (additive). Verified live: real model tokens streamed. |
+| (working doc) | #27 | Scoped plan for the 3 architecture-level items → `docs/superpowers/specs/2026-05-16-architecture-hygiene-plan.md` (gitignored working channel). |
+
+### Decisions on the architecture-level hygiene (per #27 plan)
+
+- **Per-locale i18n split** — feasible as ONE focused session via a
+  sync-preserving split (`i18n.en.js`/`i18n.pl.js`, NOT async
+  JSON+fetch which races first paint). Recommended next hygiene item.
+- **Single-sheet CSS collapse** — genuinely a 2–3 session staged
+  effort (screen × 3 breakpoints × 2 themes re-verify per screen);
+  not a drive-by. `ui-redesign.css` still linked at index.html:47
+  though its JS retired Sesja 76 — auditing/removing it is the safe
+  first slice (still needs full re-verify).
+- **Frontend build step** — resolved "won't do, by design": the
+  no-build vanilla SPA is a deliberate documented choice; the
+  lint/i18n-guard goals are met by the parity + new hygiene scripts.
+
+### Carry-forward
+
+- i18n parity ended **1174 EN == 1174 PL**; `check-frontend-hygiene.py`
+  PASS. New guard recommended for `validate-*.sh` Stage 14 / CI.
+- Working docs (gitignored, local context for next session):
+  `docs/superpowers/specs/2026-05-16-ux-polish-batch-handoff.md`,
+  `…/2026-05-16-architecture-hygiene-plan.md`.
+- Deferred-by-policy hygiene unchanged: i18n split (recommended
+  next), full CSS collapse (multi-session), build step (won't-do).
+
+---
+
 ## Sesja 76 (2026-05-15) — Full UX/UI redesign: P0 + owned shell + component system + all five screens rebuilt
 
 Operator brief: a complete product/UX/UI/frontend architecture review +

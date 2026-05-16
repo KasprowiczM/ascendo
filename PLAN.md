@@ -19,12 +19,22 @@
 > mobile (`cd997bf`); About UX-overhaul highlight + 0 visible PL
 > raw-key leaks (`3efc133`). i18n **1157/1157 EN+PL**. Every change
 > verified live (cache-bust + DOM + screenshot + 0 console errors)
-> on BOTH themes before commit. Full close-out:
-> `docs/superpowers/specs/2026-05-16-ux-polish-batch-handoff.md`.
-> Deferred-by-policy hygiene (single-sheet CSS collapse, per-locale
-> i18n split, build step, a11y/lint, real-LLM smoke) unchanged — an
-> explicit scoped session, NOT keep-going work. Not pushed to origin
-> (15 commits ahead on local `main`; push only on explicit request).
+> on BOTH themes before commit. Then a **hygiene session**: new
+> `scripts/check-frontend-hygiene.py` (`11d9e04`) immediately caught
+> a real latent bug the parity script structurally couldn't — a
+> duplicate `logs:` key shadowing 12 i18n keys in BOTH locales (Logs
+> view rendered raw keys); fixed, parity 1157→**1174==1174**. a11y
+> pass fixed a nested-`<main>` landmark (`afa4fb8`); added
+> `scripts/smoke-ai-chat.sh` (`fe42165`). Architecture-level items
+> scoped in a plan, NOT drive-by'd: per-locale i18n split = one
+> focused session (recommended next; sync-preserving split, not
+> async); single-sheet CSS collapse = explicit 2–3 session staged
+> effort; **build step = won't-do by design** (no-build vanilla SPA
+> is deliberate; lint/i18n goals met by the guard scripts). Full
+> close-out + plan: `docs/superpowers/specs/2026-05-16-ux-polish-
+> batch-handoff.md` + `…-architecture-hygiene-plan.md` (gitignored
+> working channel) and HANDOFF.md Sesja 77. All 22 commits pushed
+> (`3700b45 → fe42165`).
 >
 > Previous milestone (sesja 76) — **Full UX/UI redesign:
 > P0 + owned shell + component system + all five screens rebuilt.**
