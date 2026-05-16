@@ -1,6 +1,30 @@
 # Ascendo — Forward Plan
 
-> Last updated: 2026-05-16 (sesja 78) — **Per-locale i18n split
+> Last updated: 2026-05-16 (sesja 79) — **Web category full
+> coverage shipped (Parts 0/A/B/C, 15 commits `f4881eb→223ecfc`).**
+> Guarantee: every non-silent macOS web app is now surfaced — never
+> silently — in a first-class `## ⚠ Action required` REPORT.md
+> section + `GET /runs/{id}/action-required` + a post-run SPA card
+> (Open / Fix-with-AI). AI-config loop is real: fixed
+> `web_registry_schema` resolver (correct v2 + current overrides +
+> THIS machine's gap list), new read-only `POST /web/probe-entry`,
+> implemented the previously-404 `POST /ai/chat/action/web_override`
+> (re-probe-gated atomic merge into the git-excluded user override),
+> scoped read-only auto-fire (documented Task 18, bounded N=3), and
+> the `cover_missing_app` prompt. megasync check/plan consistency
+> bug fixed; Perplexity macv3 registered. Plus Part 0 cleanup: the
+> view-insights help-panel bug + 3 stale tests + hygiene guard wired
+> into validate Stage 14.5b. i18n 1174→1194 EN==PL; hygiene PASS;
+> 163 work-touched tests green, 0 new failures (only documented
+> pre-existing: Sesja-43 grouping, Windows-only service_endpoints;
+> a discovered pre-existing Sesja-73 squirrel stale test noted;
+> cli_web/dashboard_real failed environmentally on a live :8765).
+> Carry-forward: zoom/spotify/ledger-live stay trigger-only (B.2
+> hard gate — promote per-machine via the AI loop). Spec/plan in
+> `docs/superpowers/{specs,plans}/2026-05-16-web-category-full-
+> coverage*` (gitignored working channel). See HANDOFF Sesja 79.
+>
+> Previous milestone (sesja 78) — **Per-locale i18n split
 > done.** `i18n.js` monolith → `i18n.en.js` + `i18n.pl.js` (data,
 > `window.I18N.{en,pl}`) + thin `i18n.js` (tr/applyI18n/
 > detectLanguage/applyTheme). Sync-preserving (plain JS, `<script

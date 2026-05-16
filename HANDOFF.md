@@ -6,6 +6,99 @@
 
 ---
 
+## Sesja 79 (2026-05-16) — Web category full coverage (Parts 0/A/B/C)
+
+Operator brief: audit which macOS `web`-category apps are
+fully-automated vs manual via Ascendo; deep-dive on maximizing silent
+automation + a guaranteed end-of-run list so **no app is ever silently
+missing**; cross-machine portability; AI-tools-assisted per-machine
+web config. Plus "fix any unfinished items". Ran the full
+brainstorming → writing-plans → subagent-driven-development pipeline
+(read-only Explore subagents for investigation; inline TDD for
+implementation per the documented Sesja-70/71 thrash lesson). Spec:
+`docs/superpowers/specs/2026-05-16-web-category-full-coverage-design.md`;
+plan: `docs/superpowers/plans/2026-05-16-web-category-full-coverage.md`
+(both in the gitignored working channel). **15 commits on `main`**
+(`f4881eb → 223ecfc`).
+
+### Live audit (Mac.r12.home, 36 web items)
+16 FULLY-AUTOMATED · 17 TRIGGER-ONLY · 3 broken/uncovered. Three
+structural defects found + fixed: (1) the Sesja-73-promised "ONE
+needs-manual list" was never built (non-silent apps buried in generic
+`## Deferred`); (2) `add_web_override` AI action pointed at a **404**
+endpoint + the `web_registry_schema` resolver emitted **wrong v2 field
+names**; (3) cross-machine coverage was read-only.
+
+### Two locked product decisions (brainstorming)
+- Automation reach = **selective + AI-maintained** (only promote apps
+  with stable official URLs now; self-updaters stay trigger-only but
+  guaranteed-listed; rest via the AI loop).
+- AI-config loop = **iterative test-until-it-works** (read-only probe
+  endpoint; AI proposes→probes→revises ≤3×→user confirms write).
+
+### Commit table
+| # | Commit | What |
+|---|--------|------|
+| 0.1 | `f4881eb` | view-insights `<h2>`+help panel (real bug) + insights.* EN+PL |
+| 0.2 | `d5436ce` | 3 stale post-Sesja-73 tests refreshed |
+| 0.3 | `744dd1a` | check-frontend-hygiene.py → validate Stage 14.5b (×3 OS) |
+| A.1 | `949911c` | apply.sh deterministic `ASCENDO-ACTION-REQUIRED` token |
+| A.2/A.5 | `fac0916` | report.py first-class Action-required bucket + REPORT.md `## ⚠` section + guarantee test + `app_in_use` reason |
+| A.3 | `82593e2` | `GET /runs/{id}/action-required` |
+| A.4/A.6 | `c26a975` | SPA Action-required card + `POST /web/open` + action.* EN+PL |
+| B.1 | `398ead7` | megasync check/plan consistency (running≠plan-skip) |
+| B.2 | `c53a515` | Perplexity macv3 registered (builtin, zero-risk coverage) |
+| C.1 | `67842aa` | web_registry_schema resolver: correct v2 + overrides + machine gap |
+| C.2 | `12c95f0` | read-only `POST /web/probe-entry` |
+| C.3 | `010153b` | implement `POST /ai/chat/action/web_override` (404→real) + github_dmg doc fix |
+| C.4 | `6a478b0` | scoped read-only auto-fire (Task 18), bounded N=3 |
+| C.5 | `9e9e905` | `cover_missing_app` prompt (AI-loop entrypoint) |
+| C.6 | `223ecfc` | ALLOWED_ACTIONS 12→13 test |
+
+### The guarantee (structural)
+Every non-silent web app (skipped/triggered/failed) flows the same
+sentinel path → `collect_action_required()` → first-class
+`## ⚠ Action required` section (rendered first, web rows pulled out of
+Deferred) + `run.json action_required` + endpoint + SPA card with
+**Open** (`POST /web/open`) and **Fix with AI** (deep-links the
+`cover_missing_app` prompt). `test_every_non_silent_web_app_is_surfaced`
+pins it.
+
+### Cross-machine (emergent, zero per-machine config in repo)
+Discovery auto-classifies → Phase A lists every gap with a reason →
+"Fix with AI" → C.1 feeds the AI THIS machine's gap list + correct v2
+schema + current overrides → C.4 auto-fires `web_probe` so the AI
+self-corrects ≤3× → C.3 atomically merges (re-probe-gated,
+validate-before-replace) into the git-excluded
+`~/.config/ascendo/web_apps.toml`.
+
+### Verification
+163 passed across every work-touched suite, **0 new failures**.
+Documented/known failures left as-is (out of scope, proven
+pre-existing via git-stash / pre-A.1 checkout): `test_apply_report::
+test_generate_apply_report_groups_categories` (Sesja-43);
+`adapters/macos … test_apply_squirrel_invokes_open` (Sesja-73
+safe-mode-default stale test — discovered, not introduced); 9×
+`test_service_endpoints` (Windows-only). 3× `test_cli_web` /
+`test_dashboard_real` failed **environmentally** (a live dashboard on
+:8765, PID held — not killed; not a code regression). i18n parity
+**1174→1194 EN==PL**; frontend hygiene PASS.
+
+### Carry-forward
+- zoom/spotify/ledger-live: deliberately NOT given unverified mutating
+  download URLs (B.2 hard gate — cannot live-probe-gate a real install
+  here). They stay trigger-only, fully covered by Phase A, and are the
+  explicit Phase-C AI-loop promotion candidates.
+- `test_apply_squirrel_invokes_open` is a discovered pre-existing
+  Sesja-73 stale test (asserts pre-safe-mode `triggered`); a one-line
+  fix (assert `skipped` / set `ASCENDO_WEB_ALLOW_GUI=1`) if a future
+  session wants the macOS suite back to 398/398 — left out of scope.
+- The A.4 "Fix with AI" button seeds `window._ascendoAISeed`; auto-
+  filling the AI Tools input from that seed is optional polish (the
+  prompt + deep-link target exist and work).
+
+---
+
 ## Sesja 78 (2026-05-16) — Per-locale i18n split (sync-preserving)
 
 Operator: "do the per locale split". Executed the #27-plan's
