@@ -295,11 +295,19 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
         if [ -s "$err_log" ]; then
             tail_msg=$(/usr/bin/tail -n 6 "$err_log" | /usr/bin/awk 'NF{print}' | /usr/bin/head -c 800)
         fi
+        # Deterministic, machine-parseable marker so report.py can
+        # promote this into the first-class "Action required" bucket
+        # (not buried in generic Deferred). Reason derivation:
+        case "$HANDLER" in
+            keystone|omaha|squirrel) ar_reason="self_update" ;;
+            *) if [ -z "$CAND" ]; then ar_reason="probe_broken"; else ar_reason="no_silent_path"; fi ;;
+        esac
+        ar_token="ASCENDO-ACTION-REQUIRED reason=${ar_reason} cur=${INSTALLED:-?} cand=${CAND:-?}"
         json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
         if [ -n "$tail_msg" ]; then
-            json_add_message "info" "${SLUG}: ${tail_msg}"
+            json_add_message "info" "${SLUG}: ${tail_msg} | ${ar_token}"
         else
-            json_add_message "info" "${SLUG}: skipped in safe mode — launch the app manually to let its built-in updater apply ${CAND:-the new version}"
+            json_add_message "info" "${SLUG}: skipped in safe mode — open the app to apply ${CAND:-the new version} | ${ar_token}"
         fi
         COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
         continue
