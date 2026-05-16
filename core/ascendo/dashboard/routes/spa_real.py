@@ -1115,11 +1115,13 @@ async def runs_active_real(request: Request) -> dict[str, Any]:
 
 @router.post("/runs/active/stop")
 async def runs_active_stop_real(request: Request) -> dict[str, Any]:
-    """Best-effort cancel of the active run.
+    """Cooperatively cancel the active run.
 
-    The current :class:`RunRegistry` has no cancel primitive — the
-    underlying worker thread runs to completion. We surface this gap
-    rather than returning a misleading success.
+    Sets the run's cancel flag; ``run_phases`` checks it at the next
+    phase/manager boundary and stops the rest of the run (an in-flight
+    subprocess is NOT killed mid-package — by design, so a partially
+    written install is never left corrupt). The SSE ``done`` event
+    fires when the worker unwinds.
     """
     registry = getattr(request.app.state, "run_registry", None)
     if registry is None:
@@ -1127,10 +1129,14 @@ async def runs_active_stop_real(request: Request) -> dict[str, Any]:
     state = _find_latest_active(registry)
     if state is None:
         return {"ok": False, "reason": "no active run"}
+    ok = registry.request_cancel(state.run_id)
     return {
-        "ok": False,
-        "reason": "cancel not yet supported by RunRegistry",
+        "ok": bool(ok),
         "run_id": str(state.run_id),
+        "reason": (
+            "cancel requested; stops at the next phase/manager boundary"
+            if ok else "run already finished"
+        ),
     }
 
 

@@ -92,6 +92,9 @@ class RunState:
     phases: tuple[str, ...] = ()
     # Internal coordination -- used by the SSE endpoint to wait efficiently.
     _completion_event: threading.Event = field(default_factory=threading.Event, repr=False)
+    # Cooperative cancel. /runs/active/stop sets this; run_phases checks it
+    # at phase/manager boundaries and aborts the rest of the run.
+    cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)
 
 
 class RunRegistry:
@@ -166,6 +169,24 @@ class RunRegistry:
     def get(self, run_id: UUID) -> RunState | None:
         with self._lock:
             return self._states.get(run_id)
+
+    def request_cancel(self, run_id: UUID) -> bool:
+        """Signal cooperative cancellation for an in-flight run.
+
+        Returns True if a pending/running run was found and its cancel
+        flag set; False if there is no such run (already finished /
+        unknown id). The worker's ``run_phases`` checks the flag at the
+        next phase/manager boundary and stops the rest of the run.
+        """
+        with self._lock:
+            st = self._states.get(run_id)
+            if st is None or st.status not in (
+                RunStatus.PENDING,
+                RunStatus.RUNNING,
+            ):
+                return False
+            st.cancel_event.set()
+            return True
 
     def all_running(self) -> list[UUID]:
         """Snapshot of currently-running run-ids."""
@@ -533,6 +554,7 @@ async def start_run_async(
                 base_dir=base_dir,
                 stop_on_failure=stop_on_failure,
                 item_filter=item_filter,
+                should_cancel=lambda: state.cancel_event.is_set(),
             )
             state.report = report
             state.status = RunStatus.COMPLETED

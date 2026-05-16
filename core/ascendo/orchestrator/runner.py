@@ -35,7 +35,7 @@ ADR-0005 (six-layer architecture).
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
@@ -146,6 +146,7 @@ def run_phases(
     base_dir: Path,
     stop_on_failure: bool = True,
     item_filter: Iterable[str] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> RunReport:
     """Run the requested phases for every available package manager.
 
@@ -195,9 +196,34 @@ def run_phases(
             skipped[-1][1],
         )
 
+    def _cancelled() -> bool:
+        try:
+            return should_cancel is not None and bool(should_cancel())
+        except Exception:  # noqa: BLE001 — a flaky predicate must never crash a run
+            return False
+
+    cancelled = False
     for phase in ordered:
+        # Cooperative cancel is checked at phase + manager boundaries (NOT
+        # mid-subprocess): a Stop click takes effect before the next
+        # phase/manager starts, so an in-flight install is never killed
+        # half-done. For a long `full` run (5 phases × N managers) this
+        # stops all remaining work within one manager-phase.
+        if _cancelled():
+            _log.warning("run %s cancelled before phase %s", run.id, phase.value)
+            aborted = phase
+            cancelled = True
+            break
         phase_results: list[Sidecar] = []
         for mgr in selected:
+            if _cancelled():
+                _log.warning(
+                    "run %s cancelled during phase %s (before %s)",
+                    run.id, phase.value, mgr.category.value,
+                )
+                aborted = phase
+                cancelled = True
+                break
             sidecar = _safe_run_phase(
                 mgr,
                 phase,
@@ -209,6 +235,8 @@ def run_phases(
             phase_results.append(sidecar)
             sidecars.append(sidecar)
 
+        if cancelled:
+            break
         if stop_on_failure and phase_results and all(
             s.status is PhaseStatus.FAILED for s in phase_results
         ):
