@@ -2570,6 +2570,31 @@ button.is-refreshing::before {
   color: var(--fg-faint);
 }
 
+/* Tablet + desktop: show the three switchers directly in the header as
+   an inline icon cluster — no gear, no popover. Mobile (≤768px) keeps
+   the gear + submenu untouched. JS/IDs unchanged (CSS-only): we just
+   force the menu visible inline and demote it from a floating panel.
+   Per-button title/aria-label still name each control on hover/SR. */
+@media (min-width: 769px) {
+  .prefs-toggle { display: none !important; }
+  .prefs-menu,
+  .prefs-menu[hidden] {
+    display: flex !important;
+    position: static;
+    min-width: 0;
+    gap: 4px;
+    align-items: center;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+  }
+  .prefs-menu-title,
+  .prefs-label,
+  .prefs-hint { display: none !important; }
+  .prefs-row { padding: 0; gap: 0; }
+}
+
 /* ── OS status (sidebar footer) ───────────────────────────────────────── */
 .platform-status {
   display: flex; align-items: center; gap: 6px;
