@@ -33,6 +33,7 @@ from .routes.onboarding import router as onboarding_router
 from .routes.runs import router as runs_router
 from .routes.scheduler_real import router as scheduler_real_router
 from .routes.service import router as service_router
+from .routes.web_config import router as web_config_router
 from .routes.spa_real import InventoryCache
 from .routes.spa_real import router as spa_real_router
 from .routes.spa_stubs import router as spa_stubs_router
@@ -312,6 +313,10 @@ def create_app(
     # stubs that returned ``{ok:true, stub:true}``. MUST be BEFORE
     # spa_stubs so the real handlers win.
     app.include_router(scheduler_real_router, prefix="")
+    # Web-config surface (Phase A/C): POST /web/open (post-run app
+    # launch) + POST /web/probe-entry (read-only candidate-entry
+    # dry-run for the AI-config loop). Before spa_stubs so real wins.
+    app.include_router(web_config_router, prefix="")
     # Legacy SPA stubs -- transient placeholders for endpoints the
     # Ubuntu_Aktualizacje SPA expects but the new core hasn't ported yet.
     # Delete the matching stub from routes/spa_stubs.py when each real

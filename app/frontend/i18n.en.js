@@ -242,6 +242,17 @@ window.I18N.en = {
       drop:     "Drop a bundle here, or click to choose",
       restored: "Bundle restored. Reload the page.",
     },
+    action: {
+      title: "Action required — {n} app(s) need you to open them",
+      subtitle: "These apps weren't updated silently — open each and check for updates inside it. Nothing was missed.",
+      open: "Open",
+      fix_with_ai: "Fix with AI",
+      reason_self_update: "Updates itself in the background — open it once to apply.",
+      reason_no_silent_path: "No silent install path — open it and use Help → Check for Updates.",
+      reason_probe_broken: "Ascendo can't detect a version — fix via AI Tools or update manually.",
+      reason_app_in_use: "The app was running during the update — quit it and re-run apply.",
+      reason_failed: "Update failed — open the app and update manually.",
+    },
     insights: {
       title: "Insights",
       help_summary: "Trends, failures, and timing across your recent runs — read-only analytics assembled from run history.",

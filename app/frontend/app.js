@@ -1626,6 +1626,89 @@ const ui = {
     return { key, color, label: tr("overview.staleness_prefix") + " " + rel };
   },
 
+  // Phase A: the consolidated "you must open these apps" panel. Called
+  // from the SSE done handler. Guarantees every non-silent web app is
+  // surfaced after a run — never silently missing.
+  async loadActionRequired(runId) {
+    const panel = document.getElementById("action-required-panel");
+    if (!panel || !runId) return;
+    let data;
+    try {
+      data = await api.get(`/runs/${encodeURIComponent(runId)}/action-required`);
+    } catch { panel.classList.add("hidden"); return; }
+    const items = (data && data.items) || [];
+    panel.replaceChildren();
+    if (items.length === 0) { panel.classList.add("hidden"); return; }
+    panel.classList.remove("hidden");
+    panel.className = "card";
+
+    const h = document.createElement("h3");
+    h.textContent = tr("action.title", "Action required").replace(
+      "{n}", String(items.length));
+    panel.appendChild(h);
+    const sub = document.createElement("p");
+    sub.className = "dim";
+    sub.textContent = tr(
+      "action.subtitle",
+      "These apps weren't updated silently — open each and check for updates. Nothing was missed.");
+    panel.appendChild(sub);
+
+    const REASON_KEY = {
+      self_update: "action.reason_self_update",
+      no_silent_path: "action.reason_no_silent_path",
+      probe_broken: "action.reason_probe_broken",
+      app_in_use: "action.reason_app_in_use",
+      failed: "action.reason_failed",
+    };
+    for (const it of items) {
+      const row = document.createElement("div");
+      row.className = "action-row";
+
+      const meta = document.createElement("div");
+      meta.className = "action-meta";
+      const nm = document.createElement("b");
+      nm.textContent = it.name || it.slug;
+      meta.appendChild(nm);
+      if (it.current || it.candidate) {
+        const ver = document.createElement("span");
+        ver.className = "dim";
+        ver.textContent = ` ${it.current || "?"} → ${it.candidate || "?"}`;
+        meta.appendChild(ver);
+      }
+      const chip = document.createElement("span");
+      chip.className = "st-pill st-skip action-reason";
+      chip.textContent = tr(
+        REASON_KEY[it.reason] || "action.reason_failed",
+        it.reason_text || it.reason || "");
+      meta.appendChild(chip);
+      row.appendChild(meta);
+
+      const actions = document.createElement("div");
+      actions.className = "action-buttons";
+      const openBtn = document.createElement("button");
+      openBtn.className = "secondary";
+      openBtn.textContent = tr("action.open", "Open");
+      openBtn.addEventListener("click", async () => {
+        openBtn.disabled = true;
+        try { await api.post("/web/open", { slug: it.slug }); }
+        catch (e) { ui.status(`open ${it.slug}: ${e}`); }
+        openBtn.disabled = false;
+      });
+      actions.appendChild(openBtn);
+
+      const aiBtn = document.createElement("button");
+      aiBtn.className = "secondary";
+      aiBtn.textContent = tr("action.fix_with_ai", "Fix with AI");
+      aiBtn.addEventListener("click", () => {
+        window._ascendoAISeed = { prompt: "cover_missing_app", slug: it.slug };
+        try { ui.show("suggest"); } catch {}
+      });
+      actions.appendChild(aiBtn);
+      row.appendChild(actions);
+      panel.appendChild(row);
+    }
+  },
+
   async loadHealth() {
     const card = $("#health-card");
     if (!card) return;
@@ -4242,6 +4325,9 @@ const ui = {
       appendStreamLine(`>>> done - ${status}${ms ? ` in ${(ms/1000).toFixed(1)}s` : ""}`);
       if (window.runDetail) window.runDetail.onDone(runId, p);
       ui.invalidateCaches(); ui.checkRebootBanner(); ui.loadHealth();
+      // Phase A: surface every non-silent web app in one consolidated
+      // panel so nothing is ever silently missing.
+      try { ui.loadActionRequired(runId); } catch {}
       // After a run completes, force-repaint whichever live view the
       // user is on so they see post-apply state without manually
       // hitting Refresh. Apps + Categories + Overview are the most

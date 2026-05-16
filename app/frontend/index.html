@@ -230,6 +230,10 @@
            relocated into the always-visible RunPanel header by JS so the
            Sesja-74 "Stop unreachable" bug is impossible by construction. -->
       <div id="run-root"></div>
+      <!-- Phase A: consolidated post-run "you must open these" panel.
+           Populated by ui.loadActionRequired(runId) on the SSE done
+           event. Guarantees no non-silent web app is silently missing. -->
+      <div id="action-required-panel" class="hidden"></div>
       <form id="run-form" hidden style="display:none">
         <label><span data-i18n="run.profile">Profile</span>
           <select name="profile" id="profile-select"></select>

@@ -281,6 +281,17 @@ window.I18N.pl = {
       drop:     "Upuść paczkę tutaj lub kliknij aby wybrać",
       restored: "Paczka przywrócona. Odśwież stronę.",
     },
+    action: {
+      title: "Wymagane działanie — {n} aplikacji wymaga otwarcia",
+      subtitle: "Te aplikacje nie zostały zaktualizowane po cichu — otwórz każdą i sprawdź aktualizacje w niej. Nic nie zostało pominięte.",
+      open: "Otwórz",
+      fix_with_ai: "Napraw z AI",
+      reason_self_update: "Aktualizuje się sama w tle — otwórz ją raz, aby zastosować.",
+      reason_no_silent_path: "Brak cichej instalacji — otwórz ją i użyj Pomoc → Sprawdź aktualizacje.",
+      reason_probe_broken: "Ascendo nie wykrywa wersji — napraw przez Narzędzia AI lub zaktualizuj ręcznie.",
+      reason_app_in_use: "Aplikacja była uruchomiona podczas aktualizacji — zamknij ją i uruchom apply ponownie.",
+      reason_failed: "Aktualizacja nie powiodła się — otwórz aplikację i zaktualizuj ręcznie.",
+    },
     insights: {
       title: "Statystyki",
       help_summary: "Trendy, błędy i czasy z ostatnich uruchomień — analityka tylko do odczytu z historii uruchomień.",
