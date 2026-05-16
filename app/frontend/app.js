@@ -3753,14 +3753,27 @@ const ui = {
   // MONTHLY HH:MM, day tokens SUN..SAT, zero-padded HH:MM — verified
   // against adapters/macos/scripts/scheduler/scheduler.sh) into the
   // hidden #schedule-f-expr so scheduleSubmit is untouched.
-  _initSchedBuilder() {
-    if (ui._schedBuilderWired) { ui._assembleSchedExpr(); return; }
-    const freq = document.getElementById("sched-freq");
-    const wd   = document.getElementById("sched-weekday");
-    const hr   = document.getElementById("sched-hour");
-    const mn   = document.getElementById("sched-minute");
+  // Selection-only schedule builder. `ids` defaults to the Schedule-tab
+  // element set; Settings → Scheduler passes its own id set so the same
+  // no-typing picker drives both surfaces (DSL expression in `expr`).
+  _schedIds(ids) {
+    return Object.assign({
+      freq: "sched-freq", weekday: "sched-weekday",
+      hour: "sched-hour", minute: "sched-minute",
+      expr: "schedule-f-expr", preview: "sched-preview",
+    }, ids || {});
+  },
+
+  _initSchedBuilder(ids) {
+    const id = ui._schedIds(ids);
+    ui._schedWired = ui._schedWired || {};
+    if (ui._schedWired[id.freq]) { ui._assembleSchedExpr(ids); return; }
+    const freq = document.getElementById(id.freq);
+    const wd   = document.getElementById(id.weekday);
+    const hr   = document.getElementById(id.hour);
+    const mn   = document.getElementById(id.minute);
     if (!freq || !hr || !mn) return;
-    ui._schedBuilderWired = true;
+    ui._schedWired[id.freq] = true;
     if (!hr.options.length) {
       for (let h = 0; h < 24; h++) {
         const o = document.createElement("option");
@@ -3781,19 +3794,20 @@ const ui = {
     }
     const onChange = () => {
       if (wd) wd.style.display = (freq.value === "WEEKLY") ? "" : "none";
-      ui._assembleSchedExpr();
+      ui._assembleSchedExpr(ids);
     };
     [freq, wd, hr, mn].forEach(s => s && s.addEventListener("change", onChange));
     onChange();
   },
 
-  _assembleSchedExpr() {
-    const freq = document.getElementById("sched-freq");
-    const wd   = document.getElementById("sched-weekday");
-    const hr   = document.getElementById("sched-hour");
-    const mn   = document.getElementById("sched-minute");
-    const exprEl = document.getElementById("schedule-f-expr");
-    const prev = document.getElementById("sched-preview");
+  _assembleSchedExpr(ids) {
+    const id = ui._schedIds(ids);
+    const freq = document.getElementById(id.freq);
+    const wd   = document.getElementById(id.weekday);
+    const hr   = document.getElementById(id.hour);
+    const mn   = document.getElementById(id.minute);
+    const exprEl = document.getElementById(id.expr);
+    const prev = document.getElementById(id.preview);
     if (!freq || !hr || !mn || !exprEl) return;
     const t = `${hr.value}:${mn.value}`;
     let expr;
@@ -3805,12 +3819,13 @@ const ui = {
       tr("schedule.preview", "Schedule") + ": " + expr;
   },
 
-  _parseSchedExpr(expr) {
+  _parseSchedExpr(expr, ids) {
     // "DAILY HH:MM" | "WEEKLY DAY HH:MM" | "MONTHLY [DAY] HH:MM"
-    const freq = document.getElementById("sched-freq");
-    const wd   = document.getElementById("sched-weekday");
-    const hr   = document.getElementById("sched-hour");
-    const mn   = document.getElementById("sched-minute");
+    const id = ui._schedIds(ids);
+    const freq = document.getElementById(id.freq);
+    const wd   = document.getElementById(id.weekday);
+    const hr   = document.getElementById(id.hour);
+    const mn   = document.getElementById(id.minute);
     if (!freq || !hr || !mn || !expr) return;
     const parts = String(expr).trim().toUpperCase().split(/\s+/);
     const kind = parts[0];
@@ -3832,7 +3847,7 @@ const ui = {
       const snapped = Math.round(parseInt(m, 10) / 5) * 5;
       mn.value = String(Math.min(55, snapped)).padStart(2, "0");
     }
-    ui._assembleSchedExpr();
+    ui._assembleSchedExpr(ids);
   },
 
   scheduleEdit(it) {
@@ -3958,7 +3973,24 @@ const ui = {
     f.elements.ui_theme.value    = (s.ui && s.ui.theme)    || "auto";
     f.elements.ui_language.value = (s.ui && s.ui.language) || "auto";
     f.elements.scheduler_enabled.checked = !!(s.scheduler && s.scheduler.enabled);
-    f.elements.scheduler_calendar.value = (s.scheduler && s.scheduler.calendar) || "Sun *-*-* 03:00:00";
+    if (f.elements.scheduler_name) {
+      f.elements.scheduler_name.value =
+        (s.scheduler && s.scheduler.name) || "ascendo-scheduled";
+    }
+    // The hidden scheduler_calendar field now carries the builder's DSL
+    // expression. Init the selection-only picker (settings-scoped ids)
+    // and seed it from the saved value (DSL or a legacy OnCalendar
+    // string — _parseSchedExpr degrades that gracefully to a sane time).
+    const SET_SCHED = {
+      freq: "set-sched-freq", weekday: "set-sched-weekday",
+      hour: "set-sched-hour", minute: "set-sched-minute",
+      expr: "set-sched-expr", preview: "set-sched-preview",
+    };
+    f.elements.scheduler_calendar.value =
+      (s.scheduler && s.scheduler.calendar) || "DAILY 03:00";
+    ui._initSchedBuilder(SET_SCHED);
+    ui._parseSchedExpr(
+      (s.scheduler && s.scheduler.calendar) || "DAILY 03:00", SET_SCHED);
     f.elements.scheduler_profile.value = (s.scheduler && s.scheduler.profile) || "safe";
     f.elements.scheduler_no_drivers.checked = !!(s.scheduler && s.scheduler.no_drivers);
     if (f.elements.updates_check_repo) {
@@ -3978,6 +4010,9 @@ const ui = {
       },
       scheduler: {
         enabled: f.elements.scheduler_enabled.checked,
+        name: f.elements.scheduler_name
+          ? (f.elements.scheduler_name.value.trim() || "ascendo-scheduled")
+          : "ascendo-scheduled",
         calendar: f.elements.scheduler_calendar.value,
         profile:  f.elements.scheduler_profile.value,
         no_drivers: f.elements.scheduler_no_drivers.checked,
@@ -5633,14 +5668,28 @@ document.addEventListener("click", async e => {
   const out = $("#settings-output");
   if (id === "scheduler-install-btn") {
     try {
-      const r = await api.post("/scheduler/install", ui.collectSettings().scheduler);
+      // /scheduler/install needs {name, expression, profile, enabled}.
+      // The Settings form carries the DSL in scheduler.calendar (built
+      // by the selection-only picker) — map it to `expression` so the
+      // request validates (the old body sent `calendar` + no `name`
+      // and 422'd).
+      const sc = ui.collectSettings().scheduler;
+      const r = await api.post("/scheduler/install", {
+        name: sc.name || "ascendo-scheduled",
+        expression: sc.calendar || "DAILY 03:00",
+        profile: sc.profile || "safe",
+        enabled: sc.enabled !== false,
+      });
       out.textContent = "scheduler/install:\n" + JSON.stringify(r, null, 2);
       ui.loadSettings();
     } catch (err) { out.textContent = String(err); }
   }
   if (id === "scheduler-remove-btn") {
     try {
-      const r = await api.post("/scheduler/remove");
+      // /scheduler/remove needs {name}.
+      const sc = ui.collectSettings().scheduler;
+      const r = await api.post("/scheduler/remove",
+        { name: sc.name || "ascendo-scheduled" });
       out.textContent = "scheduler/remove:\n" + JSON.stringify(r, null, 2);
       ui.loadSettings();
     } catch (err) { out.textContent = String(err); }
