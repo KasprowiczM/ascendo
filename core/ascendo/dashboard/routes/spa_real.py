@@ -1004,6 +1004,27 @@ async def inventory_db_refresh(request: Request) -> dict[str, Any]:
     }
 
 
+@router.post("/inventory/clear")
+async def inventory_clear(request: Request) -> dict[str, Any]:
+    """Delete the entire cached inventory (DB + in-memory).
+
+    Backs the SPA's "Clear inventory" control. Non-destructive to the
+    machine — only Ascendo's inventory.db cache is wiped; a subsequent
+    "Rebuild" (/inventory/db/refresh) or any check repopulates it.
+    """
+    db = _get_inventory_db(request)
+    cache = _get_inventory_cache(request)
+    cache.invalidate()
+    cleared = False
+    if db is not None:
+        try:
+            db.clear_all()
+            cleared = True
+        except Exception:  # noqa: BLE001
+            _log.exception("inventory_db: /inventory/clear failed")
+    return {"ok": cleared, "cleared": cleared}
+
+
 # ── /health/check + /health/run ───────────────────────────────────────────
 
 

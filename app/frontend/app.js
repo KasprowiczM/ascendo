@@ -2589,8 +2589,49 @@ const ui = {
       list.appendChild(rowEl);
     }
 
+    // Inventory controls (operator: "there are no buttons to build /
+    // rebuild / delete inventory"). Rebuild = full live rescan + DB
+    // repopulate (/inventory/db/refresh, same as the CLI
+    // build-inventory). Clear = wipe the cache (/inventory/clear);
+    // non-destructive to the machine, a Rebuild or any check
+    // repopulates. Both repaint Sources when done.
+    const invCtrls = document.createElement("div");
+    invCtrls.className = "asc-srcrow__acts";
+    const rebuildBtn = AC.Button({
+      variant: "secondary",
+      label: tr("lib.inv_rebuild", "Rebuild inventory"),
+      onClick: async () => {
+        rebuildBtn.disabled = true;
+        ui.status(tr("lib.inv_rebuilding", "Rebuilding inventory…"));
+        try {
+          await api.post("/inventory/db/refresh", {});
+          frontendCache.invalidate && frontendCache.invalidate();
+          ui.status(tr("lib.inv_rebuilt", "Inventory rebuilt."));
+        } catch (e) { ui.status(String(e)); }
+        ui.loadCategories({ refresh: true });
+      },
+    });
+    const clearBtn = AC.Button({
+      variant: "ghost",
+      label: tr("lib.inv_clear", "Clear inventory"),
+      onClick: async () => {
+        if (!window.confirm(tr("lib.inv_clear_confirm",
+          "Delete the cached inventory? A rebuild or any check repopulates it. The machine is not affected."))) return;
+        clearBtn.disabled = true;
+        try {
+          await api.post("/inventory/clear", {});
+          frontendCache.invalidate && frontendCache.invalidate();
+          ui.status(tr("lib.inv_cleared", "Inventory cleared."));
+        } catch (e) { ui.status(String(e)); }
+        ui.loadCategories({ refresh: true });
+      },
+    });
+    invCtrls.appendChild(rebuildBtn);
+    invCtrls.appendChild(clearBtn);
+
     AC.mount(root, AC.Card({
       title: tr("lib.sources_title", "Sources"),
+      action: invCtrls,
       children: list,
     }));
   },
