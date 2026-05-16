@@ -61,11 +61,18 @@ Try this instead."""
     assert len(actions) == 1
 
 
-def test_allowed_actions_has_12_entries():
-    from ascendo.ai.actions import ALLOWED_ACTIONS
-    assert len(ALLOWED_ACTIONS) == 12
+def test_allowed_actions_has_13_entries():
+    from ascendo.ai.actions import ALLOWED_ACTIONS, is_auto_fireable
+    # Phase C.4 added the read-only `web_probe` action (Task 18).
+    assert len(ALLOWED_ACTIONS) == 13
     assert "run_check" in ALLOWED_ACTIONS
     assert "open_view" in ALLOWED_ACTIONS
+    assert "web_probe" in ALLOWED_ACTIONS
+    # web_probe is the only auto-fireable (read-only, low-risk) action;
+    # mutating actions must never be.
+    assert is_auto_fireable("web_probe") is True
+    assert is_auto_fireable("run_apply") is False
+    assert is_auto_fireable("add_web_override") is False
 
 
 def test_allowed_actions_shape():
