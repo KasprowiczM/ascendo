@@ -1934,8 +1934,31 @@ const ui = {
       });
     }
 
+    // ---- Inventory status pie (the donut the operator asked back) ----
+    let pieCard = null;
+    if (managed > 0) {
+      const pieHost = document.createElement("div");
+      pieHost.id = "overview-status-pie";
+      pieCard = AC.Card({
+        title: tr("overview.status_title", "Inventory status"),
+        children: pieHost,
+      });
+    }
+
     // ---- compose -----------------------------------------------------
-    AC.mount(root, [answer, kpis, recent]);
+    AC.mount(root, pieCard ? [answer, kpis, pieCard, recent]
+                           : [answer, kpis, recent]);
+
+    if (pieCard) {
+      ui.renderDonut("overview-status-pie", [
+        { label: tr("shell.ins.lbl_ok", "up to date"),
+          value: totals.ok || 0,       color: "var(--ok)"   },
+        { label: tr("shell.ins.lbl_outdated", "outdated"),
+          value: totals.outdated || 0, color: "var(--warn)" },
+        { label: tr("shell.ins.lbl_missing", "missing"),
+          value: totals.missing || 0,  color: "var(--err)"  },
+      ]);
+    }
   },
 
   // -- SVG donut + bar charts (pure DOM, no chart libs) -----------------
@@ -1961,7 +1984,10 @@ const ui = {
                        stroke-dashoffset="${(-off).toFixed(2)}" />`;
       off += len;
     }
-    const okPct = Math.round(((segments.find(s=>s.label==="ok")||{}).value||0) * 100 / total);
+    // Headline % = the first (by convention "healthy") segment, so this
+    // works regardless of the segment label (it's translated upstream).
+    const headSeg = segments.find(s => s.label === "ok") || segments[0] || {};
+    const okPct = Math.round((headSeg.value || 0) * 100 / total);
     host.innerHTML = `
       <div class="donut-wrap">
         <svg viewBox="0 0 160 160" width="180" height="180" role="img"
@@ -2004,6 +2030,58 @@ const ui = {
         <span style="color:var(--warn)">█ outdated</span> /
         <span style="color:var(--err)">█ missing</span>
       </p>`;
+  },
+
+  // Correctly-proportional per-category chart. Unlike renderBars (each
+  // track normalised to its own total, so a 9-package source looked the
+  // same width as a 151-package one), the bar length here is scaled to
+  // the category total RELATIVE to the largest category — so the chart
+  // actually communicates how much each source carries. Health is shown
+  // by segmenting that scaled bar into up-to-date / outdated / missing.
+  renderCatChart(elId, cats) {
+    const host = $("#"+elId);
+    if (!host) return;
+    const entries = Object.entries(cats || {})
+      .map(([name, c]) => ({
+        name,
+        ok: c.ok || 0,
+        outdated: c.outdated || 0,
+        missing: c.missing || 0,
+        total: c.total || ((c.ok||0)+(c.outdated||0)+(c.missing||0)),
+      }))
+      .filter(e => e.total > 0)
+      .sort((a, b) => b.total - a.total);
+    if (!entries.length) {
+      host.innerHTML = `<p class="ins-muted">${tr("shell.ins.status_empty","Run a check to populate inventory status.")}</p>`;
+      return;
+    }
+    const max = Math.max(...entries.map(e => e.total));
+    const lOk  = tr("shell.ins.lbl_ok","up to date");
+    const lOut = tr("shell.ins.lbl_outdated","outdated");
+    const lMis = tr("shell.ins.lbl_missing","missing");
+    const esc = (s) => String(s).replace(/[&<>"]/g,
+      c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+    const rows = entries.map(e => {
+      const barPct = Math.max(2, (e.total / max) * 100);
+      const seg = (n, cls) => n > 0
+        ? `<span class="cc-seg cc-seg-${cls}" style="flex:${n}"
+                 title="${n} ${cls}"></span>` : "";
+      return `<div class="cc-row" title="${esc(e.name)} — ${e.ok} ${lOk}, ${e.outdated} ${lOut}, ${e.missing} ${lMis}">
+        <span class="cc-name mono">${esc(e.name)}</span>
+        <span class="cc-track">
+          <span class="cc-bar" style="width:${barPct.toFixed(1)}%">
+            ${seg(e.ok,"ok")}${seg(e.outdated,"outdated")}${seg(e.missing,"missing")}
+          </span>
+        </span>
+        <span class="cc-count mono">${e.total}</span>
+      </div>`;
+    }).join("");
+    host.innerHTML = `<div class="cc-chart">${rows}</div>
+      <div class="donut-legend" style="padding-top:0.6rem">
+        <span><span class="swatch" style="background:var(--ok)"></span>${lOk}</span>
+        <span><span class="swatch" style="background:var(--warn)"></span>${lOut}</span>
+        <span><span class="swatch" style="background:var(--err)"></span>${lMis}</span>
+      </div>`;
   },
 
   // Apps view in-memory state (filters/groups). Lives across re-renders
@@ -3265,6 +3343,27 @@ const ui = {
     }
     if (bodyEl) bodyEl.hidden = false;
     if (emptyEl) emptyEl.hidden = true;
+
+    // Inventory status pie + correctly-proportional per-category chart
+    // (the two graphs the operator explicitly asked back, done right —
+    // donut with a legend, category bars scaled to real package counts).
+    api.get("/inventory/summary").then(s => {
+      const t = (s && s.totals) || { ok: 0, outdated: 0, missing: 0 };
+      if ($("#insights-status")) {
+        ui.renderDonut("insights-status", [
+          { label: tr("shell.ins.lbl_ok","up to date"),  value: t.ok || 0,       color: "var(--ok)"   },
+          { label: tr("shell.ins.lbl_outdated","outdated"), value: t.outdated || 0, color: "var(--warn)" },
+          { label: tr("shell.ins.lbl_missing","missing"),  value: t.missing || 0,  color: "var(--err)"  },
+        ]);
+      }
+      if ($("#insights-percat")) {
+        ui.renderCatChart("insights-percat", (s && s.categories) || {});
+      }
+    }).catch(() => {
+      if ($("#insights-status"))
+        $("#insights-status").innerHTML =
+          `<p class="ins-muted">${tr("shell.ins.status_empty","Run a check to populate inventory status.")}</p>`;
+    });
 
     const total = rows.length;
     const ok = rows.filter(r => r.status === "success" || r.status === "ok").length;

@@ -752,6 +752,18 @@ dialog.modal-dialog #apply-modal-confirm:disabled {
 .bar-row .bar-fill-missing  { background: var(--err);  height: 100%; }
 .bar-row .bar-counts { width: 8rem; text-align: right; color: var(--dim); font-family: var(--mono); font-size: 0.8rem; }
 
+/* Proportional per-category chart (Insights) */
+.cc-chart { display: flex; flex-direction: column; gap: 0.45rem; }
+.cc-row { display: flex; align-items: center; gap: 0.6rem; font-size: 0.85rem; }
+.cc-name { flex: 0 0 6.5rem; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-track { flex: 1; min-width: 0; }
+.cc-bar { display: flex; height: 0.8rem; border-radius: 4px; overflow: hidden; min-width: 4px; background: var(--bg); }
+.cc-seg { height: 100%; }
+.cc-seg-ok       { background: var(--ok); }
+.cc-seg-outdated { background: var(--warn); }
+.cc-seg-missing  { background: var(--err); }
+.cc-count { flex: 0 0 3.2rem; text-align: right; color: var(--dim); font-size: 0.8rem; }
+
 /* Ã¢ÂÂÃ¢ÂÂ Inventory table Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
 .inv-table { font-size: 0.85rem; }
 .inv-table td { padding: 0.3rem 0.6rem; }
