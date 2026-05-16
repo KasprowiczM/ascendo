@@ -14,13 +14,15 @@ loads cleanly on non-macOS hosts (the routes just report unavailable).
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 _log = logging.getLogger(__name__)
@@ -114,3 +116,115 @@ def web_open(body: WebOpenBody) -> dict:
     app_path = str(app.app_path) if getattr(app, "app_path", None) else None
     ok = _open_bundle(app.bundle_id, app_path)
     return {"ok": ok, "slug": body.slug, "bundle_id": app.bundle_id}
+
+
+# ── POST /web/probe-entry (Phase C: read-only candidate dry-run) ─────────────
+
+# Handlers with no version probe by design (Tier-B). Probing them is a
+# definitive "no" without shelling out.
+_NO_PROBE_HANDLERS = {"squirrel", "builtin"}
+
+
+def _adapter_lib_dir() -> Path | None:
+    try:
+        import ascendo_macos  # type: ignore
+
+        return Path(ascendo_macos.__file__).resolve().parent.parent / "lib"
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _validate_entry(raw: dict) -> Any:
+    """Validate a candidate entry against the macOS WebApp model.
+
+    Returns the WebApp instance, or raises HTTPException(422) with the
+    pydantic error detail. HTTPException(503) when the adapter model is
+    unavailable (non-macOS host).
+    """
+    try:
+        from ascendo_macos.web_registry import WebApp  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=503, detail="web registry model unavailable"
+        ) from exc
+    try:
+        from pydantic import ValidationError
+
+        return WebApp.model_validate(raw)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+
+
+def _probe_handler(slug: str, handler: str, cfg_json: str) -> tuple[str, str]:
+    """Run ``<handler>_check`` for ONE entry in isolation via the adapter's
+    existing _web_probe_parallel machinery. Read-only. Returns
+    (resolved_version, raw_stderr). 8s timeout."""
+    lib = _adapter_lib_dir()
+    if lib is None or not (lib / "ascendo_web.sh").is_file():
+        return ("", "adapter lib unavailable")
+    with tempfile.TemporaryDirectory(prefix="ascendo-probe-") as td:
+        td_p = Path(td)
+        (td_p / "0.slug").write_text(slug, encoding="utf-8")
+        (td_p / "0.handler").write_text(handler, encoding="utf-8")
+        (td_p / "0.cfg.json").write_text(cfg_json, encoding="utf-8")
+        (td_p / "_indices").write_text("0\n", encoding="utf-8")
+        script = (
+            'set -e; . "$1/ascendo_web.sh"; '
+            '_web_probe_parallel "$2/_indices" "$2"'
+        )
+        try:
+            proc = subprocess.run(
+                ["bash", "-c", script, "_", str(lib), str(td_p)],
+                capture_output=True,
+                text=True,
+                timeout=12,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return ("", "probe timed out")
+        out_f = td_p / "0.txt"
+        resolved = (
+            out_f.read_text(encoding="utf-8").strip()
+            if out_f.is_file()
+            else ""
+        )
+        return (resolved, (proc.stderr or "")[-800:])
+
+
+@router.post("/web/probe-entry")
+def web_probe_entry(raw: dict = Body(...)) -> dict:
+    """Read-only dry-run of ONE candidate web_apps.toml entry.
+
+    Validates the entry against the WebApp schema, runs its handler's
+    check in isolation, and reports the resolved version or the exact
+    failure. Never installs, never writes any file. The AI-config loop
+    calls this (auto-fired, read-only) to iterate until an entry works.
+    """
+    app = _validate_entry(raw)
+    handler = app.handler
+    cfg_json = json.dumps(app.model_dump(mode="json"), separators=(",", ":"))
+
+    if handler in _NO_PROBE_HANDLERS:
+        return {
+            "ok": False,
+            "validated": True,
+            "handler": handler,
+            "resolved_version": "",
+            "error": (
+                f"handler '{handler}' is Tier-B (no version probe) — "
+                "use sparkle / github_dmg / release_feed / omaha / "
+                "msupdate for a real candidate probe"
+            ),
+            "raw_probe_output": "",
+        }
+
+    resolved, raw_err = _probe_handler(app.slug, handler, cfg_json)
+    ok = bool(resolved)
+    return {
+        "ok": ok,
+        "validated": True,
+        "handler": handler,
+        "resolved_version": resolved,
+        "error": "" if ok else "probe returned no version",
+        "raw_probe_output": raw_err,
+    }
