@@ -3643,16 +3643,107 @@ const ui = {
         ui.loadSchedule();
       });
     }
+    // Wire the selection-only builder + seed the hidden expression so a
+    // submit works even if the user never touches the selects (default
+    // DAILY 03:00). Idempotent.
+    ui._initSchedBuilder();
+  },
+
+  // Selection-only schedule builder (#11): no cron text. The four
+  // selects assemble the backend DSL (DAILY HH:MM / WEEKLY DAY HH:MM /
+  // MONTHLY HH:MM, day tokens SUN..SAT, zero-padded HH:MM — verified
+  // against adapters/macos/scripts/scheduler/scheduler.sh) into the
+  // hidden #schedule-f-expr so scheduleSubmit is untouched.
+  _initSchedBuilder() {
+    if (ui._schedBuilderWired) { ui._assembleSchedExpr(); return; }
+    const freq = document.getElementById("sched-freq");
+    const wd   = document.getElementById("sched-weekday");
+    const hr   = document.getElementById("sched-hour");
+    const mn   = document.getElementById("sched-minute");
+    if (!freq || !hr || !mn) return;
+    ui._schedBuilderWired = true;
+    if (!hr.options.length) {
+      for (let h = 0; h < 24; h++) {
+        const o = document.createElement("option");
+        o.value = String(h).padStart(2, "0");
+        o.textContent = String(h).padStart(2, "0") + " h";
+        hr.appendChild(o);
+      }
+      hr.value = "03";
+    }
+    if (!mn.options.length) {
+      for (let m = 0; m < 60; m += 5) {
+        const o = document.createElement("option");
+        o.value = String(m).padStart(2, "0");
+        o.textContent = ":" + String(m).padStart(2, "0");
+        mn.appendChild(o);
+      }
+      mn.value = "00";
+    }
+    const onChange = () => {
+      if (wd) wd.style.display = (freq.value === "WEEKLY") ? "" : "none";
+      ui._assembleSchedExpr();
+    };
+    [freq, wd, hr, mn].forEach(s => s && s.addEventListener("change", onChange));
+    onChange();
+  },
+
+  _assembleSchedExpr() {
+    const freq = document.getElementById("sched-freq");
+    const wd   = document.getElementById("sched-weekday");
+    const hr   = document.getElementById("sched-hour");
+    const mn   = document.getElementById("sched-minute");
+    const exprEl = document.getElementById("schedule-f-expr");
+    const prev = document.getElementById("sched-preview");
+    if (!freq || !hr || !mn || !exprEl) return;
+    const t = `${hr.value}:${mn.value}`;
+    let expr;
+    if (freq.value === "WEEKLY")      expr = `WEEKLY ${(wd && wd.value) || "MON"} ${t}`;
+    else if (freq.value === "MONTHLY") expr = `MONTHLY ${t}`;
+    else                               expr = `DAILY ${t}`;
+    exprEl.value = expr;
+    if (prev) prev.textContent =
+      tr("schedule.preview", "Schedule") + ": " + expr;
+  },
+
+  _parseSchedExpr(expr) {
+    // "DAILY HH:MM" | "WEEKLY DAY HH:MM" | "MONTHLY [DAY] HH:MM"
+    const freq = document.getElementById("sched-freq");
+    const wd   = document.getElementById("sched-weekday");
+    const hr   = document.getElementById("sched-hour");
+    const mn   = document.getElementById("sched-minute");
+    if (!freq || !hr || !mn || !expr) return;
+    const parts = String(expr).trim().toUpperCase().split(/\s+/);
+    const kind = parts[0];
+    const time = parts[parts.length - 1] || "03:00";
+    const [h, m] = time.split(":");
+    if (kind === "WEEKLY") {
+      freq.value = "WEEKLY";
+      if (wd && parts[1]) { wd.value = parts[1]; wd.style.display = ""; }
+    } else if (kind === "MONTHLY") {
+      freq.value = "MONTHLY";
+      if (wd) wd.style.display = "none";
+    } else {
+      freq.value = "DAILY";
+      if (wd) wd.style.display = "none";
+    }
+    if (h) hr.value = String(parseInt(h, 10)).padStart(2, "0");
+    if (m) {
+      // snap minute to nearest 5 (the picker is 5-min granular)
+      const snapped = Math.round(parseInt(m, 10) / 5) * 5;
+      mn.value = String(Math.min(55, snapped)).padStart(2, "0");
+    }
+    ui._assembleSchedExpr();
   },
 
   scheduleEdit(it) {
     const $n = document.getElementById("schedule-f-name");
-    const $e = document.getElementById("schedule-f-expr");
     const $p = document.getElementById("schedule-f-profile");
     const $en = document.getElementById("schedule-f-enabled");
     const $d = document.getElementById("schedule-f-desc");
     if ($n) $n.value = it.name || "";
-    if ($e) $e.value = it.expression || "";
+    ui._initSchedBuilder();
+    ui._parseSchedExpr(it.expression || "DAILY 03:00");
     if ($p) $p.value = it.profile || "safe";
     if ($en) $en.checked = !!it.enabled;
     if ($d) $d.value = it.description || "";

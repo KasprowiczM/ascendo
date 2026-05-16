@@ -677,11 +677,39 @@
                    pattern="[A-Za-z0-9_-]+"
                    placeholder="ascendo-daily" style="width:100%">
           </label>
-          <label>
-            <span data-i18n="schedule.f_expr">Expression</span><br>
-            <input id="schedule-f-expr" name="expression" required maxlength="200"
-                   placeholder="DAILY 03:00" style="width:100%">
-            <small class="dim" data-i18n="schedule.f_expr_hint">DAILY HH:MM, WEEKLY DAY HH:MM, MONTHLY HH:MM, HOURLY HH:MM, MINUTE N</small>
+          <label style="grid-column:1/-1">
+            <span data-i18n="schedule.f_when">When to run</span><br>
+            <!-- Selection-only schedule builder (no typing). The hidden
+                 input is kept so scheduleSubmit/scheduleEdit work
+                 unchanged; the selects below assemble its value. The
+                 selects are auto-upgraded to tap-friendly no-dropdown
+                 controls by ui-components.js. -->
+            <input id="schedule-f-expr" name="expression" type="hidden">
+            <!-- data-uikit-skip: keep these as compact NATIVE selects.
+                 ui-components.js otherwise blows 24h/60m selects up into
+                 full-screen searchable choice-card columns. Native
+                 <select> on touch opens the OS picker wheel — already
+                 tap-selectable, no typing, and compact. -->
+            <div id="sched-builder" data-uikit-skip
+                 style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.3rem">
+              <select id="sched-freq" aria-label="Frequency" style="flex:1 1 130px">
+                <option value="DAILY"   data-i18n="schedule.freq_daily">Daily</option>
+                <option value="WEEKLY"  data-i18n="schedule.freq_weekly">Weekly</option>
+                <option value="MONTHLY" data-i18n="schedule.freq_monthly">Monthly (1st)</option>
+              </select>
+              <select id="sched-weekday" aria-label="Weekday" style="flex:1 1 130px;display:none">
+                <option value="MON" data-i18n="schedule.dow_mon">Monday</option>
+                <option value="TUE" data-i18n="schedule.dow_tue">Tuesday</option>
+                <option value="WED" data-i18n="schedule.dow_wed">Wednesday</option>
+                <option value="THU" data-i18n="schedule.dow_thu">Thursday</option>
+                <option value="FRI" data-i18n="schedule.dow_fri">Friday</option>
+                <option value="SAT" data-i18n="schedule.dow_sat">Saturday</option>
+                <option value="SUN" data-i18n="schedule.dow_sun">Sunday</option>
+              </select>
+              <select id="sched-hour" aria-label="Hour" style="flex:1 1 90px"></select>
+              <select id="sched-minute" aria-label="Minute" style="flex:1 1 90px"></select>
+            </div>
+            <small class="dim" id="sched-preview" style="display:block;margin-top:0.3rem"></small>
           </label>
           <label>
             <span data-i18n="schedule.f_profile">Profile</span><br>
