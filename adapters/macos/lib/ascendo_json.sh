@@ -294,40 +294,58 @@ _ascendo_sudo_warm() {
         return 0
     fi
 
-    # 1. PAM path (Touch ID first, password fallback at TTY).
-    #    `osascript ... with administrator privileges` goes through Apple's
-    #    SecurityAgent / AuthorizationCreate API — which BYPASSES PAM
-    #    entirely and never uses Touch ID, even with pam_tid.so configured.
-    #    THAT was the cause of the "password popup every time" UX.
+    # 1. PAM path — Touch ID first, password fallback. `sudo -v` runs
+    #    sudo's PAM stack, which respects /etc/pam.d/sudo (-> sudo_local
+    #    on Sonoma+). With `auth sufficient pam_tid.so` configured, the
+    #    macOS biometric subsystem presents the Touch ID sheet ITSELF and
+    #    `sufficient` short-circuits before any password module — so a
+    #    successful tap needs NEITHER a controlling TTY NOR an askpass
+    #    helper. pam_tid does not use the PAM conversation function /
+    #    stdin / a TTY at all; only the password *fallback* does.
     #
-    #    `sudo -v` goes through PAM, which respects /etc/pam.d/sudo_local
-    #    ordering. With `auth sufficient pam_tid.so` configured, you get:
-    #      * macOS Touch ID prompt FIRST (graphical sheet)
-    #      * "Use Password" button in the same prompt for fallback
-    #    With pam_tid.so NOT configured, you get the standard sudo password
-    #    prompt at /dev/tty. Either way: ONE prompt, no osascript double-up.
-    #
-    #    sudo always reads its prompt from /dev/tty when available; we
-    #    redirect explicitly so sudo doesn't get confused if the helper is
-    #    invoked from a wrapper that closed stdin.
-    if [ "$(uname -s)" = "Darwin" ] && [ -e /dev/tty ]; then
-        if sudo -v </dev/tty 2>/dev/tty; then
+    #    The earlier `[ -e /dev/tty ]` gate was wrong: the /dev/tty device
+    #    node always exists, but a process spawned by the dashboard
+    #    (`ascendo web start`, Tauri sidecar, Ascendo.app) has no
+    #    controlling terminal, so the forced `</dev/tty` redirect failed
+    #    ("Device not configured") and Touch ID never got a chance — every
+    #    apply fell through to the osascript SecurityAgent password popup
+    #    (Authorization Services, `system.privilege.admin` — a DIFFERENT
+    #    auth rule that does NOT consult pam_tid). That was the
+    #    "osascript keeps asking for a password" regression.
+    if [ "$(uname -s)" = "Darwin" ]; then
+        # 1a. TTY-independent: let pam_tid show the Touch ID sheet. stdin
+        #     from /dev/null so sudo never blocks on an inherited pipe;
+        #     no `-A` so no askpass is consulted. If Touch ID is
+        #     unavailable/declined sudo would need a password and, with
+        #     no TTY+no askpass, fails cleanly — the correct fallback
+        #     signal (the operator should use the dashboard password
+        #     modal, i.e. the SUDO_ASKPASS path handled in step 0b).
+        if sudo -v </dev/null 2>/dev/null; then
             return 0
         fi
-    elif [ "$(uname -s)" != "Darwin" ]; then
+        # 1b. Real controlling terminal present (operator launched from a
+        #     shell): route the prompt to it so an in-terminal Touch ID
+        #     sheet or the password fallback is actually visible. Probe by
+        #     trying to OPEN /dev/tty (not `[ -e ]`, which is always true).
+        if ( : >/dev/tty ) 2>/dev/null && sudo -v </dev/tty 2>/dev/tty; then
+            return 0
+        fi
+    else
         # Linux / other Unix: sudo -v on the inherited TTY.
         sudo -v && return 0 || true
     fi
 
-    # 2. Headless fallback (no /dev/tty + no SUDO_ASKPASS — unattended cron,
-    #    CI, or detached service). Touch ID is unreachable here, so we'd
-    #    have to fall through to osascript with administrator privileges
-    #    (Apple's SecurityAgent dialog: typed password only, no biometrics).
-    #
-    #    The user explicitly said "Touch ID only", so this fallback is
-    #    OPT-IN via ASCENDO_SUDO_ALLOW_GUI=1. Default behaviour: stay
-    #    silent and let the subsequent `sudo -A` raise its own error so
-    #    the operator knows to run `sudo -v` in their launching terminal.
+    # 2. Last-resort GUI fallback — STRICTLY opt-in, never auto-enabled.
+    #    `osascript ... with administrator privileges` uses Authorization
+    #    Services (`system.privilege.admin`), a different auth rule from
+    #    sudo's PAM stack: it does NOT consult pam_tid.so, so it is
+    #    PASSWORD-ONLY even when Touch ID is configured. It exists only
+    #    for a genuinely headless macOS box (no Touch ID, no password
+    #    modal) where an operator has explicitly accepted that trade-off
+    #    via `export ASCENDO_SUDO_ALLOW_GUI=1`. The dashboard no longer
+    #    sets this automatically (that was the root-cause regression).
+    #    Default: stay silent and let the subsequent sudo raise its own
+    #    error so the operator knows to enable Touch ID or use the modal.
     if [ "$(uname -s)" = "Darwin" ] \
        && [ "${ASCENDO_SUDO_ALLOW_GUI:-0}" = "1" ] \
        && [ -z "${ASCENDO_SUDO_NO_GUI:-}" ] \

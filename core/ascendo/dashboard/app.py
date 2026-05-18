@@ -103,29 +103,27 @@ def _augment_path_for_macos_gui() -> None:
     if new_entries:
         os.environ["PATH"] = ":".join(new_entries + existing)
 
-    # Same fix-class as PATH augmentation: when the dashboard is launched
-    # without a controlling TTY (Tauri sidecar, Ascendo.app
-    # double-click), the apply scripts' `_ascendo_sudo_warm` helper can't
-    # use the TTY-PAM Touch ID path. If we don't also enable the
-    # GUI/SecurityAgent fallback, sudo invocations hang silently with no
-    # prompt visible to the user — the exact "Touch ID stopped prompting,
-    # updates don't apply" regression operators saw after the Sesja 44
-    # timestamp-probe + Sesja 52/53 Tauri-shell rework.
+    # Deliberately DO NOT auto-enable ASCENDO_SUDO_ALLOW_GUI here.
     #
-    # Enable ASCENDO_SUDO_ALLOW_GUI=1 only when:
-    #   * no /dev/tty is openable from this process (true GUI launch)
-    #   * the operator hasn't already pinned it (respect explicit setting)
-    # The SecurityAgent dialog this triggers honours PAM Touch ID via the
-    # AuthorizationCreate API on Sonoma 14+, so users with pam_tid still
-    # get a Touch ID prompt — just sourced from SecurityAgent instead of
-    # the apply script's TTY-PAM path.
-    if "ASCENDO_SUDO_ALLOW_GUI" not in os.environ:
-        try:
-            fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
-            os.close(fd)
-            # We have a real TTY — leave GUI fallback opt-in.
-        except OSError:
-            os.environ["ASCENDO_SUDO_ALLOW_GUI"] = "1"
+    # A previous revision set ASCENDO_SUDO_ALLOW_GUI=1 whenever the
+    # dashboard had no controlling TTY (which is *always* true for
+    # `ascendo web start` / the Tauri sidecar / an Ascendo.app
+    # double-click). Its comment claimed the SecurityAgent dialog
+    # "honours PAM Touch ID" — that is factually wrong. `osascript … with
+    # administrator privileges` goes through Authorization Services
+    # (`system.privilege.admin`), which is a DIFFERENT auth rule from
+    # `sudo`'s PAM stack. It does NOT consult `pam_tid.so`, so even with
+    # Touch ID configured the operator got a password-only popup on every
+    # apply — the exact regression this removal fixes.
+    #
+    # The correct Touch-ID-first path is plain `sudo` going through PAM
+    # (`auth sufficient pam_tid.so` in /etc/pam.d/sudo_local). The macOS
+    # biometric subsystem presents the Touch ID sheet itself — it needs
+    # neither a controlling TTY nor an askpass helper — so the apply
+    # scripts' `_ascendo_sudo_warm` handles the no-TTY dashboard case
+    # natively. ASCENDO_SUDO_ALLOW_GUI stays strictly opt-in: an operator
+    # may still `export ASCENDO_SUDO_ALLOW_GUI=1` for a genuinely headless
+    # box with no Touch ID and no password modal, but we never force it.
 
 
 def _resolve_edition() -> str:
