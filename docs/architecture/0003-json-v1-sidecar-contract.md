@@ -45,10 +45,19 @@ Pydantic v2 models, exported as JSON Schema in
 `docs/architecture/schemas/sidecar.v1.schema.json`, and validated by
 `tests/contract/`.
 
-**Backward compatibility:** the reader accepts both `ascendo/v1` and
-`ascendo/v1`. New native code emits only `ascendo/v1`.
-Legacy emitters in `Ascendo` checkouts (pre-rename clones)
-continue to work without modification.
+**Backward compatibility:** the reader accepts both `ascendo/v1`
+(canonical) and `ubuntu-aktualizacje/v1` (historical legacy literal).
+New native code emits only `ascendo/v1`. Legacy emitters in
+`Ubuntu_Aktualizacje` checkouts (pre-rename clones) continue to work
+without modification — `parse_sidecar()` routes legacy payloads
+through `translate_legacy_v1()` before validating against the v1
+Pydantic model.
+
+> ⚠️ **Do not change the legacy literal.** It is the on-disk string
+> historical emitters wrote — renaming the project does not retroactively
+> rename JSON files on user disks. A mechanical search-and-replace
+> already collapsed this once (commit `96d5167`) and broke every
+> dashboard-dispatched run with `KeyError: 'kind'`.
 
 ## Schema (top-level fields)
 

@@ -595,7 +595,7 @@
       "description": "Recognized sidecar schema identifiers.\n\nThe reader accepts both during the migration period. New emitters\nwrite only `V1_ASCENDO`. See ADR-0003 for the deprecation timeline.",
       "enum": [
         "ascendo/v1",
-        "ascendo/v1"
+        "ubuntu-aktualizacje/v1"
       ],
       "title": "SidecarSchema",
       "type": "string"

@@ -1,5 +1,5 @@
 {
-  "schema": "ascendo/v1",
+  "schema": "ubuntu-aktualizacje/v1",
   "kind": "check",
   "category": "apt",
   "host": "ubuntu-desktop",

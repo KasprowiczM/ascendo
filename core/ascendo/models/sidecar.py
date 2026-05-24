@@ -35,7 +35,12 @@ class SidecarSchema(str, Enum):
     """
 
     V1_ASCENDO = "ascendo/v1"
-    V1_LEGACY_UBUNTU = "ascendo/v1"
+    # Historical literal — pre-rename emitters wrote this string. Do not
+    # collapse it into the canonical "ascendo/v1": the rebrand commit
+    # 96d5167 did exactly that and broke every dashboard run with
+    # `KeyError: 'kind'` (every sidecar was misrouted through the legacy
+    # translator).
+    V1_LEGACY_UBUNTU = "ubuntu-aktualizacje/v1"
 
 
 # Tool name (e.g. 'apt', 'winget', 'brew', 'softwareupdate', 'dcu-cli').
@@ -208,4 +213,4 @@ def parse_sidecar(payload: str | bytes | dict) -> Sidecar:  # noqa: D401 (impera
 
 # Type alias for v1 reader's accept-both-schemas contract — exported for
 # clarity at use-sites (e.g. core.dashboard).
-SidecarSchemaLiteral = Literal["ascendo/v1", "ascendo/v1"]
+SidecarSchemaLiteral = Literal["ascendo/v1", "ubuntu-aktualizacje/v1"]

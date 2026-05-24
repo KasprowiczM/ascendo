@@ -61,8 +61,14 @@ from typing import Any
 # repeated translations of the same input.
 _LEGACY_NAMESPACE = uuid.UUID("6f1d4c0e-2b7a-4a2e-9b9d-1ad6e0f9ba01")
 
-# Legacy schema literal we accept.
-_LEGACY_SCHEMA = "ascendo/v1"
+# Legacy schema literal we accept. This MUST stay as the pre-rebrand
+# historical string — renaming the project does not retroactively rename
+# what historical artefacts on disk contain. The rebrand commit 96d5167
+# (Ubuntu_Aktualizacje -> Ascendo) collapsed this literal into the
+# canonical "ascendo/v1" via mechanical search-and-replace, which routed
+# EVERY freshly-emitted canonical sidecar through translate_legacy_v1
+# and broke every web-dispatched run with `KeyError: 'kind'`.
+_LEGACY_SCHEMA = "ubuntu-aktualizacje/v1"
 
 # Mapping for legacy item.result -> ascendo item.status.
 _RESULT_TO_STATUS: dict[str, str] = {

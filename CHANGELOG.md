@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Rebrand fallout: every dashboard-dispatched run failed with `KeyError: 'kind'`
+
+The rebrand commit `96d5167` ("chore: Rebrand project to Ascendo and
+restructure configuration files") did a mechanical search-and-replace
+of `ubuntu-aktualizacje` → `ascendo` across the entire repo, which
+collapsed the **historical legacy schema literal** into the **canonical
+current schema literal** — they became the same string. Result: every
+canonical `ascendo/v1` sidecar emitted by the macOS/Ubuntu/Windows
+adapters was mis-detected as legacy by `is_legacy_v1()`, routed through
+`translate_legacy_v1()`, and immediately raised `KeyError: 'kind'`
+because the canonical format uses `phase`, not `kind`. The error
+escaped `_safe_run_phase` (catches `ManagerError` only), propagated
+past `attach_run_log` (file handler detached, so no traceback in
+`run.log`), and was finally caught by the async worker's
+`except Exception` — visible only via `GET /runs/<id>/status`. Every
+single web-dispatched run since the rebrand crashed with zero sidecars
+on disk.
+
+Restored the legacy literal to its historical value `ubuntu-aktualizacje/v1`
+in [core/ascendo/models/legacy.py:71](core/ascendo/models/legacy.py:71),
+[core/ascendo/models/sidecar.py:43](core/ascendo/models/sidecar.py:43),
+[core/ascendo/models/sidecar.py:216](core/ascendo/models/sidecar.py:216),
+[docs/architecture/schemas/sidecar.v1.schema.json:598](docs/architecture/schemas/sidecar.v1.schema.json:598)
+and the two legacy test fixtures.
+
+Belt-and-suspenders guard: [core/ascendo/orchestrator/sidecar_io.py:501](core/ascendo/orchestrator/sidecar_io.py:501)
+`read_sidecar()` now also catches `KeyError`, rewrapping it as
+`SidecarReadError` so a stray missing-field-in-legacy-translator can
+never again silently kill an entire async run.
+
+ADR-0003 picked up an explicit "do not change the legacy literal"
+warning so a future mass-rename cannot regress this.
+
+Live: dashboard restarted, `POST /runs/async` with full profile
+completed cleanly (220 packages enumerated, 0 failures, full
+REPORT.md generated). Confirmed across all three adapters — macOS
+416/417, Ubuntu 140/141, Windows 453/453 (the remaining failures
+are documented pre-existing environment flakes from earlier
+sessions, none touch the sidecar-parse path).
+
+Affects: every operator who pulled `96d5167` or later. Cross-platform
+— Ubuntu + Windows + macOS adapters all hit the same `KeyError`
+because the legacy detector lives in shared `core/`.
+
 ### Added — Touch-first responsive UI kit (Sesja 74)
 
 - New `app/frontend/ui-components.js`: **no native dropdowns anywhere**

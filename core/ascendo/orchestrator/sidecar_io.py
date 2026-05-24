@@ -498,8 +498,15 @@ def read_sidecar(path: Path) -> Sidecar:
 
     try:
         return parse_sidecar(raw)
-    except (ValidationError, ValueError, json.JSONDecodeError) as exc:
-        raise SidecarReadError(f"could not parse {path}: {exc}") from exc
+    except (ValidationError, ValueError, json.JSONDecodeError, KeyError) as exc:
+        # KeyError is raised by translate_legacy_v1 when a payload tagged
+        # as legacy is missing a required legacy field (e.g. ``kind`` or
+        # ``host``). Treat it as a parse failure so it routes through the
+        # same channel manager code already handles (SidecarReadError) —
+        # never leak a raw KeyError up to the orchestrator, where only
+        # ManagerError is caught and a stray exception kills the whole
+        # async run silently.
+        raise SidecarReadError(f"could not parse {path}: {exc!r}") from exc
 
 
 def list_run_sidecars(run_dir: Path) -> list[Path]:
