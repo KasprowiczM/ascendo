@@ -127,7 +127,7 @@ Ascendo ships in two editions. The same code, different surfaces:
 
 | Edition | For | What's visible | Helper scripts |
 |---------|-----|----------------|----------------|
-| **`basic`** (default) | Everyday user | Overview · Categories · Run Center · History · Apps · Settings · Help · About | `ascendo_update`, `ascendo_doctor`, `ascendo_maintenance`, … |
+| **`basic`** (default) | Everyday user | Dashboard · Library · Runs · Insights · Settings | `ascendo_update`, `ascendo_doctor`, `ascendo_maintenance`, … |
 | **`dev`** | Maintainer / contributor | Everything basic shows + Sync · Hosts · Logs (raw events) · Git push · dev-sync overlay | basic set + `dev/` shims (`ascendo_sync`, `ascendo_push`, …) |
 
 Setting the edition (priority order, highest wins):

@@ -94,29 +94,31 @@ private split.
 
 ---
 
-## 3. The 12-tab UI (dev edition)
+## 3. The 5-destination UI (dev edition)
 
-The dev edition unlocks four extra tabs on top of the eight from the
-basic edition:
+The dev edition unlocks extra sub-tabs on top of the ones from the
+basic edition, seamlessly integrated into the 5-destination AppShell:
 
-| Tab | Basic | Dev | What it does |
-|-----|-------|-----|--------------|
-| Overview     | ✅ | ✅ | Health card + quick actions |
-| Categories   | ✅ | ✅ | Per-source phase buttons |
-| Run Center   | ✅ | ✅ | Live SSE progress |
-| History      | ✅ | ✅ | Past runs + inline logs |
-| Apps         | ✅ | ✅ | Inventory + per-app history + exclusions |
-| Suggestions  | ✅ | ✅ | Preset + AI recommendations |
-| Settings     | ✅ | ✅ | Locale, theme, scheduler, AI providers |
-| About / Help | ✅ | ✅ | Versions + release notes + troubleshooting |
-| **Sync**     | ❌ | ✅ | Dev-sync overlay export/import via Proton/rclone |
-| **Hosts**    | ❌ | ✅ | Multi-machine register: track + push to remote hosts |
-| **Logs (raw events)** | ❌ | ✅ | Raw SSE event stream for debugging |
-| **Settings → GitHub repo config** | ❌ | ✅ | Configure origin URL + push permissions |
+| Destination → Sub-tab | Basic | Dev | What it does |
+|-----------------------|-------|-----|--------------|
+| **Dashboard** | ✅ | ✅ | Health card + quick actions + action required |
+| **Library** → Sources | ✅ | ✅ | Per-source phase buttons |
+| **Library** → Apps | ✅ | ✅ | Inventory + per-app history + exclusions |
+| **Library** → Tools | ✅ | ✅ | Rule-based + AI Suggestions + Chat |
+| **Runs** → Start | ✅ | ✅ | Live SSE progress + manual start |
+| **Runs** → Scheduled | ✅ | ✅ | Launchd / Task Scheduler configuration |
+| **Runs** → History | ✅ | ✅ | Past runs + inline logs + reports |
+| **Insights** → Trends | ✅ | ✅ | Run duration + success trends |
+| **Insights** → **Logs (raw events)** | ❌ | ✅ | Raw SSE event stream for debugging |
+| **Settings** → General | ✅ | ✅ | Locale, theme, AI providers |
+| **Settings** → **Sync** | ❌ | ✅ | Dev-sync overlay export/import via Proton/rclone |
+| **Settings** → **Hosts** | ❌ | ✅ | Multi-machine register: track + push to remote hosts |
+| **Settings** → Help / About | ✅ | ✅ | Versions + release notes + troubleshooting |
+
+*Note: The GitHub repo config lives inside Settings.*
 
 The gating happens in the frontend via `data-edition` attributes — see
-`app/frontend/index.html` and `app/frontend/app.js` for the gate
-points.
+`app/frontend/index.html` and `app/frontend/app.js` for the gate points.
 
 ---
 

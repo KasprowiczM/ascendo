@@ -137,6 +137,13 @@ description, and a single primary action (e.g. **Start Run**).
   permission`) so you always know which platform and elevation model
   is in effect.
 
+### Action Required
+
+If Ascendo detects an app that needs manual intervention (e.g., an unverified URL or an app that requires a manual download), it will appear in an **Action Required** panel on the Dashboard.
+- Click **Open** to launch the download URL.
+- Click **Fix with AI** to let the LLM automatically research and propose an automated update path for that app.
+- Click **Open all** to open all pending download URLs at once.
+
 **Old → new map** (bookmarks still work — old hashes auto-resolve):
 
 | Old tab | Now lives at |
@@ -163,8 +170,8 @@ desktop):
   lists (e.g. Logs) become a searchable list. Pick one option and the
   next relevant choices reveal in place.
 - **Phones** get a bottom tab bar for the 5 destinations; the Run
-  Center walks you through **Profile → Options → Confirm** one step at
-  a time; the History table becomes tappable cards (tap a card for the
+  Center offers a unified Start view (Safe / Quick / Advanced options);
+  the History table becomes tappable cards (tap a card for the
   run drawer). All controls are ≥44px tap targets.
 - **Light & dark themes** (⚙ Preferences → Theme; `dark` is the
   default). Light mode has strong contrast and clear card/section
@@ -185,11 +192,10 @@ The everyday flow:
 4. When the row's "outdated" count updates, you know what's pending.
 
 You can repeat this per source, or use the **Dashboard → Start Run**
-header action / the Run Center quick-action chips for a multi-source
-sweep:
+header action / the Run Center for a multi-source sweep:
 
 ```
-[1] Build inventory   [2] Quick check   [3] Safe update   [4] Full dry-run   [5] Full update
+[1] Safe update   [2] Quick update   [3] Advanced ▸
 ```
 
 Equivalent CLI one-liners (handy for terminals or scripts):
@@ -211,7 +217,7 @@ prevents accidental click-throughs from changing system state.
 ### Per source
 
 1. Library → Sources → row → **plan** (preview the changes)
-2. Library → Sources → row → **apply** (modal opens; type `apply`)
+2. Library → Sources → row → **apply** (modal opens; type `apply` or use Touch ID on macOS)
 3. Watch **Runs → Start** stream the run live
 4. When done, Library counts + the Apps sub-tab auto-refresh
 

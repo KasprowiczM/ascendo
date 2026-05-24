@@ -116,7 +116,7 @@ the platform quickstarts below.
 
 | Platform | Status | Quickstart |
 |----------|--------|------------|
-| macOS (Apple Silicon + Intel) | ✅ feature-complete (v0.6.8-rc1) — 12 health components, 6 package managers, Tier-A web auto-updates, Time Machine snapshots, launchd scheduler, Touch ID-first sudo | [MACOS_QUICKSTART.md](MACOS_QUICKSTART.md) |
+| macOS (Apple Silicon + Intel) | ✅ feature-complete (v0.6.8-rc1) — 12 health components, 6 package managers, full web category coverage (AI-maintained), Time Machine snapshots, launchd scheduler, Touch ID-first sudo | [MACOS_QUICKSTART.md](MACOS_QUICKSTART.md) |
 | Windows 11 / 10 (build 17763+) | 🟡 functional (v0.6.x) — winget + msstore + ARP + PSWindowsUpdate + VSS + Task Scheduler + UAC. Parity with macOS still in progress (web auto-updates, Dell driver plugin shipped) | [WINDOWS_QUICKSTART.md](WINDOWS_QUICKSTART.md) |
 | Ubuntu 22.04+ / Debian 12+ | 🟡 functional (v0.6.x) — apt + snap + brew + npm + pip + flatpak inventory; legacy bash adapters bridged into Python orchestrator. Scheduler/snapshot/elevation Python wrappers pending | [LINUX_QUICKSTART.md](LINUX_QUICKSTART.md) |
 
