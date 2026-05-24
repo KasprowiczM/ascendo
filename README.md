@@ -28,7 +28,7 @@ backed by the same Python core, all writing the same JSON receipt
 
 | Edition | Who it's for | Features |
 |---------|--------------|----------|
-| **Basic** *(default)* | Everyday users — install, update, click-to-run | Simplified UI: Overview, Categories, Run Center, History (with inline logs), Apps, Suggestions, Settings (locale + theme), About, Help |
+| **Basic** *(default)* | Everyday users — install, update, click-to-run | 5-destination AppShell: Dashboard, Library (Sources, Apps, Tools), Runs (Start, Scheduled, History), Insights, Settings (General, Help/About). Includes AI Tools chat. |
 | **Dev** | Maintainers + contributors | Above + Sync, Hosts, raw-events stream, dev-sync overlay tooling, GitHub repo config, push capability |
 
 The edition is recorded in `$ASCENDO_HOME/.ascendo-edition`; the
@@ -116,9 +116,9 @@ the platform quickstarts below.
 
 | Platform | Status | Quickstart |
 |----------|--------|------------|
-| macOS (Apple Silicon + Intel) | ✅ feature-complete (v0.6.0-rc) — 12 health components, 6 package managers, Tier-A web auto-updates, Time Machine snapshots, launchd scheduler | [MACOS_QUICKSTART.md](MACOS_QUICKSTART.md) |
-| Windows 11 / 10 (build 17763+) | 🟡 functional (v0.5.x) — winget + msstore + ARP + PSWindowsUpdate + VSS + Task Scheduler + UAC. Parity with macOS still in progress (web auto-updates, Dell driver plugin shipped) | [WINDOWS_QUICKSTART.md](WINDOWS_QUICKSTART.md) |
-| Ubuntu 22.04+ / Debian 12+ | 🟡 functional (v0.5.x) — apt + snap + brew + npm + pip + flatpak inventory; legacy bash adapters bridged into Python orchestrator. Scheduler/snapshot/elevation Python wrappers pending | [LINUX_QUICKSTART.md](LINUX_QUICKSTART.md) |
+| macOS (Apple Silicon + Intel) | ✅ feature-complete (v0.6.8-rc1) — 12 health components, 6 package managers, Tier-A web auto-updates, Time Machine snapshots, launchd scheduler, Touch ID-first sudo | [MACOS_QUICKSTART.md](MACOS_QUICKSTART.md) |
+| Windows 11 / 10 (build 17763+) | 🟡 functional (v0.6.x) — winget + msstore + ARP + PSWindowsUpdate + VSS + Task Scheduler + UAC. Parity with macOS still in progress (web auto-updates, Dell driver plugin shipped) | [WINDOWS_QUICKSTART.md](WINDOWS_QUICKSTART.md) |
+| Ubuntu 22.04+ / Debian 12+ | 🟡 functional (v0.6.x) — apt + snap + brew + npm + pip + flatpak inventory; legacy bash adapters bridged into Python orchestrator. Scheduler/snapshot/elevation Python wrappers pending | [LINUX_QUICKSTART.md](LINUX_QUICKSTART.md) |
 
 See [docs/PLATFORM_STATUS.md](docs/PLATFORM_STATUS.md) for the full
 per-feature matrix (which package managers, schedulers, snapshot

@@ -348,7 +348,7 @@ How it works:
   open Suggestions, Ascendo sends a compact inventory snapshot to
   the LLM with a strict JSON schema and merges 1-3 AI cards on top.
   Supported providers: **Anthropic** · **OpenAI** · **OpenRouter** ·
-  **Ollama** (local) · **Google Gemini** · **LM Studio** (local).
+  **Ollama** (local) · **Google Gemini** · **LM Studio** (local) · **LiteLLM**.
 - **Graceful fallback** — if the configured provider is offline,
   rate-limited, or returns malformed JSON, Ascendo silently falls
   back to rule-based cards. You see the rule-based library and a
