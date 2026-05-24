@@ -80,7 +80,7 @@ read-only-only: dashboard reads, dashboard displays, operator decides.
 
 ## 4. SoftwareUpdateManager — flag semantics
 
-The legacy `update_system.sh` from `/Users/mk/Dev_Env/Aktualizacje_MAC/`
+The legacy `update_system.sh` from `/Users/mk/Dev_Env/Ascendo/`
 contains a battle-tested comment block (in Polish, capitalized as **WAŻNE**):
 the `-R` flag is mandatory because it sets the boot metadata via macOS's
 proper update mechanism. A raw `sudo reboot` instead of `-R` would skip the
@@ -312,4 +312,4 @@ equivalent CVE — uniform argv-only sudo is the project standard).
 - M5.3 spec for comparison: `docs/superpowers/specs/2026-05-04-macos-inventory-launchservices-design.md`
 - M5.2 spec for the elevation pattern: `docs/superpowers/specs/2026-05-03-macos-mas-elevation-design.md`
 - Legacy `update_system.sh` for the `-R` flag wisdom:
-  `/Users/mk/Dev_Env/Aktualizacje_MAC/update_system.sh`
+  `/Users/mk/Dev_Env/Ascendo/update_system.sh`

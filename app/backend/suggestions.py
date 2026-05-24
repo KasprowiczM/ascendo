@@ -39,7 +39,7 @@ from typing import Any
 from . import config, db, settings as settings_mod
 
 DISMISSED_PATH = Path(os.environ.get("XDG_STATE_HOME") or
-                      os.path.expanduser("~/.local/state")) / "ubuntu-aktualizacje" / "dismissed-suggestions.json"
+                      os.path.expanduser("~/.local/state")) / "ascendo" / "dismissed-suggestions.json"
 
 
 def _load_dismissed() -> set[str]:

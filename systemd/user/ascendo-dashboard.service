@@ -1,17 +1,17 @@
 [Unit]
-Description=Ubuntu_Aktualizacje Dashboard (local FastAPI service)
+Description=Ascendo Dashboard (local FastAPI service)
 After=network.target
 
 [Service]
 Type=exec
-WorkingDirectory=%h/Dev_Env/Ubuntu_Aktualizacje
+WorkingDirectory=%h/Dev_Env/Ascendo
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=UA_DASHBOARD_HOST=127.0.0.1
 Environment=UA_DASHBOARD_PORT=8765
 # Use the project-local venv created by app/install.sh (PEP-668 safe).
 # Falls back to system python3 if the venv was not bootstrapped yet.
-ExecStartPre=/bin/bash -c 'test -x %h/Dev_Env/Ubuntu_Aktualizacje/app/.venv/bin/python || (echo "venv missing; run: bash app/install.sh" >&2; exit 1)'
-ExecStart=%h/Dev_Env/Ubuntu_Aktualizacje/app/.venv/bin/python -m app.backend
+ExecStartPre=/bin/bash -c 'test -x %h/Dev_Env/Ascendo/app/.venv/bin/python || (echo "venv missing; run: bash app/install.sh" >&2; exit 1)'
+ExecStart=%h/Dev_Env/Ascendo/app/.venv/bin/python -m app.backend
 Restart=on-failure
 RestartSec=5
 

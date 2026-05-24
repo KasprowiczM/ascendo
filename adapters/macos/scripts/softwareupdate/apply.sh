@@ -6,7 +6,7 @@
 # `sudo -A softwareupdate -i ... -R --verbose`. The -R flag is MANDATORY:
 # it sets the boot metadata that triggers the update on restart. Without -R,
 # updates download but never apply. Battle-tested wisdom from legacy
-# /Users/mk/Dev_Env/Aktualizacje_MAC/update_system.sh ("WAŻNE: flaga -R …
+# /Users/mk/Dev_Env/Ascendo/update_system.sh ("WAŻNE: flaga -R …
 # jest wymagana"; "BŁĄD: sudo reboot to surowy restart jądra").
 #
 # Strategy A (sudo -A always): if no SUDO_ASKPASS helper is set, sudo -A

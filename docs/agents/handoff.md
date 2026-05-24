@@ -1,7 +1,7 @@
 # Handoff
 
 
-## 2026-05-24 (Sesja 13) — M5.7.6 macOS coverage closeout + operator-grade ports from Aktualizacje_MAC
+## 2026-05-24 (Sesja 13) — M5.7.6 macOS coverage closeout + operator-grade ports from Ascendo
 
 ### Co poszło na produkcję
 
@@ -34,12 +34,12 @@
   (`com.apple.{Keynote,Numbers,Pages}`) are still covered by the
   existing mas manager.
 
-**Phase B — operator-grade ports from `Aktualizacje_MAC`:**
+**Phase B — operator-grade ports from `Ascendo`:**
 - **B1 TOR-2 MAS-GUI handler** for iPad-on-Apple-Silicon apps that
   `mas` cannot touch (UniFi / WiFiman / Picsart): new
   `adapters/macos/scripts/mas/gui_fallback.sh` ports the reference's
   AppleScript-based 3-pass "Update All" automation verbatim
-  (`Aktualizacje_MAC/update_appstore.sh:215`). Auto-detects
+  (`Ascendo/update_appstore.sh:215`). Auto-detects
   Accessibility permission and opens the System Settings Privacy pane
   on denial. Top-level entry point at `bin/ascendo-mas-gui-update.sh`.
   Smoke test in `adapters/macos/tests/test_mas_gui_fallback.sh`
@@ -62,7 +62,7 @@
   Pruner only touches UUID4 / legacy `YYYYMMDDTHHMMSSZ-<hex>` named
   directories — operator-owned paths are preserved. Wired into
   `run_phases` via a thin wrapper (`_run_phases_inner`). Mirrors the
-  `Aktualizacje_MAC/logs/update_all_<ts>.log` rotation but inside
+  `Ascendo/logs/update_all_<ts>.log` rotation but inside
   Ascendo's per-run sidecar dir. 230 stale runs detected on
   Mac.r12.home; will be pruned on next run.
 - **B4 inventory override** — deferred as redundant. The existing
@@ -358,7 +358,7 @@ whenever `candidate != installed`, without a direction check.
 
 ### App title rename
 
-`Ubuntu_Aktualizacje` → `Ascendo - Unified Updates` everywhere:
+`Ascendo` → `Ascendo - Unified Updates` everywhere:
 
 - `app/frontend/index.html` `<title>`
 - `app/backend/main.py` FastAPI `title=`
@@ -403,8 +403,8 @@ curl -s http://127.0.0.1:8765/ | grep -o '<title>[^<]*</title>'
 
 | Obszar | Status |
 |---|---|
-| **Ikona Ubuntu desktop = Ascendo logo** | ✅ `share/icons/hicolor/scalable/apps/ascendo.svg` + `share/applications/ubuntu-aktualizacje.desktop` (`Name=Ascendo`, `Icon=ascendo`, `StartupWMClass=Ascendo`); poprzednio używało systemowego `software-update-available` |
-| **User-level instalator ikony** | ✅ `systemd/user/install-dashboard.sh` instaluje ikonę i `.desktop` do `~/.local/share/{icons,applications}`, woła `update-desktop-database` + `gtk-update-icon-cache`, kasuje stare `ubuntu-aktualizacje.desktop` |
+| **Ikona Ubuntu desktop = Ascendo logo** | ✅ `share/icons/hicolor/scalable/apps/ascendo.svg` + `share/applications/ascendo.desktop` (`Name=Ascendo`, `Icon=ascendo`, `StartupWMClass=Ascendo`); poprzednio używało systemowego `software-update-available` |
+| **User-level instalator ikony** | ✅ `systemd/user/install-dashboard.sh` instaluje ikonę i `.desktop` do `~/.local/share/{icons,applications}`, woła `update-desktop-database` + `gtk-update-icon-cache`, kasuje stare `ascendo.desktop` |
 | **System-wide ikona w `.deb`** | ✅ `packaging/deb/usr/share/icons/hicolor/scalable/apps/ascendo.svg` + `packaging/deb/usr/share/applications/ascendo.desktop`, postinst odświeża bazy |
 | **CLI runs widoczne w historii dashboard/web** | ✅ `db.import_disk_runs()` reconciliuje `logs/runs/<id>/run.json` z SQLite; wpięte w startup oraz w `/runs` i `/runs/{id}` |
 | **Migracja `004 run_source`** | ✅ kolumna `runs.source` (`'cli'` vs `'dashboard'`); `insert_run` przyjmuje source; UI dorzuca pill **cli** w History |
@@ -412,7 +412,7 @@ curl -s http://127.0.0.1:8765/ | grep -o '<title>[^<]*</title>'
 
 ### Pliki dotknięte
 
-share/icons/hicolor/scalable/apps/ascendo.svg, share/applications/ubuntu-aktualizacje.desktop, systemd/user/install-dashboard.sh, packaging/deb/usr/share/icons/hicolor/scalable/apps/ascendo.svg, packaging/deb/usr/share/applications/ascendo.desktop, packaging/deb/DEBIAN/postinst, app/backend/migrations.py (+_m004_run_source), app/backend/db.py (import_disk_runs), app/backend/main.py (startup/lazy reconcile), app/frontend/app.js (cli pill).
+share/icons/hicolor/scalable/apps/ascendo.svg, share/applications/ascendo.desktop, systemd/user/install-dashboard.sh, packaging/deb/usr/share/icons/hicolor/scalable/apps/ascendo.svg, packaging/deb/usr/share/applications/ascendo.desktop, packaging/deb/DEBIAN/postinst, app/backend/migrations.py (+_m004_run_source), app/backend/db.py (import_disk_runs), app/backend/main.py (startup/lazy reconcile), app/frontend/app.js (cli pill).
 
 ### Walidacja
 
@@ -433,7 +433,7 @@ bash -n update-all.sh + scripts/*/*.sh + lib/*.sh + systemd/user/*.sh + DEBIAN/p
 ### Komendy do weryfikacji
 
 ```bash
-systemctl --user restart ubuntu-aktualizacje-dashboard.service
+systemctl --user restart ascendo-dashboard.service
 ./update-all.sh --profile quick --no-notify
 curl -s 'http://127.0.0.1:8765/runs?limit=5' | jq '.runs[] | {id, source, profile, status}'
 ```
@@ -468,7 +468,7 @@ config/profiles/{dev-workstation,media-server,minimal-laptop}.list, scripts/apps
 
 ### Zmodyfikowane (tej sesji)
 
-app/backend/main.py (+/apt/downgrade, /profiles/*, /updates/check, /sync/remotes, /sync/browse), app/backend/inventory.py (scan_drivers, scan_inventory_meta), app/backend/settings.py (ai.base_url, sync.*, updates.*), app/backend/hosts_edit.py (NEW), app/frontend/{index.html, app.js, style.css}, app/frontend/i18n.js (PL/EN parity), app/frontend/icons.js (monitor, folder), packaging/deb/usr/bin/ubuntu-aktualizacje (settings/health/exclusions/profile subcommands), scripts/snap/apply.sh (SNAP-AUTO-REFRESHED), scripts/drivers/check.sh (dpkg --compare-versions), update-all.sh (--budget, --no-health, CHECK-ONLY banner).
+app/backend/main.py (+/apt/downgrade, /profiles/*, /updates/check, /sync/remotes, /sync/browse), app/backend/inventory.py (scan_drivers, scan_inventory_meta), app/backend/settings.py (ai.base_url, sync.*, updates.*), app/backend/hosts_edit.py (NEW), app/frontend/{index.html, app.js, style.css}, app/frontend/i18n.js (PL/EN parity), app/frontend/icons.js (monitor, folder), packaging/deb/usr/bin/ascendo (settings/health/exclusions/profile subcommands), scripts/snap/apply.sh (SNAP-AUTO-REFRESHED), scripts/drivers/check.sh (dpkg --compare-versions), update-all.sh (--budget, --no-health, CHECK-ONLY banner).
 
 ### Walidacja
 
@@ -520,7 +520,7 @@ Branding Ascendo: logo.svg + icon.svg + banner.txt + favicon. CLI i18n (EN/PL): 
 
 ## 2026-04-30 — UX/perf overhaul + portability (Etap 4)
 
-Sudo: one password per CLI run via ephemeral askpass helper ($XDG_RUNTIME_DIR/ubuntu-aktualizacje/askpass-*.sh, chmod 0700). lib/common.sh::sudo() wraps all calls as `sudo -A`. Live progress: orchestrator tee's phase output to console + log; apt:apply prints upgradable preview. Inventory speed 85s → 11s via `apt_inventory_cache_init` (batched apt-cache policy). Brew cleanup proactive chown Cellar before prune. Dashboard Overview cache via ui._loaded[view]. Reboot UX: banner + POST /system/reboot?delay=5. dev-sync overlay 3527 → 8 files (Cargo target/, Tauri bundle, *.db, .gradle/ excluded). CI guard: overlay ≤ 50 files check. scripts/fresh-machine.sh: one-liner bring-up.
+Sudo: one password per CLI run via ephemeral askpass helper ($XDG_RUNTIME_DIR/ascendo/askpass-*.sh, chmod 0700). lib/common.sh::sudo() wraps all calls as `sudo -A`. Live progress: orchestrator tee's phase output to console + log; apt:apply prints upgradable preview. Inventory speed 85s → 11s via `apt_inventory_cache_init` (batched apt-cache policy). Brew cleanup proactive chown Cellar before prune. Dashboard Overview cache via ui._loaded[view]. Reboot UX: banner + POST /system/reboot?delay=5. dev-sync overlay 3527 → 8 files (Cargo target/, Tauri bundle, *.db, .gradle/ excluded). CI guard: overlay ≤ 50 files check. scripts/fresh-machine.sh: one-liner bring-up.
 
 **Validation:** bash -n all .sh OK; python3 ast parse all .py OK; ./update-all.sh --profile quick --no-notify 6/6 ok, 14.5s; python3 tests/validate_phase_json.py 232/232 PASS; test_dev_sync_safety.py 9/9 OK.
 

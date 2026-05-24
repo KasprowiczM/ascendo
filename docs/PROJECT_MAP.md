@@ -1,6 +1,6 @@
 # Project Map
 
-Generated for architecture review of `Ubuntu_Aktualizacje`.
+Generated for architecture review of `Ascendo`.
 
 ## Hybrid CLI + Dashboard architecture (2026-04-30)
 
@@ -36,7 +36,7 @@ flowchart LR
         Front[app/frontend/* — index.html, app.js, i18n.js, style.css]
     end
     subgraph Tauri[Native shell — opcjonalne]
-        Bin[ubuntu-aktualizacje<br/>.deb / .AppImage]
+        Bin[ascendo<br/>.deb / .AppImage]
         Webview[WebView → 127.0.0.1:8765]
     end
 
@@ -111,7 +111,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Timer[systemd/ubuntu-aktualizacje@USER.timer] --> Service[ubuntu-aktualizacje@USER.service]
+    Timer[systemd/ascendo@USER.timer] --> Service[ascendo@USER.service]
     Service --> UpdateNoDrivers[update-all.sh --no-drivers]
     UpdateNoDrivers --> Logs[logs/systemd_update.log]
     UpdateNoDrivers --> Inventory[APPS.md]
@@ -123,7 +123,7 @@ This flow is intentionally separate from `update-all.sh`.
 
 ```mermaid
 flowchart TD
-    Repo[/home/mk/Dev_Env/Ubuntu_Aktualizacje] --> Git[GitHub tracked files]
+    Repo[/home/mk/Dev_Env/Ascendo] --> Git[GitHub tracked files]
     Repo --> Export[dev-sync-export.sh]
     Export --> Excludes[config/dev-sync-excludes.txt]
     Export --> Overlay[Private overlay selection]
@@ -158,7 +158,7 @@ flowchart TD
 | Plugins | `plugins/<id>/{manifest.toml, *.sh}` + `lib/plugins.sh` | manifest + 5-phase scripts | Sidecar uses `category=plugin:<id>`. |
 | Dashboard backend | `app/backend/main.py` (FastAPI on 127.0.0.1:8765) | REST + SSE | 13 endpoints incl. `/inventory*`, `/sudo/*`, `/hosts*`, `/scheduler/*`, `/sync/*`. |
 | Dashboard frontend | `app/frontend/{index.html, app.js, i18n.js, style.css}` | vanilla SPA | 8 views, EN/PL i18n, light/dark/auto theme, SVG donut+bar charts. |
-| Sudo flow | `app/backend/sudo.py` + `update-all.sh` SUDO_ASKPASS branch | password held in memory | Ephemeral askpass helper in `$XDG_RUNTIME_DIR/ubuntu-aktualizacje/`. |
+| Sudo flow | `app/backend/sudo.py` + `update-all.sh` SUDO_ASKPASS branch | password held in memory | Ephemeral askpass helper in `$XDG_RUNTIME_DIR/ascendo/`. |
 | Multi-host preflight | `app/backend/hosts.py` + `config/hosts.toml` | SSH BatchMode read-only | Read-only by design — no remote mutation. |
 | DB migrations | `app/backend/migrations.py` | numbered + idempotent | Schema columns: snapshot_id, label. |
 | Secrets | `lib/secrets.sh` + `scripts/secrets/migrate-to-libsecret.sh` | libsecret with `.env.local` fallback | `secret-tool` based; idempotent migrator. |
@@ -174,7 +174,7 @@ flowchart TD
 3. Desired-state enforcement differs by manager: npm/pip/flatpak install missing configured packages during update, while apt/snap/brew mostly report missing packages.
 4. APT repo drift audit should be expanded to validate existing `.sources` content, not only create missing files.
 5. Third-party repository package pinning is not yet modeled.
-6. The systemd timer is templated consistently: `ubuntu-aktualizacje@USER.timer` -> `ubuntu-aktualizacje@USER.service`; unattended sudo policy still needs host-level configuration.
+6. The systemd timer is templated consistently: `ascendo@USER.timer` -> `ascendo@USER.service`; unattended sudo policy still needs host-level configuration.
 7. `--dry-run` should exercise module logic through command wrappers instead of only printing script paths.
 8. CI should add `shellcheck`, `shfmt -d`, and parser/config tests.
 9. Dev sync must not delete source project files; provider cleanup is plan-first and quarantine-first.

@@ -13,12 +13,12 @@ fi
 
 # 2. Install user unit
 mkdir -p "$DEST"
-install -m 0644 "${SCRIPT_DIR}/systemd/user/ubuntu-aktualizacje-dashboard.service" \
-    "${DEST}/ubuntu-aktualizacje-dashboard.service"
+install -m 0644 "${SCRIPT_DIR}/systemd/user/ascendo-dashboard.service" \
+    "${DEST}/ascendo-dashboard.service"
 systemctl --user daemon-reload
-systemctl --user enable --now ubuntu-aktualizacje-dashboard.service
+systemctl --user enable --now ascendo-dashboard.service
 sleep 1
-systemctl --user status ubuntu-aktualizacje-dashboard.service --no-pager || true
+systemctl --user status ascendo-dashboard.service --no-pager || true
 
 # 3. Install Ascendo icon + desktop entries (user-level, no root)
 #    Two .desktop entries:
@@ -31,14 +31,14 @@ BIN_DIR="${HOME}/.local/bin"
 mkdir -p "$ICON_DIR" "$APPS_DIR" "$BIN_DIR"
 install -m 0644 "${SCRIPT_DIR}/share/icons/hicolor/scalable/apps/ascendo.svg" \
     "${ICON_DIR}/ascendo.svg"
-install -m 0644 "${SCRIPT_DIR}/share/applications/ubuntu-aktualizacje.desktop" \
+install -m 0644 "${SCRIPT_DIR}/share/applications/ascendo.desktop" \
     "${APPS_DIR}/ascendo.desktop"
 install -m 0644 "${SCRIPT_DIR}/share/applications/ascendo-desktop.desktop" \
     "${APPS_DIR}/ascendo-desktop.desktop"
 install -m 0755 "${SCRIPT_DIR}/share/bin/ascendo-launch" \
     "${BIN_DIR}/ascendo-launch"
 # Drop the old (pre-rebrand) desktop file if it lingers
-rm -f "${APPS_DIR}/ubuntu-aktualizacje.desktop"
+rm -f "${APPS_DIR}/ascendo.desktop"
 # Warn the user if ~/.local/bin isn't on $PATH (the .desktop entries call
 # `ascendo-launch` by name; if $PATH is missing it, GNOME spawns nothing).
 case ":${PATH}:" in
@@ -59,5 +59,5 @@ if ss -lntp 2>/dev/null | grep -q ":8765"; then
     echo "    • Ascendo - Unified Updates (Desktop) — opens dashboard in a standalone window"
 else
     echo
-    echo "⚠ Dashboard not listening on :8765 — check journalctl --user -u ubuntu-aktualizacje-dashboard.service"
+    echo "⚠ Dashboard not listening on :8765 — check journalctl --user -u ascendo-dashboard.service"
 fi

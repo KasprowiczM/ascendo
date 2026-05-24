@@ -1,7 +1,7 @@
 # =============================================================================
 # config/hosts.toml — Multi-host registry (rename from hosts.toml.example)
 #
-# Each host represents a remote machine running Ubuntu_Aktualizacje. The
+# Each host represents a remote machine running Ascendo. The
 # dashboard's "Hosts" view queries them via SSH (read-only by default).
 #
 # SSH config best practice: define each host in ~/.ssh/config with a key,
@@ -11,13 +11,13 @@
 [laptop-01]
 display_name = "Workshop laptop"
 ssh_alias    = "laptop01"          # ~/.ssh/config Host entry
-repo_path    = "~/Dev_Env/Ubuntu_Aktualizacje"
+repo_path    = "~/Dev_Env/Ascendo"
 description  = "Dell Latitude, dev workstation"
 
 [server-01]
 display_name = "Home server"
 ssh_alias    = "homeserver"
-repo_path    = "/opt/Ubuntu_Aktualizacje"
+repo_path    = "/opt/Ascendo"
 description  = "Headless server, scheduled updates"
 
 # To activate, copy:

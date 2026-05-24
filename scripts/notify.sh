@@ -53,7 +53,7 @@ if command -v notify-send &>/dev/null; then
     notify-send \
         --urgency="$URGENCY" \
         --icon="$ICON" \
-        --app-name="Ubuntu_Aktualizacje" \
+        --app-name="Ascendo" \
         --expire-time=10000 \
         "$TITLE" \
         "$MSG" 2>/dev/null || true
@@ -77,7 +77,7 @@ fi
 # Reads endpoint URLs from settings.json (UI Settings panel) and falls back
 # to env vars so unattended/CI runs can route notifications too.
 
-SETTINGS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/ubuntu-aktualizacje/settings.json"
+SETTINGS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/ascendo/settings.json"
 _get_setting() {
     # _get_setting <jq-path> — prints value or empty
     [[ -f "$SETTINGS_FILE" ]] || return 0

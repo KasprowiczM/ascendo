@@ -1,7 +1,7 @@
 """ascendo-ubuntu — Tier 1 adapter for Ubuntu / Debian.
 
 Bridges to the legacy bash phase scripts at top-level ``scripts/<cat>/<phase>.sh``
-(which emit ``ubuntu-aktualizacje/v1`` sidecars). The orchestrator's
+(which emit ``ascendo/v1`` sidecars). The orchestrator's
 ``parse_sidecar()`` (in ``core/ascendo/models/sidecar.py``) auto-translates
 the legacy schema to ``ascendo/v1`` via ``core/ascendo/models/legacy.py``,
 so we do NOT rewrite the bash here.

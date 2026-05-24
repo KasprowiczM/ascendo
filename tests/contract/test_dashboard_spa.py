@@ -1,4 +1,4 @@
-"""Contract tests for the legacy Ubuntu_Aktualizacje SPA mount + stubs.
+"""Contract tests for the legacy Ascendo SPA mount + stubs.
 
 The dashboard at ``/`` serves the bundled vanilla-JS SPA and back-fills
 its missing fetch URLs via :mod:`ascendo.dashboard.routes.spa_stubs`.
@@ -50,7 +50,7 @@ def test_spa_index_html_served_at_root(client: TestClient) -> None:
 @pytest.mark.parametrize(
     ("path", "expected_substring"),
     [
-        ("/app.js", "Ubuntu_Aktualizacje dashboard"),  # comment in app.js
+        ("/app.js", "Ascendo dashboard"),  # comment in app.js
         ("/style.css", "{"),  # any rule body
         # Design-system tokens. Must load before style.css per index.html.
         ("/colors_and_type.css", "--accent"),

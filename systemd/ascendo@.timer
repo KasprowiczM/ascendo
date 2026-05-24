@@ -1,6 +1,6 @@
 [Unit]
-Description=Ubuntu_Aktualizacje — Weekly update timer for %i
-Documentation=https://github.com/KasprowiczM/Ubuntu_Aktualizacje
+Description=Ascendo — Weekly update timer for %i
+Documentation=https://github.com/KasprowiczM/Ascendo
 
 [Timer]
 # Run every Sunday at 03:00 AM
@@ -12,7 +12,7 @@ Persistent=true
 # Randomize start up to 30 minutes to avoid thundering herd
 RandomizedDelaySec=30min
 
-Unit=ubuntu-aktualizacje@%i.service
+Unit=ascendo@%i.service
 
 [Install]
 WantedBy=timers.target

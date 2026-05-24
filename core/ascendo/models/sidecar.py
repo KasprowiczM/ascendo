@@ -4,7 +4,7 @@ A sidecar is emitted to disk by a native script (Layer 6) at the end of
 each phase. The Python adapter (Layer 5) reads it and validates it
 against this model. The orchestrator (Layer 4) operates on the result.
 
-Schema name: ``ascendo/v1`` (canonical) or ``ubuntu-aktualizacje/v1``
+Schema name: ``ascendo/v1`` (canonical) or ``ascendo/v1``
 (legacy, accepted for backward compatibility — see ADR-0003).
 
 **Required vs. optional.** The `Required` rows of the table in ADR-0003
@@ -35,7 +35,7 @@ class SidecarSchema(str, Enum):
     """
 
     V1_ASCENDO = "ascendo/v1"
-    V1_LEGACY_UBUNTU = "ubuntu-aktualizacje/v1"
+    V1_LEGACY_UBUNTU = "ascendo/v1"
 
 
 # Tool name (e.g. 'apt', 'winget', 'brew', 'softwareupdate', 'dcu-cli').
@@ -130,8 +130,8 @@ class Sidecar(BaseModel):
     )
 
     # Schema-version tag (legacy alias). The default literal here lets the
-    # legacy emitters (Ubuntu_Aktualizacje pre-rename) round-trip cleanly:
-    # they emit `"schema": "ubuntu-aktualizacje/v1"` and we still parse it.
+    # legacy emitters (Ascendo pre-rename) round-trip cleanly:
+    # they emit `"schema": "ascendo/v1"` and we still parse it.
     @model_validator(mode="after")
     def _check_schema_recognized(self) -> "Sidecar":
         # Pydantic Enum validator already enforces the value; this is a
@@ -177,7 +177,7 @@ def parse_sidecar(payload: str | bytes | dict) -> Sidecar:  # noqa: D401 (impera
 
     Accepts both schema variants:
       - ``ascendo/v1`` — passed straight to :meth:`Sidecar.model_validate`.
-      - ``ubuntu-aktualizacje/v1`` — translated via
+      - ``ascendo/v1`` — translated via
         :mod:`ascendo.models.legacy` first, then validated as ascendo/v1.
 
     The legacy translation is applied unconditionally when the schema
@@ -208,4 +208,4 @@ def parse_sidecar(payload: str | bytes | dict) -> Sidecar:  # noqa: D401 (impera
 
 # Type alias for v1 reader's accept-both-schemas contract — exported for
 # clarity at use-sites (e.g. core.dashboard).
-SidecarSchemaLiteral = Literal["ascendo/v1", "ubuntu-aktualizacje/v1"]
+SidecarSchemaLiteral = Literal["ascendo/v1", "ascendo/v1"]

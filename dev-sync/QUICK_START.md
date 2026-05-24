@@ -46,7 +46,7 @@ bash dev-sync-verify-full.sh
 
 ```sh
 git clone <repo-url>
-cd Ubuntu_Aktualizacje
+cd Ascendo
 bash dev-sync/provider_setup.sh
 bash dev-sync-restore-preflight.sh
 bash dev-sync-import.sh --dry-run --verbose

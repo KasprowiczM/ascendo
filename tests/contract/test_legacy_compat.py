@@ -1,4 +1,4 @@
-"""Tests for the legacy ubuntu-aktualizacje/v1 -> ascendo/v1 translator.
+"""Tests for the legacy ascendo/v1 -> ascendo/v1 translator.
 
 These tests don't go through :class:`Sidecar` for the unit cases —
 they exercise :func:`translate_legacy_v1` directly, then a couple of
@@ -34,7 +34,7 @@ def test_is_legacy_v1_rejects_modern(
     assert not is_legacy_v1(sample_ascendo_v1_apply_winget)
     # Non-dicts should also return False, not raise.
     assert not is_legacy_v1(None)  # type: ignore[arg-type]
-    assert not is_legacy_v1("ubuntu-aktualizacje/v1")  # type: ignore[arg-type]
+    assert not is_legacy_v1("ascendo/v1")  # type: ignore[arg-type]
 
 
 def test_translate_synthesizes_run_id_stably(

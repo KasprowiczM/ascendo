@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "project": "Ubuntu_Aktualizacje",
+  "project": "Ascendo",
   "tracked_source_of_truth": "git",
   "private_overlay_source_of_truth": "dev-sync provider",
   "expected_private_overlay": [

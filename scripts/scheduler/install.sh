@@ -17,8 +17,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CURRENT_USER="${SUDO_USER:-$USER}"
-SERVICE_NAME="ubuntu-aktualizacje@${CURRENT_USER}"
-TIMER_NAME="ubuntu-aktualizacje@${CURRENT_USER}"
+SERVICE_NAME="ascendo@${CURRENT_USER}"
+TIMER_NAME="ascendo@${CURRENT_USER}"
 
 CALENDAR="Sun *-*-* 03:00:00"
 PROFILE="safe"
@@ -42,15 +42,15 @@ done
 
 if [[ "$MODE" == "status" ]]; then
     systemctl status "${TIMER_NAME}.timer" 2>/dev/null || echo "(timer not installed)"
-    systemctl list-timers "ubuntu-aktualizacje*" 2>/dev/null || true
+    systemctl list-timers "ascendo*" 2>/dev/null || true
     exit 0
 fi
 
 if [[ "$MODE" == "remove" ]]; then
     sudo systemctl stop "${TIMER_NAME}.timer" 2>/dev/null || true
     sudo systemctl disable "${TIMER_NAME}.timer" 2>/dev/null || true
-    sudo rm -f /etc/systemd/system/ubuntu-aktualizacje@.service \
-               /etc/systemd/system/ubuntu-aktualizacje@.timer
+    sudo rm -f /etc/systemd/system/ascendo@.service \
+               /etc/systemd/system/ascendo@.timer
     sudo systemctl daemon-reload
     echo "timer removed"
     exit 0
@@ -66,9 +66,9 @@ echo "  profile  : ${PROFILE}"
 echo "  user     : ${CURRENT_USER}"
 echo "  args     : ${EXTRA_ARGS[*]}"
 
-sudo tee /etc/systemd/system/ubuntu-aktualizacje@.service > /dev/null <<EOF
+sudo tee /etc/systemd/system/ascendo@.service > /dev/null <<EOF
 [Unit]
-Description=Ubuntu_Aktualizacje — Scheduled update (${PROFILE})
+Description=Ascendo — Scheduled update (${PROFILE})
 After=network-online.target
 Wants=network-online.target
 
@@ -92,15 +92,15 @@ StandardError=append:${SCRIPT_DIR}/logs/systemd_update.log
 WantedBy=multi-user.target
 EOF
 
-sudo tee /etc/systemd/system/ubuntu-aktualizacje@.timer > /dev/null <<EOF
+sudo tee /etc/systemd/system/ascendo@.timer > /dev/null <<EOF
 [Unit]
-Description=Ubuntu_Aktualizacje — Scheduled update timer
+Description=Ascendo — Scheduled update timer
 
 [Timer]
 OnCalendar=${CALENDAR}
 Persistent=true
 RandomizedDelaySec=30min
-Unit=ubuntu-aktualizacje@%i.service
+Unit=ascendo@%i.service
 
 [Install]
 WantedBy=timers.target
@@ -109,4 +109,4 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable --now "${TIMER_NAME}.timer"
 echo "timer installed and enabled"
-systemctl list-timers "ubuntu-aktualizacje*" || true
+systemctl list-timers "ascendo*" || true

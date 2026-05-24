@@ -39,7 +39,7 @@ can break X11/Wayland and require recovery. The plugin:
 
 ## Source
 
-Existing config in `D:\Dev_Env\Ubuntu_Aktualizacje\config\nvidia-*.list`
+Existing config in `D:\Dev_Env\Ascendo\config\nvidia-*.list`
 plus inline NVIDIA logic in `update-all.sh` (`--nvidia` flag). Refactored
 into plugin in M2 (alongside core scheduler/snapshot abstraction work).
 

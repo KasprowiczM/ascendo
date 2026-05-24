@@ -2,9 +2,9 @@
 
 Inventory is the read-only sweep that produces:
 
-- ``PROGRAMS.md`` / ``PROGRAMS.json`` (Windows) — see Aktualizacje-W11-Dell5520.
-- ``APPS.md`` (Linux) — see Ubuntu_Aktualizacje.
-- ``APPLICATIONS.md`` (macOS) — see Aktualizacje_MAC.
+- ``PROGRAMS.md`` / ``PROGRAMS.json`` (Windows) — see Ascendo.
+- ``APPS.md`` (Linux) — see Ascendo.
+- ``APPLICATIONS.md`` (macOS) — see Ascendo.
 
 In Ascendo, inventory consolidates these into a per-host list of
 :class:`Package` instances tagged with their :class:`ItemSource`.

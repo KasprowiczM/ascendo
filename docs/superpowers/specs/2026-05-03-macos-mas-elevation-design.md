@@ -6,7 +6,7 @@
 > **Estimated effort:** ~6 days, single-dev
 > **References:**
 > - M5.1 spec: `docs/superpowers/specs/2026-05-03-macos-brew-mvp-design.md`
-> - Legacy mas script: `/Users/mk/Dev_Env/Aktualizacje_MAC/update_appstore.sh`
+> - Legacy mas script: `/Users/mk/Dev_Env/Ascendo/update_appstore.sh`
 > - Legacy askpass: `app/backend/sudo.py` (Linux dashboard)
 > - Windows elevation parallel: `adapters/windows/ascendo_windows/managers/elevation.py`
 

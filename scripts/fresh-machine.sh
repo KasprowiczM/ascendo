@@ -7,8 +7,8 @@
 # available), package reconciliation, dashboard venv, dashboard service, and
 # a final state verification.
 #
-#   git clone https://github.com/KasprowiczM/Ubuntu_Aktualizacje
-#   cd Ubuntu_Aktualizacje
+#   git clone https://github.com/KasprowiczM/Ascendo
+#   cd Ascendo
 #   bash scripts/fresh-machine.sh                 # interactive, full
 #   bash scripts/fresh-machine.sh --no-dashboard  # CLI only
 #   bash scripts/fresh-machine.sh --dry-run       # plan, no mutations
@@ -127,7 +127,7 @@ fi
 if [[ $NO_DASHBOARD -eq 0 && $NO_SERVICE -eq 0 ]]; then
     print_section "$(t setup.service 'Step 4/5 — dashboard user-service (systemd --user)')"
     if [[ $CHECK_ONLY -eq 1 || $DRY_RUN -eq 1 ]]; then
-        if systemctl --user is-enabled ubuntu-aktualizacje-dashboard.service >/dev/null 2>&1; then
+        if systemctl --user is-enabled ascendo-dashboard.service >/dev/null 2>&1; then
             print_ok "service enabled"
         else
             print_info "service not yet enabled — run: bash systemd/user/install-dashboard.sh"
@@ -153,7 +153,7 @@ echo
 echo -e "  ${BOLD}CLI run:${RESET}     ./update-all.sh --profile quick --no-notify"
 echo -e "  ${BOLD}Dashboard:${RESET}   xdg-open http://127.0.0.1:8765"
 [[ $NO_DASHBOARD -eq 0 && $NO_SERVICE -eq 0 ]] && \
-    echo -e "  ${BOLD}Service:${RESET}     systemctl --user status ubuntu-aktualizacje-dashboard"
+    echo -e "  ${BOLD}Service:${RESET}     systemctl --user status ascendo-dashboard"
 echo -e "  ${BOLD}Schedule:${RESET}    bash scripts/scheduler/install.sh --calendar 'Sun *-*-* 03:00:00' --profile safe"
 echo -e "  ${BOLD}Sudo policy:${RESET} update-all.sh prompts ONCE — askpass keeps the run going"
 echo

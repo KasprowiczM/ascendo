@@ -1,5 +1,5 @@
 {
-  "schema": "ubuntu-aktualizacje/v1",
+  "schema": "ascendo/v1",
   "kind": "apply",
   "category": "npm",
   "host": "ubuntu-desktop",

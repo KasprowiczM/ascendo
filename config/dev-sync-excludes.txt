@@ -1,4 +1,4 @@
-# Extra dev-sync private-overlay exclusions for Ubuntu_Aktualizacje.
+# Extra dev-sync private-overlay exclusions for Ascendo.
 # These files are local/generated/rebuildable and should not be copied to Proton.
 
 # Machine-generated inventory and update logs

@@ -71,7 +71,7 @@ case."
 
 ### Positive
 
-- **90% reuse of the most mature codebase** (Linux/Ubuntu_Aktualizacje
+- **90% reuse of the most mature codebase** (Linux/Ascendo
   — FastAPI backend, JSON contract, plugin loader, scheduler, snapshot
   integration, dev-sync). These move into `core/` and `adapters/ubuntu/`
   with mechanical refactoring, not rewriting.
@@ -164,7 +164,7 @@ Why rejected (for v0.x):
 - Related ADRs: [0001](0001-monorepo-with-adapters.md), [0003](0003-json-v1-sidecar-contract.md),
   [0005](0005-six-layer-architecture.md), [0006](0006-two-tier-adapter-system.md)
 - Native bugfix history (PowerShell):
-  `Aktualizacje-W11-Dell5520/CLAUDE.md` — "Known Issues & Mitigations"
+  `Ascendo/CLAUDE.md` — "Known Issues & Mitigations"
 - Native bugfix history (Bash):
-  `Aktualizacje_MAC/docs/agents/critical_rules.md`
+  `Ascendo/docs/agents/critical_rules.md`
 - HANDOFF.md — section "Dlaczego Wariant A (Python core + native scripts adapters)?"

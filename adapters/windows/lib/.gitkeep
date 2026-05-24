@@ -1,6 +1,6 @@
 # PowerShell shared modules (.ps1 dot-source style) land here in M3.
 #
-# Hidden gems extracted from D:\Dev_Env\Aktualizacje-W11-Dell5520:
+# Hidden gems extracted from D:\Dev_Env\Ascendo:
 #   Common.ps1            — Write-Log, UTF-8 helpers, log rotation
 #   Json-Emit.ps1         — JSON v1 sidecar emitter (PS port of lib/json.sh)
 #   Winget-Parser.ps1     — Get-ColValue with header-position detection

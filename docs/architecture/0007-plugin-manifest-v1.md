@@ -30,7 +30,7 @@ A plugin needs to declare:
   required) and does it have any plugin-specific reporting fields.
 
 Without a manifest, plugins become folders of scripts with implicit
-contracts. The pre-merge `Ubuntu_Aktualizacje` repo had a plugin
+contracts. The pre-merge `Ascendo` repo had a plugin
 infrastructure prototype; we formalize and version it.
 
 ## Decision
@@ -219,4 +219,4 @@ Why rejected:
 - Manifest model: `core/ascendo/plugins_loader/manifest.py` (M2)
 - Validator: `tests/validate_plugin_manifests.py`
 - Scaffold: `plugins/_template/`
-- Pre-merge prototype: `Ubuntu_Aktualizacje/plugins/example/manifest.toml`
+- Pre-merge prototype: `Ascendo/plugins/example/manifest.toml`

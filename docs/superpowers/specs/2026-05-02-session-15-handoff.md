@@ -198,7 +198,7 @@ reach in commit `0a7d48a`:
   ≤60ch, Tauri shortDescription ≤40ch). One-paragraph + three-bullet
   pitches. 8 feature-highlight slogans. Long-form landing copy. Tone
   rules + copy gotchas (never "sudo" on Windows, never
-  "Ubuntu_Aktualizacje", etc).
+  "Ascendo", etc).
 - **`packaging/winget-manifest/`** (NEW) — submission-ready skeleton
   per winget spec 1.6.0. Three YAML files + a README walking through
   the bump-fill-validate-submit flow including the

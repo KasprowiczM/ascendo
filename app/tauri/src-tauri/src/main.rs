@@ -1,4 +1,4 @@
-// Ubuntu_Aktualizacje Tauri skin.
+// Ascendo Tauri skin.
 //
 // Strategy: thin native shell. We do NOT reimplement the dashboard in Rust.
 // Instead we spawn the existing FastAPI backend (uvicorn from app/.venv) as a
@@ -36,9 +36,9 @@ fn repo_root() -> std::path::PathBuf {
             break;
         }
     }
-    // Fallback: $HOME/Dev_Env/Ubuntu_Aktualizacje
+    // Fallback: $HOME/Dev_Env/Ascendo
     if let Some(home) = std::env::var_os("HOME") {
-        let candidate = std::path::PathBuf::from(home).join("Dev_Env/Ubuntu_Aktualizacje");
+        let candidate = std::path::PathBuf::from(home).join("Dev_Env/Ascendo");
         if candidate.exists() {
             return candidate;
         }

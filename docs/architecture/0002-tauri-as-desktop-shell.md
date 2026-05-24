@@ -22,7 +22,7 @@ Ascendo needs a desktop application UI that:
    it for an embedded HTTP server + system browser must be straightforward.
 
 A Tauri proof-of-concept already exists in the source repo at
-`app/tauri/` (developed during Etap 12 of `Ubuntu_Aktualizacje`). Its
+`app/tauri/` (developed during Etap 12 of `Ascendo`). Its
 `README.md` explicitly captured the swap-out path: *"If you need a fully
 native binary later, swap the webview URL for an embedded static SPA and
 port the API to a Rust HTTP framework — the JSON contract stays unchanged."*

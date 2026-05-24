@@ -15,8 +15,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CURRENT_USER="${SUDO_USER:-$USER}"
-SERVICE_NAME="ubuntu-aktualizacje@${CURRENT_USER}"
-TIMER_NAME="ubuntu-aktualizacje@${CURRENT_USER}"
+SERVICE_NAME="ascendo@${CURRENT_USER}"
+TIMER_NAME="ascendo@${CURRENT_USER}"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; BOLD='\033[1m'; RESET='\033[0m'
@@ -30,7 +30,7 @@ MODE="install"
 [[ "${1:-}" == "--remove" ]] && MODE="remove"
 [[ "${1:-}" == "--status" ]] && MODE="status"
 
-echo -e "\n${BOLD}${BLUE}── Ubuntu_Aktualizacje systemd timer ──${RESET}\n"
+echo -e "\n${BOLD}${BLUE}── Ascendo systemd timer ──${RESET}\n"
 
 if [[ "$MODE" == "status" ]]; then
     echo "── Timer status:"
@@ -40,7 +40,7 @@ if [[ "$MODE" == "status" ]]; then
     systemctl status "${SERVICE_NAME}.service" 2>/dev/null || echo "  (not installed)"
     echo ""
     echo "── Next runs:"
-    systemctl list-timers "ubuntu-aktualizacje*" 2>/dev/null || echo "  (no timers)"
+    systemctl list-timers "ascendo*" 2>/dev/null || echo "  (no timers)"
     exit 0
 fi
 
@@ -48,9 +48,9 @@ if [[ "$MODE" == "remove" ]]; then
     step "Stop and disable timer"
     sudo systemctl stop "${TIMER_NAME}.timer" 2>/dev/null || true
     sudo systemctl disable "${TIMER_NAME}.timer" 2>/dev/null || true
-    sudo rm -f /etc/systemd/system/ubuntu-aktualizacje@.service
-    sudo rm -f /etc/systemd/system/ubuntu-aktualizacje@.timer
-    sudo rm -f /etc/systemd/system/ubuntu-aktualizacje.timer
+    sudo rm -f /etc/systemd/system/ascendo@.service
+    sudo rm -f /etc/systemd/system/ascendo@.timer
+    sudo rm -f /etc/systemd/system/ascendo.timer
     sudo systemctl daemon-reload
     ok
     echo ""
@@ -62,9 +62,9 @@ fi
 
 # Generate service file with correct paths
 step "Install service file"
-sudo tee /etc/systemd/system/ubuntu-aktualizacje@.service > /dev/null << EOF
+sudo tee /etc/systemd/system/ascendo@.service > /dev/null << EOF
 [Unit]
-Description=Ubuntu_Aktualizacje — Full System Update
+Description=Ascendo — Full System Update
 After=network-online.target
 Wants=network-online.target
 
@@ -88,15 +88,15 @@ ok
 
 # Install timer file
 step "Install timer file"
-sudo tee /etc/systemd/system/ubuntu-aktualizacje@.timer > /dev/null << 'EOF'
+sudo tee /etc/systemd/system/ascendo@.timer > /dev/null << 'EOF'
 [Unit]
-Description=Ubuntu_Aktualizacje — Weekly update timer
+Description=Ascendo — Weekly update timer
 
 [Timer]
 OnCalendar=Sun *-*-* 03:00:00
 Persistent=true
 RandomizedDelaySec=30min
-Unit=ubuntu-aktualizacje@%i.service
+Unit=ascendo@%i.service
 
 [Install]
 WantedBy=timers.target
@@ -117,7 +117,7 @@ info "Skips   : explicit driver/firmware module (APT may still update OS package
 info "Log     : ${SCRIPT_DIR}/logs/systemd_update.log"
 echo ""
 echo "── Next scheduled run:"
-systemctl list-timers "ubuntu-aktualizacje*" 2>/dev/null | grep -E "(NEXT|ubuntu)" || true
+systemctl list-timers "ascendo*" 2>/dev/null | grep -E "(NEXT|ubuntu)" || true
 echo ""
 echo "── Commands:"
 info "Status  :  systemctl status ${TIMER_NAME}.timer"

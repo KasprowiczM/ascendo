@@ -36,4 +36,4 @@ APT/dpkg, Snap, Flatpak, Homebrew, inventory, and provider state.
 
 The lock first uses `XDG_RUNTIME_DIR` when writable and falls back to `/tmp`.
 If a shell session is interrupted, verify no process is active before removing a
-stale `/tmp/ubuntu-aktualizacje.lock` file.
+stale `/tmp/ascendo.lock` file.

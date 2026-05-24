@@ -1,6 +1,6 @@
 # Dev Sync
 
-`dev-sync` backs up the private overlay for `Ubuntu_Aktualizacje` while GitHub remains the source of truth for tracked project files.
+`dev-sync` backs up the private overlay for `Ascendo` while GitHub remains the source of truth for tracked project files.
 
 ## Commands
 

@@ -2,7 +2,7 @@
 # =============================================================================
 # adapters/macos/scripts/mas/gui_fallback.sh -- TOR-2 App Store GUI automation
 # =============================================================================
-# Ports the Aktualizacje_MAC TOR-2 path for iPad-on-Apple-Silicon apps that
+# Ports the Ascendo TOR-2 path for iPad-on-Apple-Silicon apps that
 # `mas` cannot touch (UniFi, WiFiman, Picsart, etc. — `mas` officially does
 # not support iPad apps; documented vendor limitation). Drives the App Store
 # UI via AppleScript: opens Updates pane → clicks "Update All" → falls back
@@ -64,7 +64,7 @@ fi
 
 # ── 2. Drive App Store via AppleScript ─────────────────────────────────────
 # Three passes in order: Update All (top-level), Update All (deep walk),
-# per-item Update buttons. Mirrors the Aktualizacje_MAC TOR-2 logic. The
+# per-item Update buttons. Mirrors the Ascendo TOR-2 logic. The
 # AppleScript is held verbatim in this file so a future audit can diff it
 # against the reference without spelunking through Python/Pydantic layers.
 say "Opening App Store Updates …"

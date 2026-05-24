@@ -47,7 +47,7 @@ ascendo_npm_npmrc_path() {
 # by an earlier Ascendo run, by `npm config set prefix` issued
 # manually, or by a third-party tool would still trigger the warning.
 # Mirror the legacy macOS toolkit's `remove_npmrc_prefix` (cf.
-# Aktualizacje_MAC/update_npm_cli.sh:77-89) and scrub on every apply.
+# Ascendo/update_npm_cli.sh:77-89) and scrub on every apply.
 #
 # Idempotent and safe when ~/.npmrc is absent.
 ascendo_npm_scrub_npmrc() {

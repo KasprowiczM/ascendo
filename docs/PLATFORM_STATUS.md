@@ -136,7 +136,7 @@
 | Install script | ❌ deferred — use launchd LaunchAgent for scheduler only | ✅ `bin/install-service.ps1` (UAC) | ✅ `bash systemd/user/install-dashboard.sh` |
 | Auto-start on login | 🟡 manual launchd plist | ✅ `Automatic (Delayed Start)` | ✅ `WantedBy=default.target` |
 | Auto-restart on crash | N/A | ✅ NSSM recovery | ✅ `Restart=on-failure` |
-| Logs path | N/A | `%LocalAppData%\Ascendo\logs\service\` | `journalctl --user -u ubuntu-aktualizacje-dashboard` |
+| Logs path | N/A | `%LocalAppData%\Ascendo\logs\service\` | `journalctl --user -u ascendo-dashboard` |
 
 ### A.10 — Smart installer (one-liner)
 

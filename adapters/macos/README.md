@@ -1,7 +1,7 @@
 # adapters/macos/
 
 Tier 1 (official) macOS adapter for Ascendo. Source of native bash scripts
-is the legacy `D:\Dev_Env\Aktualizacje_MAC` repository, refactored to the
+is the legacy `D:\Dev_Env\Ascendo` repository, refactored to the
 5-phase contract.
 
 **Status: deferred to Milestone M5** (after v0.1.0 Linux+Windows release).
@@ -56,7 +56,7 @@ become a TOML entry instead of new bash code.
 
 ## Migration source
 
-- `D:\Dev_Env\Aktualizacje_MAC\` — ALL logic preserved
+- `D:\Dev_Env\Ascendo\` — ALL logic preserved
 - `update_all.sh` → archived (orchestration in Python core)
 - `update_system.sh` → `scripts/system/`
 - `update_appstore.sh` → `scripts/appstore/`

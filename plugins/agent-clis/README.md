@@ -49,8 +49,8 @@ shim becomes a shadowed fallback.
 
 ## Source
 
-- Windows: `$NPM_CLI_TOOLS` from `D:\Dev_Env\Aktualizacje-W11-Dell5520\3_Update-Programs.ps1`
-- macOS: `update_npm_cli.sh` from `D:\Dev_Env\Aktualizacje_MAC`
-- Linux: `npm-globals.list` from `D:\Dev_Env\Ubuntu_Aktualizacje\config\`
+- Windows: `$NPM_CLI_TOOLS` from `D:\Dev_Env\Ascendo\3_Update-Programs.ps1`
+- macOS: `update_npm_cli.sh` from `D:\Dev_Env\Ascendo`
+- Linux: `npm-globals.list` from `D:\Dev_Env\Ascendo\config\`
 
 Refactored into a single declarative TOML + per-OS phase scripts in M3.

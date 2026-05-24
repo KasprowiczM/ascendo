@@ -5,7 +5,7 @@ Rationale:
   sidecar JSON. Until M5.7.6, only `_stream.log` (an SSE replay buffer
   for the dashboard) lived alongside it — useful for the SPA, useless
   for offline post-mortem since it is a raw event stream, not a
-  human-readable run log. The reference project (Aktualizacje_MAC)
+  human-readable run log. The reference project (Ascendo)
   keeps a rotated `logs/update_all_<ts>.log` that captures every
   manager's stdout+stderr; this module ports that pattern to Ascendo.
 

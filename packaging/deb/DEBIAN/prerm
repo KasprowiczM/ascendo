@@ -13,9 +13,9 @@ for u in $(getent passwd | awk -F: '$3>=1000 && $3<60000 {print $1}'); do
     [ -z "$UID_NUM" ] && continue
     sudo -u "$u" XDG_RUNTIME_DIR="/run/user/$UID_NUM" \
         systemctl --user stop ascendo-dashboard.service 2>/dev/null || true
-    # Legacy unit name from the Ubuntu_Aktualizacje era — drop on next minor.
+    # Legacy unit name from the Ascendo era — drop on next minor.
     sudo -u "$u" XDG_RUNTIME_DIR="/run/user/$UID_NUM" \
-        systemctl --user stop ubuntu-aktualizacje-dashboard.service 2>/dev/null || true
+        systemctl --user stop ascendo-dashboard.service 2>/dev/null || true
 done
 
 # Warn if a dashboard process is still running (typically a foreground

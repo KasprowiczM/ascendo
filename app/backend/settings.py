@@ -45,7 +45,7 @@ DEFAULTS: dict[str, Any] = {
 
 def settings_path() -> Path:
     base = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config")))
-    p = base / "ubuntu-aktualizacje" / "settings.json"
+    p = base / "ascendo" / "settings.json"
     p.parent.mkdir(parents=True, exist_ok=True)
     return p
 

@@ -187,7 +187,7 @@ from datetime import datetime, timezone
 out, category, phase, reason = sys.argv[1:5]
 now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 obj = {
-    "schema": "ubuntu-aktualizacje/v1",
+    "schema": "ascendo/v1",
     "kind": phase,
     "category": category,
     "host": os.uname().nodename,
@@ -242,7 +242,7 @@ for path in sorted(glob.glob(os.path.join(run_dir, "*", "*.json"))):
 
 status = "failed" if int(failed) else ("warn" if int(warned) else "ok")
 out = {
-    "schema": "ubuntu-aktualizacje/run/v1",
+    "schema": "ascendo/run/v1",
     "run_id": run_id,
     "ended_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "status": status,

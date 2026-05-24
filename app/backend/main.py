@@ -575,7 +575,7 @@ def runs_diff(a: str, b: str) -> dict[str, Any]:
 def onboarding_state() -> dict[str, Any]:
     import os
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    p = Path(base) / "ubuntu-aktualizacje" / "onboarded.json"
+    p = Path(base) / "ascendo" / "onboarded.json"
     return {"onboarded": p.exists(), "path": str(p)}
 
 
@@ -583,7 +583,7 @@ def onboarding_state() -> dict[str, Any]:
 def onboarding_complete(payload: dict[str, Any]) -> dict[str, Any]:
     import os, json as _json, datetime as _dt
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    p = Path(base) / "ubuntu-aktualizacje" / "onboarded.json"
+    p = Path(base) / "ascendo" / "onboarded.json"
     p.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "completed_at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -635,7 +635,7 @@ def notify_test(payload: dict[str, Any]) -> dict[str, Any]:
     import subprocess
     cmd = [
         "bash", str(config.repo_root() / "scripts" / "notify.sh"),
-        "--title", payload.get("title", "Ubuntu_Aktualizacje test"),
+        "--title", payload.get("title", "Ascendo test"),
         "--time",  payload.get("time",  "0m 0s"),
     ]
     if payload.get("reboot"):
@@ -664,7 +664,7 @@ def system_reboot(delay: int = 5) -> dict[str, Any]:
     env["SUDO_ASKPASS"] = str(helper)
     # `shutdown -r +0` reboots immediately; we use `at`-style scheduling via
     # `sleep && shutdown` so the HTTP response can fly out before init kills us.
-    cmd = ["bash", "-c", f"(sleep {delay} && sudo -A /sbin/shutdown -r now 'ubuntu-aktualizacje dashboard reboot') >/dev/null 2>&1 &"]
+    cmd = ["bash", "-c", f"(sleep {delay} && sudo -A /sbin/shutdown -r now 'ascendo dashboard reboot') >/dev/null 2>&1 &"]
     subprocess.Popen(cmd, env=env, start_new_session=True)
     return {"ok": True, "scheduled_in_seconds": delay}
 

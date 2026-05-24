@@ -12,7 +12,7 @@ Scope on macOS:
     package list is in ``adapters/macos/config/npm_global_clis.txt``.
 
 Why this manager and not Homebrew? The legacy macOS app
-``Aktualizacje_MAC/update_npm_cli.sh`` migrated these CLIs OFF Homebrew
+``Ascendo/update_npm_cli.sh`` migrated these CLIs OFF Homebrew
 to native (``n`` for node, native installer for bun, ``npm install -g``
 for the rest) so they update independently of brew's slower release
 cadence and don't drag in libraries the user doesn't want.

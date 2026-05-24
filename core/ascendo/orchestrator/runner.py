@@ -181,7 +181,7 @@ def run_phases(
 
     # M5.7.6: attach a per-run file handler under <base_dir>/<run.id>/run.log
     # and prune to ASCENDO_RUN_LOG_KEEP (default 30) on exit. Mirrors the
-    # Aktualizacje_MAC `logs/update_all_<ts>.log` rotation. Cheap (~1 MiB
+    # Ascendo `logs/update_all_<ts>.log` rotation. Cheap (~1 MiB
     # per run worst-case); large operator wins for offline post-mortem.
     with attach_run_log(str(run.id), base_dir):
         return _run_phases_inner(

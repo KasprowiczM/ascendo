@@ -1,7 +1,7 @@
 [package]
-name = "ubuntu-aktualizacje"
+name = "ascendo"
 version = "0.1.0"
-description = "Native Tauri shell for Ubuntu_Aktualizacje dashboard"
+description = "Native Tauri shell for Ascendo dashboard"
 authors = ["mk <gaipro.mk@gmail.com>"]
 license = "MIT"
 edition = "2021"
@@ -9,7 +9,7 @@ rust-version = "1.75"
 
 # Force a stable binary name regardless of package renames in the future.
 [[bin]]
-name = "ubuntu-aktualizacje"
+name = "ascendo"
 path = "src/main.rs"
 
 [build-dependencies]

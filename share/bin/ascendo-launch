@@ -34,8 +34,8 @@ _dashboard_up() {
 if ! _dashboard_up; then
     if command -v systemctl >/dev/null 2>&1 \
        && systemctl --user list-unit-files 2>/dev/null \
-            | grep -q '^ubuntu-aktualizacje-dashboard\.service'; then
-        systemctl --user start ubuntu-aktualizacje-dashboard.service \
+            | grep -q '^ascendo-dashboard\.service'; then
+        systemctl --user start ascendo-dashboard.service \
             >/dev/null 2>&1 || true
     fi
     # Wait up to 8 seconds for the backend to bind.
@@ -48,7 +48,7 @@ fi
 if ! _dashboard_up; then
     if command -v zenity >/dev/null 2>&1; then
         zenity --error --no-wrap --title="Ascendo" \
-            --text="Dashboard service is not running and could not be started.\n\nRun:    systemctl --user start ubuntu-aktualizacje-dashboard.service\nOr:     ascendo dashboard" \
+            --text="Dashboard service is not running and could not be started.\n\nRun:    systemctl --user start ascendo-dashboard.service\nOr:     ascendo dashboard" \
             >/dev/null 2>&1 || true
     fi
     echo "ascendo-launch: dashboard at $URL is not responding" >&2
@@ -63,15 +63,15 @@ fi
 # ── Desktop mode: prefer a standalone window ────────────────────────────────
 # Priority order:
 #   1. ASCENDO_DESKTOP_BIN env override (e.g. tauri shell built locally).
-#   2. /opt/ubuntu-aktualizacje/app/tauri/.../release/ubuntu-aktualizacje
+#   2. /opt/ascendo/app/tauri/.../release/ascendo
 #      (present when the user built the Tauri shell into the install tree).
 #   3. Chromium-class browser with --app= (true app-window, no tabs).
 #   4. firefox --kiosk (full-screen window with no chrome — closest match).
 #   5. xdg-open (last resort — opens a tab in the default browser).
 TAURI_CANDIDATES=(
     "${ASCENDO_DESKTOP_BIN:-}"
-    /opt/ubuntu-aktualizacje/app/tauri/src-tauri/target/release/ubuntu-aktualizacje
-    "${HOME}/Dev_Env/Ubuntu_Aktualizacje/app/tauri/src-tauri/target/release/ubuntu-aktualizacje"
+    /opt/ascendo/app/tauri/src-tauri/target/release/ascendo
+    "${HOME}/Dev_Env/Ascendo/app/tauri/src-tauri/target/release/ascendo"
 )
 for cand in "${TAURI_CANDIDATES[@]}"; do
     [[ -n "$cand" && -x "$cand" ]] || continue

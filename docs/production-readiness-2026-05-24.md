@@ -98,7 +98,7 @@ ascendo dashboard --background --port 8765    # SPA on http://127.0.0.1:8765
 
 **Ship it.** The macOS adapter covers every installed app on this Mac,
 the orchestrator writes durable per-run logs with rotation, the
-operator-grade ports from `Aktualizacje_MAC` (TOR-2 MAS-GUI, vendor-
+operator-grade ports from `Ascendo` (TOR-2 MAS-GUI, vendor-
 direct DMG with Gatekeeper verify) are functional, and the only test
 failures are documented pre-existing items unrelated to this work.
 

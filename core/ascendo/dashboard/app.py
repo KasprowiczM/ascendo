@@ -316,7 +316,7 @@ def create_app(
     # dry-run for the AI-config loop). Before spa_stubs so real wins.
     app.include_router(web_config_router, prefix="")
     # Legacy SPA stubs -- transient placeholders for endpoints the
-    # Ubuntu_Aktualizacje SPA expects but the new core hasn't ported yet.
+    # Ascendo SPA expects but the new core hasn't ported yet.
     # Delete the matching stub from routes/spa_stubs.py when each real
     # implementation lands.
     app.include_router(spa_stubs_router, prefix="")

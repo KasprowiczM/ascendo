@@ -1,5 +1,5 @@
 # Ascendo macOS — npm/native global CLI manifest.
-# Ported from /Users/mk/Dev_Env/Aktualizacje_MAC/config/npm_global_clis.txt
+# Ported from /Users/mk/Dev_Env/Ascendo/config/npm_global_clis.txt
 #
 # Format (pipe-delimited, lines starting with # are comments):
 #   display_name|package_name|method|brew_formula|command

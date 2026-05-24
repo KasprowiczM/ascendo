@@ -50,13 +50,13 @@ def sample_ascendo_v1_check_apt() -> dict[str, Any]:
 
 @pytest.fixture
 def sample_legacy_v1_apt_check() -> dict[str, Any]:
-    """A legacy ubuntu-aktualizacje/v1 sidecar for the apt check phase."""
+    """A legacy ascendo/v1 sidecar for the apt check phase."""
     return copy.deepcopy(_load_fixture("legacy_v1_apt_check.json"))
 
 
 @pytest.fixture
 def sample_legacy_v1_npm_apply() -> dict[str, Any]:
-    """A legacy ubuntu-aktualizacje/v1 sidecar for the npm apply phase (with one error)."""
+    """A legacy ascendo/v1 sidecar for the npm apply phase (with one error)."""
     return copy.deepcopy(_load_fixture("legacy_v1_npm_apply.json"))
 
 

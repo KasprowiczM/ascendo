@@ -1,5 +1,5 @@
 # PowerShell 5-phase scripts per category land here in M3 (Windows MVP).
 # Migrated and refactored from:
-#   D:\Dev_Env\Aktualizacje-W11-Dell5520\1_Update-Windows.ps1   → windows-update/
-#   D:\Dev_Env\Aktualizacje-W11-Dell5520\3_Update-Programs.ps1  → winget/ + msstore/
-#   D:\Dev_Env\Aktualizacje-W11-Dell5520\4_Generate-ProgramsList.ps1 → inventory/
+#   D:\Dev_Env\Ascendo\1_Update-Windows.ps1   → windows-update/
+#   D:\Dev_Env\Ascendo\3_Update-Programs.ps1  → winget/ + msstore/
+#   D:\Dev_Env\Ascendo\4_Generate-ProgramsList.ps1 → inventory/

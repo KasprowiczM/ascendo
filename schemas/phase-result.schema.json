@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://ubuntu-aktualizacje/schemas/phase-result.schema.json",
-  "title": "Ubuntu_Aktualizacje phase result",
+  "$id": "https://ascendo/schemas/phase-result.schema.json",
+  "title": "Ascendo phase result",
   "description": "Sidecar JSON emitted by every phase script (check|plan|apply|verify|cleanup).",
   "type": "object",
   "required": [
@@ -21,7 +21,7 @@
   "properties": {
     "schema": {
       "type": "string",
-      "const": "ubuntu-aktualizacje/v1"
+      "const": "ascendo/v1"
     },
     "kind": {
       "type": "string",

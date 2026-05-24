@@ -249,11 +249,11 @@ TOTAL:      841/848 = 99.2% green
 - `lib/tables.sh` Unicode box-drawing tables with `@ok/@warn/@err/@skip/@info` colour pills.
 - App registration: `scripts/apps/{detect,add,remove,list,install-missing}.sh` with `.bak_<ts>` backups.
 - Backend `/apps/detect|add|remove` endpoints; "Apps" dashboard tab with add/remove buttons.
-- `bin/ascendo` CLI shim with auto-resolved root (`ASCENDO_ROOT` > `/opt/ubuntu-aktualizacje` > repo).
+- `bin/ascendo` CLI shim with auto-resolved root (`ASCENDO_ROOT` > `/opt/ascendo` > repo).
 - User Journey docs in EN + PL (`docs/{en,pl}/user-journey.md`) covering 6 flows.
 
 ### Changed
-- `.deb` metadata: `Package: ascendo`, `Source: ubuntu-aktualizacje`, version 0.3.0.
+- `.deb` metadata: `Package: ascendo`, `Source: ascendo`, version 0.3.0.
 - `fresh-machine.sh` first prompt = language pick; never auto-installs packages, runs `apps detect` read-only.
 - `dev_sync_export.py` renders boxed TTY summary; non-TTY path stays plain for CI parsers.
 
@@ -262,10 +262,10 @@ TOTAL:      841/848 = 99.2% green
 ## v0.2.0 — 2026-04-30 (Etap-5 roadmap: .deb, wizard, auth, metrics)
 
 ### Added
-- `.deb` packaging: `packaging/build-deb.sh`, control/postinst/prerm, `/usr/bin/ubuntu-aktualizacje` shim with `fresh|dashboard|schedule|snapshot` subcommands.
-- First-run wizard modal triggered when `~/.config/ubuntu-aktualizacje/onboarded.json` missing; `GET /onboarding/state`, `POST /onboarding/complete`.
+- `.deb` packaging: `packaging/build-deb.sh`, control/postinst/prerm, `/usr/bin/ascendo` shim with `fresh|dashboard|schedule|snapshot` subcommands.
+- First-run wizard modal triggered when `~/.config/ascendo/onboarded.json` missing; `GET /onboarding/state`, `POST /onboarding/complete`.
 - Bearer token middleware (`app/backend/auth.py`) + `/auth/{status,generate-token,revoke-token}`; no-op when token file absent.
-- Audit log (`app/backend/audit.py`) JSONL at `~/.local/state/ubuntu-aktualizacje/audit.log`; `/audit` endpoint tail.
+- Audit log (`app/backend/audit.py`) JSONL at `~/.local/state/ascendo/audit.log`; `/audit` endpoint tail.
 - Prometheus `/metrics` text 0.0.4, dependency-free (`run_total`, `last_run_duration_seconds`, `phase_summary`, `inventory_totals`, `reboot_required`).
 - Run diff (`GET /runs/diff?a=X&b=Y`) and Markdown report (`GET /runs/{id}/report.md`).
 - Snapshot restore: `scripts/snapshot/restore.sh` (timeshift→etckeeper) + `POST /snapshots/restore` with confirm token.
@@ -303,7 +303,7 @@ TOTAL:      841/848 = 99.2% green
 - RUN.md, `docs/agents/{contract,hybrid-mode}.md`, refreshed `docs/PROJECT_MAP.md`.
 
 ### Changed
-- `update-all.sh` reads sudo password ONCE; ephemeral 0700 askpass helper at `$XDG_RUNTIME_DIR/ubuntu-aktualizacje/`; `lib/common.sh` wraps `sudo` as `sudo -A`.
+- `update-all.sh` reads sudo password ONCE; ephemeral 0700 askpass helper at `$XDG_RUNTIME_DIR/ascendo/`; `lib/common.sh` wraps `sudo` as `sudo -A`.
 - Orchestrator `tee`s phase output to terminal + per-phase log; `ORCH_QUIET=1` opts back into silent mode.
 - Inventory phase: bulk `dpkg-query` + single batched `apt-cache policy` drops runtime ~85s → ~11s (8×).
 - Brew cleanup proactively `chown`s Cellar before pruning; retries after heal.
@@ -355,7 +355,7 @@ TOTAL:      841/848 = 99.2% green
 - Universal config-driven architecture: `config/{apt-packages,apt-repos,snap-packages,brew-formulas,brew-casks,npm-globals}.list`.
 - `lib/detect.sh` universal scanner (OS/hardware/GPU/all package managers); `lib/repos.sh` idempotent APT repo setup.
 - Flatpak, pip, and pipx managers with their own `config/*.list`.
-- systemd timer (`ubuntu-aktualizacje.{service,timer}` + `install-timer.sh`) replacing cron.
+- systemd timer (`ascendo.{service,timer}` + `install-timer.sh`) replacing cron.
 - `setup.sh --rollback`, `--discover`, `--check`, `--nvidia` modes.
 - GitHub Actions CI (`validate.yml`): config syntax, `bash -n`, required files, APPS.md gitignore, secret scan.
 - DKMS rebuild script (`scripts/rebuild-dkms.sh`).

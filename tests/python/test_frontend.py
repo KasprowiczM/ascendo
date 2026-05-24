@@ -21,7 +21,7 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
-# The legacy ``app.backend.main`` (the pre-monorepo Ubuntu_Aktualizacje
+# The legacy ``app.backend.main`` (the pre-monorepo Ascendo
 # dashboard kept in-tree until the M4 ``app/`` retirement) registers
 # startup hooks with FastAPI's deprecated ``@app.on_event("startup")``.
 # Repo-wide ``filterwarnings = ["error", ...]`` escalates that to a test

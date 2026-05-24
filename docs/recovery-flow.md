@@ -15,8 +15,8 @@ overlay and rebuildable files.
 ## Fresh Clone
 
 ```bash
-git clone https://github.com/KasprowiczM/Ubuntu_Aktualizacje.git
-cd Ubuntu_Aktualizacje
+git clone https://github.com/KasprowiczM/Ascendo.git
+cd Ascendo
 bash scripts/preflight.sh
 bash dev-sync/provider_setup.sh
 bash scripts/restore-from-proton.sh --dry-run --verbose

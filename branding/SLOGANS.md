@@ -113,7 +113,7 @@ notes section headers, and the website hero rotator:
 
 - **Never** say "sudo" on Windows surfaces. Always "Administrator" or
   "UAC elevation".
-- **Never** say "Ubuntu_Aktualizacje" — the project is Ascendo. Old
+- **Never** say "Ascendo" — the project is Ascendo. Old
   Polish copy is being purged.
 - **Never** auto-translate `winget` / `MSI` / `MSIX` / `KB`. They're
   product names; Polish keeps them as-is.

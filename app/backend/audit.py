@@ -2,7 +2,7 @@
 
 Every mutating action (run start/stop, sync export, system reboot, scheduler
 install/remove, settings change, snapshot restore) appends a JSON line to
-``~/.local/state/ubuntu-aktualizacje/audit.log`` so the operator can answer
+``~/.local/state/ascendo/audit.log`` so the operator can answer
 "what was done on this host, when, by whom" without reading FastAPI logs.
 
 The file lives outside the repo on purpose — audit data is per-host and
@@ -25,7 +25,7 @@ from typing import Any
 
 def _audit_path() -> Path:
     base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
-    p = Path(base) / "ubuntu-aktualizacje" / "audit.log"
+    p = Path(base) / "ascendo" / "audit.log"
     p.parent.mkdir(parents=True, exist_ok=True)
     return p
 

@@ -3,7 +3,7 @@
 Covers:
   - canonical round-trip (dict -> Sidecar -> dict -> Sidecar)
   - JSON-string round-trip via :meth:`Sidecar.model_validate_json`
-  - legacy ``ubuntu-aktualizacje/v1`` payload acceptance through
+  - legacy ``ascendo/v1`` payload acceptance through
     :func:`parse_sidecar`
   - cross-field validators (summary totals, time ordering)
   - schema-level rejections (unknown schema, extra top-level fields)

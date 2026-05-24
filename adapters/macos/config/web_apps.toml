@@ -350,7 +350,7 @@ slug = "ledger-live"
 bundle_id = "com.ledger.live"
 display_name = "Ledger Live"
 handler = "release_feed"
-notes = "Electron-builder latest-mac.yml on Ledger's CDN. files[0]=.zip, files[1]=.dmg (verified live 2026-05-24, version 4.4.0). M5.7.6 Phase B2 promoted to Tier-A apply: download_path=files[1].url drives the existing release_feed_apply pipeline which downloads the DMG, spctl Gatekeeper-verifies the .app, atomic-swaps into /Applications. Mirrors the Aktualizacje_MAC 2026-05-22 fix for Ledger's broken in-app updater. The vendor still ships a Squirrel updater inside the bundle, but vendor-direct DMG is the canonical path now."
+notes = "Electron-builder latest-mac.yml on Ledger's CDN. files[0]=.zip, files[1]=.dmg (verified live 2026-05-24, version 4.4.0). M5.7.6 Phase B2 promoted to Tier-A apply: download_path=files[1].url drives the existing release_feed_apply pipeline which downloads the DMG, spctl Gatekeeper-verifies the .app, atomic-swaps into /Applications. Mirrors the Ascendo 2026-05-22 fix for Ledger's broken in-app updater. The vendor still ships a Squirrel updater inside the bundle, but vendor-direct DMG is the canonical path now."
 
 [app.release_feed]
 url = "https://download.live.ledger.com/latest-mac.yml"
@@ -545,7 +545,7 @@ http_timeout_s = 8
 
 # ═════════════════════════════ M5.7.6 — Phase A coverage closeout ═══════════
 # Added 2026-05-24. Closes the coverage gaps identified by diffing the
-# canonical Aktualizacje_MAC inventory against this registry. All five
+# canonical Ascendo inventory against this registry. All five
 # endpoints probed live before commit (HTTP 200 + version field matches
 # installed CFBundleShortVersionString or matches the legend in the
 # reference APPLICATIONS.md).

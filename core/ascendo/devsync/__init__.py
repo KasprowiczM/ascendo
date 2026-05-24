@@ -9,6 +9,6 @@ configs) that's gitignored.
 - safety.py — cleanup_protected_patterns, sha256 helpers
 - providers/{proton,gdrive,icloud,onedrive,mega}.py — provider configs
 
-Inherits from existing dev-sync code in Ubuntu_Aktualizacje/dev-sync/ and
-Aktualizacje-W11-Dell5520/dev_sync_*.py (already cross-OS-ready Python).
+Inherits from existing dev-sync code in Ascendo/dev-sync/ and
+Ascendo/dev_sync_*.py (already cross-OS-ready Python).
 """

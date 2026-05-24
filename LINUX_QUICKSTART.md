@@ -77,7 +77,7 @@ python3 -m ascendo doctor                  # 10-component self-test
 The Linux adapter is a **Python scaffold over the mature legacy bash
 scripts** in the repo root (`update-all.sh`, `lib/`, `scripts/`). The
 `UbuntuAdapter` discovers them via env-var IPC; sidecars are emitted
-in the legacy `ubuntu-aktualizacje/v1` schema and auto-translated to
+in the legacy `ascendo/v1` schema and auto-translated to
 `ascendo/v1` by `parse_sidecar()` in core. Override the legacy script
 location via `$ASCENDO_UBUNTU_REPO_ROOT`.
 
@@ -278,7 +278,7 @@ bash systemd/user/install-dashboard.sh
 
 That single script:
 - Bootstraps the venv if missing (PEP 668 safe)
-- Installs the user unit at `~/.config/systemd/user/ubuntu-aktualizacje-dashboard.service`
+- Installs the user unit at `~/.config/systemd/user/ascendo-dashboard.service`
 - Runs `systemctl --user daemon-reload && enable --now`
 - Drops two `.desktop` entries into `~/.local/share/applications/` so
   Ascendo appears in your application menu (GNOME / KDE / XFCE)
@@ -288,10 +288,10 @@ That single script:
 Inspect / control:
 
 ```bash
-systemctl --user status ubuntu-aktualizacje-dashboard.service
-systemctl --user restart ubuntu-aktualizacje-dashboard.service
-journalctl --user -u ubuntu-aktualizacje-dashboard.service -f
-systemctl --user disable --now ubuntu-aktualizacje-dashboard.service   # uninstall
+systemctl --user status ascendo-dashboard.service
+systemctl --user restart ascendo-dashboard.service
+journalctl --user -u ascendo-dashboard.service -f
+systemctl --user disable --now ascendo-dashboard.service   # uninstall
 ```
 
 For **scheduled runs** (nightly safe-profile sweep), the legacy
@@ -345,7 +345,7 @@ directly — `update-all.sh --snapshot` is fully functional.
 | `Could not get lock /var/lib/dpkg/lock` | Another apt / unattended-upgrades running | `sudo fuser /var/lib/dpkg/lock` to identify, wait or kill, re-run |
 | `ascendo doctor` shows `brew: unavailable` | Linuxbrew not installed | `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"` |
 | `ascendo doctor` shows `flatpak: unavailable` | Not a default install on minimal Ubuntu | `sudo apt install flatpak && flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo` |
-| Dashboard not listening on :8765 after `install-dashboard.sh` | venv missing or unit failed | `journalctl --user -u ubuntu-aktualizacje-dashboard.service -e` |
+| Dashboard not listening on :8765 after `install-dashboard.sh` | venv missing or unit failed | `journalctl --user -u ascendo-dashboard.service -e` |
 | NVIDIA upgrade silently skipped | NVIDIA packages are held by default for safety | `./update-all.sh --nvidia` to opt in (re-test after; rollback via timeshift if it breaks X) |
 | `~/.local/bin` not on `$PATH` | Default not in some shells | Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.profile` / `~/.zshrc` / `~/.config/fish/config.fish` |
 | `python3 -m ascendo schedule` says "not implemented" | Linux scheduler CLI not wired yet | Use `bash scripts/scheduler/install.sh` (systemd timer) directly |
@@ -395,7 +395,7 @@ directly — `update-all.sh --snapshot` is fully functional.
 ├── app/frontend/                          # The SPA the desktop shell renders
 ├── systemd/user/                          # User-level dashboard service
 │  ├── install-dashboard.sh
-│  └── ubuntu-aktualizacje-dashboard.service
+│  └── ascendo-dashboard.service
 ├── share/                                 # XDG desktop integration
 │  ├── applications/                       # `.desktop` entries
 │  ├── icons/hicolor/scalable/apps/        # ascendo.svg

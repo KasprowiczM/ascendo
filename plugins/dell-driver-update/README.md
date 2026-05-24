@@ -30,7 +30,7 @@ have Dell hardware, so we don't burden them with Dell-specific logic.
 
 ## Source
 
-`D:\Dev_Env\Aktualizacje-W11-Dell5520\2_Update-Drivers.ps1` — preserved 1:1,
+`D:\Dev_Env\Ascendo\2_Update-Drivers.ps1` — preserved 1:1,
 moved to plugin in M3 with refactor to 5-phase contract.
 
 ## See also

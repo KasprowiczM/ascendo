@@ -34,7 +34,7 @@ EOF
     shift
 done
 
-print_header "Bootstrap — Ubuntu_Aktualizacje"
+print_header "Bootstrap — Ascendo"
 acquire_project_lock "bootstrap"
 
 bash "${SCRIPT_DIR}/scripts/preflight.sh"

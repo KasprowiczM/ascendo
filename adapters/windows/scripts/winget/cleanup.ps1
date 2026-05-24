@@ -30,7 +30,7 @@
 
       B. Old log retention
          Scans <OutputDir>/../Logs (the runtime log directory, mirroring
-         Aktualizacje-W11-Dell5520\0_Run-Maintenance.ps1 LOG_RETAIN_DAYS=60).
+         Ascendo\0_Run-Maintenance.ps1 LOG_RETAIN_DAYS=60).
          Files older than $LogRetainDays are deleted. One sidecar item per
          deleted file; status='success' on delete, status='failed' on error.
          Whole pass is wrapped in try/catch -- a Logs/ directory that
@@ -76,7 +76,7 @@
 
 .NOTES
     PowerShell 5.1 + 7.x compatible. No PS 7+ syntax used.
-    LOG_RETAIN_DAYS=60 sourced from Aktualizacje-W11-Dell5520\0_Run-Maintenance.ps1.
+    LOG_RETAIN_DAYS=60 sourced from Ascendo\0_Run-Maintenance.ps1.
 #>
 
 [CmdletBinding()]

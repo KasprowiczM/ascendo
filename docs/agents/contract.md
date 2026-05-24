@@ -50,7 +50,7 @@ Patrz `schemas/phase-result.schema.json`. Walidator: `tests/validate_phase_json.
 
 ```json
 {
-  "schema": "ubuntu-aktualizacje/v1",
+  "schema": "ascendo/v1",
   "kind": "verify",
   "category": "apt",
   "host": "mk-uP5520",
@@ -72,11 +72,11 @@ Patrz `schemas/phase-result.schema.json`. Walidator: `tests/validate_phase_json.
 
 ## Run-level summary
 
-`logs/runs/<run-id>/run.json` (schema `ubuntu-aktualizacje/run/v1`) agreguje wszystkie fazy:
+`logs/runs/<run-id>/run.json` (schema `ascendo/run/v1`) agreguje wszystkie fazy:
 
 ```json
 {
-  "schema": "ubuntu-aktualizacje/run/v1",
+  "schema": "ascendo/run/v1",
   "run_id": "20260429T203101Z-29243",
   "ended_at": "2026-04-29T20:31:17Z",
   "status": "ok",

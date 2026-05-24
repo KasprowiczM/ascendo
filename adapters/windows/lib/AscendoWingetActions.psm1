@@ -12,7 +12,7 @@
 #   * Rollback-method synthesis for the sidecar
 #
 # All three policy tables are *ports* of the corresponding constants in
-# Aktualizacje-W11-Dell5520/3_Update-Programs.ps1 (the Windows pre-merge
+# Ascendo/3_Update-Programs.ps1 (the Windows pre-merge
 # codebase that battle-tested these entries against ~600 real packages).
 # Where a winget package ID is unfamiliar, this module preserves it verbatim
 # rather than guessing - the source repo is the ground truth.
@@ -40,7 +40,7 @@ $script:UNINSTALL_REG_PATHS = @(
 # IMPORTANT: every entry below is a verbatim port. If a future Ascendo build
 # wants to *add* policies, do it here - but do not silently delete entries
 # that exist upstream without updating the upstream source first. The
-# Aktualizacje-W11-Dell5520 repository is authoritative.
+# Ascendo repository is authoritative.
 # -----------------------------------------------------------------------------
 
 # Source: 3_Update-Programs.ps1 line 74-154. Process names are matched by

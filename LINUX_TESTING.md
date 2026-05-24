@@ -285,9 +285,9 @@ For a real systemd user service that auto-starts on login:
 ```bash
 bash systemd/user/install-dashboard.sh
 # Then:
-systemctl --user status ubuntu-aktualizacje-dashboard.service
-systemctl --user restart ubuntu-aktualizacje-dashboard.service
-systemctl --user disable --now ubuntu-aktualizacje-dashboard.service   # uninstall
+systemctl --user status ascendo-dashboard.service
+systemctl --user restart ascendo-dashboard.service
+systemctl --user disable --now ascendo-dashboard.service   # uninstall
 ```
 
 ---

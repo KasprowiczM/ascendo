@@ -250,7 +250,7 @@ if [[ "$DRY_RUN" -eq 0 && "$needs_sudo" -eq 1 ]]; then
                     echo -e "${RED}  Wrong password, try again.${RESET}"; UA_PW=""
                 fi
             done
-            ASKPASS_DIR="${XDG_RUNTIME_DIR:-/tmp}/ubuntu-aktualizacje"
+            ASKPASS_DIR="${XDG_RUNTIME_DIR:-/tmp}/ascendo"
             mkdir -p "$ASKPASS_DIR"; chmod 0700 "$ASKPASS_DIR"
             UA_ASKPASS_HELPER=$(mktemp "${ASKPASS_DIR}/askpass-XXXXXX.sh")
             chmod 0700 "$UA_ASKPASS_HELPER"

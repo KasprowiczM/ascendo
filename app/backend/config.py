@@ -20,7 +20,7 @@ def db_path() -> Path:
     if env:
         return Path(env).resolve()
     base = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local" / "share")))
-    p = base / "ubuntu-aktualizacje" / "history.db"
+    p = base / "ascendo" / "history.db"
     p.parent.mkdir(parents=True, exist_ok=True)
     return p
 

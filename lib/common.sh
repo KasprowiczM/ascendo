@@ -259,7 +259,7 @@ acquire_project_lock() {
     if [[ ! -d "$lock_dir" || ! -w "$lock_dir" ]]; then
         lock_dir="/tmp"
     fi
-    local lock_file="${UPDATE_ALL_LOCK_FILE:-${lock_dir}/ubuntu-aktualizacje.lock}"
+    local lock_file="${UPDATE_ALL_LOCK_FILE:-${lock_dir}/ascendo.lock}"
 
     if [[ "${UPDATE_ALL_LOCK_HELD:-0}" == "1" ]]; then
         _log_raw "INFO" "reusing parent ${name} lock"
@@ -271,11 +271,11 @@ acquire_project_lock() {
     fi
 
     if ! eval "exec {PROJECT_LOCK_FD}>\"\${lock_file}\""; then
-        lock_file="/tmp/ubuntu-aktualizacje.lock"
+        lock_file="/tmp/ascendo.lock"
         eval "exec {PROJECT_LOCK_FD}>\"\${lock_file}\""
     fi
     if ! flock -n "${PROJECT_LOCK_FD}"; then
-        print_error "Another Ubuntu_Aktualizacje workflow is already running (${lock_file})"
+        print_error "Another Ascendo workflow is already running (${lock_file})"
         print_info "If this is stale, verify no update/bootstrap process is active before removing it."
         exit 75
     fi

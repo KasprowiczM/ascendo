@@ -1,4 +1,4 @@
-"""Transient stub endpoints — keep the legacy Ubuntu_Aktualizacje SPA
+"""Transient stub endpoints — keep the legacy Ascendo SPA
 rendering on Windows while the real implementations are still being
 ported behind the :class:`IAdapter` firewall.
 

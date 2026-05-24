@@ -9,7 +9,7 @@ packaging/
 ├── deb/                     # Debian/Ubuntu .deb staging tree
 │   ├── DEBIAN/{control,postinst,prerm,postrm}
 │   ├── opt/ascendo/         # populated by build-deb.sh from `git ls-files`
-│   ├── usr/bin/             # legacy shims (ubuntu-aktualizacje)
+│   ├── usr/bin/             # legacy shims (ascendo)
 │   └── usr/local/bin/       # populated by build-deb.sh from bin/user-scripts/*
 ├── pyinstaller/             # Python sidecar bundling (Win/macOS)
 │   ├── ascendo.spec         # PyInstaller spec (one-folder)

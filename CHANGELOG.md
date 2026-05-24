@@ -304,17 +304,17 @@ behind, and the drivers row no longer appears as falsely outdated.
 
 ### Removed
 
-- Legacy `packaging/deb/opt/ubuntu-aktualizacje/` stage tree (191 stale
+- Legacy `packaging/deb/opt/ascendo/` stage tree (191 stale
   files from before the rebrand). The `build-deb.sh` clean-stage step
   already wipes it on each build; this commit removes it from the
   index too.
 
 ### Operator notes
 
-- Old `ubuntu-aktualizacje-dashboard.service` systemd-user unit on
+- Old `ascendo-dashboard.service` systemd-user unit on
   this host was renamed to `*.disabled-by-ascendo` so it can never
   autostart again. Old + new app state are already separated
-  (`~/.local/share/ubuntu-aktualizacje/` vs `~/.ascendo/`) — no
+  (`~/.local/share/ascendo/` vs `~/.ascendo/`) — no
   config conflict to clean up.
 
 ---
@@ -850,7 +850,7 @@ reaches ``completed``.
   cross-OS file locking (POSIX flock + Windows msvcrt), atomic writes,
   partial-sidecar recovery, jittered exponential backoff.
 - **Legacy translator** (`core/ascendo/models/legacy.py`): converts
-  pre-rename `ubuntu-aktualizacje/v1` payloads into `ascendo/v1`
+  pre-rename `ascendo/v1` payloads into `ascendo/v1`
   per ADR-0003 backward-compat.
 - **i18n loader** (`core/ascendo/i18n/`): 7 locales × 42 keys
   (en/pl/es/it/pt/de/fr) ported from macOS bash; locale detection
@@ -910,12 +910,12 @@ reaches ``completed``.
 
 ### Changed
 
-- Monorepo restructure (rebrand `Ubuntu_Aktualizacje` → `ascendo`):
-  - JSON sidecar schema renamed `ubuntu-aktualizacje/v1` → `ascendo/v1`.
+- Monorepo restructure (rebrand `Ascendo` → `ascendo`):
+  - JSON sidecar schema renamed `ascendo/v1` → `ascendo/v1`.
     Reader accepts both during the migration period.
   - Repository origin: new GitHub repo at
     `https://github.com/KasprowiczM/ascendo` (parent local clone:
-    `D:\Dev_Env\Ubuntu_Aktualizacje`).
+    `D:\Dev_Env\Ascendo`).
   - Pre-restructure state preserved at git tag
     `pre-monorepo-restructure` for rollback if needed.
 
@@ -943,7 +943,7 @@ ALL CHECKS PASSED.
 
 ---
 
-## Pre-monorepo history (Ubuntu_Aktualizacje legacy)
+## Pre-monorepo history (Ascendo legacy)
 
 The following entries are from the source project before rename + restructure.
 

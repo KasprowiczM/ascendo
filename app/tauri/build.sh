@@ -166,8 +166,8 @@ if [[ -n "$DEB" ]]; then
         echo
     fi
     echo "After install, launch with:"
-    echo "  ubuntu-aktualizacje      # CLI binary on PATH"
-    echo "  # or via Activities menu (look for 'ubuntu-aktualizacje')"
+    echo "  ascendo      # CLI binary on PATH"
+    echo "  # or via Activities menu (look for 'ascendo')"
     echo
     echo "Quick install command (copy-paste, runs sudo apt install):"
     echo "  bash \"${SCRIPT_DIR}/install-deb.sh\""

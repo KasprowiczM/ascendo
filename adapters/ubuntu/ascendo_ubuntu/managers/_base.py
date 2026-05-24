@@ -14,7 +14,7 @@ read their inputs from environment variables (set by
 The scripts do NOT take CLI args; everything flows through env. The
 helper here wraps that contract: it builds the env, spawns bash, and
 then re-reads the sidecar via :func:`read_sidecar` (which auto-translates
-the ``ubuntu-aktualizacje/v1`` schema to ``ascendo/v1``).
+the ``ascendo/v1`` schema to ``ascendo/v1``).
 """
 from __future__ import annotations
 

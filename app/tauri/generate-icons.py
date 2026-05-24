@@ -13,7 +13,7 @@ import sys
 import zlib
 from pathlib import Path
 
-# Ubuntu_Aktualizacje brand: deep indigo background, light accent square,
+# Ascendo brand: deep indigo background, light accent square,
 # small bright accent dot in lower-right. All hand-coded so we don't need
 # Pillow / imagemagick.
 

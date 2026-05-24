@@ -12,8 +12,8 @@ repo aż po cofnięcie nieudanej aktualizacji. Każda ścieżka ma
 aktualizacyjny bez niespodzianek.
 
 ```bash
-git clone https://github.com/KasprowiczM/Ubuntu_Aktualizacje
-cd Ubuntu_Aktualizacje
+git clone https://github.com/KasprowiczM/Ascendo
+cd Ascendo
 bash scripts/fresh-machine.sh
 ```
 
@@ -39,7 +39,7 @@ Co się dzieje, krok po kroku:
 > sam przez `bash scripts/apps/install-missing.sh`.
 
 Po zakończeniu adres dashboardu to **<http://127.0.0.1:8765>**; jeśli
-`~/.config/ubuntu-aktualizacje/onboarded.json` jeszcze nie istnieje,
+`~/.config/ascendo/onboarded.json` jeszcze nie istnieje,
 pojawi się First-run wizard.
 
 **Wyjścia awaryjne:**
@@ -128,8 +128,8 @@ ich nie zarejestrujesz.
 bash dev-sync-export.sh        # push prywatnego overlay do Proton/rclone
 
 # Na NOWYM komputerze
-git clone https://github.com/KasprowiczM/Ubuntu_Aktualizacje
-cd Ubuntu_Aktualizacje
+git clone https://github.com/KasprowiczM/Ascendo
+cd Ascendo
 bash scripts/fresh-machine.sh
 ```
 
@@ -157,7 +157,7 @@ sudo systemctl reboot                         # wstań na cofniętym stanie
 
 Odpowiednik w dashboardzie: panel **Snapshots** → wiersz → **Restore**
 → confirm. Akcja loguje się do
-`~/.local/state/ubuntu-aktualizacje/audit.log`.
+`~/.local/state/ascendo/audit.log`.
 
 ---
 

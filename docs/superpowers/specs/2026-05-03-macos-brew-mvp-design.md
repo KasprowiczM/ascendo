@@ -4,7 +4,7 @@
 > **Scope:** M5.1 only — brew × 5 phases, end-to-end on real Mac hardware
 > **Target tag:** `v0.0.8-alpha`
 > **Estimated effort:** ~5 days, single-dev
-> **Reference:** legacy `/Users/mk/Dev_Env/Aktualizacje_MAC/`, Windows adapter `adapters/windows/`
+> **Reference:** legacy `/Users/mk/Dev_Env/Ascendo/`, Windows adapter `adapters/windows/`
 
 ---
 
@@ -38,8 +38,8 @@ adapters/macos/
 │       ├── __init__.py
 │       └── brew.py                             BrewManager(IPackageManager)
 ├── lib/
-│   ├── _json_emit.py                           ported from Aktualizacje_MAC/lib/_json_emit.py
-│   │                                           schema repointed: ubuntu-aktualizacje/v1 → ascendo/v1
+│   ├── _json_emit.py                           ported from Ascendo/lib/_json_emit.py
+│   │                                           schema repointed: ascendo/v1 → ascendo/v1
 │   ├── ascendo_json.sh                         bash wrapper (analog of AscendoJson.psm1)
 │   └── ascendo_brew.sh                         brew helpers (analog of AscendoWinget.psm1):
 │                                               resolve_brew_prefix, brew_outdated_json,
@@ -126,7 +126,7 @@ Skeleton:
 ```bash
 #!/usr/bin/env bash
 # adapters/macos/scripts/brew/check.sh
-set -o pipefail                                 # NOT set -e (per Aktualizacje_MAC rule #6)
+set -o pipefail                                 # NOT set -e (per Ascendo rule #6)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"     # no hardcoded paths (rule #5)
 ADAPTER_LIB="$SCRIPT_DIR/../../lib"
 . "$ADAPTER_LIB/ascendo_json.sh"                # exports json_init/json_add_item/json_save
@@ -150,7 +150,7 @@ done
 # Then walk `brew list` for non-outdated installed packages → status=up_to_date
 ```
 
-### Critical rules from `Aktualizacje_MAC/CLAUDE.md` enforced throughout
+### Critical rules from `Ascendo/CLAUDE.md` enforced throughout
 
 1. ✅ `set -o pipefail` (NOT `set -e` — orchestrator runs every step even on partial failure)
 2. ✅ Bash 3.2 only — no `declare -A`, no `mapfile`, no `readarray`
@@ -162,7 +162,7 @@ done
 ### `apply.sh` — `kill_cask_apps` (the macOS hidden gem)
 
 Ports the `osascript -e 'tell application "X" to quit'` graceful-quit pattern from
-`Aktualizacje_MAC/update_brew.sh`. 5-second wait → fallback `pkill -f "/Applications/X.app/"`.
+`Ascendo/update_brew.sh`. 5-second wait → fallback `pkill -f "/Applications/X.app/"`.
 
 Cask-name → app-bundle-name map lives in `ascendo_brew.sh` as a **case statement** (Bash 3.2 —
 no associative arrays). Initial entries: Slack, VSCode (`Visual Studio Code.app`), Chrome
@@ -178,18 +178,18 @@ after check-only — no crash).
 ### `cleanup.sh`
 
 `brew cleanup -s` (formulae + casks + downloads). 60-day log retention prune (port from
-`Aktualizacje_MAC` `clean_logs.sh`). DryRun mode emits `planned` items instead of deleting
+`Ascendo` `clean_logs.sh`). DryRun mode emits `planned` items instead of deleting
 — per-file deletion items for audit trail.
 
 ---
 
 ## §5 — JSON sidecar emitter
 
-Port `Aktualizacje_MAC/lib/_json_emit.py` and `Aktualizacje_MAC/lib/json.sh` into
+Port `Ascendo/lib/_json_emit.py` and `Ascendo/lib/json.sh` into
 `adapters/macos/lib/`, with three changes:
 
 1. **Schema flip.** Every emitted sidecar uses `"schema": "ascendo/v1"`
-   (was `"ubuntu-aktualizacje/v1"` in legacy). The Pydantic `parse_sidecar()` in
+   (was `"ascendo/v1"` in legacy). The Pydantic `parse_sidecar()` in
    `core/ascendo/models/legacy.py` accepts both, so this is forward-compatible.
 2. **Field rename to match `ascendo/v1`.**
 
@@ -217,7 +217,7 @@ Port `Aktualizacje_MAC/lib/_json_emit.py` and `Aktualizacje_MAC/lib/json.sh` int
 
 The bash functions are thin shims that maintain a `$JSON_PAYLOAD` variable as a JSON string
 and delegate complex transforms to `python3 -m _json_emit ...` calls — same pattern as
-`Aktualizacje_MAC/lib/json.sh`. State carrying between bash and python is the JSON file
+`Ascendo/lib/json.sh`. State carrying between bash and python is the JSON file
 itself: bash invokes `python3 _json_emit.py append-item --file "$JSON_TMP" --id ... --status ...`,
 python reads/mutates/writes the file, bash continues. Avoids needing a Python long-running
 daemon. Bash 3.2-safe throughout.

@@ -81,7 +81,7 @@ teardown() {
 @test "schema rejects invalid kind" {
     cat > "$TMPHOME/bad.json" <<'EOF'
 {
-  "schema": "ubuntu-aktualizacje/v1",
+  "schema": "ascendo/v1",
   "kind": "BOGUS",
   "category": "apt",
   "host": "h",

@@ -43,7 +43,7 @@ xdg-open http://127.0.0.1:8765
 | `UA_DASHBOARD_HOST`     | `127.0.0.1`                         |
 | `UA_DASHBOARD_PORT`     | `8765`                              |
 | `UA_REPO_ROOT`          | repo z którego serwowany jest backend |
-| `UA_DB_PATH`            | `$XDG_DATA_HOME/ubuntu-aktualizacje/history.db` |
+| `UA_DB_PATH`            | `$XDG_DATA_HOME/ascendo/history.db` |
 
 ## REST API
 

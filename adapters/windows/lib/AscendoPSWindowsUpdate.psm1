@@ -24,7 +24,7 @@
 # Get-PendingWindowsUpdates returns @(); Install-WindowsUpdateBatch returns @().
 # The script side surfaces this as a [warn]-level phase message.
 #
-# See Aktualizacje-W11-Dell5520\1_Update-Windows.ps1 for the original real-
+# See Ascendo\1_Update-Windows.ps1 for the original real-
 # world usage on DP5520WMK that this module is ported from.
 # =============================================================================
 

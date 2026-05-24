@@ -212,9 +212,9 @@ contrib/                          # Tier-2 community adapters + plugins
 
 Ascendo evolved from three sibling projects of the same author:
 
-- `Aktualizacje_MAC` — macOS shell scripts (foundation: i18n, DMG verification, session-dir patterns)
-- `Aktualizacje-W11-Dell5520` — PowerShell on Windows (foundation: column parser, unknown-version suppression, exit-code mapping)
-- `Ubuntu_Aktualizacje` — Linux/Ubuntu (foundation: Python backend, JSON v1 contract, plugin manifest, scheduler, snapshots, dev-sync)
+- `Ascendo` — macOS shell scripts (foundation: i18n, DMG verification, session-dir patterns)
+- `Ascendo` — PowerShell on Windows (foundation: column parser, unknown-version suppression, exit-code mapping)
+- `Ascendo` — Linux/Ubuntu (foundation: Python backend, JSON v1 contract, plugin manifest, scheduler, snapshots, dev-sync)
 
 Unifying them was an exercise in extracting common patterns and
 respecting hard-won OS-specific knowledge.

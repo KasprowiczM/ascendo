@@ -66,7 +66,7 @@ if [[ -f /var/run/reboot-required ]]; then
 fi
 
 # 5. Last run status (if recently completed)
-RUNS_DIR="${UA_RUNS_DIR:-${HOME}/Dev_Env/Ubuntu_Aktualizacje/logs/runs}"
+RUNS_DIR="${UA_RUNS_DIR:-${HOME}/Dev_Env/Ascendo/logs/runs}"
 if [[ -d "$RUNS_DIR" ]]; then
     last=$(ls -1dt "${RUNS_DIR}"/*/ 2>/dev/null | head -1 | sed 's:/$::' || true)
     if [[ -n "$last" && -f "${last}/run.json" ]]; then

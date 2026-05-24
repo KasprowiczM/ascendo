@@ -10,7 +10,7 @@ source "${SCRIPT_DIR}/lib/detect.sh"
 
 MANIFEST="${SCRIPT_DIR}/config/restore-manifest.json"
 
-print_header "Preflight — Ubuntu_Aktualizacje"
+print_header "Preflight — Ascendo"
 
 failures=0
 warnings=0

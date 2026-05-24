@@ -61,7 +61,7 @@ for line in "${LINES[@]}"; do
     val="${val%\'}"; val="${val#\'}"
 
     # Already in libsecret?
-    if secret-tool lookup app ubuntu-aktualizacje name "$name" >/dev/null 2>&1; then
+    if secret-tool lookup app ascendo name "$name" >/dev/null 2>&1; then
         print_info "${name}: already in libsecret — skipped"
         skipped=$((skipped + 1))
         continue
@@ -75,8 +75,8 @@ for line in "${LINES[@]}"; do
 
     print_step "store ${name}"
     if printf '%s' "$val" | secret-tool store \
-            --label="ubuntu-aktualizacje: ${name}" \
-            app ubuntu-aktualizacje name "$name"; then
+            --label="ascendo: ${name}" \
+            app ascendo name "$name"; then
         print_ok
         migrated=$((migrated + 1))
     else

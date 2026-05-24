@@ -3,7 +3,7 @@
 Bridges core to the legacy bash phase scripts at top-level
 ``scripts/<cat>/<phase>.sh`` (in the repo root, NOT under
 ``adapters/ubuntu/scripts/``). Those scripts emit the legacy
-``ubuntu-aktualizacje/v1`` sidecar schema; ``parse_sidecar()`` in
+``ascendo/v1`` sidecar schema; ``parse_sidecar()`` in
 ``ascendo.models.sidecar`` automatically translates to ``ascendo/v1``.
 
 This adapter is intentionally a thin scaffold. Scheduler / Snapshot /

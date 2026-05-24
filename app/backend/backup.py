@@ -31,8 +31,8 @@ _REPO_RELATIVE = (
 def _user_paths() -> list[Path]:
     base = Path(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"))
     return [
-        base / "ubuntu-aktualizacje" / "settings.json",
-        base / "ubuntu-aktualizacje" / "onboarded.json",
+        base / "ascendo" / "settings.json",
+        base / "ascendo" / "onboarded.json",
         base / "ascendo" / "lang",
     ]
 

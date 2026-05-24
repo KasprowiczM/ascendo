@@ -19,8 +19,8 @@
 #
 # EXAMPLES:
 #   # Fresh machine setup:
-#   git clone https://github.com/KasprowiczM/Ubuntu_Aktualizacje.git
-#   cd Ubuntu_Aktualizacje && ./setup.sh
+#   git clone https://github.com/KasprowiczM/Ascendo.git
+#   cd Ascendo && ./setup.sh
 #
 #   # Capture current machine state into config files:
 #   ./setup.sh --discover
@@ -74,7 +74,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── Banner ────────────────────────────────────────────────────────────────────
-print_header "Ubuntu_Aktualizacje — Setup [mode: ${MODE}]"
+print_header "Ascendo — Setup [mode: ${MODE}]"
 detect_os
 detect_hardware
 detect_gpu
@@ -358,22 +358,22 @@ if [[ "$MODE" == "check" ]]; then
 
     _check_snaps() {
         print_section "Snap packages"
-        if ! _snap_cmd list >/tmp/ubuntu-aktualizacje-snap-list.$$ 2>/dev/null; then
-            rm -f /tmp/ubuntu-aktualizacje-snap-list.$$
+        if ! _snap_cmd list >/tmp/ascendo-snap-list.$$ 2>/dev/null; then
+            rm -f /tmp/ascendo-snap-list.$$
             print_warn "snap list timed out or failed — skipping Snap package check"
             return 0
         fi
         while IFS= read -r line; do
             [[ -z "$line" ]] && continue
             local pkg; pkg=$(echo "$line" | awk '{print $1}')
-            if awk -v pkg="$pkg" 'NR>1 && $1 == pkg {found=1} END{exit found ? 0 : 1}' /tmp/ubuntu-aktualizacje-snap-list.$$; then
-                local ver; ver=$(awk -v pkg="$pkg" 'NR>1 && $1 == pkg {print $2; exit}' /tmp/ubuntu-aktualizacje-snap-list.$$)
+            if awk -v pkg="$pkg" 'NR>1 && $1 == pkg {found=1} END{exit found ? 0 : 1}' /tmp/ascendo-snap-list.$$; then
+                local ver; ver=$(awk -v pkg="$pkg" 'NR>1 && $1 == pkg {print $2; exit}' /tmp/ascendo-snap-list.$$)
                 print_info "  ${GREEN}✔${RESET} ${pkg} (${ver})"
             else
                 print_warn "  ✘ MISSING: ${pkg}"
             fi
         done < <(parse_config_lines "${CONFIG_DIR}/snap-packages.list")
-        rm -f /tmp/ubuntu-aktualizacje-snap-list.$$
+        rm -f /tmp/ascendo-snap-list.$$
     }
 
     _check_brew() {
@@ -653,14 +653,14 @@ fi
 print_header "Step 7/7 — Shell Configuration"
 
 SCRIPTS_PATH='
-# Ubuntu_Aktualizacje — update scripts
+# Ascendo — update scripts
 if [[ -d "'"${SCRIPT_DIR}"'" ]]; then
     export PATH="'"${SCRIPT_DIR}"':$PATH"
 fi'
 
 for rcfile in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
     [[ ! -f "$rcfile" ]] && continue
-    if ! grep -q "Ubuntu_Aktualizacje" "$rcfile" 2>/dev/null; then
+    if ! grep -q "Ascendo" "$rcfile" 2>/dev/null; then
         print_step "Add project PATH to $(basename "$rcfile")"
         echo "${SCRIPTS_PATH}" >> "$rcfile" && print_ok || print_warn "failed"
     fi
@@ -686,7 +686,7 @@ fi
 print_summary "Setup complete"
 echo
 echo -e "${BOLD}${GREEN}╔═══════════════════════════════════════════════════════╗${RESET}"
-echo -e "${BOLD}${GREEN}║   Ubuntu_Aktualizacje — Setup complete!               ║${RESET}"
+echo -e "${BOLD}${GREEN}║   Ascendo — Setup complete!               ║${RESET}"
 echo -e "${BOLD}${GREEN}╚═══════════════════════════════════════════════════════╝${RESET}"
 echo
 

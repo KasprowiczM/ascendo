@@ -40,7 +40,7 @@ sidecar v1) i ten sam katalog logów `logs/runs/<run-id>/`.
 | `config/host-profiles/<host>/*.list` | overlay per-host (opcjonalny) |
 | `lib/common.sh`, `lib/detect.sh`, `lib/repos.sh` | helpery |
 | `lib/secrets.sh` | secret lookup z fallbackiem libsecret → .env.local |
-| `flock` na `${XDG_RUNTIME_DIR}/ubuntu-aktualizacje.lock` | wzajemnie wykluczają się |
+| `flock` na `${XDG_RUNTIME_DIR}/ascendo.lock` | wzajemnie wykluczają się |
 | `logs/master_*.log` (legacy) i `logs/runs/<id>/` (nowy) | równoległe katalogi logów |
 
 ## Test hybrydowości

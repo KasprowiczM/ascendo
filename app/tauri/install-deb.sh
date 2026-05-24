@@ -21,7 +21,7 @@ DEB_ABS="$(readlink -f "$DEB")"
 echo "Found: $DEB_ABS"
 
 # Remove older package variants if installed
-for legacy in ubuntu-aktualizacje-skin Ubuntu_Aktualizacje ubuntu_aktualizacje; do
+for legacy in ascendo-skin Ascendo ubuntu_aktualizacje; do
     if dpkg -s "$legacy" >/dev/null 2>&1; then
         echo "── removing legacy package: $legacy"
         sudo apt-get remove --purge -y "$legacy" || true
@@ -34,5 +34,5 @@ sudo apt install -y "$DEB_ABS"
 
 echo
 echo "✔ installed. Launch with:"
-echo "    ubuntu-aktualizacje"
-echo "  or open from GNOME Activities (search 'ubuntu-aktualizacje')."
+echo "    ascendo"
+echo "  or open from GNOME Activities (search 'ascendo')."

@@ -88,8 +88,8 @@ jobs:
             "scripts/restore-from-proton.sh"
             "scripts/verify-state.sh"
             "systemd/install-timer.sh"
-            "systemd/ubuntu-aktualizacje@.service"
-            "systemd/ubuntu-aktualizacje@.timer"
+            "systemd/ascendo@.service"
+            "systemd/ascendo@.timer"
             "dev-sync/dev_sync_core.py"
             "dev-sync/provider_setup.sh"
             "dev-sync/dev-sync-export.sh"
@@ -202,7 +202,7 @@ jobs:
             "packaging/deb/DEBIAN/control"
             "packaging/deb/DEBIAN/postinst"
             "packaging/deb/DEBIAN/prerm"
-            "packaging/deb/usr/bin/ubuntu-aktualizacje"
+            "packaging/deb/usr/bin/ascendo"
             "scripts/snapshot/create.sh"
             "scripts/snapshot/list.sh"
             "scripts/scheduler/install.sh"
@@ -221,9 +221,9 @@ jobs:
             "app/frontend/app.js"
             "app/pyproject.toml"
             "app/README.md"
-            "systemd/user/ubuntu-aktualizacje-dashboard.service"
+            "systemd/user/ascendo-dashboard.service"
             "systemd/user/install-dashboard.sh"
-            "share/applications/ubuntu-aktualizacje.desktop"
+            "share/applications/ascendo.desktop"
             "docs/agents/contract.md"
             "APPS.md.example"
             "README.md"
@@ -348,17 +348,17 @@ jobs:
           if [[ ! -f .dev_sync_config.json ]]; then
             cat > .dev_sync_config.json <<'JSON'
           {
-            "project_name": "Ubuntu_Aktualizacje",
+            "project_name": "Ascendo",
             "provider": "protondrive",
             "provider_path": "/tmp/_ci_proton",
             "rclone_remote": "",
             "rclone_remote_path": "",
-            "proton_project_root": "/tmp/_ci_proton/Ubuntu_Aktualizacje",
+            "proton_project_root": "/tmp/_ci_proton/Ascendo",
             "exclude_patterns": [],
             "include_always": []
           }
           JSON
-            mkdir -p /tmp/_ci_proton/Ubuntu_Aktualizacje
+            mkdir -p /tmp/_ci_proton/Ascendo
           fi
           count=$(python3 dev-sync/dev_sync_export.py --dry-run 2>&1 | awk -F': ' '/^Files selected:/ {print $2}')
           echo "overlay file count: ${count:-?}"

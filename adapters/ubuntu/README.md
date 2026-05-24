@@ -49,7 +49,7 @@ adapters/ubuntu/
 
 ## Migrated from
 
-Ubuntu_Aktualizacje (`D:\Dev_Env\Ubuntu_Aktualizacje`) — most logic
+Ascendo (`D:\Dev_Env\Ascendo`) — most logic
 preserved, refactored to clean architecture.
 
 ## See also

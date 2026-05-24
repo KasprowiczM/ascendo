@@ -6,7 +6,7 @@ exposed on a LAN address (or behind a reverse proxy) safely.
 
 Activation:
     1. ``bash systemd/user/install-dashboard.sh --generate-token``
-       writes ``~/.config/ubuntu-aktualizacje/auth.token`` (chmod 0600).
+       writes ``~/.config/ascendo/auth.token`` (chmod 0600).
     2. From now on every request must carry ``Authorization: Bearer <token>``
        except the unauth allowlist (``/health``, static assets).
 
@@ -39,7 +39,7 @@ UNAUTH_PREFIXES = (
 
 def token_path() -> Path:
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    return Path(base) / "ubuntu-aktualizacje" / "auth.token"
+    return Path(base) / "ascendo" / "auth.token"
 
 
 def read_token() -> str | None:

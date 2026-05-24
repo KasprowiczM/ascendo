@@ -7,7 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
-print_header "Verify State — Ubuntu_Aktualizacje"
+print_header "Verify State — Ascendo"
 
 failures=0
 warnings=0
@@ -59,10 +59,10 @@ fi
 
 print_section "Systemd templates"
 if has_cmd systemd-analyze; then
-    if systemd-analyze verify "${SCRIPT_DIR}/systemd/ubuntu-aktualizacje@.service" "${SCRIPT_DIR}/systemd/ubuntu-aktualizacje@.timer" >/tmp/ubuntu-aktualizacje-systemd-verify.log 2>&1; then
+    if systemd-analyze verify "${SCRIPT_DIR}/systemd/ascendo@.service" "${SCRIPT_DIR}/systemd/ascendo@.timer" >/tmp/ascendo-systemd-verify.log 2>&1; then
         ok_check "systemd templates verify"
     else
-        cat /tmp/ubuntu-aktualizacje-systemd-verify.log >&2 || true
+        cat /tmp/ascendo-systemd-verify.log >&2 || true
         fail_check "systemd template verification failed"
     fi
 else

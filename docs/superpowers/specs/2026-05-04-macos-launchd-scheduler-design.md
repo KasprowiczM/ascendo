@@ -442,7 +442,7 @@ cross-cutting across all OSes).
   `adapters/windows/ascendo_windows/managers/scheduler.py` +
   `adapters/windows/scripts/scheduler/scheduler.ps1`
 - IScheduler contract: `core/ascendo/interfaces/scheduler.py`
-- Legacy macOS scheduling in `Aktualizacje_MAC/` is shell-cron-style
+- Legacy macOS scheduling in `Ascendo/` is shell-cron-style
   (ad-hoc `crontab` edits, not launchd) — not a useful template; this
   spec is built fresh on launchd best practices from `man launchd.plist`
   and `man launchctl`.

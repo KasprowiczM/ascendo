@@ -91,7 +91,7 @@ if [ "$DRY_RUN" -eq 0 ]; then
     rm -rf "$STAGE"
     mkdir -p "$STAGE" "$DIST"
     # Drop legacy stage directory if present (left over from older builds).
-    rm -rf "$PKG_DIR/opt/ubuntu-aktualizacje" 2>/dev/null || true
+    rm -rf "$PKG_DIR/opt/ascendo" 2>/dev/null || true
 fi
 ok "stage: $STAGE"
 
@@ -195,7 +195,7 @@ step "Build $OUT"
 find "$DIST" -maxdepth 1 -name "${PKG_NAME}-${EDITION}_*_all.deb" \
     ! -name "$(basename "$OUT")" -delete 2>/dev/null || true
 find "$DIST" -maxdepth 1 -name 'ascendo_*_all.deb' -delete 2>/dev/null || true
-find "$DIST" -maxdepth 1 -name 'ubuntu-aktualizacje_*_all.deb' -delete 2>/dev/null || true
+find "$DIST" -maxdepth 1 -name 'ascendo_*_all.deb' -delete 2>/dev/null || true
 
 # SHA256 + summary
 SIZE_KB="$(du -k "$OUT" | awk '{print $1}')"

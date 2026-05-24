@@ -9,7 +9,7 @@
 #   • NVIDIA hold state (informational)
 #   • current reboot-required flag
 #
-# Emits JSON sidecar at $JSON_OUT (schema ubuntu-aktualizacje/v1).
+# Emits JSON sidecar at $JSON_OUT (schema ascendo/v1).
 # Exit codes: 0 ok, 1 warn, 10 missing prerequisite.
 # =============================================================================
 set -euo pipefail

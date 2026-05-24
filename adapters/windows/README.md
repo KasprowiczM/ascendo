@@ -1,7 +1,7 @@
 # adapters/windows/
 
 Tier 1 (official) Windows adapter for Ascendo. Source of native PowerShell
-scripts is the legacy `D:\Dev_Env\Aktualizacje-W11-Dell5520` repository,
+scripts is the legacy `D:\Dev_Env\Ascendo` repository,
 refactored to the 5-phase contract.
 
 ## Supported categories
@@ -70,7 +70,7 @@ adapters/windows/
 
 ## Migration source
 
-- `D:\Dev_Env\Aktualizacje-W11-Dell5520\` — ALL logic preserved
+- `D:\Dev_Env\Ascendo\` — ALL logic preserved
 - `0_Run-Maintenance.ps1` → archived (orchestration moved to Python core)
 - `1_Update-Windows.ps1` → `scripts/windows-update/`
 - `2_Update-Drivers.ps1` → `plugins/dell-driver-update/windows/`

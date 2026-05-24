@@ -20,18 +20,18 @@ Core needs to:
 3. **Persist** that history into SQLite for the dashboard, scheduler, and
    audit trail.
 
-The pre-merge `Ubuntu_Aktualizacje` repo already had a JSON sidecar format
-(`ubuntu-aktualizacje/v1`) emitted by Bash via `lib/_json_emit.py`. It
+The pre-merge `Ascendo` repo already had a JSON sidecar format
+(`ascendo/v1`) emitted by Bash via `lib/_json_emit.py`. It
 worked well, but its name is no longer accurate (we rebranded to Ascendo
 and we now have three OSes). It also lacks several fields the cross-OS
 work has surfaced as necessary — `host.os`, `host.is_elevated`,
 `items[].source.type`, `rollback.method`, etc.
 
-The disagreement was on whether to evolve `ubuntu-aktualizacje/v1` in
+The disagreement was on whether to evolve `ascendo/v1` in
 place (rename only) or break it cleanly (`v2` rebranded). We chose
 rebrand-without-version-bump because the field set is a strict superset
 of v1 — no field was removed, all new fields are optional. A reader that
-understands `ascendo/v1` can also parse `ubuntu-aktualizacje/v1` payloads.
+understands `ascendo/v1` can also parse `ascendo/v1` payloads.
 
 ## Decision
 
@@ -46,8 +46,8 @@ Pydantic v2 models, exported as JSON Schema in
 `tests/contract/`.
 
 **Backward compatibility:** the reader accepts both `ascendo/v1` and
-`ubuntu-aktualizacje/v1`. New native code emits only `ascendo/v1`.
-Legacy emitters in `Ubuntu_Aktualizacje` checkouts (pre-rename clones)
+`ascendo/v1`. New native code emits only `ascendo/v1`.
+Legacy emitters in `Ascendo` checkouts (pre-rename clones)
 continue to work without modification.
 
 ## Schema (top-level fields)
@@ -185,4 +185,4 @@ Why rejected:
 - JSON Schema export: `docs/architecture/schemas/sidecar.v1.schema.json`
   (generated in M2)
 - Contract tests: `tests/contract/test_sidecar_v1.py` (M2)
-- Pre-merge contract: `Ubuntu_Aktualizacje/docs/agents/contract.md`
+- Pre-merge contract: `Ascendo/docs/agents/contract.md`

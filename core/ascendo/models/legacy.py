@@ -1,6 +1,6 @@
-"""Legacy sidecar translator: ubuntu-aktualizacje/v1 -> ascendo/v1.
+"""Legacy sidecar translator: ascendo/v1 -> ascendo/v1.
 
-Pre-rename emitters in checked-out copies of Ubuntu_Aktualizacje continue
+Pre-rename emitters in checked-out copies of Ascendo continue
 to write the older schema. ADR-0003 promises the reader accepts both.
 This module bridges the gap by converting a legacy payload (dict) into a
 payload that satisfies the ascendo/v1 :class:`~ascendo.models.sidecar.Sidecar`
@@ -33,7 +33,7 @@ defaults are synthesized:
 * ``run.trigger`` -> ``"unknown"``.
 * ``run.profile`` -> ``"full"``.
 * ``host.os`` -> derived from host string (assume ``"linux_ubuntu"`` for
-  legacy emitters, since they were Ubuntu_Aktualizacje-only).
+  legacy emitters, since they were Ascendo-only).
 * ``host.is_elevated`` -> ``False`` (legacy didn't track this).
 * ``tool.name`` -> ``category``, ``tool.version`` -> ``"unknown"``.
 
@@ -62,7 +62,7 @@ from typing import Any
 _LEGACY_NAMESPACE = uuid.UUID("6f1d4c0e-2b7a-4a2e-9b9d-1ad6e0f9ba01")
 
 # Legacy schema literal we accept.
-_LEGACY_SCHEMA = "ubuntu-aktualizacje/v1"
+_LEGACY_SCHEMA = "ascendo/v1"
 
 # Mapping for legacy item.result -> ascendo item.status.
 _RESULT_TO_STATUS: dict[str, str] = {
@@ -210,7 +210,7 @@ def _translate_diagnostics(legacy_diags: list[dict[str, Any]]) -> list[dict[str,
 
 
 def translate_legacy_v1(payload: dict[str, Any]) -> dict[str, Any]:
-    """Translate a legacy ubuntu-aktualizacje/v1 payload into an ascendo/v1 payload.
+    """Translate a legacy ascendo/v1 payload into an ascendo/v1 payload.
 
     The returned dict is suitable for ``Sidecar.model_validate(...)``.
     All synthesized fields are documented in the module docstring.

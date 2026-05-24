@@ -29,7 +29,7 @@ Security caveats:
     DB, not in logs, not on disk except as a 0700 askpass helper limited
     to the calling user's $XDG_RUNTIME_DIR.
   - On hard crash an askpass file may linger; check
-    $XDG_RUNTIME_DIR/ubuntu-aktualizacje/.
+    $XDG_RUNTIME_DIR/ascendo/.
 """
 from __future__ import annotations
 
@@ -109,7 +109,7 @@ def invalidate() -> bool:
 
 def _askpass_dir() -> Path:
     base = os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
-    p = Path(base) / "ubuntu-aktualizacje"
+    p = Path(base) / "ascendo"
     p.mkdir(parents=True, exist_ok=True)
     try:
         p.chmod(0o700)

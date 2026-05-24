@@ -13,8 +13,8 @@ and the **escape hatches** if something looks off.
 update suite without surprises.
 
 ```bash
-git clone https://github.com/KasprowiczM/Ubuntu_Aktualizacje
-cd Ubuntu_Aktualizacje
+git clone https://github.com/KasprowiczM/Ascendo
+cd Ascendo
 bash scripts/fresh-machine.sh
 ```
 
@@ -41,7 +41,7 @@ What happens, in order:
 > decide whether to install with `bash scripts/apps/install-missing.sh`.
 
 After this, the dashboard URL is **<http://127.0.0.1:8765>** and shows the
-First-run wizard if `~/.config/ubuntu-aktualizacje/onboarded.json`
+First-run wizard if `~/.config/ascendo/onboarded.json`
 doesn't exist yet.
 
 **Escape hatches:**
@@ -130,8 +130,8 @@ suite until you opt them in.
 bash dev-sync-export.sh        # pushes private overlay to Proton/rclone
 
 # On the NEW machine
-git clone https://github.com/KasprowiczM/Ubuntu_Aktualizacje
-cd Ubuntu_Aktualizacje
+git clone https://github.com/KasprowiczM/Ascendo
+cd Ascendo
 bash scripts/fresh-machine.sh
 ```
 
@@ -159,7 +159,7 @@ sudo systemctl reboot                         # come back on the rolled-back sta
 ```
 
 Dashboard equivalent: **Snapshots** panel → row → **Restore** → confirm.
-Audit log records the action under `~/.local/state/ubuntu-aktualizacje/audit.log`.
+Audit log records the action under `~/.local/state/ascendo/audit.log`.
 
 ---
 

@@ -36,7 +36,7 @@ bash build.sh           # interactive: prompts before installing rust/libs
 bash build.sh -y        # non-interactive, accepts all prompts
 
 # Find the produced .deb / .AppImage:
-find src-tauri/target -name 'ubuntu-aktualizacje*.deb' -o -name '*.AppImage'
+find src-tauri/target -name 'ascendo*.deb' -o -name '*.AppImage'
 ```
 
 `build.sh` will:
@@ -53,9 +53,9 @@ Skip auto-install with `--skip-deps` if you have prereqs already.
 ## Install the produced .deb
 
 ```bash
-DEB=$(find src-tauri/target -name 'ubuntu-aktualizacje*.deb' | head -1)
+DEB=$(find src-tauri/target -name 'ascendo*.deb' | head -1)
 sudo apt install "./$DEB"
-ubuntu-aktualizacje      # launches the window
+ascendo      # launches the window
 ```
 
 > **Important:** `apt install ./*.deb` only works when the path expands to
@@ -77,7 +77,7 @@ cd src-tauri && cargo tauri build
 
 The `.deb` declares dependencies on `python3`, `python3-venv`, and
 `ssh-client` (for the Hosts view). The python venv at
-`~/Dev_Env/Ubuntu_Aktualizacje/app/.venv/` is created on first run by
+`~/Dev_Env/Ascendo/app/.venv/` is created on first run by
 `bash app/install.sh` (or by `bash systemd/user/install-dashboard.sh`).
 
 ## Icons
@@ -98,7 +98,7 @@ default Tauri icon.
 ## Troubleshooting
 
 - `connection refused at 127.0.0.1:8765` after launch → the spawned python
-  process didn't start. Check `journalctl --user -u ubuntu-aktualizacje-dashboard.service`
+  process didn't start. Check `journalctl --user -u ascendo-dashboard.service`
   or run `app/.venv/bin/python -m app.backend` manually to see the error.
 - `python3: command not found` → install python3 or set `PATH` for the
   service. The skin falls back to `python3` if `app/.venv/bin/python` is

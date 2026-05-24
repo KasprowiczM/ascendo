@@ -1,4 +1,4 @@
-# Graph Report - /home/mk/Dev_Env/Ubuntu_Aktualizacje  (2026-04-27)
+# Graph Report - /home/mk/Dev_Env/Ascendo  (2026-04-27)
 
 ## Corpus Check
 - 11 files · ~28,972 words
@@ -34,15 +34,15 @@
 
 ## Surprising Connections (you probably didn't know these)
 - `StaticDevSyncConfigTests` --uses--> `DevSyncError`  [INFERRED]
-  /home/mk/Dev_Env/Ubuntu_Aktualizacje/tests/test_dev_sync_safety.py → /home/mk/Dev_Env/Ubuntu_Aktualizacje/dev-sync/dev_sync_core.py
+  /home/mk/Dev_Env/Ascendo/tests/test_dev_sync_safety.py → /home/mk/Dev_Env/Ascendo/dev-sync/dev_sync_core.py
 - `DevSyncError` --uses--> `FileProviderStatus`  [INFERRED]
-  /home/mk/Dev_Env/Ubuntu_Aktualizacje/dev-sync/dev_sync_core.py → /home/mk/Dev_Env/Ubuntu_Aktualizacje/dev-sync/dev_sync_proton_status.py
+  /home/mk/Dev_Env/Ascendo/dev-sync/dev_sync_core.py → /home/mk/Dev_Env/Ascendo/dev-sync/dev_sync_proton_status.py
 - `DevSyncError` --calls--> `manifest_files()`  [INFERRED]
-  /home/mk/Dev_Env/Ubuntu_Aktualizacje/dev-sync/dev_sync_core.py → /home/mk/Dev_Env/Ubuntu_Aktualizacje/dev-sync/dev_sync_proton_status.py
+  /home/mk/Dev_Env/Ascendo/dev-sync/dev_sync_core.py → /home/mk/Dev_Env/Ascendo/dev-sync/dev_sync_proton_status.py
 - `DevSyncError` --calls--> `main()`  [INFERRED]
-  /home/mk/Dev_Env/Ubuntu_Aktualizacje/dev-sync/dev_sync_core.py → /home/mk/Dev_Env/Ubuntu_Aktualizacje/dev-sync/dev_sync_proton_status.py
+  /home/mk/Dev_Env/Ascendo/dev-sync/dev_sync_core.py → /home/mk/Dev_Env/Ascendo/dev-sync/dev_sync_proton_status.py
 - `DevSyncError` --calls--> `main()`  [INFERRED]
-  /home/mk/Dev_Env/Ubuntu_Aktualizacje/dev-sync/dev_sync_core.py → /home/mk/Dev_Env/Ubuntu_Aktualizacje/dev-sync/dev_sync_purge_quarantine.py
+  /home/mk/Dev_Env/Ascendo/dev-sync/dev_sync_core.py → /home/mk/Dev_Env/Ascendo/dev-sync/dev_sync_purge_quarantine.py
 
 ## Communities
 

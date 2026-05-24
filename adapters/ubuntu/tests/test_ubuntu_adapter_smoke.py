@@ -259,9 +259,9 @@ def _make_run() -> RunInfo:
 
 
 def _legacy_v1_payload(*, category: str, started_at: str, ended_at: str) -> dict:
-    """Build a minimal legacy ubuntu-aktualizacje/v1 sidecar payload."""
+    """Build a minimal legacy ascendo/v1 sidecar payload."""
     return {
-        "schema": "ubuntu-aktualizacje/v1",
+        "schema": "ascendo/v1",
         "kind": "check",
         "category": category,
         "host": "mk-uP5520",

@@ -1,7 +1,7 @@
 """Locale detection, catalog loading, and string translation.
 
 This module is the Python port of the legacy macOS bash i18n system
-(``Aktualizacje_MAC/i18n/loader.sh`` + ``lang_<code>.sh``). It supersedes
+(``Ascendo/i18n/loader.sh`` + ``lang_<code>.sh``). It supersedes
 the Linux-only ``ascendo/i18n/*.txt`` flat-file format with structured
 JSON catalogs that are also parseable by non-Python tooling (CI lint,
 the future Tauri/Rust binding for the desktop app, etc.).

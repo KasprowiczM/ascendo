@@ -16,7 +16,7 @@ Without explicit rules, the codebase will accrete cross-cutting imports
 quickly: the dashboard imports from a Linux helper, a Windows adapter
 imports from another Windows adapter, a plugin imports from core. Each
 short-cut is locally rational and globally fatal. The Linux pre-merge
-codebase (`Ubuntu_Aktualizacje`) already had this problem — `app/backend/`
+codebase (`Ascendo`) already had this problem — `app/backend/`
 referenced `lib/` and `scripts/` directly, which is fine when there's
 only one OS but breaks when adding two more.
 

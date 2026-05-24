@@ -1,5 +1,5 @@
 # Bash 3.2 5-phase scripts per category land here in M5.
-# Migrated from D:\Dev_Env\Aktualizacje_MAC\update_*.sh
+# Migrated from D:\Dev_Env\Ascendo\update_*.sh
 #
 # Special: update_internet_apps.sh (1460 LOC) gets refactored into
 # scripts/internet_apps/ + _apps.toml + handlers/{github_dmg,keystone,sparkle,direct_url}.sh

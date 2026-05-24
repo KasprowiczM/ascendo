@@ -4,7 +4,7 @@
 
 **Goal:** Ship `python -m ascendo run --category brew --phase {check|plan|apply|verify|cleanup}` working end-to-end on macOS, with a real `brew upgrade` performed and `v0.0.8-alpha` tagged.
 
-**Architecture:** Mirrors the Windows v0.0.7-alpha pattern. Layer 4 core is unchanged (already OS-agnostic). New Layer 5 (`MacOSAdapter` + `BrewManager` Python) wraps new Layer 6 (5 bash phase scripts + `ascendo_json.sh` + `ascendo_brew.sh` + `_json_emit.py` Python helper). Sidecar emitter is a hybrid Bash + Python helper pattern matching the existing `lib/json.sh` + `lib/_json_emit.py` already in the repo at root level. Schema flipped from legacy `ubuntu-aktualizacje/v1` to canonical `ascendo/v1`.
+**Architecture:** Mirrors the Windows v0.0.7-alpha pattern. Layer 4 core is unchanged (already OS-agnostic). New Layer 5 (`MacOSAdapter` + `BrewManager` Python) wraps new Layer 6 (5 bash phase scripts + `ascendo_json.sh` + `ascendo_brew.sh` + `_json_emit.py` Python helper). Sidecar emitter is a hybrid Bash + Python helper pattern matching the existing `lib/json.sh` + `lib/_json_emit.py` already in the repo at root level. Schema flipped from legacy `ascendo/v1` to canonical `ascendo/v1`.
 
 **Tech Stack:** Python 3.11+ (Pydantic v2), Bash 3.2+ (macOS system shell), Homebrew 4.x (`brew outdated --json=v2`), `jq`. No new core dependencies. Tests: pytest (mock-based unit) + bash on macOS (real-hardware via `bin/validate-macos.sh`).
 
@@ -94,7 +94,7 @@ EOF
 
 ## Task 2: Port `lib/_json_emit.py` to `adapters/macos/lib/_json_emit.py` (schema flip)
 
-The legacy `lib/_json_emit.py` (289 LOC, repo root) emits `ubuntu-aktualizacje/v1` sidecars with legacy field names (`kind`, bare `host` string, `summary.{ok,warn,err}`, `items[].{from,to,result}`). The macOS adapter needs the same Python helper but emitting `ascendo/v1` with canonical field names. Atomic write + buffered subcommand model retained.
+The legacy `lib/_json_emit.py` (289 LOC, repo root) emits `ascendo/v1` sidecars with legacy field names (`kind`, bare `host` string, `summary.{ok,warn,err}`, `items[].{from,to,result}`). The macOS adapter needs the same Python helper but emitting `ascendo/v1` with canonical field names. Atomic write + buffered subcommand model retained.
 
 **Files:**
 - Read (reference): `lib/_json_emit.py` (root, 289 LOC), `core/ascendo/models/sidecar.py` (canonical schema)
@@ -626,7 +626,7 @@ git commit -m "$(cat <<'EOF'
 feat(macos/lib): _json_emit.py — ascendo/v1 sidecar emitter helper (M5.1.1)
 
 Ports the buffer-directory subcommand pattern from lib/_json_emit.py
-(repo root, ubuntu-aktualizacje/v1) into adapters/macos/lib/ with the
+(repo root, ascendo/v1) into adapters/macos/lib/ with the
 schema flipped to ascendo/v1 and field names canonicalised:
 
   kind                       → phase
@@ -1467,7 +1467,7 @@ same arg surface (--run-id/--trigger/--profile/--output-dir/--dry-run/
 --filter), drops a sidecar at <output-dir>/<run-id>/check__brew.json
 on every code path via EXIT trap.
 
-Honors Aktualizacje_MAC critical rules:
+Honors Ascendo critical rules:
   - set -o pipefail (NOT set -e)
   - Bash 3.2 only (no associative arrays, no mapfile)
   - SCRIPT_DIR via cd-dirname idiom (no hardcoded paths)
@@ -2782,7 +2782,7 @@ it relied on brew 4.x's built-in app quit). Modeled on the Windows
 process-kill pattern (Stop-PackageProcesses) but using osascript +
 pgrep instead of CloseMainWindow + Get-Process.
 
-Honors all six Aktualizacje_MAC critical rules:
+Honors all six Ascendo critical rules:
   set -o pipefail, Bash 3.2 only, no hardcoded paths, mktemp -t with
   TMPDIR fallback, softwareupdate -R rule N/A here, mas sudo N/A here.
 

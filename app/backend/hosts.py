@@ -46,7 +46,7 @@ def load_hosts() -> dict[str, HostDef]:
             id=hid,
             display_name=body.get("display_name", hid),
             ssh_alias=body.get("ssh_alias", hid),
-            repo_path=body.get("repo_path", "~/Dev_Env/Ubuntu_Aktualizacje"),
+            repo_path=body.get("repo_path", "~/Dev_Env/Ascendo"),
             description=body.get("description", ""),
         )
     return out

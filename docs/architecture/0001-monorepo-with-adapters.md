@@ -7,9 +7,9 @@
 
 ## Context
 
-Ascendo unifies three previously independent repositories — `Aktualizacje_MAC`
-(macOS, Bash 3.2), `Aktualizacje-W11-Dell5520` (Windows, PowerShell), and
-`Ubuntu_Aktualizacje` (Linux, Bash + Python FastAPI + Tauri). All three solve
+Ascendo unifies three previously independent repositories — `Ascendo`
+(macOS, Bash 3.2), `Ascendo` (Windows, PowerShell), and
+`Ascendo` (Linux, Bash + Python FastAPI + Tauri). All three solve
 the same problem (orchestrating system updates) on a different OS, with
 different package managers and different runtime constraints.
 

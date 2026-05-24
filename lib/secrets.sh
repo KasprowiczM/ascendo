@@ -12,10 +12,10 @@
 #   1. libsecret via secret-tool   (preferred; encrypted via gnome-keyring/kwallet)
 #   2. .env.local KEY=VALUE        (fallback; chmod 0600)
 #
-# Schema attribute used: app=ubuntu-aktualizacje, name=<name>
+# Schema attribute used: app=ascendo, name=<name>
 # =============================================================================
 
-SECRETS_PROJECT="ubuntu-aktualizacje"
+SECRETS_PROJECT="ascendo"
 SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-${SCRIPT_DIR:-$(pwd)}/.env.local}"
 
 _secrets_have_tool() { command -v secret-tool >/dev/null 2>&1; }

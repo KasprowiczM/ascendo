@@ -2,7 +2,7 @@
 # AscendoWinget.psm1 - winget output parsing + exit-code helpers
 # =============================================================================
 #
-# Extracts the hidden gems from Aktualizacje-W11-Dell5520/3_Update-Programs.ps1
+# Extracts the hidden gems from Ascendo/3_Update-Programs.ps1
 # (the Windows pre-merge codebase that took ~6 patch iterations to stabilise).
 #
 # Public surface:
@@ -22,7 +22,7 @@ Set-StrictMode -Version Latest
 # -----------------------------------------------------------------------------
 # Exit-code constants
 # -----------------------------------------------------------------------------
-# Source: Aktualizacje-W11-Dell5520/CLAUDE.md > Key Design Decisions item 4
+# Source: Ascendo/CLAUDE.md > Key Design Decisions item 4
 # Confirmed in 3_Update-Programs.ps1 (search for -1978335190, -1978335212, 3010).
 $script:WINGET_EXIT_SUCCESS         = 0
 $script:WINGET_EXIT_UP_TO_DATE      = -1978335190    # 0x8A15002A

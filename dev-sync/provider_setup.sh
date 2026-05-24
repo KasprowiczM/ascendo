@@ -2,7 +2,7 @@
 # =============================================================================
 # provider_setup.sh — Configure dev-sync private overlay provider
 #
-# Ubuntu_Aktualizacje policy:
+# Ascendo policy:
 # - GitHub stores tracked project files.
 # - Provider stores only Git-ignored private overlay files.
 # - Prefer rclone for Proton Drive on Linux; local provider is supported for a
