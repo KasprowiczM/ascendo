@@ -56,33 +56,35 @@ def test_shipped_registry_chrome_uses_release_feed() -> None:
     assert chrome.release_feed.version_path == "versions[0].version"
 
 
-def test_shipped_registry_brave_uses_release_feed_with_regex() -> None:
-    """M5.7.4 Phase B: Brave promoted from keystone to release_feed.
-    CFBundleShortVersionString is `<chromium_milestone>.<brave_internal>`
-    (e.g. 148.1.90.121 = Chromium 148 + Brave 1.90.121). The GitHub
-    release `name` field carries both pieces; version_regex rewrites
-    "Release v1.90.121 (Chromium 148.0.7778.96)" -> "148.1.90.121".
+def test_shipped_registry_brave_uses_sparkle_arm64_appcast() -> None:
+    """M5.7.6 (2026-05-24): Brave switched from release_feed-against-
+    GitHub to native Sparkle appcast.
 
-    M5.7.5 (2026-05-09): apply path now downloads the universal DMG
-    (the published `Brave-Browser-arm64.dmg` is for Apple Silicon
-    only — operators on x86_64 hardware would get the wrong arch
-    via that asset; ditto vice-versa. Universal works everywhere)."""
+    Why the switch: Brave's `releases/latest` on GitHub now ships only
+    Android APK assets — the Mac DMG was dropped from GH releases
+    entirely, breaking the M5.7.5 download_asset_pattern path with
+    handler-exit-28 (no DMG URL resolved). The CANONICAL mac stable
+    channel is the vendor's own Sparkle appcast at
+    updates.bravesoftware.com/sparkle/Brave-Browser/stable-arm64/
+    appcast.xml — gated rollout, lags GH tag by 0–1 patches.
+
+    Real-world failure that drove the fix: operator ran
+    `ascendo run --category web --phase apply` on Mac.r12.home,
+    sidecar reported `brave: handler exit 28`. Switched in commit
+    820dbdb; the Sparkle DMG enclosure flows through the existing
+    sparkle handler (download + spctl Gatekeeper verify + atomic
+    swap)."""
     reg = WebRegistry.load(SHIPPED, None)
     brave = reg.find("brave")
     assert brave is not None
-    assert brave.handler == "release_feed"
-    assert brave.release_feed is not None
-    assert "api.github.com/repos/brave/brave-browser" in str(brave.release_feed.url)
-    assert brave.release_feed.version_path == "name"
-    assert brave.release_feed.version_regex is not None
-    assert brave.release_feed.version_replace is not None
-    # M5.7.5: apply path enabled via download_asset_pattern.
-    assert brave.release_feed.download_asset_pattern is not None
-    assert "universal" in brave.release_feed.download_asset_pattern.lower()
-    # Mutually exclusive — must not also have download_path.
-    assert brave.release_feed.download_path is None
-    # GitHub asset binary is ~234 MiB; default 8s timeout is too tight.
-    assert brave.release_feed.http_timeout_s >= 12
+    assert brave.handler == "sparkle"
+    assert brave.appcast_url is not None
+    appcast = str(brave.appcast_url)
+    assert "updates.bravesoftware.com" in appcast
+    assert "stable-arm64" in appcast
+    assert appcast.endswith("appcast.xml")
+    # Negative: must not still carry the legacy release_feed sub-table.
+    assert brave.release_feed is None
 
 
 def test_shipped_registry_docker_uses_sparkle_handler() -> None:

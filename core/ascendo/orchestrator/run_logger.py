@@ -31,9 +31,9 @@ import os
 import re
 import shutil
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator, Optional
 
 _log = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ def attach_run_log(
     run_id: str,
     base_dir: Path,
     *,
-    keep: Optional[int] = None,
+    keep: int | None = None,
     level: int = logging.INFO,
 ) -> Iterator[Path]:
     """Context manager: attach a per-run file handler, prune on exit.

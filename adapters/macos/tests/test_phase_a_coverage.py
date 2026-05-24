@@ -16,7 +16,6 @@ import pytest
 
 from ascendo_macos.web_registry import WebRegistry
 
-
 REGISTRY_PATH = (
     Path(__file__).resolve().parent.parent
     / "config"
@@ -37,7 +36,7 @@ def test_registry_loads(registry: WebRegistry) -> None:
 
 
 @pytest.mark.parametrize(
-    "slug,bundle_id,handler",
+    ("slug", "bundle_id", "handler"),
     [
         ("antigravity-ide", "com.google.antigravity-ide", "release_feed"),
         ("appcleaner", "net.freemacsoft.AppCleaner", "sparkle"),
@@ -59,6 +58,7 @@ def test_new_entries_present(
 @pytest.mark.parametrize(
     "slug",
     ["opera", "macwhisper", "notion", "notion-calendar"],
+    ids=lambda v: v,
 )
 def test_dead_entries_dropped(registry: WebRegistry, slug: str) -> None:
     assert registry.find(slug) is None, f"{slug!r} should have been removed"

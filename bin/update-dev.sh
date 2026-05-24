@@ -23,7 +23,7 @@ set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-cd "$REPO_ROOT"
+cd "$REPO_ROOT" || exit 1
 
 CHECK_ONLY=0
 QUIET=0
