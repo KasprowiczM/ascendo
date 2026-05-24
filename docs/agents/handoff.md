@@ -1,5 +1,206 @@
 # Handoff
 
+
+## 2026-05-24 (Sesja 13) — M5.7.6 macOS coverage closeout + operator-grade ports from Aktualizacje_MAC
+
+### Co poszło na produkcję
+
+**Phase A — registry coverage parity:**
+- 5 new entries in `adapters/macos/config/web_apps.toml`:
+  `antigravity-ide` (release_feed, root endpoint text-regex mirror),
+  `appcleaner` (sparkle, SUFeedURL extracted from installed Info.plist:
+  `freemacsoft.net/appcleaner/updates.xml`),
+  `protonvpn` (sparkle, `protonvpn.com/download/macos/updates/v5/sparkle.xml`
+  — the legacy macos-update.xml feed is the abandoned 1.x channel),
+  `protondrive` (release_feed, `proton.me/download/drive/macos/version.json`,
+  Tier-A apply with download_path=`Releases[0].File.Url`),
+  `ipmiview` (builtin, no auto-updater).
+- 4 dead entries dropped (operator confirmed single-Mac scope):
+  `opera`, `macwhisper`, `notion` (desktop), `notion-calendar`.
+- `codeedit` re-enabled with the correct universal asset pattern
+  `^CodeEdit\.dmg$` — live probe of `releases/latest` confirmed
+  v0.3.6 ships a single universal DMG (no `-arm64` variant; the legacy
+  pattern was vendor-speculation).
+- `com.microsoft.autoupdate2` retagged `category="infrastructure"` so
+  the SPA hides MAU from the Categories grid (engine, not product).
+- New `category: Literal["app","infrastructure"]` field on WebApp
+  schema, default `"app"`. `extra="forbid"` preserved.
+- 13 new contract tests in `adapters/macos/tests/test_phase_a_coverage.py`
+  pin every Phase A change (new entries / dropped entries / codeedit
+  pattern / infrastructure tag / category default).
+- iWork "Creator Studio" rename investigated and dismissed as
+  not-a-bug: `mas list` uses CLI output indifferent to the
+  `/Applications/<Name>.app` rename; all three iWork bundles
+  (`com.apple.{Keynote,Numbers,Pages}`) are still covered by the
+  existing mas manager.
+
+**Phase B — operator-grade ports from `Aktualizacje_MAC`:**
+- **B1 TOR-2 MAS-GUI handler** for iPad-on-Apple-Silicon apps that
+  `mas` cannot touch (UniFi / WiFiman / Picsart): new
+  `adapters/macos/scripts/mas/gui_fallback.sh` ports the reference's
+  AppleScript-based 3-pass "Update All" automation verbatim
+  (`Aktualizacje_MAC/update_appstore.sh:215`). Auto-detects
+  Accessibility permission and opens the System Settings Privacy pane
+  on denial. Top-level entry point at `bin/ascendo-mas-gui-update.sh`.
+  Smoke test in `adapters/macos/tests/test_mas_gui_fallback.sh`
+  (4/4 passing on Mac.r12.home).
+- **B2 vendor-direct DMG for Ledger Live** — confirmed the existing
+  `_web_install_dmg` pipeline in `adapters/macos/lib/ascendo_web.sh`
+  already does the full chain (download → `hdiutil`/`ditto` → `spctl
+  --assess --type execute --verbose` Gatekeeper verify → remove-then-
+  copy atomic swap → xattr quarantine strip), so the only change
+  needed was promoting `ledger-live` from Tier-B trigger-only to
+  Tier-A apply by setting `download_path = "files[1].url"` against
+  `download.live.ledger.com/latest-mac.yml`. Live probe verified:
+  `files[1]` is the DMG (`files[0]` is the .zip). Mirrors the
+  reference's 2026-05-22 Ledger fix.
+- **B3 rotated per-run logs** — new
+  `core/ascendo/orchestrator/run_logger.py` attaches a
+  `logging.FileHandler` at `<base_dir>/<run.id>/run.log` for the
+  lifetime of `run_phases()`, then prunes the runs directory to the
+  newest N=30 entries (override via `ASCENDO_RUN_LOG_KEEP`).
+  Pruner only touches UUID4 / legacy `YYYYMMDDTHHMMSSZ-<hex>` named
+  directories — operator-owned paths are preserved. Wired into
+  `run_phases` via a thin wrapper (`_run_phases_inner`). Mirrors the
+  `Aktualizacje_MAC/logs/update_all_<ts>.log` rotation but inside
+  Ascendo's per-run sidecar dir. 230 stale runs detected on
+  Mac.r12.home; will be pruned on next run.
+- **B4 inventory override** — deferred as redundant. The existing
+  `~/.config/ascendo/web_apps.toml` user override (merge-by-bundle_id)
+  already covers the operator's add-custom-entries use case.
+
+**Phase C — bug fixes:**
+- **C1 `bin/validate-macos.sh --quick` + auto-detect** — added
+  `--quick` / `--full` flags. Default is now `--quick` when stdin is
+  not a TTY (CI / dashboard sidecar / piped invocation), eliminating
+  the 120s+ hang Sesja 12 observed. Quick mode skips dashboard
+  smoke, softwareupdate `-l` network call, and the launchd scheduler
+  round-trip (stages 10-12). Validated live:
+  `validate-macos.sh </dev/null` returns
+  "ALL QUICK CHECKS PASSED" in ~3s with 18/0 passed/failed.
+- **C2 dead elevation stub deleted** —
+  `core/ascendo/elevation/__init__.py` (17-line docstring-only orphan
+  flagged for optional deletion in Sesja 81 carry-forward) was
+  confirmed to have zero importers and removed. Empty directory
+  also pruned.
+- **C3 flaky-test triage** — three documented flakes
+  (`test_runs_active_stop_running_run`,
+  `test_apply_squirrel_invokes_open`,
+  `test_generate_apply_report_groups_categories`) catalogued in
+  new `docs/known-flaky-tests.md` with root-cause and "don't fix
+  here" rationale per Sesja 81 carry-forward.
+- **C4 editable re-install in dev workflow** — new
+  `bin/update-dev.sh` post-`git pull` editable refresh. Verifies
+  `python3 -c "import ascendo"` resolves to `$REPO_ROOT/core` and
+  re-runs `pip install --upgrade -e core/ -e adapters/<os>/`.
+  Idempotent. `--check-only` exits 0/1 based on drift. Handles
+  PEP 668 on Homebrew Python via `--break-system-packages`.
+
+**Phase D — parallel vendor doc refresh:**
+- 41 Tier-A registry entries probed in parallel (12-thread executor,
+  1.9s wall-clock). Findings categorised in
+  `docs/phase-d-vendor-probe-2026-05-24.md`:
+  - **3 real outdated** apps on this Mac: Google Chrome
+    (148.0.7778.179 → 149.0.7827.29), Brave (148.1.90.124 →
+    148.1.90.125), Proton Mail (1.13.0 → 1.13.1). Operator action:
+    `ascendo run --only web --phase apply`.
+  - **15 ✓ up_to_date** (claude/warp/trezor/codeedit/rdm/docker/
+    vscode/keepassxc/obsidian/opencode/inkscape/spotify/protonvpn/
+    protondrive/lm-studio).
+  - **7 false-drift probe artifacts** (megasync 4-digit vs 3-digit
+    format, zoom space-paren vs dot, firefox-dev beta-channel
+    picker, cursor stale ToDesktop app-id, antigravity rollout
+    cohort drift, appcleaner Sparkle item-order). Production
+    handlers do the right thing; probe was a one-shot quick check.
+  - **3 sparkle parse errors** (chatgpt / chatgpt-atlas / codex):
+    probe regex assumed attribute form, vendors use
+    `<sparkle:shortVersionString>X</sparkle:shortVersionString>`
+    element form. Production handler grabs both.
+  - **13 skipped** (omaha / msupdate / builtin handlers not in the
+    probe — they do their own fetch).
+- One real registry-fix recommendation: `cursor` slug points at a
+  stale ToDesktop app-id (`230313mzl4w4u92` returns 0.45.14 while
+  installed is 3.5.17). Operator should capture a fresh URL via
+  `mitmproxy` on next Cursor launch.
+
+### Pliki
+
+**New:**
+- `core/ascendo/orchestrator/run_logger.py` (M5.7.6 B3)
+- `bin/update-dev.sh` (M5.7.6 C4)
+- `bin/ascendo-mas-gui-update.sh` (M5.7.6 B1)
+- `adapters/macos/scripts/mas/gui_fallback.sh` (M5.7.6 B1)
+- `adapters/macos/tests/test_phase_a_coverage.py` (13 tests)
+- `adapters/macos/tests/test_mas_gui_fallback.sh` (4 smokes)
+- `docs/known-flaky-tests.md` (C3 triage)
+- `docs/phase-d-vendor-probe-2026-05-24.md` (Phase D report)
+
+**Modified:**
+- `adapters/macos/config/web_apps.toml` (5 new entries, 4 dropped,
+  codeedit fixed, ms365 retagged, ledger-live → Tier-A apply)
+- `adapters/macos/ascendo_macos/web_registry.py` (+category field)
+- `core/ascendo/orchestrator/runner.py` (attach_run_log wrapper +
+  `_run_phases_inner` split)
+- `bin/validate-macos.sh` (--quick / --full + auto-detect)
+
+**Deleted:**
+- `core/ascendo/elevation/__init__.py` + empty parent dir
+
+### Walidacja
+
+- 413/413 tests pass on `core/ascendo/` + `adapters/macos/tests/`
+  excluding the documented Sesja-73 pre-existing failure
+  (`test_apply_squirrel_invokes_open`); that single failure
+  reproduces identically on the pristine baseline and is
+  catalogued in `docs/known-flaky-tests.md`.
+- All shell scripts: `bash -n` clean.
+- All Python: AST parse + Pydantic validate clean.
+- `bin/validate-macos.sh </dev/null` → ALL QUICK CHECKS PASSED
+  (18/0) in ~3s.
+- `bin/update-dev.sh --check-only` → "dev tree pinned correctly
+  at /Users/mk/Dev_Env/Ascendo".
+- `bash adapters/macos/tests/test_mas_gui_fallback.sh` → 4/4 PASS.
+- `run_logger` smoke: log content reaches the file (321 B), prune
+  trims to keep=10, operator-owned dirs preserved.
+
+### Otwarte ryzyka / follow-ups
+
+1. **Cursor registry URL is stale** — fix per the Phase D report
+   recommendation (capture live update endpoint via mitmproxy on
+   next Cursor launch).
+2. **Firefox-dev beta channel** — if the next Phase D probe also
+   returns a `b2`-suffixed tag, switch `version_path` from
+   `FIREFOX_DEVEDITION` to a stable-only channel pointer.
+3. **iPad MAS-GUI not wired into mas/apply.sh** — `gui_fallback.sh`
+   is currently invocable only via `bin/ascendo-mas-gui-update.sh`.
+   Future session: wire it as an opt-in fallback after `mas upgrade`
+   when `mas list` shows iPad apps still pending.
+4. **Phase D probe regex robustness** — three sparkle false-positives
+   (chatgpt/chatgpt-atlas/codex) suggest the one-shot probe should
+   also accept the `<element>X</element>` form. Probe is a doc
+   artifact, not production code, so this is documentation polish.
+5. **3 documented flaky tests** — see `docs/known-flaky-tests.md`.
+6. **Self-update Ascendo.app via GH Releases** — depends on M4
+   signing/notarization; M5.7.6 left `dev.ascendo.desktop` filtered
+   out of the web inventory.
+
+### Sesja count
+
+| Window | Count |
+|---|---|
+| Sesja 12 (M3.12-M3.15 Windows MVP) | shipped 2026-05-01 |
+| Sesja 13 (M5.7.6 macOS coverage closeout) | **shipped 2026-05-24** |
+
+**macOS adapter status:** every non-silent app on this Mac (40
+installed `.app` bundles + brew casks + mas + native CLI) is now
+either covered by a Tier-A real-candidate probe, covered by the
+existing mas / msupdate / brew adapters, or surfaces as a clean
+Action-required item (IPMIView). The 3 real outdated apps detected
+in the Phase D probe (Chrome / Brave / Proton Mail) confirm the
+end-to-end coverage path works.
+
+---
+
 ## 2026-05-01 (Sesja 12) — Windows MVP feature-complete (M3.12 + M3.13 + M3.14 + M3.15)
 
 ### Co poszło na produkcję

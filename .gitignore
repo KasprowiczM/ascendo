@@ -263,3 +263,10 @@ dashboard-*.png
 
 # Build artefacts
 /dist/
+/.codex
+/.codex.local/
+/.codexignore
+/.claudeignore
+/.geminiignore
+/.gemini/
+/CODEX.md

@@ -59,17 +59,6 @@ download_asset_pattern = "^Brave-Browser-universal\\.dmg$"
 http_timeout_s = 12
 
 [[app]]
-slug = "opera"
-bundle_id = "com.operasoftware.Opera"  # TODO: confirm bundle_id (not installed on Mac.r12.home)
-display_name = "Opera"
-handler = "sparkle"
-appcast_url = "https://autoupdate.geo.opera.com/pub/opera/desktop/appcast.xml"
-
-# firefox-dev / keepassxc / ledger-live moved to the M5.7.1 vendor-probe
-# section below (release_feed for Mozilla product-details + Ledger CDN;
-# github_dmg already-correct for keepassxc kept once at the new location).
-
-[[app]]
 slug = "trezor-suite"
 bundle_id = "io.trezor.TrezorSuite"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Trezor Suite"
@@ -215,8 +204,12 @@ bundle_id = "app.codeedit.CodeEdit"  # verified on Mac.r12.home (2026-05-06)
 display_name = "CodeEdit"
 handler = "github_dmg"
 github_repo = "CodeEditApp/CodeEdit"
-asset_pattern = "CodeEdit-arm64\\.dmg$"
-enabled = false  # CodeEditApp/CodeEdit GH releases don't expose arm64.dmg assets at the documented URL. Real-Mac smoke at v0.3.0 confirmed asset_pattern doesn't match. Re-enable via user override once correct pattern is identified.
+asset_pattern = "^CodeEdit\\.dmg$"
+arch = "universal"
+# Re-enabled M5.7.6 (2026-05-24): probe of releases/latest confirmed
+# CodeEditApp/CodeEdit ships a single universal `CodeEdit.dmg` asset
+# (no per-arch variant). The legacy `CodeEdit-arm64\.dmg` pattern was
+# vendor-speculation. Live probe v0.3.6 verified.
 
 [[app]]
 slug = "rdm"
@@ -234,16 +227,6 @@ http_timeout_s = 8
 
 # ───────────────────────── Productivity / Multimedia ─────────────────────────
 
-[[app]]
-slug = "macwhisper"
-bundle_id = "com.goodsnooze.MacWhisper"  # verified on Mac.r12.home (2026-05-06; was com.appsforartists.MacWhisper in template)
-display_name = "MacWhisper"
-handler = "github_dmg"
-github_repo = "JordiBros/MacWhisper-releases"
-asset_pattern = "MacWhisper-.+-arm64\\.dmg$"
-enabled = false  # JordiBros/MacWhisper-releases is a GUESS — real distribution is goodsnooze.com direct downloads. Real-Mac smoke at v0.3.0 confirmed the repo doesn't exist or doesn't expose arm64 assets. Re-enable via user override once correct source identified.
-notes = "vendor's distribution repo (placeholder; not confirmed)"
-
 # ───────────────────────── Microsoft 365 + Docker ─────────────────────────
 # MAU per-app targeting (M5.7.4): each Office app gets its own [[app]]
 # entry with its MAU Application ID under [app.msupdate]. check reads the
@@ -256,7 +239,8 @@ slug = "ms365"
 bundle_id = "com.microsoft.autoupdate2"
 display_name = "Microsoft AutoUpdate"
 handler = "msupdate"
-notes = "Microsoft AutoUpdate self-update entry. Without [app.msupdate.app_id] this entry triggers a global `msupdate --install` covering anything pending — useful as a catch-all (e.g. Office License OLIC02). Per-product entries below give Word/Excel/etc. their own real-candidate row."
+category = "infrastructure"
+notes = "Microsoft AutoUpdate self-update entry. Without [app.msupdate.app_id] this entry triggers a global `msupdate --install` covering anything pending — useful as a catch-all (e.g. Office License OLIC02). Per-product entries below give Word/Excel/etc. their own real-candidate row. Tagged category=infrastructure (M5.7.6) so the SPA hides it from the user-facing Categories grid — MAU is an engine, not a product."
 
 [[app]]
 slug = "ms-word"
@@ -367,31 +351,19 @@ version_path = "FIREFOX_DEVEDITION"
 http_timeout_s = 8
 
 # ─── Notion ────────────────────────────────────────────────────────────────
-[[app]]
-slug = "notion"
-bundle_id = "notion.id"
-display_name = "Notion"
-handler = "release_feed"
-notes = "Electron-builder latest-mac.yml. files[1] is the .dmg (files[0] is the .zip). download_path is relative; release_feed_apply resolves against the feed URL's parent dir."
-
-[app.release_feed]
-url = "https://desktop-release.notion-static.com/latest-mac.yml"
-version_path = "version"
-download_path = "files[1].url"
-http_timeout_s = 8
-
 # ─── Ledger Live ───────────────────────────────────────────────────────────
 [[app]]
 slug = "ledger-live"
 bundle_id = "com.ledger.live"
 display_name = "Ledger Live"
 handler = "release_feed"
-notes = "Electron-builder latest-mac.yml on Ledger's CDN. files[0] is .zip; the published mac DMG is at files[N] where N is implementation-dependent. Probe-only on apply (no download_path) since the DMG URL isn't always present in the YAML response — Ledger's own updater handles the swap on app relaunch."
+notes = "Electron-builder latest-mac.yml on Ledger's CDN. files[0]=.zip, files[1]=.dmg (verified live 2026-05-24, version 4.4.0). M5.7.6 Phase B2 promoted to Tier-A apply: download_path=files[1].url drives the existing release_feed_apply pipeline which downloads the DMG, spctl Gatekeeper-verifies the .app, atomic-swaps into /Applications. Mirrors the Aktualizacje_MAC 2026-05-22 fix for Ledger's broken in-app updater. The vendor still ships a Squirrel updater inside the bundle, but vendor-direct DMG is the canonical path now."
 
 [app.release_feed]
 url = "https://download.live.ledger.com/latest-mac.yml"
 version_path = "version"
-http_timeout_s = 8
+download_path = "files[1].url"
+http_timeout_s = 12
 
 # ─── KeePassXC ─────────────────────────────────────────────────────────────
 [[app]]
@@ -437,19 +409,6 @@ notes = "Confirmed via app-update.yml inside /Applications/OpenCode.app/Contents
 # ────────────────────────────────────────────────────────────────────────────
 
 # ─── Notion Calendar (formerly Cron) ───────────────────────────────────────
-[[app]]
-slug = "notion-calendar"
-bundle_id = "com.cron.electron"
-display_name = "Notion Calendar"
-handler = "release_feed"
-notes = "Electron-builder latest-mac.yml on Notion's CDN. Discovered via app.asar reverse-engineering (M5.7.2). Files list contains arm64 DMG + universal/x64 zips. files[2] is typically the arm64 DMG (after the two zips). Live response 2026-05-08: version 1.133.0."
-
-[app.release_feed]
-url = "https://calendar-desktop-release.notion-static.com/latest-mac.yml"
-version_path = "version"
-download_path = "files[2].url"
-http_timeout_s = 8
-
 # ─── Cursor (ToDesktop-distributed Electron app) ───────────────────────────
 [[app]]
 slug = "cursor"
@@ -589,3 +548,68 @@ http_timeout_s = 8
 # inventory. If a future packaged Ascendo.dmg ships via GitHub Releases,
 # either remove the discovery filter and re-add a [[app]] entry here,
 # or rely on a user override at ~/.config/ascendo/web_apps.toml.
+
+
+# ═════════════════════════════ M5.7.6 — Phase A coverage closeout ═══════════
+# Added 2026-05-24. Closes the coverage gaps identified by diffing the
+# canonical Aktualizacje_MAC inventory against this registry. All five
+# endpoints probed live before commit (HTTP 200 + version field matches
+# installed CFBundleShortVersionString or matches the legend in the
+# reference APPLICATIONS.md).
+# ────────────────────────────────────────────────────────────────────────────
+
+# ─── Antigravity IDE (Google's separate IDE-product sibling) ───────────────
+[[app]]
+slug = "antigravity-ide"
+bundle_id = "com.google.antigravity-ide"  # verified on Mac.r12.home (2026-05-24)
+display_name = "Antigravity IDE"
+handler = "release_feed"
+notes = "Sibling of the `antigravity` entry — Google ships Antigravity IDE as a separate /Applications bundle (`com.google.antigravity-ide`) but the auto-updater service is shared. The same root endpoint at antigravity-auto-updater-974169037036.us-central1.run.app/ returns plain text `Auto updater is running. Stable Version: <X.Y.Z>. Rolled out to N%` for both products (Stable Version field tracks the shared release train). Apply trigger-only (Squirrel updater bundled inside the app handles install on next launch). Live probe verified 2026-05-24."
+
+[app.release_feed]
+url = "https://antigravity-auto-updater-974169037036.us-central1.run.app/"
+format = "text"
+version_regex = "(?s).*Stable Version:\\s*([0-9]+\\.[0-9]+\\.[0-9]+).*"
+version_replace = "\\1"
+http_timeout_s = 8
+
+# ─── AppCleaner (FreeMacSoft) ──────────────────────────────────────────────
+[[app]]
+slug = "appcleaner"
+bundle_id = "net.freemacsoft.AppCleaner"  # verified on Mac.r12.home (2026-05-24)
+display_name = "AppCleaner"
+handler = "sparkle"
+appcast_url = "https://freemacsoft.net/appcleaner/updates.xml"
+notes = "Real SUFeedURL extracted from installed Info.plist (M5.7.6). Vendor doc at freemacsoft.com lists this same URL. Note: vendor-published updates are infrequent (current latest item is sparkle:shortVersionString=3.6.8, dated 2023-07; matches installed). The handler will report up_to_date so long as latest item matches; once vendor ships 3.6.9+ the probe surfaces it. Apply downloads the .zip enclosure and installs via existing sparkle handler path."
+
+# ─── ProtonVPN ──────────────────────────────────────────────────────────────
+[[app]]
+slug = "protonvpn"
+bundle_id = "ch.protonvpn.mac"  # verified on Mac.r12.home (2026-05-24)
+display_name = "ProtonVPN"
+handler = "sparkle"
+appcast_url = "https://protonvpn.com/download/macos/updates/v5/sparkle.xml"
+notes = "Real SUFeedURL extracted from installed Info.plist (M5.7.6). The legacy macos-update.xml feed at protonvpn.com is the abandoned 1.x channel (last item v1.5.8 from 2020); the v5/sparkle.xml feed is the current 6.x channel — verified 2026-05-24, latest=6.5.1 (matches installed). Apply: standard sparkle handler downloads the DMG and runs the in-app updater on next launch."
+
+# ─── Proton Drive ───────────────────────────────────────────────────────────
+[[app]]
+slug = "protondrive"
+bundle_id = "ch.protonmail.drive"  # verified on Mac.r12.home (2026-05-24)
+display_name = "Proton Drive"
+handler = "release_feed"
+notes = "Vendor JSON at proton.me/download/drive/macos/version.json — same shape as Proton Mail's version.json (Releases[] array; Releases[0] is the current Stable release with File.Url pointing at the versioned DMG). Live probe verified 2026-05-24: Releases[0].Version=2.11.5 (matches installed). Tier-A on apply: File.Url is a direct DMG download path that can be passed into release_feed_apply. download_path is set so the handler installs via direct DMG instead of trigger-only."
+
+[app.release_feed]
+url = "https://proton.me/download/drive/macos/version.json"
+version_path = "Releases[0].Version"
+download_path = "Releases[0].File.Url"
+http_timeout_s = 8
+
+# ─── IPMIView (Supermicro) — manual updates only ───────────────────────────
+[[app]]
+slug = "ipmiview"
+bundle_id = "com.supermicro.IPMIView"  # speculative; vendor app has no Info.plist bundle id readable via standard PlistBuddy
+display_name = "IPMIView"
+handler = "builtin"
+notes = "Supermicro IPMIView has no auto-updater framework (no Sparkle / Keystone / Squirrel). Vendor distributes via supermicro.com/en/solutions/management-software/ipmi-utilities behind a 'register your product' wall — no public version endpoint discoverable. Builtin handler surfaces an Action-required item in the SPA pointing the operator at the vendor page. enabled=true so the entry appears in Action-required; flip to false locally if you don't use IPMIView."
+update_url = "https://www.supermicro.com/en/solutions/management-software/ipmi-utilities"

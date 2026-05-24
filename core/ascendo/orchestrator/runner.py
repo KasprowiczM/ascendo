@@ -49,6 +49,7 @@ from ..models.package import SourceType
 from ..models.result import Message, MessageLevel, Summary
 from ..models.run import Phase, PhaseStatus, RunInfo
 from ..models.sidecar import Sidecar, SidecarSchema, ToolInfo
+from .run_logger import attach_run_log
 from .sidecar_io import write_sidecar
 
 _log = logging.getLogger(__name__)
@@ -178,6 +179,31 @@ def run_phases(
         msg = f"phases must be a non-empty subset of {DEFAULT_PHASE_ORDER}"
         raise ValueError(msg)
 
+    # M5.7.6: attach a per-run file handler under <base_dir>/<run.id>/run.log
+    # and prune to ASCENDO_RUN_LOG_KEEP (default 30) on exit. Mirrors the
+    # Aktualizacje_MAC `logs/update_all_<ts>.log` rotation. Cheap (~1 MiB
+    # per run worst-case); large operator wins for offline post-mortem.
+    with attach_run_log(str(run.id), base_dir):
+        return _run_phases_inner(
+            adapter=adapter, run=run, host=host, ordered=ordered,
+            categories=categories, base_dir=base_dir,
+            stop_on_failure=stop_on_failure, item_filter=item_filter,
+            should_cancel=should_cancel,
+        )
+
+
+def _run_phases_inner(
+    adapter,
+    run,
+    host,
+    *,
+    ordered,
+    categories,
+    base_dir,
+    stop_on_failure,
+    item_filter,
+    should_cancel,
+):
     available_managers = adapter.package_managers(host)
     selected = _select_managers(available_managers, categories, host)
 

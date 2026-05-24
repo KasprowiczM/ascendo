@@ -202,6 +202,11 @@ class WebApp(BaseModel):
     handler: Literal["sparkle", "github_dmg", "keystone", "squirrel",
                      "builtin", "msupdate", "docker", "release_feed",
                      "omaha"]
+    # category (M5.7.6): "app" = end-user product (default; appears in SPA);
+    # "infrastructure" = update engine itself (e.g. Microsoft AutoUpdate) —
+    # SPA hides these from the Categories grid since they are not
+    # user-facing products. Discovery + handler logic unchanged.
+    category: Literal["app", "infrastructure"] = "app"
     app_path: Optional[Path] = None
     enabled: bool = True
     notes: Optional[str] = None

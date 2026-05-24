@@ -32,6 +32,11 @@
 # Flags:
 #   --port <N>         dashboard port (default: 8765)
 #   --skip-dashboard   skip dashboard tests
+#   --quick            skip dashboard + softwareupdate + scheduler (no network,
+#                      no sudo warm). Default ON when stdin is not a TTY
+#                      (CI / dashboard sidecar / piped invocation).
+#   --full             force full validation even without a TTY (overrides
+#                      the auto-quick default).
 # =============================================================================
 set -o pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -40,13 +45,32 @@ cd "$REPO_ROOT"
 
 DASHBOARD_PORT="${DASHBOARD_PORT:-8765}"
 SKIP_DASHBOARD=0
+QUICK_MODE=0
+FORCE_FULL=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --port)           DASHBOARD_PORT="$2"; shift 2 ;;
         --skip-dashboard) SKIP_DASHBOARD=1; shift ;;
+        --quick)          QUICK_MODE=1; shift ;;
+        --full)           FORCE_FULL=1; shift ;;
         *) printf "validate-macos.sh: unknown arg: %s\n" "$1" >&2; exit 2 ;;
     esac
 done
+
+# Auto-quick when stdin is not a TTY (M5.7.6 fix for the 120s+ hang seen
+# under CI / dashboard sidecar / piped invocation). Operator override via
+# --full. Quick mode skips the dashboard smoke (which blocks on uvicorn
+# bind + port-collision retry), the softwareupdate phases (which call
+# `softwareupdate -l` over the network and can take 60+ s), and the
+# scheduler round-trip (which warms sudo via launchctl bootstrap).
+if [ "$QUICK_MODE" = "0" ] && [ "$FORCE_FULL" = "0" ] && [ ! -t 0 ]; then
+    QUICK_MODE=1
+    printf "validate-macos.sh: stdin is not a TTY -- enabling --quick (use --full to override).\n" >&2
+fi
+if [ "$QUICK_MODE" = "1" ]; then
+    SKIP_DASHBOARD=1
+    export ASCENDO_VALIDATE_QUICK=1
+fi
 
 FAIL_COUNT=0
 PASS_COUNT=0
@@ -493,6 +517,17 @@ fi
 # ============================================================
 # Stage 10 — softwareupdate (M5.4)
 # ============================================================
+if [ "${QUICK_MODE:-0}" = "1" ]; then
+    step "10-12: SKIPPED in --quick mode"
+    printf "validate-macos.sh: --quick mode -- skipping softwareupdate / Time Machine / launchd stages.\n"
+    printf "validate-macos.sh: passed=%d failed=%d (partial)\n" "$PASS_COUNT" "$FAIL_COUNT"
+    if [ "$FAIL_COUNT" -eq 0 ]; then
+        printf "ALL QUICK CHECKS PASSED.\n"
+        exit 0
+    fi
+    exit 1
+fi
+
 step "10. softwareupdate (M5.4)"
 
 # Capture doctor output ONCE for both Stage 10 + Stage 11 component grep.
