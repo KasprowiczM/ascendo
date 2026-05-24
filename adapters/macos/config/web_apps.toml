@@ -47,16 +47,9 @@ http_timeout_s = 8
 slug = "brave"
 bundle_id = "com.brave.Browser"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Brave Browser"
-handler = "release_feed"
-notes = "Promoted from keystone (Tier-B) -> release_feed Tier-A check (M5.7.4 Phase B) -> full Tier-A apply (M5.7.5, 2026-05-09 after operator hit unlaunchable x86_64 Brave on arm64 Mac that Keystone couldn't reconcile). CFBundleShortVersionString is `<chromium_milestone>.<brave_internal>` (e.g. 148.1.90.121 = Chromium 148 + Brave 1.90.121). Neither the GitHub tag (v1.90.121) nor the Sparkle appcast (1.90.121.0) match directly, but the GitHub release `name` field carries both pieces — `Release v1.90.121 (Chromium 148.0.7778.96)`. The version_regex rewrites this into the canonical CFBundleShortVersionString shape. If Brave changes the release-name format the regex won't match and the handler falls back to the raw `name` value (degraded but visible) per M5.7.4 spec. Apply downloads `Brave-Browser-universal.dmg` (the only universal-binary asset; `Brave-Browser-arm64.dmg` is also published but `universal` is what brew/Sparkle use). The 234 MiB DMG needs a longer timeout than the 8s default because the GitHub API call returns a ~50 KiB JSON body but if curl follows the asset URL on a slow link it can take >8s — bump to 12s. Live probe verified 2026-05-08: name='Release v1.90.121 (Chromium 148.0.7778.96)' -> 148.1.90.121."
-
-[app.release_feed]
-url = "https://api.github.com/repos/brave/brave-browser/releases/latest"
-version_path = "name"
-version_regex = ".*v([0-9.]+) \\(Chromium ([0-9]+)\\.[^)]*\\).*"
-version_replace = "\\2.\\1"
-download_asset_pattern = "^Brave-Browser-universal\\.dmg$"
-http_timeout_s = 12
+handler = "sparkle"
+appcast_url = "https://updates.bravesoftware.com/sparkle/Brave-Browser/stable-arm64/appcast.xml"
+notes = "Switched from release_feed-against-GitHub to native Sparkle in M5.7.6 (2026-05-24) after a real apply failed with handler exit 28 -- the `brave/brave-browser` GitHub releases/latest now only carries Android APK assets (no Brave-Browser-universal.dmg). The CANONICAL mac stable channel is the vendor's Sparkle appcast at updates.bravesoftware.com/sparkle/Brave-Browser/stable-arm64/appcast.xml -- it lags the GitHub tag by 0-1 patches because mac rollout is gated separately. Sparkle appcast version 1.90.124.0 matches CFBundleShortVersionString 148.1.90.124 (the Sparkle major drops the Chromium prefix; production sparkle_check compares both forms). DMG enclosure at updates-cdn.bravesoftware.com is direct-served (no auth, no GH rate limit). Reverted complexity: the M5.7.5 version_regex acrobatics for combining GitHub tag with Chromium milestone are no longer needed -- sparkle hands us the canonical channel version directly."
 
 [[app]]
 slug = "trezor-suite"
