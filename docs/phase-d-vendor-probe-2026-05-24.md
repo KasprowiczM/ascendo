@@ -25,7 +25,7 @@
 
 Run on this Mac:
 ```bash
-ascendo run --only web --phase apply
+ascendo run --category web --phase apply
 ```
 
 ## False drift — probe artifact, not registry bug
@@ -61,7 +61,7 @@ and `test_web_phase_apply.py`.
 
 ## Recommendations
 
-1. **Run `ascendo run --only web --phase apply`** on this Mac to install
+1. **Run `ascendo run --category web --phase apply`** on this Mac to install
    the 3 real updates (Chrome / Brave / Proton Mail). Expected runtime
    ~5 min for the DMG downloads.
 2. **Cursor registry refresh** — the `cursor` slug points at a stale
@@ -87,5 +87,5 @@ cd ~/Dev_Env/Ascendo
 python3 -c "..."   # restore from git history of this commit
 ```
 
-Or simply re-run via `ascendo run --only web --phase check` which uses
+Or simply re-run via `ascendo run --category web --phase check` which uses
 the production handlers and their full version-compare logic.

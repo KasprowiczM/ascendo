@@ -103,7 +103,7 @@
   - **3 real outdated** apps on this Mac: Google Chrome
     (148.0.7778.179 → 149.0.7827.29), Brave (148.1.90.124 →
     148.1.90.125), Proton Mail (1.13.0 → 1.13.1). Operator action:
-    `ascendo run --only web --phase apply`.
+    `ascendo run --category web --phase apply`.
   - **15 ✓ up_to_date** (claude/warp/trezor/codeedit/rdm/docker/
     vscode/keepassxc/obsidian/opencode/inkscape/spotify/protonvpn/
     protondrive/lm-studio).
