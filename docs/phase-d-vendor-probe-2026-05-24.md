@@ -89,3 +89,24 @@ python3 -c "..."   # restore from git history of this commit
 
 Or simply re-run via `ascendo run --category web --phase check` which uses
 the production handlers and their full version-compare logic.
+
+## Post-apply correction (2026-05-24, ~30min after probe)
+
+The first real `ascendo run --category web --phase apply` on Mac.r12.home
+exposed a probe artefact in this report:
+
+* **Brave** was listed as "real outdated 148.1.90.124 → 148.1.90.125".
+  This was wrong. The probe used GitHub's `releases/latest` `name`
+  field, which leads the Sparkle stable-arm64 channel by 0-1 patches.
+  The canonical mac rollout channel (Sparkle appcast at
+  `updates.bravesoftware.com/sparkle/Brave-Browser/stable-arm64/`)
+  reports 1.90.124.0 = installed CFBundleShortVersionString
+  148.1.90.124. Brave is **up_to_date** on this Mac.
+* Plus, the apply phase exit code 28 surfaced that Brave moved their
+  Mac DMG off GitHub Releases entirely (only Android APKs there now).
+  Fixed in commit `820dbdb`: registry entry switched
+  `release_feed (GH) → sparkle (vendor stable-arm64 appcast)`.
+
+Final outdated set after the fix: **chrome (deferred while running)**,
+**comet (self-update)**, **proton-mail (manual)**. Chrome's the only
+one Ascendo can install end-to-end; quit Chrome and re-run apply.
