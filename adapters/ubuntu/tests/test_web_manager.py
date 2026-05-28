@@ -298,6 +298,6 @@ def test_check_phase_runs_against_empty_host(tmp_path: Path) -> None:
     sidecar = tmp_path / "check.json"
     assert sidecar.exists(), "sidecar not written"
     data = json.loads(sidecar.read_text())
-    # ascendo/v1 schema (legacy emitter)
-    assert data.get("schema") in ("ascendo/v1", "ascendo/v1")
+    # legacy bash emitter writes ubuntu-aktualizacje/v1; canonical writers emit ascendo/v1
+    assert data.get("schema") in ("ascendo/v1", "ubuntu-aktualizacje/v1")
     assert data.get("category") == "web"

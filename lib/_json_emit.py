@@ -27,7 +27,7 @@ from pathlib import Path
 
 import re
 
-SCHEMA_ID = "ascendo/v1"
+SCHEMA_ID = "ubuntu-aktualizacje/v1"
 VALID_KINDS = {"check", "plan", "apply", "verify", "cleanup"}
 _BUILTIN_CATEGORIES = {
     "apt", "snap", "brew", "npm", "pip", "flatpak", "drivers", "inventory",

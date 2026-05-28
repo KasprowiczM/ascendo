@@ -1,6 +1,6 @@
 Package: ascendo
 Source: ascendo
-Version: 0.0.7
+Version: 0.6.0
 Section: admin
 Priority: optional
 Architecture: all

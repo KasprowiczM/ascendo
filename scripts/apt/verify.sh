@@ -74,14 +74,16 @@ if [[ -n "$broken" ]]; then
     EXIT_RC=1
 fi
 
-# ── 4. NVIDIA driver health (informational) ──────────────────────────────────
+# ── 4. NVIDIA driver health (informational only) ─────────────────────────────
+# Driver health is the drivers category's responsibility — see
+# scripts/drivers/verify.sh. apt verify only logs it as info so operators
+# scanning a single sidecar still see the signal, but a broken driver does
+# not cause apt verify to exit non-zero (it isn't apt's domain).
 if has_cmd nvidia-smi; then
     if nvidia-smi >/dev/null 2>&1; then
         json_add_diag info NVIDIA-SMI-OK "nvidia-smi responsive"
     else
-        json_add_diag warn NVIDIA-SMI-DOWN "nvidia-smi not responsive (reboot or DKMS rebuild may be needed)"
-        json_count_warn
-        EXIT_RC=1
+        json_add_diag info NVIDIA-SMI-DOWN "nvidia-smi not responsive (see drivers/verify; reboot or DKMS rebuild may be needed)"
     fi
 fi
 

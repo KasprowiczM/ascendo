@@ -517,24 +517,6 @@ class UbuntuAdapter(IAdapter):
         v = out[0] if out else ""
         return f"ok: {v}" if v else "ok"
 
-    def _systemctl_status(self) -> str:
-        path = shutil.which("systemctl")
-        if path is None:
-            return "warn: not available (systemctl not on PATH)"
-        try:
-            res = subprocess.run(
-                [path, "--user", "is-system-running"],
-                capture_output=True, text=True, timeout=5, check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            return f"warn: {exc}"
-        # is-system-running returns non-zero on degraded/initializing/etc.,
-        # but systemctl itself is functional. Treat any successful spawn
-        # as ok.
-        line = (res.stdout or res.stderr or "").strip().splitlines()
-        v = line[0] if line else ""
-        return f"ok: {v}" if v else "ok"
-
     def _bash_status(self) -> str:
         path = shutil.which("bash") or "/bin/bash"
         if not Path(path).exists():

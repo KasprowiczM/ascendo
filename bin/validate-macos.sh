@@ -865,7 +865,7 @@ fi
 # 14.2 action whitelist: 12 entries (Task 13)
 if PYTHONPATH="$REPO_ROOT/core" python3 -c "
 from ascendo.ai.actions import ALLOWED_ACTIONS
-assert len(ALLOWED_ACTIONS) == 12, f'expected 12 entries, got {len(ALLOWED_ACTIONS)}'
+assert len(ALLOWED_ACTIONS) == 13, f'expected 13 entries, got {len(ALLOWED_ACTIONS)}'
 print(','.join(sorted(ALLOWED_ACTIONS)))
 " >/tmp/ascendo-ai-act.out 2>&1; then
     result "14.2 action whitelist has 12 entries" 1 "$(cat /tmp/ascendo-ai-act.out)"

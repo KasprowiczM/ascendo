@@ -550,9 +550,9 @@ try {
     $libOut = python -c "from ascendo.ai.prompts import load_library; lib = load_library(); assert len(lib) >= 10; [(\"en\" in e[\"title\"] and \"pl\" in e[\"title\"]) for e in lib]; print(len(lib))" 2>&1
     Test-Result "14.1 prompt library 10+ EN+PL" ($LASTEXITCODE -eq 0) "$libOut entries"
 
-    # 14.2 action whitelist 12 entries
-    $actOut = python -c "from ascendo.ai.actions import ALLOWED_ACTIONS; assert len(ALLOWED_ACTIONS) == 12; print(len(ALLOWED_ACTIONS))" 2>&1
-    Test-Result "14.2 action whitelist 12 entries" ($LASTEXITCODE -eq 0) $actOut
+    # 14.2 action whitelist 13 entries (12 base + web_probe added by Sesja 79 C.4)
+    $actOut = python -c "from ascendo.ai.actions import ALLOWED_ACTIONS; assert len(ALLOWED_ACTIONS) == 13; print(len(ALLOWED_ACTIONS))" 2>&1
+    Test-Result "14.2 action whitelist 13 entries" ($LASTEXITCODE -eq 0) $actOut
 
     # 14.3 backend resolver lists 4 CLI drivers
     $bkOut = python -c "from ascendo.ai.backend import BackendResolver; names = sorted({b['name'] for b in BackendResolver(preferred=None).list_status()}); assert names == ['claude', 'codex', 'gemini', 'opencode'], names; print(','.join(names))" 2>&1

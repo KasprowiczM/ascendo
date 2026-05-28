@@ -430,15 +430,15 @@ else
     result "14.1 prompt library 10+ EN+PL" 0 "$(cat /tmp/ascendo-ai-lib.out)"
 fi
 
-# 14.2 action whitelist size (Task 13)
+# 14.2 action whitelist size (13 = 12 base + web_probe added by Sesja 79 C.4)
 if PYTHONPATH="$REPO_ROOT_AI/core" python3 -c "
 from ascendo.ai.actions import ALLOWED_ACTIONS
-assert len(ALLOWED_ACTIONS) == 12
+assert len(ALLOWED_ACTIONS) == 13, f'expected 13, got {len(ALLOWED_ACTIONS)}'
 print(','.join(sorted(ALLOWED_ACTIONS)))
 " >/tmp/ascendo-ai-act.out 2>&1; then
-    result "14.2 action whitelist 12 entries" 1
+    result "14.2 action whitelist 13 entries" 1
 else
-    result "14.2 action whitelist 12 entries" 0 "$(cat /tmp/ascendo-ai-act.out)"
+    result "14.2 action whitelist 13 entries" 0 "$(cat /tmp/ascendo-ai-act.out)"
 fi
 
 # 14.3 backend resolver lists 4 CLI backends (Task 9)

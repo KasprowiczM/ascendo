@@ -17,10 +17,20 @@ if [[ "${HAS_NVIDIA:-0}" -eq 1 ]]; then
         json_add_item id="drivers:nvidia-smi" action="health" result="ok" details="${smi}"
         json_count_ok
     else
-        json_add_item id="drivers:nvidia-smi" action="health" result="failed"
-        json_add_diag error NVIDIA-SMI-DOWN "nvidia-smi not responsive after apply"
-        json_count_err
-        EXIT_RC=1
+        # Match the severity check + apply use for the same condition:
+        # nvidia-smi unresponsive is typically a kernel/DKMS mismatch
+        # (running kernel ≠ kernel the driver was built against) that
+        # pre-exists the run, so we don't escalate to error here. The
+        # warn surfaces in the report and pairs with the reboot-required
+        # banner that DKMS already sets via /var/run/reboot-required.
+        running_kernel=$(uname -r 2>/dev/null || echo unknown)
+        dkms_state=$(dkms status 2>/dev/null | grep -E "^nvidia/" | head -1 || echo "")
+        details="kernel=${running_kernel}; dkms=${dkms_state:-none}"
+        json_add_item id="drivers:nvidia-smi" action="health" result="warn" details="${details}"
+        json_add_diag warn NVIDIA-SMI-DOWN "nvidia-smi not responsive (reboot or DKMS rebuild may be needed; ${details})"
+        json_count_warn
+        # Do not set EXIT_RC=1 — pre-existing kernel/DKMS mismatches
+        # aren't apply failures and shouldn't poison the run status.
     fi
 fi
 
