@@ -25,7 +25,8 @@ Set-StrictMode -Version Latest
 # Source: Ascendo/CLAUDE.md > Key Design Decisions item 4
 # Confirmed in 3_Update-Programs.ps1 (search for -1978335190, -1978335212, 3010).
 $script:WINGET_EXIT_SUCCESS         = 0
-$script:WINGET_EXIT_UP_TO_DATE      = -1978335190    # 0x8A15002A
+$script:WINGET_EXIT_UP_TO_DATE_A    = -1978335190    # 0x8A15002A (Config error)
+$script:WINGET_EXIT_UP_TO_DATE_B    = -1978335189    # 0x8A15002B (CLI error)
 $script:WINGET_EXIT_ID_NOT_FOUND    = -1978335212    # 0x8A150014
 $script:WINGET_EXIT_REBOOT_REQUIRED = 3010
 
@@ -538,7 +539,15 @@ function Convert-WingetExitCode {
                 ExitCode    = $ExitCode
             }
         }
-        $script:WINGET_EXIT_UP_TO_DATE {
+        $script:WINGET_EXIT_UP_TO_DATE_A {
+            return [pscustomobject]@{
+                Status      = 'up_to_date'
+                IsSuccess   = $true
+                Description = 'Package is already up to date (no applicable update found).'
+                ExitCode    = $ExitCode
+            }
+        }
+        $script:WINGET_EXIT_UP_TO_DATE_B {
             return [pscustomobject]@{
                 Status      = 'up_to_date'
                 IsSuccess   = $true

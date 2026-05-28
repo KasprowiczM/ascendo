@@ -1,5 +1,23 @@
 # Last Run Review
 
+## 2026-05-28 — Windows parity validation run
+
+Reviewed run:
+
+```text
+id: f94a682e-c3ae-4945-8eae-5521902978a9
+status: failed (1 winget apply failure on Mega.MEGASync, which cascaded to verify)
+duration: ~6m
+```
+
+### Findings & fixes shipped
+
+| Finding | Root cause | Fix |
+|---|---|---|
+| `winget` phase failed | `Mega.MEGASync` failed to apply with exit code `-1978335189` (`0x8A15002B` `APPINSTALLER_CLI_ERROR_NO_APPLICABLE_UPGRADE`). Winget found an update but it was not applicable to the system configuration. | Mapped `-1978335189` to `up_to_date` status in `AscendoWinget.psm1::Convert-WingetExitCode`, alongside the already-mapped `-1978335190`. |
+
+---
+
 ## 2026-04-30 — Full run analysis + UX/perf overhaul
 
 Reviewed run:
