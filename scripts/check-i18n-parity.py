@@ -54,7 +54,7 @@ def _load_via_node() -> dict:
     )
     r = subprocess.run(
         [node, "-e", script],
-        check=True, capture_output=True, text=True,
+        check=True, capture_output=True, text=True, encoding="utf-8"
     )
     return json.loads(r.stdout)
 

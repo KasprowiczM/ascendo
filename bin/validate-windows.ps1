@@ -1,5 +1,5 @@
 # =============================================================================
-# bin\validate-windows.ps1 — Ascendo Windows-side validation harness
+# bin\validate-windows.ps1 - Ascendo Windows-side validation harness
 # =============================================================================
 #
 # Run AFTER:
@@ -13,8 +13,8 @@
 #   4. `python -m ascendo run --category winget --phase check --runs-dir TEMP`
 #      runs end-to-end, produces a sidecar, exits 0/1 (not 2/3).
 #   5. All 5 phases × winget (apply runs --dry-run; no real mutations).
-#   6. npm manager 5-phase smokes — skip-on-missing.        (Sesja 58)
-#   7. pip manager 5-phase smokes — skip-on-missing.        (Sesja 58)
+#   6. npm manager 5-phase smokes - skip-on-missing.        (Sesja 58)
+#   7. pip manager 5-phase smokes - skip-on-missing.        (Sesja 58)
 #   8. web manager check / plan / apply --dry-run.          (Sesja 58)
 #   9. `ascendo web {start,status,restart,stop}` lifecycle. (Sesja 56)
 #  10. `ascendo build-inventory` enumerates packages.       (Sesja 57)
@@ -35,7 +35,7 @@ param(
     [switch] $SkipDashboard
 )
 
-# Each native command's exit code is checked explicitly — do NOT make
+# Each native command's exit code is checked explicitly - do NOT make
 # pwsh treat any non-zero return as a terminating error. A non-zero exit
 # from `ascendo doctor` (e.g. 3 = no adapter installed) is a valid
 # signal that the script reports as [FAIL], not a fatal error.
@@ -83,11 +83,10 @@ try {
     if ($doctorExit -eq 0) {
         Test-Result "doctor command (adapter healthy)" $true $doctorText
     } elseif ($doctorExit -eq 3 -or $doctorText -match 'No adapter available') {
-        # Specific, well-known failure mode — point user at the fix.
-        Test-Result "doctor command — NO ADAPTER INSTALLED" $false `
-            "Fix: cd $RepoRoot ; pip install -e .\adapters\windows\"
+        # Specific, well-known failure mode - point user at the fix.
+        Test-Result "doctor command - NO ADAPTER INSTALLED" $false "Fix: cd $RepoRoot ; pip install -e .\adapters\windows"
         Write-Host "  HINT: install the Windows adapter:" -ForegroundColor Yellow
-        Write-Host "        pip install -e .\adapters\windows\" -ForegroundColor Yellow
+        Write-Host "        pip install -e .\adapters\windows" -ForegroundColor Yellow
         Write-Host ""
         Write-Host "  Then re-run this script." -ForegroundColor Yellow
         Write-Host ""
@@ -193,7 +192,7 @@ try {
 
     # ── 6. npm manager (Sesja 58) ──────────────────────────────────────────
     # Skip-on-missing: if npm isn't on PATH, doctor reports degraded but
-    # the script must NOT fail — the operator may not have Node.js
+    # the script must NOT fail - the operator may not have Node.js
     # installed and that's a legitimate state.
     Write-Step "6. npm manager (Sesja 58)"
 
@@ -225,7 +224,7 @@ try {
         & python -B -m ascendo run --category npm --phase plan --runs-dir $out 2>&1 | Out-Null
         Test-Result "6.3 npm plan exit 0/1" ($LASTEXITCODE -in @(0,1)) "exit=$LASTEXITCODE"
     } else {
-        Write-Host "  [SKIP] 6.2 / 6.3 — npm not on PATH (install Node.js if you want npm management)" -ForegroundColor DarkGray
+        Write-Host "  [SKIP] 6.2 / 6.3 - npm not on PATH (install Node.js if you want npm management)" -ForegroundColor DarkGray
     }
 
     # ── 7. pip manager (Sesja 58) ──────────────────────────────────────────
@@ -260,7 +259,7 @@ try {
         & python -B -m ascendo run --category pip --phase plan --runs-dir $out 2>&1 | Out-Null
         Test-Result "7.3 pip plan exit 0/1" ($LASTEXITCODE -in @(0,1)) "exit=$LASTEXITCODE"
     } else {
-        Write-Host "  [SKIP] 7.2 / 7.3 — pip not on PATH" -ForegroundColor DarkGray
+        Write-Host "  [SKIP] 7.2 / 7.3 - pip not on PATH" -ForegroundColor DarkGray
     }
 
     # ── 8. web manager (Sesja 58) ──────────────────────────────────────────
@@ -287,10 +286,10 @@ try {
     $webCheckExit = $LASTEXITCODE
     $webCheckSidecar = Get-ChildItem -Path $out -Recurse -Filter 'check__web.json' -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($webCheckExit -in @(0,1,2) -and ($null -ne $webCheckSidecar -or $webCheckExit -eq 2)) {
-        # Exit 2 = bad usage (e.g. web category not supported by this adapter) — skip cleanly
+        # Exit 2 = bad usage (e.g. web category not supported by this adapter) - skip cleanly
         if ($webCheckExit -eq 2 -and $null -eq $webCheckSidecar) {
-            Write-Host "  [SKIP] 8.2 web check — category not supported by this adapter (exit=2)" -ForegroundColor DarkGray
-            Write-Host "  [SKIP] 8.3 / 8.4 — skipping further web phases" -ForegroundColor DarkGray
+            Write-Host "  [SKIP] 8.2 web check - category not supported by this adapter (exit=2)" -ForegroundColor DarkGray
+            Write-Host "  [SKIP] 8.3 / 8.4 - skipping further web phases" -ForegroundColor DarkGray
         } else {
             Test-Result "8.2 web check produced sidecar" ($null -ne $webCheckSidecar) "exit=$webCheckExit  sidecar=$($null -ne $webCheckSidecar)"
 
@@ -315,7 +314,7 @@ try {
     }
 
     # ── 9. ascendo web lifecycle (Sesja 56) ────────────────────────────────
-    # CLI-driven lifecycle (pidfile-tracked) — different surface from the
+    # CLI-driven lifecycle (pidfile-tracked) - different surface from the
     # dashboard tested in stage 12. Use a different port to avoid collisions.
     Write-Step "9. ascendo web lifecycle (Sesja 56)"
 
@@ -330,7 +329,7 @@ try {
     $startExit = $LASTEXITCODE
     Start-Sleep -Seconds 2
 
-    # 9.2 web status — should report running
+    # 9.2 web status - should report running
     $statusOk = $false
     $statusObj = $null
     try {
@@ -360,10 +359,10 @@ try {
             Test-Result "9.3 web restart (new pid)" $true "old_pid=$oldPid  new_pid=$($statusObj2.pid)"
         } else {
             # restart that reuses pid is unusual but not a hard failure; warn only.
-            Write-Host "  [WARN] 9.3 web restart — pid did not change (old=$oldPid  new=$(if ($statusObj2) { $statusObj2.pid } else { 'n/a' }))" -ForegroundColor Yellow
+            Write-Host "  [WARN] 9.3 web restart - pid did not change (old=$oldPid  new=$(if ($statusObj2) { $statusObj2.pid } else { 'n/a' }))" -ForegroundColor Yellow
         }
     } else {
-        Write-Host "  [SKIP] 9.3 web restart — start did not succeed" -ForegroundColor DarkGray
+        Write-Host "  [SKIP] 9.3 web restart - start did not succeed" -ForegroundColor DarkGray
     }
 
     # 9.4 web stop
@@ -374,12 +373,12 @@ try {
         $statusObj3 = (& python -m ascendo web status --json 2>&1 | Out-String) | ConvertFrom-Json
         $stopOk = (-not $statusObj3.pid_alive) -and (-not $statusObj3.port_listening)
     } catch {
-        # status command may exit non-zero when no pidfile present — treat as stopped
+        # status command may exit non-zero when no pidfile present - treat as stopped
         $stopOk = $true
     }
     Test-Result "9.4 web stop" $stopOk "pid_alive/port_listening cleared"
 
-    # 9.5 web start idempotency — running 'start' twice on the same port
+    # 9.5 web start idempotency - running 'start' twice on the same port
     # should not error out (the second call should detect the existing
     # process and report it cleanly).
     & python -m ascendo web start --port $LifecyclePort --no-open 2>&1 | Out-Null
@@ -547,7 +546,7 @@ try {
     $env:PYTHONPATH = "$aiRepoRoot\core;$aiRepoRoot\adapters\windows"
 
     # 14.1 prompt library 10+ EN+PL
-    $libOut = python -c "from ascendo.ai.prompts import load_library; lib = load_library(); assert len(lib) >= 10; [(\"en\" in e[\"title\"] and \"pl\" in e[\"title\"]) for e in lib]; print(len(lib))" 2>&1
+    $libOut = python -c "from ascendo.ai.prompts import load_library; lib = load_library(); assert len(lib) >= 10; [('en' in e['title'] and 'pl' in e['title']) for e in lib]; print(len(lib))" 2>&1
     Test-Result "14.1 prompt library 10+ EN+PL" ($LASTEXITCODE -eq 0) "$libOut entries"
 
     # 14.2 action whitelist 13 entries (12 base + web_probe added by Sesja 79 C.4)

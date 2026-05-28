@@ -71,7 +71,7 @@ def _load_i18n() -> dict:
         "process.stdout.write(JSON.stringify(window.I18N));"
     )
     r = subprocess.run(
-        [node, "-e", script], check=True, capture_output=True, text=True
+        [node, "-e", script], check=True, capture_output=True, text=True, encoding="utf-8"
     )
     return json.loads(r.stdout)
 
