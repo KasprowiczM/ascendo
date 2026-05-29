@@ -424,6 +424,12 @@ def get_best_item():
 
     arch = platform.machine().lower()
     is_arm = arch in ('arm64', 'aarch64')
+    if sys.platform == 'darwin' and not is_arm:
+        try:
+            if os.popen('sysctl -n hw.optional.arm64 2>/dev/null').read().strip() == '1':
+                is_arm = True
+        except Exception:
+            pass
     
     ns = {'sparkle': 'http://www.andymatuschak.org/xml-namespaces/sparkle'}
     valid_items = []
@@ -518,6 +524,12 @@ def get_best_item():
 
     arch = platform.machine().lower()
     is_arm = arch in ('arm64', 'aarch64')
+    if sys.platform == 'darwin' and not is_arm:
+        try:
+            if os.popen('sysctl -n hw.optional.arm64 2>/dev/null').read().strip() == '1':
+                is_arm = True
+        except Exception:
+            pass
     ns = {'sparkle': 'http://www.andymatuschak.org/xml-namespaces/sparkle'}
     valid_items = []
     
@@ -640,7 +652,9 @@ _web_install_dmg() {
         # parent directory — search up to two levels deep.
         src_app=$(/usr/bin/find "$extract_dir" -maxdepth 2 -name '*.app' -type d 2>/dev/null | /usr/bin/head -n 1)
     else
-        mount_point=$(/usr/bin/hdiutil attach -nobrowse -plist "$archive" 2>/dev/null \
+        # Pipe 'yes' to auto-accept any EULAs (e.g. Google Chrome DMG) which
+        # otherwise cause hdiutil to block indefinitely waiting for stdin.
+        mount_point=$(yes | /usr/bin/hdiutil attach -nobrowse -plist "$archive" 2>/dev/null \
             | /usr/bin/grep -oE '/Volumes/[^<]+' \
             | /usr/bin/head -n 1)
         if [ -z "$mount_point" ]; then

@@ -1,5 +1,22 @@
 # Last Run Review
 
+## 2026-05-29 — macOS Ascendo Web Phase fixes
+
+Reviewed run:
+User reported issues during `ascendo` update phase for Chrome, Codex, Antigravity, Antigravity IDE, Perplexity, VSCode, and MS365.
+
+### Findings & fixes shipped
+
+| Finding | Root cause | Fix |
+|---|---|---|
+| `Chrome` apply hang | `hdiutil attach` hangs waiting for stdin on DMGs with EULAs (like Google Chrome). | Piped `yes` to `hdiutil attach` in `adapters/macos/lib/ascendo_web.sh` to auto-accept EULAs. Also ensured `download_url` is set to direct DMG for silent install. |
+| `Codex` downloading x64 on Apple Silicon | Python under Rosetta 2 reports `platform.machine()` as `x86_64`, tricking Sparkle hardware check. | Replaced `platform.machine()` check with `sysctl -n hw.optional.arm64` in `ascendo_web.sh` for reliable Apple Silicon detection regardless of Python environment. |
+| `Ms365` not on host | `msupdate_check` failed to return global version when `app_id` was empty. | Updated `msupdate.sh` to fallback to global MAU `AutoUpdateVersion` when no specific `app_id` is passed. |
+| `Antigravity` / `Antigravity IDE` version missing | Upstream endpoint changed string format to `Fixed Version: X.Y.Z`. | Updated `version_regex` in `web_apps.toml` to support `(?:Stable\|Fixed)` prefix. |
+| `VSCode` silent install missing | `download_path` was missing. Ascendo previously only triggered `open -a` (exit 95). | Added `download_path = "url"` to `web_apps.toml` and verified `_web_install_dmg` supports `.zip` unpacking natively. |
+| `Perplexity` version missing | Cloudflare anti-bot blocks `curl` requests to the Sparkle `appcast.xml`. | Documented limitation: Perplexity requires manual update or a bypass strategy outside simple curl. |
+
+
 ## 2026-05-29 — Ubuntu Deduplication & Test Validation
 
 Reviewed run:
@@ -37,7 +54,7 @@ duration: ~2-5m
 | Finding | Root cause | Fix |
 |---|---|---|
 | Proton Mail / Squirrel installers exit code -1 | Web installer failed because Update.exe (Squirrel updater) locked the installation directory in the background. | Added "Update" to kill_processes for proton-mail, proton-drive, and opencode in web_apps.toml to kill ghost updaters before launching the silent install. |
-| Overlapping package updates across managers | Same app installed via multiple sources (e.g., Claude via npm vs winget) could be double-updated. | Implemented core/ascendo/orchestrator/deduplicator.py and pp_sources.toml to deduplicate planned items, prioritizing recommended install sources based on explicit app tiers. |
+| Overlapping package updates across managers | Same app installed via multiple sources (e.g., Claude via npm vs winget) could be double-updated. | Implemented core/ascendo/orchestrator/deduplicator.py and  pp_sources.toml to deduplicate planned items, prioritizing recommended install sources based on explicit app tiers. |
 | PASS E Hardening: Windows chats.db ACLs | Missing SDDL protection for SQLite DB. | Verified already implemented in persistence.py using ctypes (D:P(A;;FA;;;OW)(A;;FA;;;SY)). |
 | PASS E Hardening: UAC Env fail-fast | UAC children don't inherit overrides safely on Windows. | Verified already implemented in elevation.py via NotImplementedError("UAC elevation does not support environment variable overrides"). |
 
@@ -45,7 +62,7 @@ duration: ~2-5m
 The Windows platform is fully verified and ready for production testing on Ubuntu and macOS.
 
 
-## 2026-05-28 â€” Windows parity validation run
+## 2026-05-28 — Windows parity validation run
 
 Reviewed run:
 
