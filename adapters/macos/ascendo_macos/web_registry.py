@@ -128,6 +128,7 @@ class ReleaseFeedConfig(BaseModel):
                                                 pattern=r"^[A-Za-z0-9_.\-\[\]]+$")]] = None
     download_path: Optional[Annotated[str, Field(min_length=1, max_length=256,
                                                   pattern=r"^[A-Za-z0-9_.\-\[\]]+$")]] = None
+    download_url: Optional[HttpsUrl] = None
     # download_asset_pattern (M5.7.5) — for GitHub Releases API responses
     # where ``assets`` is a list of objects with stable ``name`` fields
     # but unstable ordering. The handler walks ``assets[]``, picks the
@@ -174,12 +175,11 @@ class ReleaseFeedConfig(BaseModel):
                 raise ValueError(
                     f"version_regex is not a valid Python regex: {exc}")
         # download_asset_pattern (M5.7.5) is mutually exclusive with
-        # download_path — they're two different ways to point at a DMG
-        # in the response body, and supplying both would be ambiguous.
-        if (self.download_asset_pattern is not None
-                and self.download_path is not None):
+        # download_path and download_url.
+        _set_downloads = sum(x is not None for x in (self.download_asset_pattern, self.download_path, getattr(self, "download_url", None)))
+        if _set_downloads > 1:
             raise ValueError(
-                "download_asset_pattern and download_path are mutually "
+                "download_asset_pattern, download_path, and download_url are mutually "
                 "exclusive (pick one)")
         if self.download_asset_pattern is not None:
             import re as _re
