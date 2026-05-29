@@ -1,0 +1,9 @@
+[[app]]
+id = "claude"
+name = "Claude"
+preferred_order = ["web", "npm", "winget"]
+
+[app.sources]
+winget = "Anthropic.Claude"
+npm = "@anthropic-ai/claude-cli"
+web = "claude"

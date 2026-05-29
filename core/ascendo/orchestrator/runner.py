@@ -263,6 +263,14 @@ def _run_phases_inner(
 
         if cancelled:
             break
+
+        if phase == Phase.CHECK:
+            try:
+                from .deduplicator import apply_deduplication  # noqa: PLC0415
+                apply_deduplication(phase_results, run.id, base_dir)
+            except Exception:  # noqa: BLE001
+                _log.exception("Deduplication pass failed for run %s", run.id)
+
         if stop_on_failure and phase_results and all(
             s.status is PhaseStatus.FAILED for s in phase_results
         ):

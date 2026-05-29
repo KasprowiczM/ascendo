@@ -274,7 +274,7 @@ slug = "opencode"
 display_name = "OpenCode"
 handler = "github_release"
 tier_a_apply = true
-windows_uninstall_key = "OpenCode"
+windows_uninstall_key = "d074f30d-5f88-5885-b075-be1348cc7676"
 notes = "GitHub releases at anomalyco/opencode (per macOS adapter Sesja 40 finding; sst/opencode is a different fork). The Windows DisplayName is just `OpenCode` even though the installer creates a versioned ARP subkey like `OpenCode 1.14.48`. DisplayName matching handles both. Actual asset (verified via GitHub API 2026-05-13): opencode-desktop-win-x64.exe (Squirrel.Windows installer)."
 
 [app.github_release]
@@ -282,9 +282,9 @@ repo = "anomalyco/opencode"
 asset_pattern = "^opencode-desktop-win-x64\\.exe$"
 http_timeout_s = 8
 expected_publisher = "Anomaly"
-silent_args = ["--silent"]
+silent_args = ["/S"]
 installer_kind = "exe"
-kill_processes = ["opencode", "OpenCode"]
+kill_processes = ["opencode", "OpenCode", "Update"]
 
 [[app]]
 slug = "tuta-mail"
@@ -326,22 +326,34 @@ kill_processes = ["Code"]
 slug = "proton-mail"
 display_name = "Proton Mail"
 handler = "release_feed"
+tier_a_apply = true
 windows_uninstall_key = "Proton Mail"
 notes = "Proton publishes a version.json at proton.me/download/mail/windows/version.json. Returns `Releases[0].Version` like `1.13.0` matching DisplayVersion."
 
 [app.release_feed]
 url = "https://proton.me/download/mail/windows/version.json"
 version_path = "Releases[0].Version"
+download_path = "Releases[0].File[0].Url"
+expected_publisher = "Proton AG"
+silent_args = ["--silent"]
+installer_kind = "exe"
+kill_processes = ["Proton Mail", "Update"]
 http_timeout_s = 8
 
 [[app]]
 slug = "proton-drive"
 display_name = "Proton Drive"
 handler = "release_feed"
+tier_a_apply = true
 windows_uninstall_key = "Proton Drive"
 notes = "Proton Drive parallel of Proton Mail. Same version.json shape at proton.me/download/drive/windows/version.json."
 
 [app.release_feed]
 url = "https://proton.me/download/drive/windows/version.json"
 version_path = "Releases[0].Version"
+download_path = "Releases[0].File[0].Url"
+expected_publisher = "Proton AG"
+silent_args = ["/quiet", "/norestart"]
+installer_kind = "exe"
+kill_processes = ["ProtonDrive", "Update"]
 http_timeout_s = 8
