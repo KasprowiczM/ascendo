@@ -150,7 +150,7 @@ _version_gt() {
     local a="$1" b="$2"
     [ "$a" = "$b" ] && return 1
     # W11: Python-based version comparison to handle PEP-440 instead of sort -V
-    /usr/bin/python3 -c "import sys; from ascendo.utils.version import version_gt; sys.exit(0 if version_gt(sys.argv[1], sys.argv[2]) else 1)" "$a" "$b" 2>/dev/null
+    python3 -c "import sys; from ascendo.utils.version import version_gt; sys.exit(0 if version_gt(sys.argv[1], sys.argv[2]) else 1)" "$a" "$b" 2>/dev/null
     return $?
 }
 

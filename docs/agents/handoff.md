@@ -1,5 +1,39 @@
 # Handoff
 
+## 2026-05-29 — macOS Deduplicator Integration & Production Hardening Audit
+
+### Co poszło na produkcję
+
+- **macOS Cross-Source Deduplicator Integration**:
+  - Rozwiązano krytyczny błąd wykrywania platformy macOS (`darwin`) w `core/ascendo/orchestrator/deduplicator.py` (wcześniej system wpadał w domyślną gałąź Windows, próbując ładować nieistniejący plik `windows_app_sources.toml`).
+  - Dodano dedykowaną, domyślną konfigurację deduplikacji dla macOS w nowym pliku `adapters/macos/config/macos_app_sources.toml`. Obecnie plik ten zawiera regułę dla `Claude` (preferowany menedżer npm nad brew).
+  - Rozbudowano orkiestrator (`deduplicator.py` i powiązane szablony raportu) o pełną obsługę odinstalowywania i generowania komend dla menedżera `mas` (Mac App Store) na macOS.
+  - Oczyszczono kod deduplikatora z tymczasowych instrukcji typu `print(f"DEBUG: ...")`, zastępując je prawidłowym logowaniem przy użyciu loggera `_log.debug()`.
+  - Wdrożono kompleksowy test jednostkowy `test_deduplicator_macos_brew_npm` w pliku `tests/test_deduplicator.py`, sprawdzający poprawność działania deduplikacji, priorytetyzację oraz poprawne generowanie komend odinstalowania dla brew/npm na macOS.
+
+- **Weryfikacja i Audyt Production Hardening**:
+  - Przeprowadzono pełną weryfikację i audyt wdrożenia planu produkcyjnego bezpieczeństwa i stabilizacji (zgodnie ze specyfikacją `HANDOFF_PLAN.md` i `HANDOFF_TASK.md`).
+  - Potwierdzono w kodzie prawidłowe działanie wszystkich kluczowych poprawek, w tym:
+    - **P5 CORS lockdown** — zablokowanie domyślnego dostępu CORS do localhost w `app.py`.
+    - **P12 Stale lock detection** — funkcja `detect_stale_locks` w `sidecar_io.py` szukająca starych plików `.lock`.
+    - **E11 Lifecycle state** — pełne wsparcie dla statusu `RunStatus.CANCELLED` oraz pomijanie zapisu baz danych przy przerwaniu sesji.
+    - **E5 Exception handling** — poprawne wyłapywanie specyficznych wyjątków zapisu i blokad sidecarów.
+    - **I9 DB freshness** — zaimplementowana tabela `scan_meta` z datami ukończenia skanowania na kategorię w `inventory_db.py`.
+
+### Pliki
+
+**Nowe:**
+- `adapters/macos/config/macos_app_sources.toml`
+
+**Zmodyfikowane:**
+- `core/ascendo/orchestrator/deduplicator.py`
+- `tests/test_deduplicator.py`
+
+### Walidacja
+- Zestaw 2/2 testów deduplikatora, 556 testów kontraktowych oraz wszystkie 417 testów adaptera macOS przechodzą pomyślnie na lokalnej maszynie deweloperskiej bez żadnych błędów czy regresji.
+
+---
+
 ## 2026-05-29 — Button Fixes: Missing API Endpoints (app/backend/main.py)
 
 ### Problem

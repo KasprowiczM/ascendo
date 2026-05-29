@@ -1,0 +1,16 @@
+# macOS cross-source deduplication configuration.
+#
+# When the same logical app is installed via multiple package managers
+# (e.g. Claude via both npm and brew), the orchestrator's deduplicator
+# will prefer the source listed first in preferred_order and offer to
+# auto-uninstall the non-preferred version.
+#
+# Schema: core/ascendo/models/deduplication.py — AppSourcesRegistry
+
+[[app]]
+id = "claude"
+name = "Claude"
+preferred_order = ["npm", "brew"]
+[app.sources]
+npm = "@anthropic-ai/claude-cli"
+brew = "claude"

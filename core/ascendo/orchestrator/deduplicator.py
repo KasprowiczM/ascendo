@@ -39,18 +39,23 @@ def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, c
     
     import sys
     is_linux = sys.platform.startswith("linux")
+    is_macos = sys.platform == "darwin"
     
     # Look for config in user profile
     user_config_dir = Path(os.environ.get("ASCENDO_HOME") or Path.home() / ".ascendo")
     if config_path is None:
         if is_linux:
             config_path = user_config_dir / "ubuntu_app_sources.toml"
+        elif is_macos:
+            config_path = user_config_dir / "macos_app_sources.toml"
         else:
             config_path = user_config_dir / "windows_app_sources.toml"
         
     if not config_path.exists():
         if is_linux:
             default_path = Path(__file__).parent.parent.parent.parent / "adapters" / "ubuntu" / "config" / "ubuntu_app_sources.toml"
+        elif is_macos:
+            default_path = Path(__file__).parent.parent.parent.parent / "adapters" / "macos" / "config" / "macos_app_sources.toml"
         else:
             default_path = Path(__file__).parent.parent.parent.parent / "adapters" / "windows" / "config" / "app_sources.toml"
             
@@ -85,7 +90,7 @@ def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, c
                 if sidecar.category.value == source_name and item.id == source_pkg_id:
                     installed_sources[source_name] = (sidecar, item)
 
-        print(f"DEBUG: installed_sources for {app.id} = {list(installed_sources.keys())}")
+        _log.debug("installed_sources for %s = %s", app.id, list(installed_sources.keys()))
         if not installed_sources:
             continue
 
@@ -118,7 +123,7 @@ def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, c
             for src_name, (sidecar, item) in installed_sources.items():
                 if src_name != best_source:
                     if _confirm_uninstall(app.name, src_name, absolute_preferred):
-                        print(f"DEBUG: Auto-uninstalling {src_name} item {item.id}")
+                        _log.debug("Auto-uninstalling %s item %s", src_name, item.id)
                         uninstall_tasks[src_name].append(item.id)
                         
                         # Change status from successful check to planned uninstall
@@ -130,7 +135,7 @@ def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, c
                             text=f"Auto-uninstalling non-preferred source '{src_name}'. Preferred is '{absolute_preferred}'."
                         ))
                     else:
-                        print(f"DEBUG: Skipping uninstall for {src_name} item {item.id}")
+                        _log.debug("Skipping uninstall for %s item %s", src_name, item.id)
                         item.status = ItemStatus.SKIPPED
                         item.target_version = item.current_version
                         item.messages.append(Message(
@@ -198,6 +203,10 @@ def _generate_report(actionable_fixes: list[dict], run_id: UUID, base_dir: Path)
                     lines.append(f"flatpak uninstall -y {item.id}")
                 elif src == "brew":
                     lines.append(f"brew uninstall {item.id}")
+                elif src == "mas":
+                    lines.append(f"mas uninstall {item.id}")
+                elif src == "softwareupdate":
+                    lines.append(f"# softwareupdate items cannot be selectively uninstalled")
                 else:
                     lines.append(f"# Please uninstall '{item.name}' manually from {src}")
 
@@ -217,6 +226,8 @@ def _generate_report(actionable_fixes: list[dict], run_id: UUID, base_dir: Path)
             lines.append(f"flatpak install -y flathub {pref_id}")
         elif preferred == "brew":
             lines.append(f"brew install {pref_id}")
+        elif preferred == "mas":
+            lines.append(f"mas install {pref_id}")
         else:
             lines.append(f"# Please install '{app.name}' via {preferred}")
             

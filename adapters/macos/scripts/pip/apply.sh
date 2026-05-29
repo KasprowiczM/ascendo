@@ -73,7 +73,7 @@ classify() {
     [ -z "$_latest" ] && { printf 'up_to_date'; return; }
     [ "$_installed" = "$_latest" ] && { printf 'up_to_date'; return; }
     # W11: Use Python version comparison instead of sort -V
-    if /usr/bin/python3 -c "import sys; from ascendo.utils.version import version_gt; sys.exit(0 if version_gt(sys.argv[1], sys.argv[2]) else 1)" "$_installed" "$_latest" 2>/dev/null; then
+    if python3 -c "import sys; from ascendo.utils.version import version_gt; sys.exit(0 if version_gt(sys.argv[1], sys.argv[2]) else 1)" "$_installed" "$_latest" 2>/dev/null; then
         printf 'up_to_date'; return
     fi
     printf 'planned'

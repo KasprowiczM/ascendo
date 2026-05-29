@@ -50,6 +50,15 @@
 - `[x]` P12: Stale sidecar-lock detection (detect_stale_locks in sidecar_io.py)
 - `[x]` Tests: covered in test_remaining_hardening.py
 
+## macOS DEDUPLICATOR INTEGRATION (2026-05-29) ✅
+
+- `[x]` Fix platform detection bug in `deduplicator.py` (add macOS/darwin support)
+- `[x]` Create `adapters/macos/config/macos_app_sources.toml` config
+- `[x]` Extend report generation and deduplicator for `mas` (Mac App Store) uninstallation commands
+- `[x]` Clean up deduplicator code (convert temporary `print(f"DEBUG: ...")` to logger-based `_log.debug()`)
+- `[x]` Add comprehensive macOS-specific unit test `test_deduplicator_macos_brew_npm` in `tests/test_deduplicator.py`
+- `[x]` Verify all test suites are 100% green (contract tests, deduplicator tests, macOS adapter tests)
+
 ## REMAINING (Not code-implementable in this session)
 
 ### Phase 0 blockers (require platform-specific work)
