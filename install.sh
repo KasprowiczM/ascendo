@@ -488,14 +488,29 @@ if [ -d "$INSTALL_DIR/.git" ]; then
 else
     info "$(t CLONING)"
     mkdir -p "$(dirname "$INSTALL_DIR")"
-    if [ "$PROFILE" = "cli" ]; then
-        git clone --filter=blob:none --no-checkout -b "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR"
-        git -C "$INSTALL_DIR" sparse-checkout init --cone
-        git -C "$INSTALL_DIR" sparse-checkout set core adapters bin schemas docs plugins lib scripts share i18n
-        git -C "$INSTALL_DIR" checkout "$REPO_BRANCH"
+    if [ -d "$INSTALL_DIR" ] && [ "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
+        # Sibling temporary folder for safe merge
+        TMP_DIR="${INSTALL_DIR}_clone_tmp"
+        rm -rf "$TMP_DIR"
+        if [ "$PROFILE" = "cli" ]; then
+            git clone --filter=blob:none --no-checkout -b "$REPO_BRANCH" "$REPO_URL" "$TMP_DIR"
+            git -C "$TMP_DIR" sparse-checkout init --cone
+            git -C "$TMP_DIR" sparse-checkout set core adapters bin schemas docs plugins lib scripts share i18n
+            git -C "$TMP_DIR" checkout "$REPO_BRANCH"
+        else
+            git clone -b "$REPO_BRANCH" "$REPO_URL" "$TMP_DIR"
+        fi
+        cp -a "$TMP_DIR"/. "$INSTALL_DIR"/
+        rm -rf "$TMP_DIR"
     else
-        # web / desktop / full: full checkout (need ui/desktop-tauri etc.)
-        git clone -b "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR"
+        if [ "$PROFILE" = "cli" ]; then
+            git clone --filter=blob:none --no-checkout -b "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR"
+            git -C "$INSTALL_DIR" sparse-checkout init --cone
+            git -C "$INSTALL_DIR" sparse-checkout set core adapters bin schemas docs plugins lib scripts share i18n
+            git -C "$INSTALL_DIR" checkout "$REPO_BRANCH"
+        else
+            git clone -b "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR"
+        fi
     fi
 fi
 ok "Repo ready"
