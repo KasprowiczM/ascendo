@@ -19,7 +19,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tauri::Manager;
 
-struct BackendChild(Mutex<Option<Child>>);
+struct AppState {
+    child: Mutex<Option<Child>>,
+    is_systemd: Mutex<bool>,
+}
 
 const HOST: &str = "127.0.0.1";
 const PORT: u16 = 8765;
@@ -76,21 +79,54 @@ fn wait_for_backend() -> bool {
 }
 
 fn main() {
-    let child = spawn_backend().ok();
+    // 1. Try to start the service via systemd-user
+    let mut is_systemd = false;
+    let mut child = None;
+
+    let mut cmd = Command::new("systemctl");
+    cmd.args(["--user", "start", "ascendo-dashboard.service"]);
+    if let Ok(status) = cmd.status() {
+        if status.success() {
+            is_systemd = true;
+            println!("Started dashboard service via systemd-user");
+        }
+    }
+
+    // 2. Fallback to raw Python process spawn if systemd fails
+    if !is_systemd {
+        println!("systemd service launch failed/unavailable, falling back to direct spawn");
+        child = spawn_backend().ok();
+    }
+
     if !wait_for_backend() {
         eprintln!("warning: backend did not start within {STARTUP_TIMEOUT_SECS}s");
     }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .manage(BackendChild(Mutex::new(child)))
+        .manage(AppState {
+            child: Mutex::new(child),
+            is_systemd: Mutex::new(is_systemd),
+        })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
-                if let Some(state) = window.app_handle().try_state::<BackendChild>() {
-                    if let Ok(mut guard) = state.0.lock() {
-                        if let Some(child) = guard.as_mut() {
-                            let _ = child.kill();
-                            let _ = child.wait();
+                if let Some(state) = window.app_handle().try_state::<AppState>() {
+                    // Check if we started via systemd
+                    if let Ok(is_sys) = state.is_systemd.lock() {
+                        if *is_sys {
+                            let mut cmd = Command::new("systemctl");
+                            cmd.args(["--user", "stop", "ascendo-dashboard.service"]);
+                            let _ = cmd.status();
+                            println!("Stopped dashboard service via systemd-user");
+                            return;
+                        }
+                    }
+                    // Direct spawn fallback cleanup
+                    if let Ok(mut guard) = state.child.lock() {
+                        if let Some(mut c) = guard.take() {
+                            let _ = c.kill();
+                            let _ = c.wait();
+                            println!("Terminated raw backend process");
                         }
                     }
                 }

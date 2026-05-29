@@ -47,3 +47,4 @@ Nie wprowadzaj żadnych zmian w kodzie, dopóki nie poznasz kodu i wymagań na t
 - @docs/agents/security.md — polityki bezpieczeństwa, sekrety i autoryzacja
 - @docs/agents/handoff.md — kompresja kontekstu i przekazanie pracy między sesjami
 - @docs/last-run-review.md — ostatni przeanalizowany pełny run i znane ostrzeżenia operacyjne
+- @docs/multi-project-coexistence.md — dokumentacja współistnienia projektów ascendo i ascendo-ubuntu

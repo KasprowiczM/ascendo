@@ -594,6 +594,22 @@ def onboarding_complete(payload: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "path": str(p)}
 
 
+# ── Open URL in default browser ──────────────────────────────────────────────
+@app.post("/open-url")
+def open_url(payload: dict[str, Any]) -> dict[str, Any]:
+    import webbrowser
+    url = payload.get("url", "")
+    if not url:
+        raise HTTPException(status_code=400, detail="url required")
+    # Resolve relative paths (like "/runs/<id>/report")
+    if url.startswith("/"):
+        host = os.environ.get("UA_DASHBOARD_HOST", "127.0.0.1")
+        port = os.environ.get("UA_DASHBOARD_PORT", "8765")
+        url = f"http://{host}:{port}{url}"
+    webbrowser.open(url)
+    return {"ok": True}
+
+
 # ── Snapshot restore ─────────────────────────────────────────────────────────
 @app.get("/snapshots")
 def snapshots_list() -> dict[str, Any]:

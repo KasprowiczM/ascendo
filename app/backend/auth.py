@@ -27,6 +27,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 UNAUTH_ALLOWLIST = {
     "/health",
     "/favicon.ico",
+    "/open-url",
 }
 UNAUTH_PREFIXES = (
     "/static/",

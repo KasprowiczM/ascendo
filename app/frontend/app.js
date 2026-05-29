@@ -43,6 +43,45 @@ const api = {
   },
 };
 
+// Global open URL interceptor (Sesja 82): redirects target="_blank" window.open
+// and link clicks to a secure backend endpoint /open-url which opens them in the
+// default system browser. Bypasses Tauri / WebKit standalone window blocks.
+const openURLSecurely = async (url) => {
+  try {
+    await fetch("/open-url", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: url }),
+    });
+  } catch (e) {
+    console.error("openURLSecurely failed, falling back:", e);
+    // Fail-soft fallback via standard link navigation
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.click();
+  }
+};
+
+const originalWindowOpen = window.open;
+window.open = function (url, target, features) {
+  if (target === "_blank" || !target) {
+    openURLSecurely(url);
+    return null;
+  }
+  return originalWindowOpen.call(window, url, target, features);
+};
+
+// Global click event delegator for target="_blank" links
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("a[target='_blank']");
+  if (a && a.href) {
+    e.preventDefault();
+    openURLSecurely(a.getAttribute("href"));
+  }
+});
+
 // ---------------------------------------------------------------------
 // frontendCache — session-scoped read-through cache for slow scans.
 // The user complaint: re-scanning every time we switch back to Overview
