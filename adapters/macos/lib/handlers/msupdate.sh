@@ -161,6 +161,10 @@ msupdate_apply() {
     # _ascendo_sudo (ascendo_json.sh) chooses -A vs plain sudo based on
     # SUDO_ASKPASS, so the TTY-PAM / Touch-ID-only flow works without
     # an askpass helper.
+    if command -v _stream_emit >/dev/null 2>&1; then
+        _stream_emit info "Installing Microsoft updates via msupdate (this may take several minutes in the background)"
+    fi
+
     if [ -n "$app_id" ]; then
         _ascendo_sudo "$bin" --install --apps "$app_id"
     else
