@@ -94,21 +94,21 @@ prefer:
 
 ```bash
 # A. Web profile — open in your browser
-ascendo_start_web                   # starts FastAPI on 127.0.0.1:8765
-# then open http://127.0.0.1:8765/
-
-# B. Desktop profile — native window (macOS / Windows)
-ascendo_start_desktop
+ascendo-web                         # starts service, opens dedicated browser window
+                                    # (stops service automatically on window close!)
+# B. Desktop profile — standalone window
+ascendo-desktop                     # starts service, opens Tauri desktop window
+                                    # (stops service automatically on window close!)
 
 # C. CLI fallback if you skipped Web/Desktop
 ascendo doctor                      # one-shot health snapshot
 ```
 
-To stop the background dashboard later:
+To stop the background dashboard manually (if started via legacy shims):
 
 ```bash
 ascendo_stop_web                    # or ascendo_restart_web to bounce it
-ascendo_stop_desktop                # if you started the Tauri shell
+ascendo_stop_desktop                # if you started the legacy Tauri shell
 ```
 
 ---

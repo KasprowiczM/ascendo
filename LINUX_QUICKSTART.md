@@ -91,10 +91,10 @@ Four paths — pick one:
 
 | | Where | What it does |
 |-|-------|--------------|
-| **A** *(recommended)* | `ascendo web start` | Detached background dashboard with pidfile tracking, **opens browser automatically**. Pair with `ascendo web stop`, `restart`, `status`. Idempotent. |
+| **A** *(recommended)* | `ascendo-web` / `ascendo-desktop` | Runs the branded UI in browser/Tauri window, automatically starting the `ascendo-dashboard` service first, and cleanly stopping it upon window close! |
 | **B** | `python3 -m ascendo dashboard` | Backend in the foreground; visit `http://127.0.0.1:8765` in your browser. Useful for debugging. |
 | **C** | `bash systemd/user/install-dashboard.sh` | Installs a `systemd --user` unit so the dashboard starts on every login. |
-| **D** | `ascendo-launch` (after `install-dashboard.sh`) | Opens the SPA in your default browser; `.desktop` entries are also installed in your application menu. |
+| **D** | `ascendo-launch web` / `desktop` | Core launcher shim that powers `ascendo-web` and `ascendo-desktop`. |
 
 The first time you launch any of these, the **Apps inventory** is
 populated by `adapters/ubuntu/scripts/inventory/list.sh` (≈ 5–15 s on
@@ -281,8 +281,8 @@ That single script:
 - Installs the user unit at `~/.config/systemd/user/ascendo-dashboard.service`
 - Runs `systemctl --user daemon-reload && enable --now`
 - Drops two `.desktop` entries into `~/.local/share/applications/` so
-  Ascendo appears in your application menu (GNOME / KDE / XFCE)
-- Installs the `ascendo-launch` shim into `~/.local/bin/`
+  `ascendo-web` and `ascendo-desktop` appear in your application menu (GNOME / KDE / XFCE)
+- Installs the `ascendo-launch`, `ascendo-web` and `ascendo-desktop` shims into `~/.local/bin/`
 - Verifies the dashboard is listening on `127.0.0.1:8765`
 
 Inspect / control:

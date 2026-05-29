@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# =============================================================================
+# ascendo-web — launch the Ascendo Web interface via ascendo-launch
+# =============================================================================
+set -euo pipefail
+exec ascendo-launch web "$@"

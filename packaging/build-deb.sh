@@ -169,6 +169,7 @@ if [ "$DRY_RUN" -eq 0 ]; then
     chmod 0755 "$PKG_DIR/DEBIAN/postinst" \
                "$PKG_DIR/DEBIAN/prerm" \
                "$PKG_DIR/DEBIAN/postrm" 2>/dev/null || true
+    [ -d "$PKG_DIR/usr/bin" ] && find "$PKG_DIR/usr/bin" -type f -exec chmod 0755 {} + 2>/dev/null || true
 fi
 
 # ── 7. Build .deb ────────────────────────────────────────────────────────

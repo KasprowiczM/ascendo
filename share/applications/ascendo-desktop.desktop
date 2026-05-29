@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=Ascendo - Unified Updates (Desktop)
-GenericName=System Update Manager
+Name=Ascendo Desktop
+GenericName=System Update Manager (Desktop)
 Comment=Standalone Ascendo desktop window (no browser tab)
-Exec=ascendo-launch desktop
-Icon=ascendo
+Exec=ascendo-desktop
+Icon=ascendo-desktop
 Terminal=false
 Categories=System;Settings;PackageManager;
 Keywords=update;apt;snap;flatpak;brew;npm;ascendo;

@@ -6,37 +6,32 @@
 # Both modes ensure the dashboard service is reachable at 127.0.0.1:8765
 # before opening the UI, starting the user-level systemd unit if needed.
 #
-# Usage:
-#   ascendo-launch web        # → xdg-open http://127.0.0.1:8765
-#   ascendo-launch desktop    # → standalone window (Tauri binary, browser
-#                                  --app= mode, or fallback to xdg-open)
-#
-# Exit codes:
-#   0 launched, 1 dashboard never came up, 2 bad usage.
+# When the app window is closed, the dashboard service is stopped automatically.
 # =============================================================================
 set -euo pipefail
 
 MODE="${1:-web}"
 URL="${ASCENDO_URL:-http://127.0.0.1:8765}"
 
-case "$MODE" in
-    web|desktop) ;;
-    -h|--help)   sed -n '2,18p' "$0"; exit 0 ;;
-    *)           echo "ascendo-launch: bad mode: $MODE (want web|desktop)" >&2; exit 2 ;;
-esac
+# 0. Ensure user has bootstrapped Ascendo first
+BOOTSTRAP_SCRIPT="${ASCENDO_HOME:-/opt/ascendo}/bin/first-run-bootstrap-linux.sh"
+if [ -f "$BOOTSTRAP_SCRIPT" ]; then
+    # Run it. It exits silently if already bootstrapped.
+    bash "$BOOTSTRAP_SCRIPT" || {
+        echo "Error: First-run bootstrap failed." >&2
+        exit 1
+    }
+fi
 
 _dashboard_up() {
-    # Cheap probe — backend always answers GET /health with 200.
     curl -fsS --max-time 1 "$URL/health" >/dev/null 2>&1
 }
 
-# Start the user service if installed and the port is dead.
+# Start the user service if the port is dead.
 if ! _dashboard_up; then
-    if command -v systemctl >/dev/null 2>&1 \
-       && systemctl --user list-unit-files 2>/dev/null \
-            | grep -q '^ascendo-dashboard\.service'; then
-        systemctl --user start ascendo-dashboard.service \
-            >/dev/null 2>&1 || true
+    if command -v systemctl >/dev/null 2>&1; then
+        echo "Starting Ascendo dashboard service..."
+        systemctl --user start ascendo-dashboard.service >/dev/null 2>&1 || true
     fi
     # Wait up to 8 seconds for the backend to bind.
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
@@ -48,59 +43,114 @@ fi
 if ! _dashboard_up; then
     if command -v zenity >/dev/null 2>&1; then
         zenity --error --no-wrap --title="Ascendo" \
-            --text="Dashboard service is not running and could not be started.\n\nRun:    systemctl --user start ascendo-dashboard.service\nOr:     ascendo dashboard" \
+            --text="Dashboard service is not running and could not be started." \
             >/dev/null 2>&1 || true
     fi
     echo "ascendo-launch: dashboard at $URL is not responding" >&2
     exit 1
 fi
 
-# ── Web mode: hand off to xdg-open and forget about it ──────────────────────
+# Define function to stop service on exit
+stop_service() {
+    if command -v systemctl >/dev/null 2>&1; then
+        echo "Stopping Ascendo dashboard service..."
+        systemctl --user stop ascendo-dashboard.service >/dev/null 2>&1 || true
+    fi
+}
+
+# ── Web mode ────────────────────────────────────────────────────────────────
 if [[ "$MODE" == "web" ]]; then
-    exec xdg-open "$URL"
+    # We want a blocking browser window. We search for a Chromium-class browser or Firefox.
+    # To run a normal browser window with its own profile (so it blocks):
+    CHROMIUM_BROWSERS=(
+        chromium chromium-browser
+        google-chrome google-chrome-stable
+        brave-browser microsoft-edge-stable vivaldi-stable
+    )
+    LAUNCHED=0
+    for b in "${CHROMIUM_BROWSERS[@]}"; do
+        if command -v "$b" >/dev/null 2>&1; then
+            PROFILE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/ascendo/chrome-profile-web"
+            mkdir -p "$PROFILE_DIR"
+            echo "Opening Ascendo Web in Chromium-class browser..."
+            # Run in foreground and wait
+            "$b" --user-data-dir="$PROFILE_DIR" --new-window "$URL" \
+                      --no-first-run --no-default-browser-check \
+                      --class=AscendoWeb --name=AscendoWeb \
+                      >/dev/null 2>&1 || true
+            LAUNCHED=1
+            break
+        fi
+    done
+
+    if [[ "$LAUNCHED" -eq 0 ]] && command -v firefox >/dev/null 2>&1; then
+        echo "Opening Ascendo Web in Firefox..."
+        PROFILE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/ascendo/firefox-profile-web"
+        mkdir -p "$PROFILE_DIR"
+        firefox --profile "$PROFILE_DIR" --new-window "$URL" >/dev/null 2>&1 || true
+        LAUNCHED=1
+    fi
+
+    if [[ "$LAUNCHED" -eq 0 ]]; then
+        echo "Fallback to default browser (non-blocking)..."
+        xdg-open "$URL"
+        # Wait a bit so the browser can load the page before we exit
+        sleep 5
+    fi
+
+    stop_service
+    exit 0
 fi
 
-# ── Desktop mode: prefer a standalone window ────────────────────────────────
-# Priority order:
-#   1. ASCENDO_DESKTOP_BIN env override (e.g. tauri shell built locally).
-#   2. /opt/ascendo/app/tauri/.../release/ascendo
-#      (present when the user built the Tauri shell into the install tree).
-#   3. Chromium-class browser with --app= (true app-window, no tabs).
-#   4. firefox --kiosk (full-screen window with no chrome — closest match).
-#   5. xdg-open (last resort — opens a tab in the default browser).
+# ── Desktop mode ────────────────────────────────────────────────────────────
 TAURI_CANDIDATES=(
     "${ASCENDO_DESKTOP_BIN:-}"
     /opt/ascendo/app/tauri/src-tauri/target/release/ascendo
     "${HOME}/Dev_Env/Ascendo/app/tauri/src-tauri/target/release/ascendo"
+    "${HOME}/.local/share/ascendo/app/tauri/src-tauri/target/release/ascendo"
 )
+
+LAUNCHED=0
 for cand in "${TAURI_CANDIDATES[@]}"; do
     [[ -n "$cand" && -x "$cand" ]] || continue
-    exec "$cand"
+    echo "Launching Tauri standalone app..."
+    "$cand" || true
+    LAUNCHED=1
+    break
 done
 
-CHROMIUM_BROWSERS=(
-    chromium chromium-browser
-    google-chrome google-chrome-stable
-    brave-browser microsoft-edge-stable vivaldi-stable
-)
-for b in "${CHROMIUM_BROWSERS[@]}"; do
-    if command -v "$b" >/dev/null 2>&1; then
-        # Per-app profile keeps cookies/tabs separate from the user's main
-        # browser session — so closing the standalone window doesn't kill
-        # browsing tabs and vice versa.
-        PROFILE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/ascendo/chrome-profile"
-        mkdir -p "$PROFILE_DIR"
-        exec "$b" --user-data-dir="$PROFILE_DIR" --app="$URL" \
-                  --no-first-run --no-default-browser-check \
-                  --class=AscendoDesktop --name=AscendoDesktop \
-                  >/dev/null 2>&1
-    fi
-done
-
-if command -v firefox >/dev/null 2>&1; then
-    # Firefox doesn't have a true --app mode; --kiosk is the closest analogue.
-    exec firefox --kiosk "$URL" >/dev/null 2>&1
+if [[ "$LAUNCHED" -eq 0 ]]; then
+    CHROMIUM_BROWSERS=(
+        chromium chromium-browser
+        google-chrome google-chrome-stable
+        brave-browser microsoft-edge-stable vivaldi-stable
+    )
+    for b in "${CHROMIUM_BROWSERS[@]}"; do
+        if command -v "$b" >/dev/null 2>&1; then
+            PROFILE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/ascendo/chrome-profile-desktop"
+            mkdir -p "$PROFILE_DIR"
+            echo "Opening Ascendo Desktop in Chromium app mode..."
+            "$b" --user-data-dir="$PROFILE_DIR" --app="$URL" \
+                      --no-first-run --no-default-browser-check \
+                      --class=AscendoDesktop --name=AscendoDesktop \
+                      >/dev/null 2>&1 || true
+            LAUNCHED=1
+            break
+        fi
+    done
 fi
 
-# Last-resort fallback: just open the URL in whatever the system prefers.
-exec xdg-open "$URL"
+if [[ "$LAUNCHED" -eq 0 ]] && command -v firefox >/dev/null 2>&1; then
+    echo "Opening Ascendo Desktop in Firefox kiosk mode..."
+    firefox --kiosk "$URL" >/dev/null 2>&1 || true
+    LAUNCHED=1
+fi
+
+if [[ "$LAUNCHED" -eq 0 ]]; then
+    echo "Fallback to default browser..."
+    xdg-open "$URL"
+    sleep 5
+fi
+
+stop_service
+exit 0
