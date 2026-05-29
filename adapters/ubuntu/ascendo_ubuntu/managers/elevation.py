@@ -111,6 +111,16 @@ class LinuxElevation(IElevation):
                 f"command {head!r} not in allow-list "
                 f"{sorted(self._allowlist)!r}"
             )
+            
+        # P3/P6: Resolve elevated argv[0] and compare to expected basename resolution
+        resolved_argv0 = shutil.which(argv[0])
+        resolved_expected = shutil.which(head)
+        if not resolved_argv0 or resolved_argv0 != resolved_expected:
+            raise ElevationDenied(
+                f"command path spoofing detected: {argv[0]!r} resolves to {resolved_argv0!r}, "
+                f"expected {resolved_expected!r}"
+            )
+            
         if shutil.which("sudo") is None:
             raise ElevationDenied("sudo not on PATH")
 

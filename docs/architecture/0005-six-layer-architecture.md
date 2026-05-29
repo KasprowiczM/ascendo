@@ -172,3 +172,7 @@ Why rejected:
 - Robert C. Martin, *Clean Architecture* (2017)
 - Import linter: https://import-linter.readthedocs.io/
 - Configuration: `core/pyproject.toml` `[tool.importlinter]` section
+
+### Appendix: Feature Deferrals
+
+- **`ISource.verify_signature` (T2/T3 threat model):** Implemented for `apt` (Ubuntu) as a Layer 5 validation before invoking Layer 6 scripts. For Windows and macOS, signature verification is currently deferred and `source()` returns `None`. These platforms rely on native OS mechanisms (e.g., Authenticode, macOS Gatekeeper/spctl) during installation, meaning the abstraction the threat model relies on at the core layer is intentionally empty for them until a programmatic validation can be wired in.

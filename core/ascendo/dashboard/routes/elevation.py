@@ -135,7 +135,13 @@ async def post_auth(body: AuthRequest, request: Request) -> OkResponse:
     """
     elev = _elevation_or_503(request)
 
-    ok, msg = elev.register_password(body.password)
+    try:
+        ok, msg = elev.register_password(body.password)
+    finally:
+        # P3/P6: best-effort password memory sanitization
+        body.password = ""
+        del body
+        
     if not ok:
         # Sanitise: strip sudo's raw stderr before returning.
         safe_msg = msg[:300] if msg else "authentication failed"

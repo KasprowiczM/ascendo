@@ -45,6 +45,7 @@ from .managers.npm import NpmManager
 from .managers.pip import PipManager
 from .managers.scheduler import SystemdScheduler
 from .managers.snap import SnapManager
+from .managers.source import UbuntuSource
 from .managers.web import WebManager
 
 _log = logging.getLogger(__name__)
@@ -102,6 +103,7 @@ class UbuntuAdapter(IAdapter):
         self._cached_snapshot: TimeshiftSnapshot | None = None
         self._cached_elevation: LinuxElevation | None = None
         self._cached_scheduler: SystemdScheduler | None = None
+        self._cached_source: UbuntuSource | None = None
 
     # ── Identity ──────────────────────────────────────────────────────────
 
@@ -209,8 +211,14 @@ class UbuntuAdapter(IAdapter):
         return self._cached_scheduler
 
     def source(self) -> ISource | None:
-        """Not implemented; reserved for M6 (cross-cutting source verification)."""
-        return None
+        """Returns a cached :class:`UbuntuSource` singleton.
+        
+        Parses APT sources and implements T2 threat model signature verification.
+        """
+        if self._cached_source is None:
+            from .managers.source import UbuntuSource
+            self._cached_source = UbuntuSource()
+        return self._cached_source
 
     def elevation(self) -> IElevation | None:
         """Returns a cached :class:`LinuxElevation` singleton.

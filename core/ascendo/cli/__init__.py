@@ -348,8 +348,22 @@ def doctor(verbose: bool = typer.Option(False, "--verbose", "-v")) -> None:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(3) from None
     typer.echo(f"adapter: {adapter.name} ({adapter.display_name}) tier={adapter.tier}")
+    from ..orchestrator.sidecar_io import detect_stale_locks
+
     typer.echo(f"capabilities: {adapter.capabilities}")
     health = adapter.health_check()
+    
+    # P12: detect stale sidecar locks (mtime/PID)
+    runs_dir = _default_runs_dir()
+    stale_locks = []
+    if runs_dir.is_dir():
+        for run_sub_dir in runs_dir.iterdir():
+            if run_sub_dir.is_dir():
+                stale_locks.extend(detect_stale_locks(run_sub_dir))
+                
+    if stale_locks:
+        health["Orchestrator"] = f"degraded (found {len(stale_locks)} stale sidecar .lock files)"
+    
     bad = 0
     for component, status in sorted(health.items()):
         ok = status.startswith("ok") or status.startswith("degraded")
@@ -357,6 +371,15 @@ def doctor(verbose: bool = typer.Option(False, "--verbose", "-v")) -> None:
         typer.secho(f"  {component:<20s} {status}", fg=color)
         if not ok:
             bad += 1
+            
+    if stale_locks:
+        typer.secho(
+            "\nWarning: Stale sidecar locks detected. These may prevent future sidecar writes.",
+            fg=typer.colors.YELLOW
+        )
+        for lock in stale_locks:
+            typer.echo(f"  rm {lock}")
+            
     raise typer.Exit(0 if bad == 0 else 1)
 
 
@@ -755,6 +778,11 @@ def dashboard(
         "-b",
         help="Spawn uvicorn in a detached child process and return immediately.",
     ),
+    allow_remote: bool = typer.Option(
+        False,
+        "--allow-remote",
+        help="Allow binding to non-loopback addresses (e.g. 0.0.0.0).",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
     """Launch the FastAPI dashboard backend on 127.0.0.1 (loopback only by default).
@@ -766,6 +794,20 @@ def dashboard(
     open http://127.0.0.1:8765/``).
     """
     _setup_logging(verbose)
+
+    if host not in ("127.0.0.1", "localhost", "::1") and not allow_remote:
+        typer.secho(
+            f"error: Refusing to bind to remote-accessible host '{host}' without --allow-remote.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        typer.secho(
+            "The dashboard exposes privileged operations. Binding to 0.0.0.0 without "
+            "authentication can allow anyone on your network to execute updates.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        raise typer.Exit(1)
 
     if background:
         # Probe whether a dashboard is already listening before spawning a
@@ -797,6 +839,8 @@ def dashboard(
         ]
         if runs_dir is not None:
             argv += ["--runs-dir", str(runs_dir)]
+        if allow_remote:
+            argv += ["--allow-remote"]
         if verbose:
             argv += ["--verbose"]
         popen_kwargs: dict[str, object] = {
