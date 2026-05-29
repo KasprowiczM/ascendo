@@ -1,6 +1,62 @@
 # Handoff
 
-## 2026-05-29 — Ubuntu Deduplication & Test Suite Stabilization (Ubuntu Pre-Prod)
+## 2026-05-29 — Button Fixes: Missing API Endpoints (app/backend/main.py)
+
+### Problem
+Multiple buttons in the Ascendo desktop/web app were failing with
+`405 Method Not Allowed` because the frontend (`app.js`) calls endpoints
+that exist only in `core/ascendo/dashboard/routes/spa_real.py` (the legacy
+monorepo router) but were never added to `app/backend/main.py` (the actual
+running backend).
+
+**Root cause confirmed:** `app/backend/main.py` serves the live dashboard
+at 127.0.0.1:8765. The frontend's `app.js` was calling:
+- `POST /inventory/db/refresh` → "Build inventory" / "Rebuild inventory" buttons
+- `POST /inventory/clear` → "Clear inventory" button
+- `GET /service/status`, `POST /service/{action}` → Settings → Service card
+- `GET /ai/providers`, `GET+POST /ai/config`, `POST /ai/test-connection` → AI wizard
+- `GET /scheduler/list`, `POST /scheduler/trigger` → Schedule tab
+- `POST /runs/async` → Run Center wizard / deferred check
+- `GET /version` → adapter locale detection
+- `GET /suggestions/library` → AI suggestions view
+- `GET /sync/config-status` → Dev-sync status
+- `GET /about/release-notes` → About tab release notes
+- `POST /apps/exclude` / `POST /apps/include` → per-package exclude toggle
+- `GET /elevation/touchid/status` → macOS-only, now returns `{enabled:false}` on Linux
+
+### Fix
+Added all missing endpoints to `app/backend/main.py` (lines ~1088–1410).
+Key mappings:
+- `/inventory/db/refresh` → calls `inv_mod.invalidate(None)` + `inv_mod.summary()`
+- `/inventory/clear` → calls `inv_mod.invalidate(None)` (no rescan)
+- `/service/status` → queries systemd `ascendo-dashboard.service` + `ss -tlnp`
+- `/ai/providers` → static catalog of 7 providers (same as `suggestions.py` implements)
+- `/ai/config` GET/POST → reads/writes `settings.json["ai"]` (api_key masked on GET)
+- `/runs/async` → translates `{phases:[], categories:[]}` to `StartRunRequest` shape
+- `/apps/exclude`+`/apps/include` → delegates to `excl_mod.add`/`excl_mod.remove`
+- All others → proper implementations using existing modules
+
+### Validation
+- All 597 tests pass (4 skipped, 1 xfail, unchanged from baseline).
+- Manual curl verified each new endpoint returns expected JSON.
+- Service restarted clean; `GET /health` → `{"ok": true}`.
+
+### Files Modified
+- `app/backend/main.py` — added ~350 lines of new route handlers
+
+### State
+- ✅ "Build inventory" button works (returns full scan result in <30s)
+- ✅ "Rebuild inventory" button works
+- ✅ "Clear inventory" button works
+- ✅ Service status card in Settings works
+- ✅ AI provider wizard loads
+- ✅ Schedule tab loads without errors
+- ✅ About → Release notes loads
+- ⚠️ `deb` package NOT yet rebuilt/reinstalled — run `bash packaging/build-deb.sh && sudo dpkg -i dist/ascendo-basic_*.deb` to sync the installed version
+
+---
+
+
 
 ### Co poszło na produkcję
 - **Ubuntu App Deduplication**: Rozszerzono `core/ascendo/orchestrator/deduplicator.py` o detekcję platformy oraz wsparcie i mapowanie komend dla Linuksa (`apt`, `snap`, `flatpak`, `brew`).

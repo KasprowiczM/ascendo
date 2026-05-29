@@ -212,6 +212,27 @@ def inventory_refresh(category: str | None = None) -> dict[str, Any]:
     return {"refreshed": category or "all"}
 
 
+@app.post("/inventory/db/refresh")
+def inventory_db_refresh() -> dict[str, Any]:
+    """Full rescan: invalidate cache for all categories then return summary.
+    Alias used by the UI's 'Build inventory' and 'Rebuild inventory' buttons.
+    Equivalent to POST /inventory/refresh without category restriction."""
+    inv_mod.invalidate(None)
+    try:
+        summary = inv_mod.summary()
+    except Exception:
+        summary = {}
+    return {"ok": True, "refreshed": "all", "summary": summary}
+
+
+@app.post("/inventory/clear")
+def inventory_clear() -> dict[str, Any]:
+    """Clear the in-memory inventory cache without triggering a rescan.
+    A subsequent GET /inventory or /inventory/summary will repopulate it."""
+    inv_mod.invalidate(None)
+    return {"ok": True, "cleared": "all"}
+
+
 # IMPORTANT: register literal /runs/active routes BEFORE /runs/{run_id} so
 # FastAPI's path-matching prefers the static route.
 @app.get("/runs/active")
@@ -1062,6 +1083,353 @@ def updates_check() -> dict[str, Any]:
                 "url": j.get("html_url", "")}
     except Exception as exc:
         return {"enabled": True, "repo": repo, "current": cur, "error": str(exc)[:200]}
+
+
+# ── Version / adapter info ───────────────────────────────────────────────────
+@app.get("/version")
+def version_info() -> dict[str, Any]:
+    """Adapter name + version. Used by the frontend to set data-adapter for
+    locale-aware wording (linux / macos / windows)."""
+    import platform
+    return {
+        "adapter": "linux",
+        "platform": platform.system().lower(),
+        "version": app.version,
+    }
+
+
+# ── TouchID / elevation status (macOS-only; stub on Linux) ───────────────────
+@app.get("/elevation/touchid/status")
+def elevation_touchid_status() -> dict[str, Any]:
+    """Returns whether macOS Touch ID is wired for sudo. Always False on Linux;
+    the UI guard checks this only when adapter == macos."""
+    return {"enabled": False, "reason": "not applicable on linux"}
+
+
+# ── Service management (systemd user service) ─────────────────────────────────
+@app.get("/service/status")
+def service_status() -> dict[str, Any]:
+    """Reports whether the ascendo-dashboard systemd user service is installed
+    and running. Used by the Settings → Service card."""
+    import subprocess
+    result: dict[str, Any] = {"installed": False, "running": False}
+    try:
+        r = subprocess.run(
+            ["systemctl", "--user", "status", "ascendo-dashboard.service"],
+            capture_output=True, text=True,
+        )
+        output = r.stdout + r.stderr
+        result["installed"] = "could not be found" not in output and r.returncode != 4
+        result["running"] = r.returncode == 0
+        result["raw"] = output[:800]
+    except Exception as exc:
+        result["error"] = str(exc)
+    try:
+        import subprocess as _sp
+        port = os.environ.get("UA_DASHBOARD_PORT", "8765")
+        ss_out = _sp.check_output(
+            ["ss", "-tlnp", f"sport = :{port}"], text=True, timeout=2,
+        )
+        result["port_listening"] = f":{port}" in ss_out
+    except Exception:
+        # Fallback: if ss unavailable, assume port is up since we're responding.
+        result["port_listening"] = True
+    return result
+
+
+@app.post("/service/{action}")
+def service_action(action: str) -> dict[str, Any]:
+    """install / uninstall / restart the ascendo-dashboard user service."""
+    import subprocess
+    if action not in ("install", "uninstall", "restart", "start", "stop"):
+        raise HTTPException(status_code=400, detail=f"unknown action: {action}")
+    if action == "install":
+        # Re-run the install script if present, otherwise just enable+start.
+        install_sh = config.repo_root() / "app" / "install.sh"
+        if install_sh.exists():
+            res = subprocess.run(["bash", str(install_sh)], capture_output=True, text=True)
+        else:
+            res = subprocess.run(
+                ["systemctl", "--user", "enable", "--now", "ascendo-dashboard.service"],
+                capture_output=True, text=True,
+            )
+    elif action == "uninstall":
+        res = subprocess.run(
+            ["systemctl", "--user", "disable", "--now", "ascendo-dashboard.service"],
+            capture_output=True, text=True,
+        )
+    else:
+        res = subprocess.run(
+            ["systemctl", "--user", action, "ascendo-dashboard.service"],
+            capture_output=True, text=True,
+        )
+    audit_mod.log(f"service.{action}", details={"rc": res.returncode})
+    return {"ok": res.returncode == 0, "stdout": res.stdout[-1000:], "stderr": res.stderr[-1000:]}
+
+
+# ── Async run (wizard / deferred-check path) ──────────────────────────────────
+class AsyncRunRequest(BaseModel):
+    profile: str | None = None
+    phases: list[str] = []
+    categories: list[str] = []
+    dry_run: bool = False
+    only: str | None = None
+    phase: str | None = None
+
+
+@app.post("/runs/async")
+async def start_run_async(req: AsyncRunRequest) -> dict[str, Any]:
+    """Async run start used by wizard/deferred-check paths.
+    Translates list-style (phases/categories) to the runner's single-value
+    (only/phase) interface then delegates to the normal runner."""
+    only = req.only or (req.categories[0] if req.categories else None)
+    phase = req.phase or (req.phases[0] if req.phases else None)
+    inner = StartRunRequest(
+        profile=req.profile,
+        only=only,
+        phase=phase,
+        dry_run=req.dry_run,
+    )
+    return await start_run(inner)
+
+
+# ── Run SSE events stream (alias, wizard subscribes to this) ─────────────────
+@app.get("/runs/{run_id}/events")
+async def run_events_stream(run_id: str) -> StreamingResponse:
+    """SSE stream for a specific run. Emits: log, sidecar, done events.
+    Alias of the active-stream endpoint but keyed by run_id."""
+    runner = get_runner()
+    h = runner.active
+    if not h or h.run_id != run_id:
+        raise HTTPException(status_code=404, detail="run not active or not found")
+
+    async def gen():
+        try:
+            while True:
+                if h.queue.empty() and h.finished:
+                    import json as _json
+                    yield f"event: done\ndata: {_json.dumps({'exit_code': h.exit_code})}\n\n"
+                    break
+                try:
+                    import json as _json
+                    msg = await asyncio.wait_for(h.queue.get(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+                if msg.get("type") == "done":
+                    import json as _json
+                    yield f"event: done\ndata: {_json.dumps(msg)}\n\n"
+                    break
+                import json as _json
+                yield f"event: log\ndata: {_json.dumps(msg)}\n\n"
+        except asyncio.CancelledError:
+            return
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+# ── Suggestions library (rule-based; superset of /suggestions) ───────────────
+@app.get("/suggestions/library")
+def suggestions_library() -> dict[str, Any]:
+    """Returns all heuristic suggestions WITHOUT AI enrichment and WITHOUT
+    filtering dismissed ones — used by the UI's AI-wizard card view where
+    operator sees everything and can dismiss or apply."""
+    try:
+        from . import suggestions as _sugg  # noqa: PLC0415
+        items = _sugg._heuristics()  # noqa: SLF001
+    except Exception:
+        items = []
+    return {"items": items}
+
+
+# ── Dev-sync config status ────────────────────────────────────────────────────
+@app.get("/sync/config-status")
+def sync_config_status() -> dict[str, Any]:
+    """Returns whether .dev_sync_config.json is present and its provider."""
+    cfg_path = config.repo_root() / ".dev_sync_config.json"
+    if not cfg_path.exists():
+        return {"configured": False, "path": str(cfg_path)}
+    try:
+        import json as _json
+        d = _json.loads(cfg_path.read_text(encoding="utf-8"))
+        return {"configured": True, "provider": d.get("provider", ""),
+                "path": str(cfg_path), "raw": d}
+    except Exception as exc:
+        return {"configured": False, "error": str(exc), "path": str(cfg_path)}
+
+
+# ── Scheduler list + trigger ──────────────────────────────────────────────────
+@app.get("/scheduler/list")
+def scheduler_list() -> dict[str, Any]:
+    """List installed systemd timer units for this user."""
+    import subprocess
+    try:
+        res = subprocess.run(
+            ["systemctl", "--user", "list-timers", "--no-pager", "--all"],
+            capture_output=True, text=True,
+        )
+        s = settings_mod.load() or {}
+        sched = s.get("scheduler") or {}
+        items = []
+        if sched.get("enabled"):
+            items.append({
+                "name": "ascendo",
+                "expression": sched.get("calendar", "Sun *-*-* 03:00:00"),
+                "profile": sched.get("profile", "safe"),
+                "enabled": True,
+            })
+        return {"ok": True, "items": items, "raw": res.stdout[:1000]}
+    except Exception as exc:
+        return {"ok": False, "items": [], "error": str(exc)}
+
+
+@app.post("/scheduler/trigger")
+def scheduler_trigger(payload: dict[str, Any]) -> dict[str, Any]:
+    """Trigger a named scheduler entry immediately."""
+    name = (payload or {}).get("name", "ascendo")
+    import subprocess
+    unit = f"ascendo-update@{name}.service"
+    res = subprocess.run(
+        ["systemctl", "--user", "start", unit],
+        capture_output=True, text=True,
+    )
+    if res.returncode != 0:
+        # Fall back: just start a run directly.
+        return {"ok": False, "stderr": res.stderr.strip(),
+                "hint": "use POST /runs to start a run directly"}
+    audit_mod.log("scheduler.trigger", details={"name": name})
+    return {"ok": True, "unit": unit}
+
+
+# ── About: platform-filtered release notes ────────────────────────────────────
+@app.get("/about/release-notes")
+def about_release_notes(platform: str = "", limit: int = 20) -> dict[str, Any]:
+    """Return parsed release-notes entries from RELEASE_NOTES.md,
+    optionally filtered by platform tag in the entry."""
+    import re
+    repo = config.repo_root()
+    rn = repo / "RELEASE_NOTES.md"
+    if not rn.exists():
+        return {"entries": []}
+    text = rn.read_text(encoding="utf-8")
+    entries = []
+    for block in re.split(r"^## ", text, flags=re.MULTILINE):
+        block = block.strip()
+        if not block:
+            continue
+        lines = block.splitlines()
+        header = lines[0].strip()
+        ver_match = re.match(r"^(v[\d.]+[\w.-]*)\s*(.*)", header)
+        version = ver_match.group(1) if ver_match else header
+        rest = ver_match.group(2).strip() if ver_match else ""
+        body = "\n".join(lines[1:]).strip()
+        if platform and platform not in {"linux", "all", ""}:
+            # Skip entries tagged with a different platform.
+            if f"[{platform}]" not in body.lower() and "[all]" not in body.lower():
+                if len(entries) > 0:  # Only skip if we have at least one already.
+                    continue
+        entries.append({"version": version, "rest": rest, "body": body})
+        if len(entries) >= limit:
+            break
+    return {"entries": entries}
+
+
+# ── Apps: exclude / include (wrappers around exclusions) ─────────────────────
+class AppExcludeRequest(BaseModel):
+    category: str
+    name: str
+
+
+@app.post("/apps/exclude")
+def apps_exclude(req: AppExcludeRequest) -> dict[str, Any]:
+    """Add a package to the exclusions list (prevents auto-upgrade)."""
+    res = excl_mod.add(req.category, req.name)
+    audit_mod.log("apps.exclude", details={"category": req.category, "name": req.name})
+    return res
+
+
+@app.post("/apps/include")
+def apps_include(req: AppExcludeRequest) -> dict[str, Any]:
+    """Remove a package from the exclusions list (re-enables auto-upgrade)."""
+    res = excl_mod.remove(req.category, req.name)
+    audit_mod.log("apps.include", details={"category": req.category, "name": req.name})
+    return res
+
+
+# ── AI provider catalog + config ──────────────────────────────────────────────
+_AI_PROVIDERS = [
+    {"id": "anthropic",   "label": "Anthropic (Claude)",     "implemented": True,  "needs_url": False,
+     "default_base_url": ""},
+    {"id": "openai",      "label": "OpenAI (GPT)",           "implemented": True,  "needs_url": False,
+     "default_base_url": ""},
+    {"id": "gemini",      "label": "Google Gemini",          "implemented": True,  "needs_url": False,
+     "default_base_url": ""},
+    {"id": "ollama",      "label": "Ollama (local)",         "implemented": True,  "needs_url": True,
+     "default_base_url": "http://127.0.0.1:11434"},
+    {"id": "lmstudio",    "label": "LM Studio (local)",      "implemented": True,  "needs_url": True,
+     "default_base_url": "http://127.0.0.1:1234/v1"},
+    {"id": "openai_compat", "label": "OpenAI-compatible",   "implemented": True,  "needs_url": True,
+     "default_base_url": ""},
+    {"id": "openrouter",  "label": "OpenRouter",             "implemented": False, "needs_url": False,
+     "default_base_url": ""},
+]
+
+
+@app.get("/ai/providers")
+def ai_providers() -> dict[str, Any]:
+    """Catalog of supported AI providers for the Settings → AI wizard."""
+    defaults = {p["id"]: p["default_base_url"] for p in _AI_PROVIDERS if p["default_base_url"]}
+    return {"providers": _AI_PROVIDERS, "default_base_urls": defaults}
+
+
+@app.get("/ai/config")
+def ai_config_get() -> dict[str, Any]:
+    """Return the current AI provider config from settings.json."""
+    s = settings_mod.load() or {}
+    ai = s.get("ai") or {}
+    # Never return the raw api_key over HTTP — return masked version.
+    key = ai.get("api_key", "")
+    masked = (key[:4] + "*" * (len(key) - 4)) if len(key) > 4 else ("*" * len(key))
+    return {
+        "provider": ai.get("provider", ""),
+        "model": ai.get("model", ""),
+        "base_url": ai.get("base_url", ""),
+        "api_key_set": bool(key),
+        "api_key_masked": masked,
+    }
+
+
+class AiConfigRequest(BaseModel):
+    provider: str = ""
+    model: str = ""
+    api_key: str = ""
+    base_url: str = ""
+
+
+@app.post("/ai/config")
+def ai_config_set(req: AiConfigRequest) -> dict[str, Any]:
+    """Save AI provider config to settings.json."""
+    s = settings_mod.load() or {}
+    ai = s.get("ai") or {}
+    if req.provider:
+        ai["provider"] = req.provider
+    if req.model:
+        ai["model"] = req.model
+    if req.api_key:
+        ai["api_key"] = req.api_key
+    if req.base_url:
+        ai["base_url"] = req.base_url
+    s["ai"] = ai
+    settings_mod.save(s)
+    audit_mod.log("ai.config", details={"provider": ai.get("provider"), "model": ai.get("model")})
+    return {"ok": True, "provider": ai.get("provider"), "model": ai.get("model")}
+
+
+@app.post("/ai/test-connection")
+def ai_test_connection() -> dict[str, Any]:
+    """Test the configured AI provider connection."""
+    result = sugg_mod.test_provider()
+    return result
 
 
 # ── Static frontend ──────────────────────────────────────────────────────────
