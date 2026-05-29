@@ -135,19 +135,20 @@ print(d.get("display_name") or "")
         echo "pending"
         return 0
     fi
-    local mau_ver
-    mau_ver=$("$bin" --config 2>/dev/null | /usr/bin/python3 -c '
-import sys, re
-text = sys.stdin.read()
-m = re.search(r"AutoUpdateVersion\s*=\s*\"([^\"]+)\";", text)
-if m:
-    print(m.group(1))
-')
-    if [ -n "$mau_ver" ]; then
-        echo "$mau_ver"
-    else
-        echo "up_to_date"
+    
+    # No pending updates globally. Just output CFBundleShortVersionString
+    # of the MAU app so it matches the inventory and shows as up_to_date
+    # instead of reporting a fake update against the longer AutoUpdateVersion.
+    local plist="/Library/Application Support/Microsoft/MAU2.0/Microsoft AutoUpdate.app/Contents/Info.plist"
+    if [ -f "$plist" ]; then
+        local short_ver
+        short_ver=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$plist" 2>/dev/null || true)
+        if [ -n "$short_ver" ]; then
+            echo "$short_ver"
+            return 0
+        fi
     fi
+    echo "up_to_date"
 }
 
 msupdate_apply() {

@@ -28,7 +28,6 @@ notes = "Promoted from keystone (Tier-B trigger-only) to release_feed Tier-A in 
 [app.release_feed]
 url = "https://versionhistory.googleapis.com/v1/chrome/platforms/mac_arm64/channels/stable/versions"
 version_path = "versions[0].version"
-download_url = "https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg"
 http_timeout_s = 8
 
 [[app]]
@@ -560,10 +559,10 @@ slug = "antigravity-ide"
 bundle_id = "com.google.antigravity-ide"  # verified on Mac.r12.home (2026-05-24)
 display_name = "Antigravity IDE"
 handler = "release_feed"
-notes = "Sibling of the `antigravity` entry — Google ships Antigravity IDE as a separate /Applications bundle (`com.google.antigravity-ide`) but the auto-updater service is shared. The same root endpoint at antigravity-auto-updater-974169037036.us-central1.run.app/ returns plain text `Auto updater is running. Stable Version: <X.Y.Z>. Rolled out to N%` for both products (Stable Version field tracks the shared release train). Apply trigger-only (Squirrel updater bundled inside the app handles install on next launch). Live probe verified 2026-05-24."
+notes = "Sibling of the `antigravity` entry — Google ships Antigravity IDE as a separate /Applications bundle (`com.google.antigravity-ide`). It uses a specific updater endpoint. Apply trigger-only (Squirrel updater bundled inside the app handles install on next launch). Live probe verified 2026-05-24."
 
 [app.release_feed]
-url = "https://antigravity-auto-updater-974169037036.us-central1.run.app/"
+url = "https://antigravity-ide-auto-updater-974169037036.us-central1.run.app/"
 format = "text"
 version_regex = "(?s).*(?:Stable|Fixed) Version:\\s*([0-9]+\\.[0-9]+\\.[0-9]+).*"
 version_replace = "\\1"
