@@ -2,7 +2,7 @@
 # ascendo_doctor — health snapshot. Wraps `ascendo doctor` plus extra checks.
 set -euo pipefail
 HOME_DIR="${ASCENDO_HOME:-$HOME/.local/share/ascendo}"
-PYTHON="$HOME_DIR/venv/bin/python"
+PYTHON="$HOME_DIR/.venv/bin/python"
 [ -x "$PYTHON" ] || PYTHON="$(command -v python3)"
 
 rc=0

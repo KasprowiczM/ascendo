@@ -10,7 +10,7 @@
 #   ascendo_maintenance check-errors         — scan recent runs for failures
 set -euo pipefail
 HOME_DIR="${ASCENDO_HOME:-$HOME/.local/share/ascendo}"
-PYTHON="$HOME_DIR/venv/bin/python"
+PYTHON="$HOME_DIR/.venv/bin/python"
 [ -x "$PYTHON" ] || PYTHON="$(command -v python3)"
 
 cmd="${1:-}"

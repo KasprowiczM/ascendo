@@ -8,7 +8,7 @@ WorkingDirectory=%h/.local/share/ascendo
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=UA_DASHBOARD_HOST=127.0.0.1
 Environment=UA_DASHBOARD_PORT=8765
-ExecStart=%h/.local/share/ascendo/venv/bin/python -m ascendo dashboard
+ExecStart=%h/.local/share/ascendo/.venv/bin/python -m ascendo dashboard
 Restart=on-failure
 RestartSec=5
 

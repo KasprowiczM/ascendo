@@ -116,13 +116,13 @@ fn locate_sidecar(app_handle: &tauri::AppHandle) -> PathBuf {
             p.push(SIDECAR_BIN);
             v.push(p);
         }
-        // ~/.local/share/ascendo/venv/bin/ascendo — direct venv shim.
+        // ~/.local/share/ascendo/.venv/bin/ascendo — direct venv shim.
         if let Some(home) = std::env::var_os("HOME") {
             let mut p = PathBuf::from(home);
             p.push(".local");
             p.push("share");
             p.push("ascendo");
-            p.push("venv");
+            p.push(".venv");
             p.push("bin");
             p.push(SIDECAR_BIN);
             v.push(p);
@@ -139,7 +139,7 @@ fn locate_sidecar(app_handle: &tauri::AppHandle) -> PathBuf {
         #[cfg(target_os = "linux")]
         {
             v.push(PathBuf::from("/usr/local/bin").join(SIDECAR_BIN));
-            v.push(PathBuf::from("/opt/ascendo/venv/bin").join(SIDECAR_BIN));
+            v.push(PathBuf::from("/opt/ascendo/.venv/bin").join(SIDECAR_BIN));
         }
         v
     };
@@ -304,24 +304,31 @@ fn main() {
             // installed in shared state before any window event has a
             // chance to ask for it.
             let sidecar_path = locate_sidecar(&app.handle());
-            let spawned_ok = match spawn_backend(sidecar_path.clone(), port) {
-                Some(child) => {
-                    if let Some(state) = app.try_state::<SidecarProcess>() {
-                        if let Ok(mut guard) = state.0.lock() {
-                            *guard = Some(child);
+
+            // Check if a healthy dashboard is already running on the standard port 8765.
+            // If so, we reuse it to avoid duplicate process overhead and port conflicts.
+            let (spawned_ok, target_port) = if port != 8765 && wait_for_health(8765, Duration::from_millis(100)) {
+                println!("ascendo: detected healthy dashboard already running on port 8765. Reusing it.");
+                (true, 8765)
+            } else {
+                // Standard flow: spawn our own sidecar on the picked port
+                let spawned = match spawn_backend(sidecar_path.clone(), port) {
+                    Some(child) => {
+                        if let Some(state) = app.try_state::<SidecarProcess>() {
+                            if let Ok(mut guard) = state.0.lock() {
+                                *guard = Some(child);
+                            }
                         }
+                        true
                     }
-                    true
-                }
-                None => false,
+                    None => false,
+                };
+                (spawned, port)
             };
 
-            // 60s window: the PyInstaller-bundled sidecar plus uvicorn
-            // + adapter discovery cold-starts in 4-15s on a typical
-            // Win11 laptop; a 10s ceiling produced connection-refused
-            // webviews intermittently. If spawn failed we skip the
-            // health-poll entirely — there's nothing to wait for.
-            if spawned_ok && !wait_for_health(port, Duration::from_secs(60)) {
+            // 60s window: wait for health if we spawned a new sidecar.
+            // If we're reusing an existing healthy one, we can skip the wait.
+            if spawned_ok && target_port == port && !wait_for_health(port, Duration::from_secs(60)) {
                 // Don't bail — let the WebView render a connection-
                 // refused page so the user can read the troubleshooting
                 // hint at the top of ui/desktop-tauri/README.md.
@@ -337,7 +344,7 @@ fn main() {
             // open at all. The user can read the hint and run the
             // suggested command in Terminal.
             let url = if spawned_ok {
-                format!("http://127.0.0.1:{}/", port)
+                format!("http://127.0.0.1:{}/", target_port)
             } else {
                 format!(
                     "data:text/html,{}",

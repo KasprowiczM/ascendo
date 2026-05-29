@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Ascendo Web
+GenericName=System Update Manager (Web)
+Comment=Open the Ascendo dashboard in a dedicated web browser window
+Exec=ascendo-web
+Icon=ascendo-web
+Terminal=false
+Categories=System;Settings;PackageManager;
+Keywords=update;apt;snap;flatpak;brew;npm;ascendo;
+StartupNotify=false
+StartupWMClass=AscendoWeb

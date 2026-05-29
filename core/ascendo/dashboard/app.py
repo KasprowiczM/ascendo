@@ -270,6 +270,7 @@ def create_app(
         "http://127.0.0.1:1420",
         "http://localhost:1420",
         "tauri://localhost",
+        "http://tauri.localhost",
     ]
     app.add_middleware(
         CORSMiddleware,

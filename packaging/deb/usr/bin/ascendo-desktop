@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# =============================================================================
+# ascendo-desktop — launch the Ascendo Desktop interface via ascendo-launch
+# =============================================================================
+set -euo pipefail
+exec ascendo-launch desktop "$@"

@@ -50,8 +50,15 @@ if ! _dashboard_up; then
     exit 1
 fi
 
-# Define function to stop service on exit
+# Define function to stop service on exit, but only if no other launchers are running
 stop_service() {
+    local other_launches
+    other_launches=$(pgrep -f "ascendo-launch" | grep -v "^$$" || true)
+    if [[ -n "$other_launches" ]]; then
+        echo "Other Ascendo launcher instances are still running ($other_launches). Keeping the dashboard service active."
+        return 0
+    fi
+
     if command -v systemctl >/dev/null 2>&1; then
         echo "Stopping Ascendo dashboard service..."
         systemctl --user stop ascendo-dashboard.service >/dev/null 2>&1 || true
@@ -105,9 +112,11 @@ fi
 # ── Desktop mode ────────────────────────────────────────────────────────────
 TAURI_CANDIDATES=(
     "${ASCENDO_DESKTOP_BIN:-}"
+    /opt/ascendo/ui/desktop-tauri/src-tauri/target/release/ascendo-desktop
     /opt/ascendo/app/tauri/src-tauri/target/release/ascendo
+    "${HOME}/Dev_Env/Ascendo/ui/desktop-tauri/src-tauri/target/release/ascendo-desktop"
     "${HOME}/Dev_Env/Ascendo/app/tauri/src-tauri/target/release/ascendo"
-    "${HOME}/.local/share/ascendo/app/tauri/src-tauri/target/release/ascendo"
+    "${HOME}/.local/share/ascendo/ui/desktop-tauri/src-tauri/target/release/ascendo-desktop"
 )
 
 LAUNCHED=0
