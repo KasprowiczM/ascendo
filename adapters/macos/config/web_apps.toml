@@ -28,6 +28,7 @@ notes = "Promoted from keystone (Tier-B trigger-only) to release_feed Tier-A in 
 [app.release_feed]
 url = "https://versionhistory.googleapis.com/v1/chrome/platforms/mac_arm64/channels/stable/versions"
 version_path = "versions[0].version"
+download_url = "https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg"
 http_timeout_s = 8
 
 [[app]]
@@ -159,8 +160,9 @@ http_timeout_s = 8
 slug = "perplexity"
 bundle_id = "ai.perplexity.macv3"
 display_name = "Perplexity"
-handler = "builtin"
-notes = "macv3 bundle (not the retired MAS ai.perplexity.mac, not ai.perplexity.comet). Sparkle SUFeedURL is runtime-injected, not in Info.plist, so no static probe. builtin keeps apply safe (safe-mode skip → Action-required list) with zero fake-silent-install risk. Promote per-machine via the Phase-C AI-config loop once a working feed URL is captured."
+handler = "sparkle"
+appcast_url = "https://macos-download.perplexity.ai/appcast.xml"
+notes = "Promoted from builtin to sparkle in M5.7.X. Perplexity started shipping the SUFeedURL natively in Info.plist."
 
 [[app]]
 slug = "comet"
@@ -315,6 +317,7 @@ notes = "Microsoft's documented update API. Returns JSON. download_path points t
 [app.release_feed]
 url = "https://update.code.visualstudio.com/api/update/darwin-arm64/stable/latest"
 version_path = "productVersion"
+download_path = "url"
 http_timeout_s = 8
 
 # ─── Zoom ──────────────────────────────────────────────────────────────────
@@ -529,7 +532,7 @@ notes = "Promoted from squirrel (Tier-B trigger-only) to release_feed Tier-A in 
 [app.release_feed]
 url = "https://antigravity-auto-updater-974169037036.us-central1.run.app/"
 format = "text"
-version_regex = "(?s).*Stable Version:\\s*([0-9]+\\.[0-9]+\\.[0-9]+).*"
+version_regex = "(?s).*(?:Stable|Fixed) Version:\\s*([0-9]+\\.[0-9]+\\.[0-9]+).*"
 version_replace = "\\1"
 http_timeout_s = 8
 
@@ -562,7 +565,7 @@ notes = "Sibling of the `antigravity` entry — Google ships Antigravity IDE as 
 [app.release_feed]
 url = "https://antigravity-auto-updater-974169037036.us-central1.run.app/"
 format = "text"
-version_regex = "(?s).*Stable Version:\\s*([0-9]+\\.[0-9]+\\.[0-9]+).*"
+version_regex = "(?s).*(?:Stable|Fixed) Version:\\s*([0-9]+\\.[0-9]+\\.[0-9]+).*"
 version_replace = "\\1"
 http_timeout_s = 8
 

@@ -371,11 +371,13 @@ release_feed_apply() {
     local url download_path download_asset_pattern timeout
     url=$(printf '%s' "$cfg" | _rf_get "release_feed.url")
     download_path=$(printf '%s' "$cfg" | _rf_get "release_feed.download_path")
+    local download_url
+    download_url=$(printf '%s' "$cfg" | _rf_get "release_feed.download_url")
     download_asset_pattern=$(printf '%s' "$cfg" | _rf_get "release_feed.download_asset_pattern")
     timeout=$(printf '%s' "$cfg" | _rf_get "release_feed.http_timeout_s")
     [ -z "$timeout" ] && timeout=8
 
-    if [ -z "$download_path" ] && [ -z "$download_asset_pattern" ]; then
+    if [ -z "$download_path" ] && [ -z "$download_asset_pattern" ] && [ -z "$download_url" ]; then
         # No download path configured — vendor only exposes a check
         # feed; the actual install path runs inside the app. Open it
         # in ``full`` profile so the in-app updater can do its thing.
@@ -398,7 +400,9 @@ release_feed_apply() {
     body=$(/usr/bin/curl -fsSL --max-time "$timeout" "$url" 2>/dev/null) || return 25
 
     local dmg_url
-    if [ -n "$download_asset_pattern" ]; then
+    if [ -n "$download_url" ]; then
+        dmg_url="$download_url"
+    elif [ -n "$download_asset_pattern" ]; then
         # GitHub Releases API shape: walk assets[] and pick by name regex.
         dmg_url=$(_rf_pick_asset_url "$body" "$download_asset_pattern") || return 28
     else

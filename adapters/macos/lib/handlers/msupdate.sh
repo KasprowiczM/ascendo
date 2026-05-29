@@ -133,6 +133,20 @@ print(d.get("display_name") or "")
     # No app_id — global behavior preserved (legacy "ms365" entry).
     if [ -n "$pending" ]; then
         echo "pending"
+        return 0
+    fi
+    local mau_ver
+    mau_ver=$("$bin" --config 2>/dev/null | /usr/bin/python3 -c '
+import sys, re
+text = sys.stdin.read()
+m = re.search(r"AutoUpdateVersion\s*=\s*\"([^\"]+)\";", text)
+if m:
+    print(m.group(1))
+')
+    if [ -n "$mau_ver" ]; then
+        echo "$mau_ver"
+    else
+        echo "up_to_date"
     fi
 }
 
