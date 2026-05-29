@@ -1,0 +1,32 @@
+[[app]]
+id = "claude"
+name = "Claude"
+preferred_order = ["npm", "snap"]
+[app.sources]
+npm = "@anthropic-ai/claude-cli"
+snap = "claude"
+
+[[app]]
+id = "docker"
+name = "Docker"
+preferred_order = ["apt", "snap"]
+[app.sources]
+apt = "docker-ce"
+snap = "docker"
+
+[[app]]
+id = "vscode"
+name = "Visual Studio Code"
+preferred_order = ["snap", "apt", "flatpak"]
+[app.sources]
+snap = "code"
+apt = "code"
+flatpak = "com.visualstudio.code"
+
+[[app]]
+id = "spotify"
+name = "Spotify"
+preferred_order = ["snap", "flatpak"]
+[app.sources]
+snap = "spotify"
+flatpak = "com.spotify.Client"

@@ -70,10 +70,15 @@ def test_scheduler_returns_systemd_scheduler_singleton() -> None:
 # ── Sub-interface accessors ──────────────────────────────────────────────
 
 
-def test_unsupported_accessors_return_none() -> None:
-    """source remains unimplemented for now (reserved for M6)."""
+def test_source_returns_ubuntu_source_singleton() -> None:
+    """source() returns a cached UbuntuSource instance."""
+    from ascendo_ubuntu.managers.source import UbuntuSource
+
     a = UbuntuAdapter()
-    assert a.source() is None
+    s1 = a.source()
+    s2 = a.source()
+    assert isinstance(s1, UbuntuSource)
+    assert s1 is s2
 
 
 def test_elevation_returns_linux_elevation_singleton() -> None:

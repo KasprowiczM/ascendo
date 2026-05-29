@@ -1,5 +1,33 @@
 # Handoff
 
+## 2026-05-29 — Ubuntu Deduplication & Test Suite Stabilization (Ubuntu Pre-Prod)
+
+### Co poszło na produkcję
+- **Ubuntu App Deduplication**: Rozszerzono `core/ascendo/orchestrator/deduplicator.py` o detekcję platformy oraz wsparcie i mapowanie komend dla Linuksa (`apt`, `snap`, `flatpak`, `brew`).
+- **Konfiguracja deduplikacji na Linuksie**: Wprowadzono `adapters/ubuntu/config/ubuntu_app_sources.toml` by kontrolować kolejność i przypisywanie aplikacji typu Docker (preferowany `apt`), Claude (preferowany `npm`), czy VS Code (preferowany `snap`).
+- **Naprawa środowiska testowego (Ubuntu)**:
+  - Wdrożono `--import-mode=importlib` w `pyproject.toml` by całkowicie wyeliminować `ModuleNotFoundError` oraz zjawisko "shadowing" pomiędzy rożnymi katalogami o nazwie `tests/`.
+  - Poprawiono logikę testowania deduplikatora (in-memory assertions) chroniąc testy przed różnicami miedzy trybem `TTY` a `non-TTY`.
+  - Aktualizacja długu technologicznego: zaktualizowano `test_ubuntu_adapter_smoke.py` gdzie `UbuntuAdapter.source()` jest już wprowadzony z użyciem singletona.
+
+### Pliki
+
+**Nowe:**
+- `adapters/ubuntu/config/ubuntu_app_sources.toml`
+
+**Zmodyfikowane:**
+- `core/ascendo/orchestrator/deduplicator.py`
+- `pyproject.toml`
+- `tests/test_deduplicator.py`
+- `adapters/ubuntu/tests/test_ubuntu_adapter_smoke.py`
+
+### Walidacja
+- Zestaw setek testów (ponad 630) przechodzi pomyślnie dla wszystkich adapterów i core.
+- `update-all.sh` dry-run pomyślnie buduje raport sidecar włączając wsparcie odinstalowywania duplikatów.
+
+### Następne kroki
+1. **Rozpoczęcie macOS Parity**. Baza pod Windows i Ubuntu została domknięta i działają na nich uniwersalne paczki testów kontraktowych. Przejęcie środowiska przez sesję macOS by wdrożyć integrację z Mac.
+
 ## 2026-05-29 — Windows Production Hardening & Auto-Uninstaller (PASS E Closeout)
 
 ### Co poszło na produkcję

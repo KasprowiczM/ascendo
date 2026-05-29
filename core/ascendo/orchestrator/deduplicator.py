@@ -37,13 +37,23 @@ def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, c
     import os
     import shutil
     
+    import sys
+    is_linux = sys.platform.startswith("linux")
+    
     # Look for config in user profile
     user_config_dir = Path(os.environ.get("ASCENDO_HOME") or Path.home() / ".ascendo")
     if config_path is None:
-        config_path = user_config_dir / "windows_app_sources.toml"
+        if is_linux:
+            config_path = user_config_dir / "ubuntu_app_sources.toml"
+        else:
+            config_path = user_config_dir / "windows_app_sources.toml"
         
     if not config_path.exists():
-        default_path = Path(__file__).parent.parent.parent.parent / "adapters" / "windows" / "config" / "app_sources.toml"
+        if is_linux:
+            default_path = Path(__file__).parent.parent.parent.parent / "adapters" / "ubuntu" / "config" / "ubuntu_app_sources.toml"
+        else:
+            default_path = Path(__file__).parent.parent.parent.parent / "adapters" / "windows" / "config" / "app_sources.toml"
+            
         if default_path.exists():
             user_config_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(default_path, config_path)
@@ -180,6 +190,14 @@ def _generate_report(actionable_fixes: list[dict], run_id: UUID, base_dir: Path)
                     lines.append(f"npm uninstall -g {item.id}")
                 elif src == "pip":
                     lines.append(f"pip uninstall -y {item.id}")
+                elif src == "apt":
+                    lines.append(f"sudo apt remove -y {item.id}")
+                elif src == "snap":
+                    lines.append(f"sudo snap remove {item.id}")
+                elif src == "flatpak":
+                    lines.append(f"flatpak uninstall -y {item.id}")
+                elif src == "brew":
+                    lines.append(f"brew uninstall {item.id}")
                 else:
                     lines.append(f"# Please uninstall '{item.name}' manually from {src}")
 
@@ -191,6 +209,14 @@ def _generate_report(actionable_fixes: list[dict], run_id: UUID, base_dir: Path)
             lines.append(f"npm install -g {pref_id}")
         elif preferred == "pip":
             lines.append(f"pip install {pref_id}")
+        elif preferred == "apt":
+            lines.append(f"sudo apt install -y {pref_id}")
+        elif preferred == "snap":
+            lines.append(f"sudo snap install {pref_id}")
+        elif preferred == "flatpak":
+            lines.append(f"flatpak install -y flathub {pref_id}")
+        elif preferred == "brew":
+            lines.append(f"brew install {pref_id}")
         else:
             lines.append(f"# Please install '{app.name}' via {preferred}")
             

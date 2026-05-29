@@ -81,14 +81,10 @@ web = "claude"
     # Run deduplication
     apply_deduplication(sidecars, run_id, tmp_path, config_file)
 
-    import json
-    winget_file = run_dir / "check__winget.json"
-    winget_data = json.loads(winget_file.read_text())
-    assert winget_data["items"][0]["status"] == "skipped"
+    assert sidecars[0].items[0].status == ItemStatus.PLANNED
+    assert sidecars[0].items[0].action == "uninstall"
 
-    npm_file = run_dir / "check__npm.json"
-    npm_data = json.loads(npm_file.read_text())
-    assert npm_data["items"][0]["status"] == "planned"
+    assert sidecars[1].items[0].status == ItemStatus.PLANNED
 
     # Check report generation
     report = (run_dir / "DEDUPLICATION_REPORT.md").read_text()

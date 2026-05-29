@@ -216,6 +216,7 @@ addopts          = [
     "--showlocals",
     "--tb=short",
     "-p", "no:cacheprovider",   # avoid clutter in CI
+    "--import-mode=importlib",  # prevent multiple 'tests' dirs from shadowing each other
 ]
 markers = [
     "unit: fast tests with no IO (default)",

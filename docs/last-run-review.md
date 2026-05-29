@@ -1,4 +1,26 @@
-﻿# Last Run Review
+# Last Run Review
+
+## 2026-05-29 — Ubuntu Deduplication & Test Validation
+
+Reviewed run:
+```text
+Ubuntu Dry-Run / Test suite validation
+id: latest
+status: PASS
+duration: ~1m
+```
+
+### Findings & fixes shipped
+
+| Finding | Root cause | Fix |
+|---|---|---|
+| Pytest `ModuleNotFoundError` | Multiple `tests/` directories shadowed each other when collected by Pytest default import behavior. | Added `--import-mode=importlib` to `pyproject.toml` configuration to isolate imports. |
+| Deduplicator hardcoded for Windows | `deduplicator.py` assumed `winget` and Windows config file. | Added cross-platform OS detection, `ubuntu_app_sources.toml`, and native command generators for `apt`, `snap`, `flatpak`, `brew`, `npm`, `pip`. |
+| `test_deduplicator` failure | Test assertions expected skipped uninstalls, but non-tty execution performs auto-uninstall planning. | Fixed assertions to expect `planned` uninstalls and perform in-memory validation of sidecars. |
+| Outdated Smoke Test | `test_ubuntu_adapter_smoke.py` expected `UbuntuAdapter.source()` to be unimplemented (`None`), but it was implemented recently. | Fixed test to properly assert `UbuntuSource` singleton instead. |
+
+### Result
+Ubuntu core and CLI tests are completely green. Cross-source deduplication logic correctly generates appropriate `apt`, `snap`, and `flatpak` removal/installation instructions. Ready for macOS development.
 
 ## 2026-05-29 — Windows cross-platform hardening & parity validation
 
