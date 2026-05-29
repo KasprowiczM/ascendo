@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Sparkle architecture selection and Bash 3.2 compatibility
+
+- **Sparkle Appcast Arch Filtering:** `adapters/macos/lib/ascendo_web.sh` now uses a robust Python `xml.etree.ElementTree` parser instead of a naive regex. It correctly extracts and filters `<item>` elements based on `<sparkle:hardwareRequirements>`, ensuring Apple Silicon users no longer receive `x64` builds of applications like Codex.
+- **`lib/detect.sh` Bash 3.2 Fix:** Wrapped Ubuntu-only `declare -gA` associative array initializations in a Bash version check. This prevents `preflight.sh` from crashing with `declare: -g: invalid option` when run on macOS (which uses Bash 3.2).
+
 ### Changed — Honest inventory status (Pass C — [honest-status])
 
 - **`_INVENTORY_STATUS_MAP`**: `failed`→`"failed"` (was `"outdated"`),

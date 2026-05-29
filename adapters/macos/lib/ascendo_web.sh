@@ -382,24 +382,6 @@ _web_is_running() {
 # Sparkle appcast parsing
 # ============================================================
 
-# _web_extract_sparkle_latest_version
-# Reads stdin (appcast XML), echoes the FIRST sparkle:shortVersionString.
-# Sparkle convention puts the latest item first.
-#
-# Handles BOTH valid Sparkle conventions:
-#   1. ATTRIBUTE on <enclosure>: Brave/Opera-style
-#        <enclosure ... sparkle:shortVersionString="X" />
-#   2. CHILD ELEMENT of <item>:  ChatGPT Atlas-style
-#        <sparkle:shortVersionString>X</sparkle:shortVersionString>
-#
-# Strategy: try element form first (text content between tags), fall back
-# to attribute form. Element form is more common in modern Sparkle 2.x
-# appcasts and unambiguous; attribute form is a Sparkle 1.x shortcut.
-#
-# Wire pattern: read stdin into a bash local first, then pass to python
-# via env var. A naked heredoc into `python3 <<'PY'` would bind stdin to
-# the python source, not the upstream pipe — same gotcha as github_dmg's
-# heredoc/pipe interaction documented in the M5.6 handoff.
 _web_extract_sparkle_latest_version() {
     local _xml
     _xml="$(cat)"
@@ -407,26 +389,14 @@ _web_extract_sparkle_latest_version() {
 import os
 import re
 import sys
+import platform
+import xml.etree.ElementTree as ET
 
-xml = os.environ.get("ASCENDO_WEB_XML", "")
-
-# Sparkle convention: <item> entries can appear in any order; the
-# CONSUMER must select the highest version. AppCleaner publishes
-# 3.4 first, 3.6 second, 3.6.8 last — naive "first match" gives 3.4.
-# Brave goes newest-first. We can't rely on order; sort + pick highest.
-
-versions = re.findall(
-    r'<sparkle:shortVersionString>([^<]+)</sparkle:shortVersionString>', xml)
-if not versions:
-    versions = re.findall(r'sparkle:shortVersionString="([^"]+)"', xml)
-
-if not versions:
+xml_data = os.environ.get("ASCENDO_WEB_XML", "")
+if not xml_data.strip():
     sys.exit(0)
 
-
 def _ver_key(s: str):
-    """Convert '3.6.8' -> [(3,''),(6,''),(8,'')]. Trailing alpha
-    components compare low so '3.6.8b' < '3.6.8' as expected."""
     parts = re.split(r'[.\-_]', s.strip())
     out = []
     for p in parts:
@@ -437,18 +407,165 @@ def _ver_key(s: str):
             out.append((-1, p))
     return out
 
+def get_best_item():
+    try:
+        root = ET.fromstring(xml_data)
+    except Exception:
+        # Regex fallback if XML is malformed
+        versions = re.findall(r'<sparkle:shortVersionString>([^<]+)</sparkle:shortVersionString>', xml_data)
+        if not versions:
+            versions = re.findall(r'sparkle:shortVersionString="([^"]+)"', xml_data)
+        if not versions:
+            return None, None
+        versions.sort(key=_ver_key)
+        # Extract first URL blindly as fallback
+        m_url = re.search(r'url="(https?://[^"]+)"', xml_data)
+        return versions[-1].strip(), (m_url.group(1) if m_url else "")
 
-versions.sort(key=_ver_key)
-print(versions[-1].strip())
+    arch = platform.machine().lower()
+    is_arm = arch in ('arm64', 'aarch64')
+    
+    ns = {'sparkle': 'http://www.andymatuschak.org/xml-namespaces/sparkle'}
+    valid_items = []
+    
+    for item in root.findall('.//item'):
+        ver_elem = item.find('sparkle:shortVersionString', ns)
+        if ver_elem is not None and ver_elem.text:
+            ver = ver_elem.text
+        else:
+            ver = item.attrib.get('{http://www.andymatuschak.org/xml-namespaces/sparkle}shortVersionString', '')
+            if not ver:
+                enc = item.find('enclosure')
+                if enc is not None:
+                    ver = enc.attrib.get('{http://www.andymatuschak.org/xml-namespaces/sparkle}shortVersionString', '')
+        if not ver:
+            continue
+            
+        hw_elem = item.find('sparkle:hardwareRequirements', ns)
+        hw = hw_elem.text.lower() if hw_elem is not None and hw_elem.text else ''
+        
+        enc = item.find('enclosure')
+        url = enc.attrib.get('url', '') if enc is not None else ''
+        
+        if hw:
+            if is_arm and hw not in ('arm64', 'aarch64', 'universal'):
+                continue
+            if not is_arm and hw in ('arm64', 'aarch64'):
+                continue
+        else:
+            url_lower = url.lower()
+            if is_arm:
+                if any(x in url_lower for x in ('x86_64', 'amd64', 'x64', 'intel')) and not any(x in url_lower for x in ('arm64', 'aarch64', 'universal')):
+                    continue
+            else:
+                if any(x in url_lower for x in ('arm64', 'aarch64', 'apple-silicon')) and not any(x in url_lower for x in ('x86_64', 'x64', 'amd64', 'universal')):
+                    continue
+                    
+        valid_items.append((ver.strip(), url))
+        
+    if not valid_items:
+        return None, None
+        
+    valid_items.sort(key=lambda x: _ver_key(x[0]))
+    return valid_items[-1]
+
+ver, _ = get_best_item()
+if ver:
+    print(ver)
 PY
 }
 
 # _web_extract_sparkle_enclosure_url
-# Reads stdin, echoes the FIRST <enclosure url="..."> URL.
+# Reads stdin, echoes the architecture-appropriate enclosure URL for the highest version.
 _web_extract_sparkle_enclosure_url() {
-    /usr/bin/grep -oE 'url="https?://[^"]+"' \
-        | /usr/bin/head -n 1 \
-        | /usr/bin/sed -E 's/url="([^"]+)"/\1/'
+    local _xml
+    _xml="$(cat)"
+    ASCENDO_WEB_XML="$_xml" /usr/bin/python3 <<'PY'
+import os
+import re
+import sys
+import platform
+import xml.etree.ElementTree as ET
+
+xml_data = os.environ.get("ASCENDO_WEB_XML", "")
+if not xml_data.strip():
+    sys.exit(0)
+
+def _ver_key(s: str):
+    parts = re.split(r'[.\-_]', s.strip())
+    out = []
+    for p in parts:
+        m = re.match(r'^(\d+)', p)
+        if m:
+            out.append((int(m.group(1)), p[m.end():] or ''))
+        else:
+            out.append((-1, p))
+    return out
+
+def get_best_item():
+    try:
+        root = ET.fromstring(xml_data)
+    except Exception:
+        # Regex fallback
+        versions = re.findall(r'<sparkle:shortVersionString>([^<]+)</sparkle:shortVersionString>', xml_data)
+        if not versions:
+            versions = re.findall(r'sparkle:shortVersionString="([^"]+)"', xml_data)
+        if not versions:
+            return None, None
+        versions.sort(key=_ver_key)
+        m_url = re.search(r'url="(https?://[^"]+)"', xml_data)
+        return versions[-1].strip(), (m_url.group(1) if m_url else "")
+
+    arch = platform.machine().lower()
+    is_arm = arch in ('arm64', 'aarch64')
+    ns = {'sparkle': 'http://www.andymatuschak.org/xml-namespaces/sparkle'}
+    valid_items = []
+    
+    for item in root.findall('.//item'):
+        ver_elem = item.find('sparkle:shortVersionString', ns)
+        if ver_elem is not None and ver_elem.text:
+            ver = ver_elem.text
+        else:
+            ver = item.attrib.get('{http://www.andymatuschak.org/xml-namespaces/sparkle}shortVersionString', '')
+            if not ver:
+                enc = item.find('enclosure')
+                if enc is not None:
+                    ver = enc.attrib.get('{http://www.andymatuschak.org/xml-namespaces/sparkle}shortVersionString', '')
+        if not ver:
+            continue
+            
+        hw_elem = item.find('sparkle:hardwareRequirements', ns)
+        hw = hw_elem.text.lower() if hw_elem is not None and hw_elem.text else ''
+        
+        enc = item.find('enclosure')
+        url = enc.attrib.get('url', '') if enc is not None else ''
+        
+        if hw:
+            if is_arm and hw not in ('arm64', 'aarch64', 'universal'):
+                continue
+            if not is_arm and hw in ('arm64', 'aarch64'):
+                continue
+        else:
+            url_lower = url.lower()
+            if is_arm:
+                if any(x in url_lower for x in ('x86_64', 'amd64', 'x64', 'intel')) and not any(x in url_lower for x in ('arm64', 'aarch64', 'universal')):
+                    continue
+            else:
+                if any(x in url_lower for x in ('arm64', 'aarch64', 'apple-silicon')) and not any(x in url_lower for x in ('x86_64', 'x64', 'amd64', 'universal')):
+                    continue
+                    
+        valid_items.append((ver.strip(), url))
+        
+    if not valid_items:
+        return None, None
+        
+    valid_items.sort(key=lambda x: _ver_key(x[0]))
+    return valid_items[-1]
+
+_, url = get_best_item()
+if url:
+    print(url)
+PY
 }
 
 # ============================================================

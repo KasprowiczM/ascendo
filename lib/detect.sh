@@ -106,9 +106,11 @@ detect_package_managers() {
 # source line). Populated lazily by apt_inventory_cache_init. Without this
 # cache, scan_apt_third_party_manual would invoke `apt-cache policy` 250+
 # times (≈30 s on this host); one batched call cuts that to ~2 s.
-declare -gA APT_CACHE_VERSION=()
-declare -gA APT_CACHE_CANDIDATE=()
-declare -gA APT_CACHE_SOURCE=()
+if [[ "${BASH_VERSINFO[0]:-0}" -ge 4 ]]; then
+    declare -gA APT_CACHE_VERSION=() 2>/dev/null || true
+    declare -gA APT_CACHE_CANDIDATE=() 2>/dev/null || true
+    declare -gA APT_CACHE_SOURCE=() 2>/dev/null || true
+fi
 APT_CACHE_INIT=0
 
 apt_inventory_cache_init() {
