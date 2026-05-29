@@ -1,5 +1,48 @@
 # Handoff
 
+## 2026-05-29 — Windows Production Hardening & Auto-Uninstaller (PASS E Closeout)
+
+### Co poszło na produkcję
+
+- **P8 Windows ACLs na `chats.db`**: Dodano surowe restrykcje używając `ctypes` (`advapi32.SetNamedSecurityInfoW`). Zabezpiecza bazę rozmów przed byciem world-readable. Testy jednostkowe potwierdzają działanie ACL-ek na Windowsie (fallback loguje ostrzeżenie, jeśli plik systemowy).
+- **P11 Fail-fast w UAC `env` overrides**: Zmodyfikowano `_run_uac` w `adapters/windows/managers/elevation.py`. Teraz zrzuca `NotImplementedError`, jeżeli środowisko nie jest puste (Windows `ShellExecuteExW` z `runas` nie wspiera dziedziczenia własnego środowiska bez hackowania tokenów).
+- **P3/P6 Proton Mail kill + Github Release handlers**: Zaktualizowano `web_apps.toml` o dodanie `Update` (Squirrel) process kills, aby upewnić się, że nie blokuje updatów. Drobne poprawki do `github_release.ps1` w celu spójnej walidacji UAC i silent apply.
+- **Cross-Source Deduplication & Auto-Uninstall**:
+  - Konfiguracja `app_sources.toml` przeniesiona z codebase do profilu użytkownika (`~/.config/ascendo/windows_app_sources.toml`), z automatycznym kopiowaniem domyślnego szablonu.
+  - Zmodyfikowano model `Item` o nową flagę `action = "uninstall"`.
+  - Orkiestrator teraz zatrzymuje się na interaktywnym promtcie (`rich.prompt.Confirm`) pytając, czy użytkownik chce automatycznie odinstalować niepreferowane źródła instalacyjne przed wymuszeniem wybranego profilu (jeżeli to terminal non-interactive, domyślnie leci silent uninstall).
+  - Skrypty PowerShell (Winget, NPM, PIP apply.ps1) pod maską parsują globalną instrukcję `DEDUPLICATION_TASKS.json` i czyszczą śmieci (uruchamiają odpowiednie komendy odinstalowania).
+
+### Pliki
+
+**Modyfikacje:**
+- `adapters/windows/ascendo_windows/managers/elevation.py` (P11)
+- `adapters/windows/lib/AscendoWinget.psm1`
+- `adapters/windows/lib/handlers/github_release.ps1` (P3/P6)
+- `adapters/windows/scripts/npm/apply.ps1`
+- `adapters/windows/scripts/pip/apply.ps1`
+- `adapters/windows/scripts/winget/apply.ps1` (Deduplikacja)
+- `adapters/windows/scripts/winget/verify.ps1`
+- `core/ascendo/ai/persistence.py` (P8)
+- `core/ascendo/models/result.py`
+- `core/ascendo/orchestrator/deduplicator.py` (Deduplikacja & Prompt)
+
+**Nowe:**
+- `adapters/windows/tests/test_elevation.py`
+- `core/ascendo/models/deduplication.py`
+- `tests/test_deduplicator.py`
+
+### Walidacja
+
+- Pomyślnie uruchomiono w trybie dry-run dla weryfikacji generowania sidecarów ze statusem `action="uninstall"`.
+- Zmodyfikowane testy Pydantic models przechodzą weryfikację.
+- Python AST + Pydantic validation clean dla wszystkich modeli.
+- Działanie potwierdzone w środowisku operacyjnym przez agenta.
+
+### Następne kroki
+
+1. Testy na produkcji Ubuntu.
+2. Testy na produkcji macOS.
 
 ## 2026-05-24 (Sesja 13) — M5.7.6 macOS coverage closeout + operator-grade ports from Ascendo
 

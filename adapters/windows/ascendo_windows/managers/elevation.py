@@ -179,13 +179,30 @@ class WindowsElevation(IElevation):
         env: dict[str, str] | None,  # noqa: ARG002 — UAC child does not inherit overrides safely
         cwd: str | None,
     ) -> ElevationResult:
+        if env is not None:
+            raise NotImplementedError("UAC elevation does not support environment variable overrides")
         if not sys.platform.startswith("win"):
             raise ElevationDenied("UAC only available on Windows")
 
         # Resolve the executable to an absolute path. ShellExecute does
         # NOT search PATH the same way CreateProcess does, so we resolve
         # via shutil.which here.
-        exe = shutil.which(argv[0]) or argv[0]
+        resolved = shutil.which(argv[0])
+        if not resolved:
+            raise ElevationDenied(f"command {argv[0]!r} not found")
+        exe = os.path.realpath(resolved)
+
+        # P3/P6: Compare resolved paths to prevent spoofing/hijacking of the target executable.
+        expected = shutil.which(os.path.basename(argv[0]))
+        if expected:
+            expected_real = os.path.realpath(expected)
+            if exe.lower() != expected_real.lower():
+                raise ElevationDenied("Spoofing detected: path resolution mismatch")
+        elif os.path.isabs(argv[0]):
+            original_real = os.path.realpath(argv[0])
+            if exe.lower() != original_real.lower():
+                raise ElevationDenied("Spoofing detected: resolved path differs from absolute argv[0]")
+
         params = subprocess.list2cmdline(argv[1:]) if len(argv) > 1 else ""
 
         # Tempfiles for stdout / stderr capture. We invoke cmd.exe /c so we

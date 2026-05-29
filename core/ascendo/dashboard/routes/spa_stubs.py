@@ -606,6 +606,12 @@ async def sudo_auth_stub(request: Request) -> dict[str, Any]:
         # Wrong password / probe failure → 401. The real /elevation/auth
         # handler does the same; we mirror it here for the legacy SPA path.
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+    finally:
+        # P3/P6: best-effort password memory sanitization
+        password = ""
+        if isinstance(body, dict) and "password" in body:
+            body["password"] = ""
+        del body
     return {"ok": True, "cached": True}
 
 

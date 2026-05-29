@@ -92,6 +92,39 @@ try {
         if ($itemFilterArray.Count -eq 0) { $itemFilterArray = $null }
     }
 
+    # ── Read DEDUPLICATION_TASKS.json for uninstalls ───────────────
+    $uninstallFilterArray = $null
+    $dedupFile = Join-Path $OutputDir "$RunId\DEDUPLICATION_TASKS.json"
+    if (Test-Path -LiteralPath $dedupFile) {
+        try {
+            $dedupJson = Get-Content -LiteralPath $dedupFile -Raw | ConvertFrom-Json
+            if ($null -ne $dedupJson.npm) {
+                $uninstallFilterArray = @($dedupJson.npm)
+            }
+        } catch {}
+    }
+    
+    if ($null -ne $uninstallFilterArray) {
+        foreach ($pkg in $uninstallFilterArray) {
+            if ($DryRun) {
+                Add-SidecarItem -Sidecar $sidecar -Id $pkg -Name $pkg `
+                    -Category 'npm' -SourceType 'npm' -Status 'planned' `
+                    -TargetVersion 'ABSENT' | Out-Null
+                continue
+            }
+            $proc = Start-Process -FilePath $npmBin -ArgumentList @('uninstall', '-g', $pkg) -NoNewWindow -Wait -PassThru
+            if ($proc.ExitCode -eq 0) {
+                Add-SidecarItem -Sidecar $sidecar -Id $pkg -Name $pkg `
+                    -Category 'npm' -SourceType 'npm' -Status 'success' `
+                    -TargetVersion 'ABSENT' -ResolvedVersion 'ABSENT' -ExitCode $proc.ExitCode | Out-Null
+            } else {
+                Add-SidecarItem -Sidecar $sidecar -Id $pkg -Name $pkg `
+                    -Category 'npm' -SourceType 'npm' -Status 'failed' `
+                    -ExitCode $proc.ExitCode | Out-Null
+            }
+        }
+    }
+
     $manifest = Read-AscendoNpmManifest -Path $ManifestPath
     foreach ($pkg in $manifest) {
         if ($null -ne $itemFilterArray -and ($itemFilterArray -notcontains $pkg)) { continue }

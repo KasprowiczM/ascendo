@@ -83,6 +83,10 @@ class Item(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: PackageId = Field(description="Package identifier within its source.")
+    action: str = Field(
+        default="update",
+        description="The intended operation. Usually 'update', but can be 'uninstall'.",
+    )
     name: str = Field(description="Display name.")
     category: SourceType = Field(
         description="Source category (mirrors Package.category).",

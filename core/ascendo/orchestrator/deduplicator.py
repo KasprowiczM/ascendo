@@ -14,17 +14,42 @@ from .sidecar_io import write_sidecar
 
 _log = logging.getLogger(__name__)
 
+def _confirm_uninstall(app_name: str, src_name: str, preferred: str) -> bool:
+    import sys
+    if not sys.stdout.isatty():
+        return True
+    try:
+        from rich.prompt import Confirm
+        from rich.console import Console
+        Console().print(f"[yellow]Duplicate detected: {app_name} is installed via '{src_name}', but '{preferred}' is preferred.[/yellow]")
+        return Confirm.ask(f"Do you want to automatically uninstall the '{src_name}' version now?", default=True)
+    except ImportError:
+        res = input(f"Duplicate detected: {app_name} is installed via '{src_name}'. Uninstall? [Y/n]: ")
+        return res.lower() not in ("n", "no")
+
+
 def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, config_path: Path | None = None) -> None:
     """Analyzes check phase sidecars, identifies duplicates, and ignores non-preferred sources.
     
     Generates a DEDUPLICATION_REPORT.md if actionable duplicates are found.
     Mutates the `sidecars` list items in-place and rewrites them to disk.
     """
-    # Look for config in adapters/windows/config
+    import os
+    import shutil
+    
+    # Look for config in user profile
+    user_config_dir = Path(os.environ.get("ASCENDO_HOME") or Path.home() / ".ascendo")
     if config_path is None:
-        config_path = Path(__file__).parent.parent.parent.parent / "adapters" / "windows" / "config" / "app_sources.toml"
+        config_path = user_config_dir / "windows_app_sources.toml"
+        
     if not config_path.exists():
-        return
+        default_path = Path(__file__).parent.parent.parent.parent / "adapters" / "windows" / "config" / "app_sources.toml"
+        if default_path.exists():
+            user_config_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(default_path, config_path)
+            _log.info("Initialized default app sources at %s", config_path)
+        else:
+            return
 
     registry = AppSourcesRegistry.load(config_path)
     if not registry.apps:
@@ -39,6 +64,7 @@ def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, c
                 installed_items.append((sidecar, item))
 
     actionable_fixes = []
+    uninstall_tasks = defaultdict(list)
 
     for app in registry.apps:
         # Check which sources are installed for this logical app
@@ -81,15 +107,34 @@ def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, c
             # Ignore updates for non-best installed sources
             for src_name, (sidecar, item) in installed_sources.items():
                 if src_name != best_source:
-                    print(f"DEBUG: Skipping {src_name} item {item.id}")
-                    item.status = ItemStatus.SKIPPED
-                    item.target_version = item.current_version  # Suppress update
-                    item.messages.append(Message(
-                        level=MessageLevel.WARN,
-                        text=f"Ignored update from non-preferred source '{src_name}'. Preferred is '{absolute_preferred}'."
-                    ))
+                    if _confirm_uninstall(app.name, src_name, absolute_preferred):
+                        print(f"DEBUG: Auto-uninstalling {src_name} item {item.id}")
+                        uninstall_tasks[src_name].append(item.id)
+                        
+                        # Change status from successful check to planned uninstall
+                        item.status = ItemStatus.PLANNED
+                        item.action = "uninstall"
+                        item.target_version = "ABSENT"
+                        item.messages.append(Message(
+                            level=MessageLevel.WARN,
+                            text=f"Auto-uninstalling non-preferred source '{src_name}'. Preferred is '{absolute_preferred}'."
+                        ))
+                    else:
+                        print(f"DEBUG: Skipping uninstall for {src_name} item {item.id}")
+                        item.status = ItemStatus.SKIPPED
+                        item.target_version = item.current_version
+                        item.messages.append(Message(
+                            level=MessageLevel.INFO,
+                            text=f"User skipped auto-uninstall of '{src_name}'. Ignored update."
+                        ))
                     # Rewrite the sidecar to disk since we mutated it
                     write_sidecar(sidecar, base_dir=base_dir)
+
+    if uninstall_tasks:
+        import json
+        tasks_path = base_dir / str(run_id) / "DEDUPLICATION_TASKS.json"
+        tasks_path.write_text(json.dumps(uninstall_tasks), encoding="utf-8")
+        _log.info("Written DEDUPLICATION_TASKS.json")
 
     if actionable_fixes:
         _generate_report(actionable_fixes, run_id, base_dir)

@@ -427,6 +427,25 @@ try {
         $verifyStatus = 'success'
         $verifyMessages = @()
 
+        # Retry loop for asynchronous installers (e.g. Squirrel.Windows) that take time to update.
+        # Winget apply returns success immediately but winget list might still show the old version.
+        if ($applyClaimedSuccess -and $null -ne $expected -and -not [string]::IsNullOrWhiteSpace($expected) `
+            -and $actual -ne 'Unknown' -and $actual -ne $expected) {
+            $retryCount = 0
+            while ($actual -ne $expected -and $retryCount -lt 6) {
+                Start-Sleep -Seconds 5
+                $retryCount++
+                $raw = & winget list --id $id --exact --accept-source-agreements 2>$null | Out-String
+                $singleList = Read-WingetTabularOutput -RawOutput $raw
+                if ($singleList.Count -gt 0) {
+                    $newActual = [string]$singleList[0].Version
+                    if (-not [string]::IsNullOrWhiteSpace($newActual) -and $newActual -ne 'Unknown') {
+                        $actual = $newActual
+                    }
+                }
+            }
+        }
+
         if ($applyClaimedSuccess) {
             if ($null -eq $actual -or [string]::IsNullOrWhiteSpace($actual)) {
                 # Apply said success but winget no longer reports the package.

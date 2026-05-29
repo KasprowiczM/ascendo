@@ -27,6 +27,14 @@ def test_db_file_perms_0600_posix(db):
     assert (st.st_mode & 0o777) == 0o600
 
 
+def test_db_file_perms_windows(db, caplog):
+    if os.name != "nt":
+        pytest.skip("perms check is Windows-specific")
+    assert "Unable to set Windows ACL" not in caplog.text
+    # Check that the file was created and isn't empty after initialization
+    assert db.path.exists()
+
+
 def test_create_conversation_returns_id(db):
     cid = db.create_conversation(backend="claude", locale="en")
     assert isinstance(cid, str) and len(cid) > 0

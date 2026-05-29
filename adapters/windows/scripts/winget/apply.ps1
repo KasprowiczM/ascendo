@@ -251,7 +251,7 @@ function Invoke-WingetMutation {
     [OutputType([pscustomobject])]
     param(
         [Parameter(Mandatory)] [string]$PackageId,
-        [Parameter()] [ValidateSet('upgrade','install')] [string]$Action = 'upgrade'
+        [Parameter()] [ValidateSet('upgrade','install','uninstall')] [string]$Action = 'upgrade'
     )
 
     $argv = @(
@@ -260,10 +260,12 @@ function Invoke-WingetMutation {
         $PackageId
         '--exact'
         '--silent'
-        '--accept-package-agreements'
-        '--accept-source-agreements'
-        '--disable-interactivity'
     )
+    if ($Action -ne 'uninstall') {
+        $argv += '--accept-package-agreements'
+        $argv += '--accept-source-agreements'
+    }
+    $argv += '--disable-interactivity'
     if ($Action -eq 'upgrade') { $argv += '--include-unknown' }
 
     Write-Verbose ("Invoke-WingetMutation: 'winget {0}'" -f ($argv -join ' '))
@@ -487,6 +489,26 @@ try {
         Write-Verbose 'ItemFilter: <none>'
     }
 
+    # ── 3.5 Read DEDUPLICATION_TASKS.json for uninstalls ───────────────
+    $uninstallFilterArray = $null
+    $dedupFile = Join-Path $OutputDir "$RunId\DEDUPLICATION_TASKS.json"
+    if (Test-Path -LiteralPath $dedupFile) {
+        try {
+            $dedupJson = Get-Content -LiteralPath $dedupFile -Raw | ConvertFrom-Json
+            if ($null -ne $dedupJson.winget) {
+                $uninstallFilterArray = @($dedupJson.winget)
+            }
+        } catch {
+            Write-Verbose "Failed to parse DEDUPLICATION_TASKS.json: $_"
+        }
+    }
+    if ($null -ne $uninstallFilterArray) {
+        Write-Verbose ("UninstallFilter: {0} ID(s) -> {1}" -f
+            $uninstallFilterArray.Count, ($uninstallFilterArray -join ', '))
+    } else {
+        Write-Verbose 'UninstallFilter: <none>'
+    }
+
     # ── 4. Enumerate upgradable + installed packages ───────────────────
     $upgradable = @()
     try {
@@ -514,7 +536,76 @@ try {
         }
     }
 
-    # ── 5. Apply loop ──────────────────────────────────────────────────
+    # ── 5. Uninstall loop ──────────────────────────────────────────────
+    if ($null -ne $uninstallFilterArray) {
+        foreach ($uid in $uninstallFilterArray) {
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            if ($DryRun) {
+                $plannedArgs = @{
+                    Sidecar    = $sidecar
+                    Id         = $uid
+                    Name       = $uid
+                    Category   = 'winget'
+                    SourceType = 'winget'
+                    Status     = 'planned'
+                    Messages   = @( @{ level = 'info'; text = "DryRun: would uninstall '{0}'." -f $uid } )
+                }
+                [void](Add-SidecarItem @plannedArgs)
+                continue
+            }
+            
+            $mutation = $null
+            try {
+                $mutation = Invoke-WingetMutation -PackageId $uid -Action 'uninstall'
+            } catch {
+                $failArgs = @{
+                    Sidecar    = $sidecar
+                    Id         = $uid
+                    Name       = $uid
+                    Category   = 'winget'
+                    SourceType = 'winget'
+                    Status     = 'failed'
+                    DurationMs = [int]$sw.Elapsed.TotalMilliseconds
+                    Messages   = @( @{ level = 'error'; text = "winget uninstall threw: {0}" -f $_.Exception.Message } )
+                }
+                [void](Add-SidecarItem @failArgs)
+                continue
+            }
+            
+            $sw.Stop()
+            if ($mutation.ExitCode -eq 0 -or $mutation.ExitCode -eq 3010) {
+                $succArgs = @{
+                    Sidecar    = $sidecar
+                    Id         = $uid
+                    Name       = $uid
+                    Category   = 'winget'
+                    SourceType = 'winget'
+                    Status     = 'success'
+                    TargetVersion = 'ABSENT'
+                    ResolvedVersion = 'ABSENT'
+                    ExitCode   = $mutation.ExitCode
+                    DurationMs = [int]$sw.Elapsed.TotalMilliseconds
+                    Messages   = @( @{ level = 'info'; text = "Uninstalled '{0}' successfully." -f $uid } )
+                }
+                [void](Add-SidecarItem @succArgs)
+            } else {
+                $failArgs = @{
+                    Sidecar    = $sidecar
+                    Id         = $uid
+                    Name       = $uid
+                    Category   = 'winget'
+                    SourceType = 'winget'
+                    Status     = 'failed'
+                    ExitCode   = $mutation.ExitCode
+                    DurationMs = [int]$sw.Elapsed.TotalMilliseconds
+                    Messages   = @( @{ level = 'error'; text = "winget uninstall failed with exit code {0}. {1}" -f $mutation.ExitCode, $mutation.StderrExcerpt } )
+                }
+                [void](Add-SidecarItem @failArgs)
+            }
+        }
+    }
+
+    # ── 6. Apply loop (Upgrades) ───────────────────────────────────────
     $rebootRequired = $false
 
     # Heartbeat keeps the SSE log stream visibly alive during long

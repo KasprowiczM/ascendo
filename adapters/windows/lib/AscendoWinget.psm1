@@ -894,6 +894,7 @@ Export-ModuleMember -Function @(
     'Resolve-WingetId'
     'Get-AscendoApplyMark'
     'Set-AscendoApplyMark'
+    'Read-WingetTabularOutput'
 )
 
 # =============================================================================

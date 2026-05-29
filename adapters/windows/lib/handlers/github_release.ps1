@@ -828,8 +828,25 @@ function Invoke-GitHubReleaseApplyReal {
     # 4) Readback installed version from registry. The uninstall key
     # was captured at the start of the function (line ~705) so we can
     # also compare against the pre-install reading.
-    $newVersion = Get-WebReinstalledVersion -UninstallKey $uninstallKey `
-        -DisplayNamePattern $dnp -Slug $Slug
+    # Asynchronous installers (like Squirrel.Windows) exit immediately but
+    # update the registry seconds later in the background. We poll for up
+    # to 60 seconds (12 x 5s) before giving up and reporting fake-success.
+    $newVersion = $null
+    for ($i = 0; $i -lt 12; $i++) {
+        $newVersion = Get-WebReinstalledVersion -UninstallKey $uninstallKey `
+            -DisplayNamePattern $dnp -Slug $Slug
+        
+        $tagTrim = $tag.TrimStart('v', 'V')
+        
+        # We can stop polling if:
+        # 1. We had no preInstallVersion (first install, though we can't reliably detect when the background process finishes without a baseline).
+        # 2. $newVersion != $preInstallVersion (the version changed! successful upgrade).
+        # 3. $newVersion == $tag (we successfully reinstalled the exact same version).
+        if (-not $preInstallVersion -or ($newVersion -and $newVersion -ne $preInstallVersion) -or ($newVersion -eq $tag) -or ($newVersion -eq $tagTrim)) {
+            break
+        }
+        if ($i -lt 11) { Start-Sleep -Seconds 5 }
+    }
 
     # 5) Fake-success detection. The installer reported a non-error
     # exit code, but the registry's DisplayVersion is unchanged from

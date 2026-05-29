@@ -63,6 +63,47 @@ class ChatsDB:
                 os.chmod(self.path, 0o600)
             except OSError:
                 pass
+        elif os.name == "nt":
+            import ctypes
+            import logging
+            try:
+                # D:P(A;;FA;;;OW)(A;;FA;;;SY)
+                # D:P = DACL protected (blocks inheritance)
+                # (A;;FA;;;OW) = Allow, Full Access, Owner Rights / Object Owner
+                # (A;;FA;;;SY) = Allow, Full Access, Local System
+                sddl = "D:P(A;;FA;;;OW)(A;;FA;;;SY)"
+                advapi32 = ctypes.windll.advapi32
+                kernel32 = ctypes.windll.kernel32
+                
+                SECURITY_DESCRIPTOR_REVISION = 1
+                DACL_SECURITY_INFORMATION = 4
+                
+                sd_ptr = ctypes.c_void_p()
+                sd_size = ctypes.c_ulong()
+                
+                res = advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                    ctypes.c_wchar_p(sddl),
+                    SECURITY_DESCRIPTOR_REVISION,
+                    ctypes.byref(sd_ptr),
+                    ctypes.byref(sd_size)
+                )
+                if not res:
+                    raise ctypes.WinError()
+                
+                res = advapi32.SetFileSecurityW(
+                    ctypes.c_wchar_p(str(self.path)),
+                    DACL_SECURITY_INFORMATION,
+                    sd_ptr
+                )
+                kernel32.LocalFree(sd_ptr)
+                if not res:
+                    raise ctypes.WinError()
+            except Exception as e:
+                logging.getLogger(__name__).warning(
+                    "Unable to set Windows ACL on %s via ctypes: %s. "
+                    "File might be world-readable.",
+                    self.path, e
+                )
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, check_same_thread=False)
