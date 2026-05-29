@@ -363,7 +363,7 @@ def test_runs_active_stop_running_run(
     client: TestClient,
     tmp_path: Path,
 ) -> None:
-    """B3: stop with an active run still reports cancel-not-supported."""
+    """B3: stop with an active run requests cooperative cancel."""
     registry: RunRegistry = client.app.state.run_registry
     run_id = uuid4()
     state = registry.register(run_id, base_dir=tmp_path)
@@ -372,7 +372,7 @@ def test_runs_active_stop_running_run(
     r = client.post("/runs/active/stop")
     assert r.status_code == 200
     body = r.json()
-    assert body["ok"] is False
+    assert body["ok"] is True
     assert "cancel" in body["reason"].lower()
 
 

@@ -71,6 +71,7 @@ __all__ = [
     "SidecarLockError",
     "SidecarReadError",
     "SidecarWriteError",
+    "detect_stale_locks",
     "list_run_sidecars",
     "read_run",
     "read_sidecar",
@@ -721,3 +722,49 @@ def recover_partial(path: Path) -> Sidecar | None:
     except (ValidationError, ValueError, json.JSONDecodeError) as exc:
         _LOG.warning("recover_partial: stub synthesis failed for %s: %s", path, exc)
         return None
+
+
+# ── P12: Stale lock detection ────────────────────────────────────────────────
+
+
+def detect_stale_locks(
+    run_dir: Path,
+    *,
+    max_age_seconds: int = 300,
+) -> list[Path]:
+    """Find ``.lock`` files older than ``max_age_seconds``.
+
+    A lock file left behind by a crashed writer prevents any future
+    writer from persisting sidecars in that run directory (on Windows;
+    POSIX advisory locks auto-release on close). This helper lets the
+    ``ascendo doctor`` command surface the issue.
+
+    Args:
+        run_dir: Path to a ``<base_dir>/<run-id>/`` directory.
+        max_age_seconds: Files older than this are considered stale.
+            Default 5 minutes — a single phase never runs that long.
+
+    Returns:
+        Sorted list of stale lock file paths.
+    """
+    if not run_dir.is_dir():
+        return []
+
+    import time as _time
+
+    now = _time.time()
+    stale: list[Path] = []
+    for entry in run_dir.iterdir():
+        if not entry.is_file():
+            continue
+        if not entry.name.endswith(".lock"):
+            continue
+        try:
+            age = now - entry.stat().st_mtime
+        except OSError:
+            continue
+        if age > max_age_seconds:
+            stale.append(entry)
+
+    stale.sort(key=lambda p: p.name)
+    return stale

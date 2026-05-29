@@ -18,7 +18,7 @@ class TestNoWindowKwargs:
             result = no_window_kwargs()
             assert isinstance(result, dict)
             assert "creationflags" in result
-            assert result["creationflags"] == subprocess.CREATE_NO_WINDOW
+            assert result["creationflags"] == getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
     def test_on_linux(self) -> None:
         """On Linux, returns empty dict."""

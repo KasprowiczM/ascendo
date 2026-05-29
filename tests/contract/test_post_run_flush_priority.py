@@ -23,7 +23,7 @@ Three fixes in ``_flush_run_to_inventory_db``:
      for the ``installed`` column (the post-install reality), not
      ``current_version`` (the stale pre-install snapshot).
   3. Normalize apply / verify status strings to the check vocabulary
-     (``success`` -> ``up_to_date``, ``failed`` -> ``outdated``, etc.)
+     (``success`` -> ``up_to_date``, ``failed`` -> ``failed``, etc.)
      so the SPA paints consistently regardless of phase.
 
 Plus: cleanup-phase items with no version info (e.g.
@@ -193,12 +193,12 @@ def test_verify_overrides_apply_when_both_present(tmp_path: Path) -> None:
     _flush_run_to_inventory_db(run, db)
     rows = db.query(category="npm")
     assert len(rows) == 1
-    # verify.failed normalizes to 'outdated' in inventory taxonomy
-    assert rows[0]["status"] == "outdated"
+    # verify.failed normalizes to 'failed' in honest-status inventory taxonomy
+    assert rows[0]["status"] == "failed"
 
 
-def test_apply_failed_maps_to_outdated_not_success(tmp_path: Path) -> None:
-    """Operator must see "outdated" for apps where the install failed;
+def test_apply_failed_maps_to_failed_not_success(tmp_path: Path) -> None:
+    """Operator must see "failed" for apps where the install failed;
     they're still on the old version.
     """
     db = InventoryDB(tmp_path / "inv.db")
@@ -217,7 +217,7 @@ def test_apply_failed_maps_to_outdated_not_success(tmp_path: Path) -> None:
     assert rows[0]["installed"] == "0.1", (
         "Failed apply: installed stays at current_version"
     )
-    assert rows[0]["status"] == "outdated"
+    assert rows[0]["status"] == "failed"
 
 
 def test_cleanup_phase_infra_items_filtered_out(tmp_path: Path) -> None:
@@ -298,10 +298,10 @@ def test_status_normalization_apply_success_to_up_to_date(
     assert db.query(category="npm")[0]["status"] == "up_to_date"
 
 
-def test_status_normalization_triggered_to_up_to_date(tmp_path: Path) -> None:
+def test_status_normalization_triggered_to_triggered_pending(tmp_path: Path) -> None:
     """``triggered`` (web Tier-B handler kicked an async updater) is
-    semantically up_to_date for the user -- the update will land soon
-    without further user action. Map accordingly.
+    now honestly reported as ``triggered_pending`` — the update was
+    kicked but not yet reconciled. The SPA should show this as pending.
     """
     db = InventoryDB(tmp_path / "inv.db")
     run = tmp_path / "runs" / "rid-vwx"
@@ -314,4 +314,4 @@ def test_status_normalization_triggered_to_up_to_date(tmp_path: Path) -> None:
     _flush_run_to_inventory_db(run, db)
     rows = db.query(category="web")
     assert len(rows) == 1
-    assert rows[0]["status"] == "up_to_date"
+    assert rows[0]["status"] == "triggered_pending"

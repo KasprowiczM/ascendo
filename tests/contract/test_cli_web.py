@@ -31,6 +31,11 @@ from ascendo.cli import (  # noqa: E402
 )
 
 
+def _default_port_occupied() -> bool:
+    """True when 127.0.0.1:8765 is already bound (e.g. Tauri desktop app)."""
+    return _port_listening("127.0.0.1", 8765, timeout=0.3)
+
+
 @pytest.fixture()
 def fake_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Re-point ASCENDO_HOME so each test has an isolated pidfile."""
@@ -110,6 +115,10 @@ def test_port_listening_true_when_bound(monkeypatch: pytest.MonkeyPatch) -> None
         s.close()
 
 
+@pytest.mark.skipif(
+    _default_port_occupied(),
+    reason="port 8765 already bound (e.g. Tauri desktop app) — test needs a free port",
+)
 def test_web_status_reports_stopped_on_clean_state(
     fake_home: Path, runner: CliRunner,
 ) -> None:
@@ -160,6 +169,10 @@ def test_web_stop_cleans_stale_pidfile(
     )
 
 
+@pytest.mark.skipif(
+    _default_port_occupied(),
+    reason="port 8765 already bound (e.g. Tauri desktop app) — test needs a free port",
+)
 def test_web_open_refuses_when_not_running(
     fake_home: Path, runner: CliRunner,
 ) -> None:

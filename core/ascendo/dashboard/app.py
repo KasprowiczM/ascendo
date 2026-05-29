@@ -260,10 +260,20 @@ def create_app(
         _log.exception("inventory_db: initial open failed at %s", db_path)
         app.state.inventory_db = None
 
-    # CORS -- permissive default for local-only usage on 127.0.0.1.
+    # P5: CORS -- locked to localhost by default. Production Tauri app
+    # uses tauri:// scheme; dev Vite uses localhost:1420.
+    # NEVER default to ["*"] — that exposes privileged endpoints to
+    # any web page when the user runs `--host 0.0.0.0`.
+    _DEFAULT_CORS_ORIGINS: list[str] = [
+        "http://127.0.0.1:8765",
+        "http://localhost:8765",
+        "http://127.0.0.1:1420",
+        "http://localhost:1420",
+        "tauri://localhost",
+    ]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=cors_origins or ["*"],
+        allow_origins=cors_origins if cors_origins is not None else _DEFAULT_CORS_ORIGINS,
         allow_methods=["*"],
         allow_headers=["*"],
         allow_credentials=False,

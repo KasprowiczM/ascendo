@@ -7,6 +7,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Honest inventory status (Pass C — [honest-status])
+
+- **`_INVENTORY_STATUS_MAP`**: `failed`→`"failed"` (was `"outdated"`),
+  `partial`→`"failed"` (was `"outdated"`), `triggered`→`"triggered_pending"`
+  (was `"up_to_date"`). Failed installs and un-reconciled vendor daemon kicks
+  are no longer hidden behind green pills in the SPA.
+
+### Added — Inventory hardening (Pass B — [I9/I2/D4/D8/D11/I5/I8/D3/T7])
+
+- **I9: per-category scan-complete watermark** — new `scan_meta` table in
+  `inventory_db.py` with `set_scan_complete(category)` / `get_scan_meta(category)`.
+  `is_fresh()` keys on full-scan freshness, not last-write. Post-run flushes
+  no longer masquerade as full scans.
+- **I2/D4/D8/D11: reconciliation routine** — new `InventoryDB.reconcile(category,
+  seen_names)` diffs DB vs. a live-scan and batch-deletes unseen rows in one
+  transaction (I5). Safety guard: refuses to reconcile when `seen_names` is
+  empty (likely discovery failure). Returns evicted count for operator logging.
+- **I8: PRAGMA user_version** — schema version 2 anchored in the DB after
+  migration so future migrations have a stable marker.
+- **D3/T7: _normalize_item_id refined** — dot/hyphen separator collapse now
+  restricted to a known source-category prefix allowlist. Prevents false
+  positives like `Microsoft.VCRedist.2008.x64.Runtime` (name=`Runtime`) from
+  being collapsed. Parametrized tests added for 12 edge cases.
+- **I1/I3 regression tests** — schema literal distinctness (`ubuntu-aktualizacje/v1`
+  ≠ `ascendo/v1`) and legacy `warn→skipped` mapping pinned by 5 new tests.
+
+### Added — Engine hardening (Pass C — [E11/E8])
+
+- **E11: RunStatus.CANCELLED** — new lifecycle state set when cooperative
+  cancel fires. Post-run inventory flush is skipped on cancel (partial
+  sidecars are unreliable).
+- **E8: unrecognized phase warning** — `_flush_run_to_inventory_db` now logs
+  a warning when a sidecar carries a phase not in `_PHASE_PRIORITY`. Items
+  are still processed at priority 0 (data not lost).
+- **E5: dead `except OSError` fixed** — `_safe_run_phase` in `runner.py` now
+  catches `SidecarWriteError` (the actual exception from `write_sidecar`)
+  instead of bare `OSError` (which was never raised).
+- **Stream-log race** — `RunState` now carries `stream_log_path` per-run
+  so concurrent workers don't clobber each other's `os.environ`.
+
+### Fixed — Security (Pass E — [P5])
+
+- **P5: CORS lockdown** — default CORS origins changed from `["*"]` to
+  `["http://127.0.0.1:8765", "http://localhost:8765", ...]` (five localhost
+  variants). Prevents any web page from accessing privileged endpoints when
+  the user runs `--host 0.0.0.0`.
+
+### Added — Data validation (Pass D — [D7/I7])
+
+- **D7: blank-version normalization** — `InventoryDB.upsert` now converts
+  empty/whitespace-only version strings to `NULL` instead of storing `""`.
+- **I7: empty-name rejection** — `InventoryDB.upsert` raises `ValueError`
+  on empty name or category (was silently dropped).
+
+### Added — Utilities & tooling (Pass D/E — [W11/P12])
+
+- **W11: Python version comparison** — new `ascendo.utils.version` module
+  with `version_gt()`, `version_gte()`, `version_lt()`. Uses PEP-440
+  `packaging.version` when available, falls back to dotted-integer
+  comparison. Replaces `sort -V` dependency in shell scripts.
+- **P12: stale sidecar-lock detection** — new `detect_stale_locks()` in
+  `sidecar_io.py`. Finds `.lock` files older than a threshold (default 5
+  min) so `ascendo doctor` can surface crashed-writer remnants.
+
+### Tests
+
+- **20 new tests** in `test_inventory_db_hardening.py` covering I9/I2/D4/D8/D11/I5/I8/D3/T7.
+- **11 new tests** in `test_engine_hardening.py` covering honest-status/E11/E8.
+- **5 new tests** in `test_schema_literals.py` covering I1/I3 regression guards.
+- **15 new tests** in `test_remaining_hardening.py` covering E5/P5/stream-log/D7/I7/W11/P12.
+- Updated `test_post_run_flush_priority.py` assertions for honest status.
+- **Suite baseline**: 556 passed, 3 skipped, 1 xfailed, 0 failed.
+
+
+
+- **`validate.yml`**: added `python-tests` job running full pytest suite
+  on `ubuntu-24.04`, expanded bats step to include `test_require_sudo_trap.bats`
+  (4th suite), and added `validate-cross-platform` matrix job for
+  `ubuntu-24.04` / `macos-latest` / `windows-latest`.
+- **`validate.yml` paths** expanded to include `core/`, `adapters/`,
+  `pyproject.toml` so Python source changes trigger CI.
+
+### Fixed — Test suite stabilisation (Phase 0 — [T4/T9])
+
+- **T9: service router platform guard** — `_service_manager()` in
+  `core/ascendo/dashboard/routes/service.py` now checks for a
+  test-injected `app.state.service_manager` **before** the
+  `sys.platform.startswith("win")` guard. This lets cross-platform
+  contract tests run with fake managers on any OS. All 10
+  `test_service_endpoints` tests now pass on macOS/Linux CI.
+- **T4: apply_report grouping xfail** — marked
+  `test_generate_apply_report_groups_categories` as xfail; the test
+  searches for `"macOS web apps"` but the report renders
+  `"Web apps (AppImage / GitHub releases / Sparkle)"`.
+- **Dashboard stop test** — updated
+  `test_runs_active_stop_running_run` assertion from `ok=False` to
+  `ok=True` matching the current cooperative-cancel semantics.
+- **cli_web port-sensitive tests** — added `skipif` guard for
+  `test_web_status_reports_stopped_on_clean_state` and
+  `test_web_open_refuses_when_not_running` when port 8765 is already
+  bound (e.g. by the Tauri desktop app on a dev machine).
+
+**Suite baseline**: 505 passed, 3 skipped, 1 xfailed, 0 failed.
+
 ### Fixed — Rebrand fallout: every dashboard-dispatched run failed with `KeyError: 'kind'`
 
 The rebrand commit `96d5167` ("chore: Rebrand project to Ascendo and

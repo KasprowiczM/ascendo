@@ -86,13 +86,17 @@ def _service_manager(request: Request):
 
     Returns ``None`` on non-Windows or when the adapter is missing —
     callers handle that branch by returning the "unsupported" shape.
+
+    Test-injected fakes via ``app.state.service_manager`` are checked
+    **before** the platform guard so cross-platform tests work.
     """
-    if not _is_windows():
-        return None
-    # Allow tests to inject a fake via app.state.
+    # Allow tests to inject a fake via app.state (checked first so tests
+    # work on any platform — T9 fix).
     fake = getattr(request.app.state, "service_manager", None)
     if fake is not None:
         return fake
+    if not _is_windows():
+        return None
     try:
         from ascendo_windows.managers.service import (
             WindowsServiceManager,

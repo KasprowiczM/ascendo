@@ -71,6 +71,7 @@ class RunStatus(str, Enum):
     RUNNING = "running"     # worker thread is in run_phases
     COMPLETED = "completed"  # run_phases returned a report
     FAILED = "failed"       # worker thread raised (rare -- most failures are inside report.sidecars)
+    CANCELLED = "cancelled"  # E11: cooperative cancel via should_cancel fired
 
 
 @dataclass
@@ -95,6 +96,11 @@ class RunState:
     # Cooperative cancel. /runs/active/stop sets this; run_phases checks it
     # at phase/manager boundaries and aborts the rest of the run.
     cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)
+    # Stream-log race fix: each run carries its own log path so concurrent
+    # workers don't clobber each other's os.environ. The worker still sets
+    # os.environ for subprocess inheritance, but saves/restores using this
+    # per-run value instead of relying on a single global.
+    stream_log_path: Path | None = None
 
 
 class RunRegistry:
@@ -244,11 +250,14 @@ _INVENTORY_STATUS_MAP: dict[str, str] = {
     "planned":     "planned",
     "missing":     "missing",
     "skipped":     "skipped",
-    # apply/verify vocabulary -- fold into the check vocabulary
-    "success":     "up_to_date",   # apply succeeded => package is at target
-    "failed":      "outdated",     # apply failed => target NOT installed yet
-    "partial":     "outdated",
-    "triggered":   "up_to_date",   # async-update kicked; treat as current
+    # apply/verify vocabulary -- HONEST mapping (Phase 0 hardening)
+    # Previously: failed→outdated, triggered→up_to_date hid real
+    # failures behind green pills. Now: failed stays failed,
+    # triggered shows as pending reconciliation.
+    "success":     "up_to_date",      # apply succeeded => package is at target
+    "failed":      "failed",          # apply failed — operator must see the failure
+    "partial":     "failed",          # partial applies are failures too
+    "triggered":   "triggered_pending",  # vendor daemon kicked; awaiting reconciliation
 }
 
 
@@ -272,13 +281,14 @@ def _normalize_item_id(item_id_raw: Any, name: str) -> str:
     a namespacing convention. Returning an empty string lets the
     legacy ``(cat, name, "")`` row upsert in place.
 
-    Heuristic: id is a "real" discriminator when it doesn't end with
-    name (case-insensitive). Examples:
-      - id="brew:wget",         name="wget"     -> ends with name -> ""
-      - id="apt:upgrade:firefox", name="firefox" -> ends with name -> ""
-      - id="Microsoft.VCRedist.2008.x64", name="Microsoft Visual C++..."
-        -> doesn't end with name -> kept as discriminator
-      - id == name                                -> trivially same -> ""
+    Heuristic (D3/T7 refined):
+      - id == name                                → trivially same → ""
+      - id ends with ``<sep><name>`` where sep is ``:`` / ``/``
+        → always collapse (synthetic prefix convention)
+      - id ends with ``<sep><name>`` where sep is ``-`` or ``.``
+        → collapse ONLY when the prefix is a known source-category
+        slug. This prevents collapsing real dotted hierarchies like
+        ``Microsoft.VCRedist.2008.x64.Runtime`` where name=``Runtime``.
     """
     if not item_id_raw or not name:
         return ""
@@ -287,12 +297,32 @@ def _normalize_item_id(item_id_raw: Any, name: str) -> str:
     lower_name = name.lower()
     if lower_raw == lower_name:
         return ""
-    # Tolerate one of these separators between prefix and name:
-    #   "brew:wget", "apt/firefox", "snap-firefox", "winget.7zip"
-    for sep in (":", "/", "-", "."):
+    # Colon and slash are unambiguous synthetic-prefix separators.
+    # Ubuntu/macOS scripts always use these (brew:wget, apt:upgrade:firefox).
+    for sep in (":", "/"):
         if lower_raw.endswith(sep + lower_name):
             return ""
+    # Dot and hyphen are ambiguous: "snap-firefox" is synthetic, but
+    # "Microsoft.VCRedist.2008.x64.Runtime" is a real dotted hierarchy.
+    # Only collapse when the prefix before sep+name is a known source
+    # category slug.
+    _KNOWN_PREFIXES = frozenset({
+        "apt", "brew", "snap", "npm", "pip", "web", "flatpak",
+        "winget", "msstore", "drivers", "firmware", "registry_arp",
+        "plugin", "mas", "windows_update",
+    })
+    for sep in ("-", "."):
+        suffix = sep + lower_name
+        if lower_raw.endswith(suffix):
+            prefix = lower_raw[: -len(suffix)]
+            # Multi-segment prefix: check the LAST segment too
+            # (e.g. "apt:upgrade" → last segment is "upgrade", not known)
+            # but the FIRST segment should be a known category.
+            first_segment = prefix.split(":")[0].split("/")[0].split(".")[0]
+            if first_segment in _KNOWN_PREFIXES:
+                return ""
     return raw
+
 
 
 def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
@@ -340,6 +370,16 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
         )
         phase = _phase_of(sc)
         priority = _PHASE_PRIORITY.get(phase, 0)
+        # E8: warn when a sidecar carries an unrecognized phase so the
+        # operator knows something unexpected was processed at lowest
+        # priority. Don't skip — data is still valuable.
+        if phase and phase not in _PHASE_PRIORITY:
+            _log.warning(
+                "inventory flush: sidecar %s has unrecognized phase %r "
+                "(processed at priority 0)",
+                sidecar_path.name,
+                phase,
+            )
 
         for item in (sc.items or []):
             item_id_raw = getattr(item, "id", None)
@@ -536,12 +576,12 @@ async def start_run_async(
     def _worker() -> None:
         state.status = RunStatus.RUNNING
         state.started_at = datetime.now(timezone.utc)
-        # Publish the stream-log path to subprocesses spawned by managers.
-        # Threads share os.environ, so setting it before run_phases lets
-        # any bash script (`apply.sh` etc.) tee its output through
-        # `_stream_tee` if it cooperates. Restored in `finally`.
+        # Stream-log race fix: store the path on the per-run state so
+        # concurrent workers don't clobber each other. The env var is
+        # still set for subprocess inheritance but keyed off state.
+        state.stream_log_path = stream_log_path
         prior_env = os.environ.get(STREAM_LOG_ENV_VAR)
-        os.environ[STREAM_LOG_ENV_VAR] = str(stream_log_path)
+        os.environ[STREAM_LOG_ENV_VAR] = str(state.stream_log_path)
         try:
             from .runner import DEFAULT_PHASE_ORDER  # noqa: PLC0415
 
@@ -557,7 +597,13 @@ async def start_run_async(
                 should_cancel=lambda: state.cancel_event.is_set(),
             )
             state.report = report
-            state.status = RunStatus.COMPLETED
+            # E11: if cooperative cancel was signalled during run_phases,
+            # the run is CANCELLED, not COMPLETED. run_phases may have
+            # returned early with partial results.
+            if state.cancel_event.is_set():
+                state.status = RunStatus.CANCELLED
+            else:
+                state.status = RunStatus.COMPLETED
         except Exception as exc:  # noqa: BLE001
             _log.exception("async run %s worker crashed", run.id)
             state.error = f"{type(exc).__name__}: {exc}"
@@ -567,14 +613,18 @@ async def start_run_async(
                 os.environ.pop(STREAM_LOG_ENV_VAR, None)
             else:
                 os.environ[STREAM_LOG_ENV_VAR] = prior_env
-            # Best-effort: flush the just-finished run's sidecars into the
-            # inventory DB so the next /inventory or /apps/detect call sees
-            # the up-to-date installed/candidate columns without a fresh
-            # OS-level scan.
-            try:
-                _flush_run_to_inventory_db(run_dir, inventory_db)
-            except Exception:  # noqa: BLE001
-                _log.exception("post-run inventory flush failed")
+            # E11: skip inventory flush on cancel — partial sidecars
+            # from a cancelled run are unreliable and should not update
+            # the inventory DB. Completed/failed runs still flush.
+            if state.status != RunStatus.CANCELLED:
+                # Best-effort: flush the just-finished run's sidecars into the
+                # inventory DB so the next /inventory or /apps/detect call sees
+                # the up-to-date installed/candidate columns without a fresh
+                # OS-level scan.
+                try:
+                    _flush_run_to_inventory_db(run_dir, inventory_db)
+                except Exception:  # noqa: BLE001
+                    _log.exception("post-run inventory flush failed")
             # Also persist per-app version-transition history so the
             # Apps view can render "this app was upgraded N times…".
             # apply phase records the transition; verify backfills the

@@ -50,7 +50,7 @@ from ..models.result import Message, MessageLevel, Summary
 from ..models.run import Phase, PhaseStatus, RunInfo
 from ..models.sidecar import Sidecar, SidecarSchema, ToolInfo
 from .run_logger import attach_run_log
-from .sidecar_io import write_sidecar
+from .sidecar_io import SidecarWriteError, write_sidecar
 
 _log = logging.getLogger(__name__)
 
@@ -366,8 +366,10 @@ def _safe_run_phase(
 
     try:
         write_sidecar(sidecar, base_dir=base_dir)
-    except OSError:
-        # Disk full, permission denied — re-raise; orchestrator can't recover.
+    except SidecarWriteError:
+        # E5: write_sidecar raises SidecarWriteError (RuntimeError
+        # subclass), NOT OSError.  Re-raise — disk full / permission
+        # denied means the orchestrator can't persist any evidence.
         _log.exception("failed to persist sidecar for %s/%s", mgr.category.value, phase.value)
         raise
 

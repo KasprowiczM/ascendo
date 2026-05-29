@@ -90,17 +90,18 @@ while IFS=$'\t' read -r ITEM_ID HANDLER APP_PATH PRE_VERSION; do
 
     case "$HANDLER" in
         squirrel|keystone)
-            # Tier-B async — emit 'triggered' regardless; refine via message.
-            # The apply phase already counts these as success/triggered.
+            # Tier-B async — The apply phase already counts these as success/triggered.
             # Verify just confirms whether the vendor agent caught up yet.
             if [ -n "$POST" ] && [ "$POST" != "$PRE_VERSION" ]; then
                 json_add_item "$ITEM_ID" "$POST" "" "triggered" "web" "$HANDLER"
                 json_add_message "info" "${SLUG}: triggered_confirmed (${PRE_VERSION} -> ${POST})"
+                COUNT_OK=$((COUNT_OK + 1))
             else
-                json_add_item "$ITEM_ID" "${POST:-$PRE_VERSION}" "" "triggered" "web" "$HANDLER"
-                json_add_message "info" "${SLUG}: triggered_pending (no version change observed; vendor agent will apply on next idle/relaunch)"
+                # W4/W13: Escalate to failed so it doesn't hide behind 'triggered_pending' forever.
+                json_add_item "$ITEM_ID" "${POST:-$PRE_VERSION}" "" "failed" "web" "$HANDLER"
+                json_add_message "error" "${SLUG}: action_required (vendor agent did not apply update within timeout; relaunch app or check daemon)"
+                COUNT_FAILED=$((COUNT_FAILED + 1))
             fi
-            COUNT_OK=$((COUNT_OK + 1))
             ;;
         *)
             # Tier-A handlers — success iff bytes were swapped

@@ -7,12 +7,15 @@ on:
       - 'config/**'
       - 'scripts/**'
       - 'lib/**'
+      - 'core/**'
+      - 'adapters/**'
       - 'setup.sh'
       - 'update-all.sh'
       - 'dev-sync/**'
       - 'dev-sync-*.sh'
       - 'systemd/**'
       - 'tests/**'
+      - 'pyproject.toml'
       - '.github/workflows/**'
   pull_request:
     branches: [ main ]
@@ -336,6 +339,7 @@ jobs:
           bats tests/bash/test_json_emit.bats
           bats tests/bash/test_orchestrator.bats
           bats tests/bash/test_phase_contract.bats
+          bats tests/bash/test_require_sudo_trap.bats
 
       - name: dev-sync overlay size guard (≤ 50 files)
         # The private overlay should contain ONLY user-secret files (.env.local,
@@ -462,3 +466,62 @@ jobs:
           done
           # Warn but don't fail on README sections
           echo "README check complete ($missing sections missing — non-blocking)"
+
+  python-tests:
+    name: Python test suite (pytest)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install core + ubuntu adapter (editable)
+        run: |
+          pip install -e core/[dev] -e adapters/ubuntu/[dev]
+          pip install fastapi uvicorn httpx pydantic
+
+      - name: Run pytest
+        run: |
+          python -m pytest tests/contract/ tests/cross-cut/ tests/integration/ -q
+
+  validate-cross-platform:
+    name: Validate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            script: bash bin/validate-ubuntu.sh --skip-dashboard --skip-scheduler --skip-web
+          - os: macos-latest
+            script: bash bin/validate-macos.sh --quick
+          - os: windows-latest
+            script: pwsh bin/validate-windows.ps1 -SkipExpensive
+    env:
+      ASCENDO_CI_SKIP_EXPENSIVE: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install packages
+        shell: bash
+        run: |
+          pip install -e core/
+          # Install OS-specific adapter
+          case "$RUNNER_OS" in
+            Linux)   pip install -e adapters/ubuntu/ ;;
+            macOS)   pip install -e adapters/macos/ ;;
+            Windows) pip install -e adapters/windows/ ;;
+          esac
+          pip install fastapi uvicorn pydantic httpx
+
+      - name: Run validation harness
+        shell: bash
+        run: ${{ matrix.script }}

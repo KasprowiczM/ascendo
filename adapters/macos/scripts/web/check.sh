@@ -103,6 +103,14 @@ export ASCENDO_WEB_ADAPTER_LIB="$ADAPTER_LIB"
 
 # ── Pass 1: build work list (sequential, fast) ────────────────────────
 WORK_IDX=0
+
+_DISC_TMP="$OUTPUT_DIR/$RUN_ID/_web_discovery.jsonl"
+if ! bash "$ADAPTER_LIB/web_discovery.sh" --emit-json > "$_DISC_TMP" 2>/dev/null; then
+    json_add_message "error" "web_discovery.sh failed to execute"
+    rm -rf "$RESULTS_DIR" "$INDICES_FILE" "$_DISC_TMP" 2>/dev/null
+    exit 2
+fi
+
 while IFS= read -r DISC_LINE; do
     [ -z "$DISC_LINE" ] && continue
 
@@ -164,7 +172,11 @@ print(json.dumps(out))
     printf '%s' "$SLUG" > "$RESULTS_DIR/${WORK_IDX}.slug"
     printf '%d\n' "$WORK_IDX" >> "$INDICES_FILE"
     WORK_IDX=$((WORK_IDX + 1))
-done < <(bash "$ADAPTER_LIB/web_discovery.sh" --emit-json 2>/dev/null)
+done < "$_DISC_TMP"
+
+if [ "$WORK_IDX" -eq 0 ]; then
+    json_add_message "warn" "web_discovery.sh yielded 0 apps (is ASCENDO_WEB_APPS_ROOT empty?)"
+fi
 
 # ── Pass 2: parallel HTTP probes ──────────────────────────────────────
 _web_probe_parallel "$INDICES_FILE" "$RESULTS_DIR"
@@ -234,7 +246,7 @@ while [ "$i" -lt "$WORK_IDX" ]; do
 done
 
 # Clean up the work artefacts (keep the sidecar; ditch the temp probe files)
-rm -rf "$RESULTS_DIR" "$INDICES_FILE" 2>/dev/null
+rm -rf "$RESULTS_DIR" "$INDICES_FILE" "$_DISC_TMP" 2>/dev/null
 
 json_add_message "info" "web: ${COUNT_PLANNED} outdated, ${COUNT_UTD} up-to-date, ${COUNT_SKIPPED} skipped, ${COUNT_FAILED} failed"
 exit 0

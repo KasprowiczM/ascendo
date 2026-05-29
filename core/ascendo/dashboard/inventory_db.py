@@ -66,6 +66,17 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
         item_count   INTEGER
     )
     """,
+    # I9: Per-category scan-complete watermark. Distinguishes "a full
+    # live-scan finished and populated this category" from "a partial
+    # post-run flush wrote some rows". is_fresh() should key on this,
+    # not on the adapter-level inventory_meta.last_scan_at.
+    """
+    CREATE TABLE IF NOT EXISTS scan_meta (
+        category       TEXT PRIMARY KEY,
+        last_scan_at   TEXT NOT NULL,
+        item_count     INTEGER NOT NULL DEFAULT 0
+    )
+    """,
     # Per-app update history: every apply/verify run that produced a real
     # version transition records one row here. Powers the "show this app's
     # update history" UX in the Apps view (e.g. "Docker: 4.71->4.72 last
@@ -90,6 +101,10 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS ix_update_history_run"
     " ON update_history(run_id)",
 )
+
+# I8: Current schema version. Stored as PRAGMA user_version in the DB
+# so future migrations have a stable anchor.
+_SCHEMA_VERSION = 2
 
 
 def _utcnow() -> str:
@@ -219,6 +234,9 @@ class InventoryDB:
                     self._migrate_inventory_items_v1_to_v2(conn)
                 for stmt in _SCHEMA_STATEMENTS:
                     conn.execute(stmt)
+                # I8: anchor the schema version so future migrations
+                # have a stable marker.
+                conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
                 conn.commit()
 
     @staticmethod
@@ -271,8 +289,19 @@ class InventoryDB:
         callers that pass distinct ``item_id`` get separate rows
         (parallel architectures, MSIX rows, etc.).
         """
-        if not category or not name:
-            return  # silently ignore malformed rows; never raise on bad input
+        # I7: reject empty names and categories — silently dropping them
+        # hid data integrity issues. Callers must fix their input.
+        if not category:
+            raise ValueError("category must be a non-empty string")
+        if not name:
+            raise ValueError("name must be a non-empty string")
+
+        # D7: normalize blank version strings to NULL so the DB doesn't
+        # store meaningless empty strings that confuse version comparisons.
+        if installed is not None and not installed.strip():
+            installed = None
+        if candidate is not None and not candidate.strip():
+            candidate = None
 
         meta_blob = _json.dumps(metadata, sort_keys=True) if metadata else None
         with self._connect() as conn:
@@ -519,6 +548,110 @@ class InventoryDB:
             )
             deleted = cursor.rowcount or 0
             conn.commit()
+            return deleted
+
+    # ── per-category scan-complete watermark (I9) ────────────────────────
+
+    def set_scan_complete(
+        self,
+        category: str,
+        *,
+        item_count: int = 0,
+        scan_at: str | None = None,
+    ) -> None:
+        """Record that a full live-scan for ``category`` just completed.
+
+        Called ONLY by full-scan paths (``/inventory/db/refresh``,
+        cold-start populate, ``build-inventory`` CLI). Post-run flushes
+        must NOT call this — they carry partial data and should not
+        masquerade as a fresh full scan (I9).
+        """
+        if not category:
+            return
+        ts = scan_at or _utcnow()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO scan_meta (category, last_scan_at, item_count)
+                VALUES (?, ?, ?)
+                ON CONFLICT(category) DO UPDATE SET
+                    last_scan_at = excluded.last_scan_at,
+                    item_count   = excluded.item_count
+                """,
+                (category, ts, item_count),
+            )
+            conn.commit()
+
+    def get_scan_meta(self, category: str) -> dict[str, Any] | None:
+        """Return ``{category, last_scan_at, item_count}`` or ``None``."""
+        if not category:
+            return None
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "SELECT category, last_scan_at, item_count FROM scan_meta"
+                " WHERE category = ?",
+                (category,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            return {
+                "category": row["category"],
+                "last_scan_at": row["last_scan_at"],
+                "item_count": row["item_count"],
+            }
+
+    # ── reconciliation (I2/D4/D8/D11) ────────────────────────────────────
+
+    def reconcile(
+        self,
+        category: str,
+        *,
+        seen_names: set[str],
+    ) -> int:
+        """Diff DB vs a live-scan and remove rows not seen.
+
+        Called after a full live-scan completes. ``seen_names`` is the set
+        of ``name`` values the scan returned. Any DB row for ``category``
+        whose name is NOT in ``seen_names`` is deleted.
+
+        Safety guard (D11): refuses to reconcile when ``seen_names`` is
+        empty — a zero-item result is almost always a discovery failure,
+        not reality. Returns the count of rows evicted.
+
+        All deletions happen in one transaction (I5) so readers never
+        see a transient "not installed" state.
+        """
+        if not category or not seen_names:
+            return 0
+        with self._connect() as conn:
+            # Fetch current names for this category.
+            cursor = conn.execute(
+                "SELECT DISTINCT name FROM inventory_items"
+                " WHERE category = ?",
+                (category,),
+            )
+            db_names = {row[0] for row in cursor.fetchall()}
+            to_delete = db_names - seen_names
+            if not to_delete:
+                return 0
+            # Batch delete in one transaction (I5).
+            placeholders = ",".join("?" for _ in to_delete)
+            cursor = conn.execute(
+                f"DELETE FROM inventory_items"
+                f" WHERE category = ? AND name IN ({placeholders})",
+                (category, *to_delete),
+            )
+            deleted = cursor.rowcount or 0
+            conn.commit()
+            if deleted:
+                _log.info(
+                    "inventory reconcile: evicted %d stale rows from %s"
+                    " (names: %s)",
+                    deleted,
+                    category,
+                    ", ".join(sorted(to_delete)[:5]),
+                )
             return deleted
 
     # ── update history ──────────────────────────────────────────────────

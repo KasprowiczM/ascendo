@@ -144,14 +144,14 @@ for app in data.get("SPApplicationsDataType", []):
 }
 
 # _version_gt <a> <b>
-# Exit 0 iff a > b (strict). Compares dotted version strings via sort -V.
+# Exit 0 iff a > b (strict). Compares dotted version strings via Python utils.
 # Equal versions return 1 (not strictly greater).
 _version_gt() {
     local a="$1" b="$2"
     [ "$a" = "$b" ] && return 1
-    local higher
-    higher=$(printf '%s\n%s\n' "$a" "$b" | sort -V | tail -n 1)
-    [ "$higher" = "$a" ]
+    # W11: Python-based version comparison to handle PEP-440 instead of sort -V
+    /usr/bin/python3 -c "import sys; from ascendo.utils.version import version_gt; sys.exit(0 if version_gt(sys.argv[1], sys.argv[2]) else 1)" "$a" "$b" 2>/dev/null
+    return $?
 }
 
 # _normalize_version <v>

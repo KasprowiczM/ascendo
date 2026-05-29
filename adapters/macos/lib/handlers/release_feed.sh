@@ -193,14 +193,6 @@ print(cur)
 PY
 }
 
-# _rf_apply_regex <raw_version> <regex> <replace>
-#
-# Runs ``re.sub(regex, replace, raw_version)`` once. Echoes the result.
-# If the regex does NOT match the raw input (re.sub returns the input
-# unchanged), echoes the raw value — so a vendor format change degrades
-# to raw detection instead of silently breaking the probe (M5.7.4 spec).
-# Uses an env-var-driven heredoc to sidestep bash quoting interactions
-# with arbitrary regex/replace strings (same pattern as _rf_get).
 _rf_apply_regex() {
     local raw="$1" pattern="$2" replace="$3"
     ASCENDO_RF_RAW="$raw" \
@@ -215,14 +207,17 @@ if not pattern:
     print(raw)
     sys.exit(0)
 try:
-    out = re.sub(pattern, replace, raw)
+    out, count = re.subn(pattern, replace, raw)
 except re.error:
-    # Bad regex — fall back to raw rather than failing the probe.
-    print(raw)
-    sys.exit(0)
-# If re.sub returned the string unchanged (no match), the regex didn't
-# fire. Per M5.7.4 spec: degrade to raw value rather than fail loudly.
-print(out if out != raw else raw)
+    # Bad regex
+    sys.exit(28)
+
+# W2: If count == 0, the regex did not match. Return a probe-broken
+# exit code (28) instead of silently degrading to raw.
+if count == 0:
+    sys.exit(28)
+
+print(out)
 PY_EOF
 }
 
@@ -273,13 +268,11 @@ release_feed_check() {
     body=$(printf '%s' "$body" | /usr/bin/head -c 2097152)
 
     # text format: skip JSON walking, run regex directly on body.
-    # _rf_apply_regex falls back to raw body if regex doesn't match —
-    # for text feeds we MUST require a match (raw body is huge),
-    # so we re-check post-transform and bail if unchanged.
     if [ "$format" = "text" ]; then
         local extracted
         extracted=$(_rf_apply_regex "$body" "$version_regex" "$version_replace")
-        if [ -z "$extracted" ] || [ "$extracted" = "$body" ]; then
+        local rc=$?
+        if [ "$rc" -ne 0 ] || [ -z "$extracted" ]; then
             echo ""
             return 28
         fi
@@ -316,13 +309,15 @@ release_feed_check() {
         return 28
     fi
 
-    # Optional version_regex / version_replace transform (M5.7.4).
-    # The Pydantic schema enforces both-or-neither at load time, so the
-    # registry layer guarantees they appear as a pair. Trigger on regex
-    # presence so an intentionally-empty replacement (strip-only, e.g.
-    # ``version_replace = ""``) still fires.
+    # Optional version_regex / version_replace transform.
+    # W2: If regex does not match, _rf_apply_regex exits 28. Propagate failure.
     if [ -n "$version_regex" ]; then
         version=$(_rf_apply_regex "$version" "$version_regex" "$version_replace")
+        local rc=$?
+        if [ "$rc" -ne 0 ]; then
+            echo ""
+            return "$rc"
+        fi
     fi
 
     echo "$version"

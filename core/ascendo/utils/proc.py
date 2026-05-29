@@ -28,5 +28,5 @@ def no_window_kwargs() -> dict:
         dict: Empty dict on non-Windows; {'creationflags': 0x08000000} on Windows.
     """
     if sys.platform == "win32":
-        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+        return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)}
     return {}
