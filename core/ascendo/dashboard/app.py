@@ -181,9 +181,12 @@ def create_app(
             here to avoid the heavyweight discovery path.
         runs_dir: Where sidecars live. Defaults to ``~/.ascendo/runs`` or
             ``$ASCENDO_RUNS_DIR``.
-        cors_origins: List of allowed origins for CORS. Default: ``[*]``
-            (FastAPI default during dev). Production deployments should
-            tighten this to ``["http://127.0.0.1:8765"]`` or similar.
+        cors_origins: List of allowed origins for CORS. Default (P5
+            hardening): a loopback-only allowlist (``_DEFAULT_CORS_ORIGINS``
+            below — 127.0.0.1/localhost on :8765, the Vite :1420 dev port,
+            and the ``tauri://`` schemes), NEVER ``["*"]`` — so a malicious
+            web page cannot drive the privileged endpoints even when the
+            user binds ``--host 0.0.0.0``.
 
     Returns:
         Configured :class:`fastapi.FastAPI` instance, ready for ``uvicorn``.

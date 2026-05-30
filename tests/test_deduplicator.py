@@ -6,7 +6,11 @@ from ascendo.models.sidecar import Sidecar
 from ascendo.models.result import ItemStatus
 from ascendo.orchestrator.deduplicator import apply_deduplication
 
-def test_deduplicator_ignores_non_preferred(tmp_path: Path):
+def test_deduplicator_ignores_non_preferred(tmp_path: Path, monkeypatch):
+    # Auto-uninstall is fail-safe by default (only with a TTY or explicit
+    # opt-in). Tests run non-interactively, so opt in to exercise the
+    # destructive-queue path deterministically.
+    monkeypatch.setenv("ASCENDO_DEDUP_AUTO_UNINSTALL", "1")
     # Setup mock config
     config_dir = tmp_path.parent / "adapters" / "windows" / "config"
     config_dir.mkdir(parents=True)
@@ -93,8 +97,10 @@ web = "claude"
     assert "winget uninstall --id Anthropic.Claude" in report
 
 
-def test_deduplicator_macos_brew_npm(tmp_path: Path):
+def test_deduplicator_macos_brew_npm(tmp_path: Path, monkeypatch):
     """Validates macOS deduplication between brew and npm sources."""
+    # Opt in to the destructive-queue path (fail-safe off by default).
+    monkeypatch.setenv("ASCENDO_DEDUP_AUTO_UNINSTALL", "1")
     config_file = tmp_path / "macos_app_sources.toml"
     config_file.write_text("""
 [[app]]

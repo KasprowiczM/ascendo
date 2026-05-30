@@ -525,3 +525,19 @@ jobs:
       - name: Run validation harness
         shell: bash
         run: ${{ matrix.script }}
+
+      # Gate the per-OS adapter Python test suite on its NATIVE runner.
+      # Previously CI ran only the core suites (tests/contract|cross-cut|
+      # integration) on ubuntu, so adapters/<os>/tests never gated merges —
+      # which let real macOS-adapter regressions (msupdate RC-95 contract,
+      # perplexity registry handler) land green. Each adapter's tests run on
+      # the OS they target.
+      - name: Adapter Python test suite
+        shell: bash
+        run: |
+          pip install pytest
+          case "$RUNNER_OS" in
+            Linux)   python -m pytest adapters/ubuntu/tests/  -q ;;
+            macOS)   python -m pytest adapters/macos/tests/   -q ;;
+            Windows) python -m pytest adapters/windows/tests/ -q ;;
+          esac

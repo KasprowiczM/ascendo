@@ -15,17 +15,40 @@ from .sidecar_io import write_sidecar
 _log = logging.getLogger(__name__)
 
 def _confirm_uninstall(app_name: str, src_name: str, preferred: str) -> bool:
+    """Decide whether to QUEUE an automatic uninstall of a non-preferred
+    duplicate source.
+
+    FAIL-SAFE (production-hardening, 2026-05-31 audit). Auto-uninstall is a
+    DESTRUCTIVE action: on Windows the winget/npm/pip ``apply.ps1`` scripts
+    read ``DEDUPLICATION_TASKS.json`` and run ``winget/npm/pip uninstall``.
+    We therefore only queue it when the operator can actually consent:
+
+      * an interactive TTY prompt (default **No**), or
+      * an explicit ``ASCENDO_DEDUP_AUTO_UNINSTALL=1`` opt-in for unattended
+        automation.
+
+    In every other non-interactive context — the dashboard worker thread,
+    the systemd/launchd service, the Tauri sidecar — we return ``False`` so
+    the duplicate is only *reported* in ``DEDUPLICATION_REPORT.md``, never
+    silently uninstalled. The previous behaviour returned ``True`` for every
+    non-TTY caller, so a "Safe update" clicked in the dashboard (non-TTY)
+    could uninstall a real package with zero user consent.
+    """
+    import os
     import sys
-    if not sys.stdout.isatty():
+
+    if os.environ.get("ASCENDO_DEDUP_AUTO_UNINSTALL") == "1":
         return True
+    if not sys.stdout.isatty():
+        return False
     try:
         from rich.prompt import Confirm
         from rich.console import Console
         Console().print(f"[yellow]Duplicate detected: {app_name} is installed via '{src_name}', but '{preferred}' is preferred.[/yellow]")
-        return Confirm.ask(f"Do you want to automatically uninstall the '{src_name}' version now?", default=True)
+        return Confirm.ask(f"Uninstall the non-preferred '{src_name}' version of {app_name} now?", default=False)
     except ImportError:
-        res = input(f"Duplicate detected: {app_name} is installed via '{src_name}'. Uninstall? [Y/n]: ")
-        return res.lower() not in ("n", "no")
+        res = input(f"Duplicate detected: {app_name} is installed via '{src_name}'. Uninstall? [y/N]: ")
+        return res.lower() in ("y", "yes")
 
 
 def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, config_path: Path | None = None) -> None:

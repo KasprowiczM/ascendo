@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — 2nd-pass production audit (2026-05-31)
+
+- **P0 — deduplicator silent auto-uninstall neutralized.** `core/ascendo/
+  orchestrator/deduplicator.py::_confirm_uninstall` returned `True` for every
+  non-TTY caller, so a "Safe update" from the dashboard (non-TTY) could
+  uninstall packages with no consent (Windows `winget/npm/pip apply.ps1`
+  execute `DEDUPLICATION_TASKS.json`). Now fail-safe: non-interactive callers
+  return `False` (report-only); auto-uninstall requires an interactive Yes or
+  an explicit `ASCENDO_DEDUP_AUTO_UNINSTALL=1` opt-in.
+- **2 macOS test regressions fixed (suite was red, EXIT=1).**
+  `test_msupdate_apply_calls_msupdate_install` → rewritten to
+  `test_msupdate_apply_falls_back_to_manual_gui` (asserts RC 95 + no
+  `--install`, matching the intentional "drop silent msupdate installs"
+  decision). Perplexity registry entry reverted `handler = "sparkle"` →
+  `"builtin"`: an unverified flip contradicted its own comment block and broke
+  the shipped-registry invariant ("zero fake-silent-install risk").
+- **CI blind spot closed.** `.github/workflows/validate.yml` now runs each
+  adapter's Python test suite (`adapters/<os>/tests`) on its native matrix
+  runner — previously only `tests/contract|cross-cut|integration` gated merges,
+  which let the two macOS-adapter regressions land green.
+- **CORS docstring** in `core/ascendo/dashboard/app.py` corrected (claimed
+  default `[*]`; the actual default is the loopback allowlist).
+
+> NOTE: the "Added — Inventory hardening" entries below (`reconcile()`,
+> `scan_meta`/`set_scan_complete`) are present + unit-tested but have **zero
+> production call sites** — orphan eviction already works via
+> `_replace_buckets_in_db` (clear+replace per full scan), so this is dead code
+> to wire-or-remove, not a live data fix. See `ASCENDO_ULTRA_REVIEW_2.md` §2.
+
 ### Fixed — Sparkle architecture selection and Bash 3.2 compatibility
 
 - **Sparkle Appcast Arch Filtering:** `adapters/macos/lib/ascendo_web.sh` now uses a robust Python `xml.etree.ElementTree` parser instead of a naive regex. It correctly extracts and filters `<item>` elements based on `<sparkle:hardwareRequirements>`, ensuring Apple Silicon users no longer receive `x64` builds of applications like Codex.

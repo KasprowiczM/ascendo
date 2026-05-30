@@ -46,7 +46,12 @@ def test_msupdate_check_parses_pending_count(tmp_path: Path) -> None:
     assert "pending" in r.stdout.lower() or r.stdout.strip() != ""
 
 
-def test_msupdate_apply_calls_msupdate_install(tmp_path: Path) -> None:
+def test_msupdate_apply_falls_back_to_manual_gui(tmp_path: Path) -> None:
+    # Decision (commits 5f89b0a / 75dad50, "drop silent msupdate installs"):
+    # the silent `msupdate --install` was abandoned because it hangs for
+    # minutes in the background even when no update is pending. msupdate_apply
+    # now returns RC 95 (the action-required sentinel) and directs the user
+    # to the Microsoft AutoUpdate GUI, and MUST NOT invoke `msupdate --install`.
     log = tmp_path / "args.log"
     fake = tmp_path / "msupdate"
     fake.write_text(f"#!/bin/sh\necho \"$@\" > {log}\nexit 0\n")
@@ -60,9 +65,10 @@ def test_msupdate_apply_calls_msupdate_install(tmp_path: Path) -> None:
     cfg = json.dumps({"slug": "ms365"})
     snippet = f"msupdate_apply 'ms365' {json.dumps(cfg)!r}"
     r = _run(snippet, fake_path=tmp_path)
-    assert r.returncode == 0
-    args = log.read_text().strip()
-    assert "--install" in args
+    # RC 95 == action-required (manual GUI) — the documented contract.
+    assert r.returncode == 95
+    # The silent installer must NOT have been invoked.
+    assert not log.exists() or "--install" not in log.read_text()
 
 
 def test_docker_check_parses_version(tmp_path: Path) -> None:

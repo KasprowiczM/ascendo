@@ -159,9 +159,8 @@ http_timeout_s = 8
 slug = "perplexity"
 bundle_id = "ai.perplexity.macv3"
 display_name = "Perplexity"
-handler = "sparkle"
-appcast_url = "https://macos-download.perplexity.ai/appcast.xml"
-notes = "Promoted from builtin to sparkle in M5.7.X. Perplexity started shipping the SUFeedURL natively in Info.plist."
+handler = "builtin"
+notes = "macv3 bundle (not the retired MAS ai.perplexity.mac, not ai.perplexity.comet). Sparkle SUFeedURL is runtime-injected (absent from Info.plist), so static discovery yields no candidate. builtin keeps apply safe (safe-mode skip -> Action-required) with zero fake-silent-install risk. NOTE 2026-05-31: an unverified flip to handler=sparkle + appcast_url=macos-download.perplexity.ai/appcast.xml contradicted the comment block above and broke test_shipped_registry_has_perplexity_macv3_entry; reverted to builtin pending a probe-verified feed. Promote per-machine via the Phase-C AI-config loop once a working feed URL is captured."
 
 [[app]]
 slug = "comet"
