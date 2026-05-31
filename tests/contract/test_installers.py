@@ -224,8 +224,13 @@ def test_install_ps1_has_valid_pwsh_syntax_if_pwsh_available() -> None:
             pwsh,
             "-NoProfile",
             "-Command",
+            # $tokens / $errors MUST be declared before being passed by [ref]:
+            # `[ref]$errors` on an undefined variable raises "[ref] cannot be
+            # applied to a variable that does not exist", which made this check
+            # fail on its own harness (not on install.ps1) wherever pwsh exists.
+            f"$tokens = $null; $errors = $null; "
             f"$ast = [System.Management.Automation.Language.Parser]::ParseFile("
-            f"'{INSTALL_PS1}', [ref]$null, [ref]$errors); "
+            f"'{INSTALL_PS1}', [ref]$tokens, [ref]$errors); "
             f"if ($errors.Count -gt 0) {{ $errors | Format-List; exit 1 }}",
         ],
         capture_output=True,

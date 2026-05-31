@@ -394,7 +394,10 @@ jobs:
           # require the (unreleased) `httpx2` package, breaking every
           # `fastapi.testclient.TestClient` import on an unpinned install.
           # This trio is the known-good, mutually-compatible set.
-          python3 -m pip install --quiet 'fastapi==0.136.1' 'starlette==1.0.0' 'httpx==0.28.1' uvicorn pydantic
+          # test_frontend.py imports pytest (uses pytest.mark / pytest.fixture
+          # even when run as a plain script), so pytest must be present here —
+          # this job does not install the [dev] extras that would pull it in.
+          python3 -m pip install --quiet 'fastapi==0.136.1' 'starlette==1.0.0' 'httpx==0.28.1' uvicorn pydantic pytest
           python3 tests/python/test_frontend.py
 
       - name: DB migrations smoke test
@@ -490,6 +493,15 @@ jobs:
       - name: Install core + ubuntu adapter (editable)
         run: |
           pip install -e core/[dev] -e adapters/ubuntu/[dev]
+          # The dashboard web-config routes import the WebRegistry model from
+          # the macOS adapter (ascendo_macos.web_registry) by design — the
+          # tests/contract/test_web_{config_routes,override_action}.py suites
+          # exercise that path and 503 ("web registry model unavailable")
+          # without it. The package is pure-Python and Linux-import-safe (all
+          # macOS behaviour is runtime-gated on platform.system()=="Darwin"),
+          # and the probe handlers are monkeypatched in every test, so it runs
+          # cleanly here.
+          pip install -e adapters/macos/
           # Pin the web stack: newer starlette TestClient requires `httpx2`,
           # which breaks the unpinned install. Known-good compatible trio.
           pip install 'fastapi==0.136.1' 'starlette==1.0.0' 'httpx==0.28.1' uvicorn pydantic
@@ -548,7 +560,13 @@ jobs:
       - name: Adapter Python test suite
         shell: bash
         run: |
-          pip install pytest
+          # pytest-asyncio is required: the root pyproject.toml sets
+          # `asyncio_mode = "auto"` under [tool.pytest.ini_options], and with
+          # the strict `filterwarnings` gate the "Unknown config option:
+          # asyncio_mode" warning from a bare pytest install becomes a fatal
+          # INTERNALERROR (exit 3). The adapter is installed without its [dev]
+          # extra above, so install the test deps explicitly here.
+          pip install pytest pytest-asyncio
           case "$RUNNER_OS" in
             Linux)   python -m pytest adapters/ubuntu/tests/  -q ;;
             macOS)   python -m pytest adapters/macos/tests/   -q ;;

@@ -193,7 +193,10 @@ def test_web_start_help_documents_auto_open_default() -> None:
     user to remember --open every time. Operator-reported friction.
     """
     runner = CliRunner()
-    result = runner.invoke(app, ["web", "start", "--help"])
+    # Force a wide terminal: typer/rich truncates long option names (e.g.
+    # `--no-open` -> `--no-…`) at the CI default width of 80, which would make
+    # the substring assertions below spuriously fail.
+    result = runner.invoke(app, ["web", "start", "--help"], env={"COLUMNS": "200"})
     assert result.exit_code == 0
     output_lower = result.output.lower()
     assert "open" in output_lower
@@ -210,6 +213,7 @@ def test_web_restart_help_mirrors_start_defaults() -> None:
     """`ascendo web restart` should match `start` defaults so muscle
     memory transfers — same --open auto-fire, same --no-open opt-out."""
     runner = CliRunner()
-    result = runner.invoke(app, ["web", "restart", "--help"])
+    # Wide terminal — see test_web_start_help_documents_auto_open_default.
+    result = runner.invoke(app, ["web", "restart", "--help"], env={"COLUMNS": "200"})
     assert result.exit_code == 0
     assert "no-open" in result.output.lower()
