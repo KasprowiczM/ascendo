@@ -20,8 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wiring tests confirming the apt apply path feeds the real SHA-256 parsed from
   `apt-get --print-uris` (never `None`) into `UbuntuSource.verify_signature`,
   and fail-closes on a hash mismatch (`test_verify_signature_apt_gpg`,
-  `test_verify_debs_passes_real_hash_from_print_uris`,
-  `test_verify_debs_fail_closed_on_mismatch`).
+  `test_verify_apt_signatures_passes_real_hash_from_print_uris`,
+  `test_verify_apt_signatures_fail_closed_on_mismatch`).
 - **Docs: Linux v1 = Ubuntu/Debian only.** README + LINUX_QUICKSTART +
   LINUX_TESTING now state that other distros (Fedora/RHEL/`dnf`, Arch/`pacman`)
   are deferred to a later release.
@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   concern targets BSD `sort`'s differing `-V`, so it does not apply on
   Ubuntu/Debian. Aligning Ubuntu's comparator with the macOS Python helper is
   tracked as a post-v1 consistency follow-up, not a v1 blocker.
-- Ubuntu adapter test suite green natively (160 passed, 1 xfailed) and now
+- Ubuntu adapter test suite green natively (151 passed) and now
   gated by CI on `ubuntu-24.04`.
 
 ### Fixed — 2nd-pass production audit (2026-05-31)
