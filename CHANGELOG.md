@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Linux/Ubuntu — v1.0-beta production push (Sesja 84, 2026-05-31)
+
+- **Deduplicator is report-only on Linux (no implicit mutation).** In the
+  fail-safe (non-opt-in / non-TTY) path, `apply_deduplication` no longer
+  mutates or rewrites the read-only CHECK sidecars; duplicates are surfaced in
+  `DEDUPLICATION_REPORT.md` only. Mutation + `DEDUPLICATION_TASKS.json` are
+  written **exclusively** when an uninstall is explicitly queued
+  (`ASCENDO_DEDUP_AUTO_UNINSTALL=1` or interactive consent). Ubuntu ships no
+  uninstall executor, so the duplicate set is recommend-only by design.
+- **`verify_signature` apply-path coverage.** Added contract +
+  wiring tests confirming the apt apply path feeds the real SHA-256 parsed from
+  `apt-get --print-uris` (never `None`) into `UbuntuSource.verify_signature`,
+  and fail-closes on a hash mismatch (`test_verify_signature_apt_gpg`,
+  `test_verify_debs_passes_real_hash_from_print_uris`,
+  `test_verify_debs_fail_closed_on_mismatch`).
+- **Docs: Linux v1 = Ubuntu/Debian only.** README + LINUX_QUICKSTART +
+  LINUX_TESTING now state that other distros (Fedora/RHEL/`dnf`, Arch/`pacman`)
+  are deferred to a later release.
+- **W10/W2/W11 parity — N/A on Ubuntu (documented).** The Ubuntu `web` check is
+  an intentional no-op for v1 (empty curated feed; Linux apps ship via
+  apt/snap/flatpak). `lib/web_handlers.sh` already uses a pure-bash
+  `version_gt` (no `sort -V`) and its probes already fail-loud on regex
+  no-match, so there is no live discovery/regex/`sort -V` path to fix.
+- Ubuntu adapter test suite green natively (158 passed, 1 xfailed) and now
+  gated by CI on `ubuntu-24.04`.
+
 ### Fixed — 2nd-pass production audit (2026-05-31)
 
 - **P0 — deduplicator silent auto-uninstall neutralized.** `core/ascendo/

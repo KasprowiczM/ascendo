@@ -148,8 +148,10 @@ def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, c
                     if _confirm_uninstall(app.name, src_name, absolute_preferred):
                         _log.debug("Auto-uninstalling %s item %s", src_name, item.id)
                         uninstall_tasks[src_name].append(item.id)
-                        
-                        # Change status from successful check to planned uninstall
+
+                        # Change status from successful check to planned uninstall.
+                        # This is an explicitly opted-in DESTRUCTIVE action, so
+                        # mutating + rewriting the sidecar is intentional here.
                         item.status = ItemStatus.PLANNED
                         item.action = "uninstall"
                         item.target_version = "ABSENT"
@@ -157,16 +159,20 @@ def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, c
                             level=MessageLevel.WARN,
                             text=f"Auto-uninstalling non-preferred source '{src_name}'. Preferred is '{absolute_preferred}'."
                         ))
+                        # Rewrite the sidecar to disk since we mutated it.
+                        write_sidecar(sidecar, base_dir=base_dir)
                     else:
-                        _log.debug("Skipping uninstall for %s item %s", src_name, item.id)
-                        item.status = ItemStatus.SKIPPED
-                        item.target_version = item.current_version
-                        item.messages.append(Message(
-                            level=MessageLevel.INFO,
-                            text=f"User skipped auto-uninstall of '{src_name}'. Ignored update."
-                        ))
-                    # Rewrite the sidecar to disk since we mutated it
-                    write_sidecar(sidecar, base_dir=base_dir)
+                        # REPORT-ONLY (fail-safe default, 2026-05-31 audit):
+                        # do NOT mutate or rewrite the read-only CHECK sidecar.
+                        # The honest check result is left intact; the duplicate
+                        # is surfaced in DEDUPLICATION_REPORT.md only. Silently
+                        # flipping a check item to SKIPPED/up-to-date here would
+                        # re-introduce the dishonest-status problem the audit
+                        # fixed at the data layer.
+                        _log.debug(
+                            "Report-only: leaving %s item %s untouched (no sidecar mutation)",
+                            src_name, item.id,
+                        )
 
     if uninstall_tasks:
         import json

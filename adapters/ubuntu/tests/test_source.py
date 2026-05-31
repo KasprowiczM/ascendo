@@ -70,8 +70,94 @@ def test_verify_signature_success(dummy_host, tmp_path):
 def test_verify_signature_failure(dummy_host, tmp_path):
     source = UbuntuSource()
     metadata = type("MockMeta", (), {"type": SourceType.APT})()
-    
+
     deb_path = tmp_path / "test.deb"
     deb_path.write_bytes(b"testcontent")
-    
+
     assert source.verify_signature(dummy_host, metadata, str(deb_path), "wronghash") is False
+
+
+def test_verify_signature_apt_gpg(dummy_host, tmp_path):
+    """Contract (P1, Layer 5): APT hash verification anchored by the GPG-signed
+    manifest — valid hash ⇒ True, mismatch ⇒ False, missing hash ⇒ fail-closed.
+    """
+    import hashlib
+
+    source = UbuntuSource()
+    metadata = type("MockMeta", (), {"type": SourceType.APT})()
+    deb_path = tmp_path / "pkg.deb"
+    deb_path.write_bytes(b"deb-bytes")
+    good = hashlib.sha256(b"deb-bytes").hexdigest()
+
+    # valid hash from the signed manifest ⇒ True
+    assert source.verify_signature(dummy_host, metadata, str(deb_path), good) is True
+    # tampered artifact / wrong hash ⇒ False (refuse to install)
+    assert source.verify_signature(dummy_host, metadata, str(deb_path), "0" * 64) is False
+    # no hash available ⇒ fail-closed (cannot verify ⇒ raise, never silently pass)
+    with pytest.raises(SourceVerificationError):
+        source.verify_signature(dummy_host, metadata, str(deb_path), None)
+
+
+def test_verify_debs_passes_real_hash_from_print_uris(dummy_host, monkeypatch):
+    """Wiring: the apply path feeds the SHA-256 parsed from `apt-get
+    --print-uris` (a real hash, NOT None) into verify_signature."""
+    from ascendo_ubuntu.managers.apt import AptManager, _AptCmdResult
+    from ascendo.models.package import PackagePlan
+
+    mgr = AptManager()
+    real_hash = "a" * 64
+    print_uris = (
+        "'http://archive.ubuntu.com/ubuntu/pool/main/f/foo/foo_1.2_amd64.deb' "
+        f"foo_1.2_amd64.deb 12345 SHA256:{real_hash}\n"
+    )
+
+    def fake_run_apt(host, args, elevated=False, timeout=300):
+        if "--print-uris" in args:
+            return _AptCmdResult(0, print_uris, "")
+        return _AptCmdResult(0, "", "")  # download-only
+
+    monkeypatch.setattr(mgr, "_run_apt", fake_run_apt)
+    monkeypatch.setattr("pathlib.Path.is_file", lambda self: True)
+
+    captured = {}
+
+    def fake_verify(self, host, source, artifact_path, expected_sha256=None):
+        captured["hash"] = expected_sha256
+        return True
+
+    monkeypatch.setattr(
+        "ascendo_ubuntu.managers.source.UbuntuSource.verify_signature", fake_verify
+    )
+
+    plan = [PackagePlan(package_id="foo", name="foo", target_version="1.2")]
+    ok, errors = mgr._verify_debs(dummy_host, plan)
+    assert ok is True
+    assert errors == []
+    assert captured["hash"] == real_hash  # real GPG-manifest hash, never None
+
+
+def test_verify_debs_fail_closed_on_mismatch(dummy_host, monkeypatch):
+    """Wiring: a hash mismatch from verify_signature aborts the apply."""
+    from ascendo_ubuntu.managers.apt import AptManager, _AptCmdResult
+    from ascendo.models.package import PackagePlan
+
+    mgr = AptManager()
+    print_uris = "'http://x/foo_1.2_amd64.deb' foo_1.2_amd64.deb 12345 SHA256:" + "b" * 64 + "\n"
+
+    monkeypatch.setattr(
+        mgr,
+        "_run_apt",
+        lambda host, args, elevated=False, timeout=300: (
+            _AptCmdResult(0, print_uris, "") if "--print-uris" in args else _AptCmdResult(0, "", "")
+        ),
+    )
+    monkeypatch.setattr("pathlib.Path.is_file", lambda self: True)
+    monkeypatch.setattr(
+        "ascendo_ubuntu.managers.source.UbuntuSource.verify_signature",
+        lambda self, host, source, artifact_path, expected_sha256=None: False,
+    )
+
+    plan = [PackagePlan(package_id="foo", name="foo", target_version="1.2")]
+    ok, errors = mgr._verify_debs(dummy_host, plan)
+    assert ok is False
+    assert errors
