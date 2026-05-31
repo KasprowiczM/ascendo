@@ -274,7 +274,10 @@ slug = "opencode"
 display_name = "OpenCode"
 handler = "github_release"
 tier_a_apply = true
-windows_uninstall_key = "d074f30d-5f88-5885-b075-be1348cc7676"
+# DisplayName, not the GUID ARP subkey: opencode is a Squirrel.Windows app
+# that registers under a versioned subkey (`OpenCode 1.14.48`), so the
+# Get-WebInstalledVersion DisplayName fallback keys on "OpenCode".
+windows_uninstall_key = "OpenCode"
 notes = "GitHub releases at anomalyco/opencode (per macOS adapter Sesja 40 finding; sst/opencode is a different fork). The Windows DisplayName is just `OpenCode` even though the installer creates a versioned ARP subkey like `OpenCode 1.14.48`. DisplayName matching handles both. Actual asset (verified via GitHub API 2026-05-13): opencode-desktop-win-x64.exe (Squirrel.Windows installer)."
 
 [app.github_release]
@@ -282,7 +285,9 @@ repo = "anomalyco/opencode"
 asset_pattern = "^opencode-desktop-win-x64\\.exe$"
 http_timeout_s = 8
 expected_publisher = "Anomaly"
-silent_args = ["/S"]
+# Squirrel.Windows Setup.exe takes --silent (NOT the NSIS /S flag, which
+# Squirrel ignores). Matches the macOS opencode entry + the registry tests.
+silent_args = ["--silent"]
 installer_kind = "exe"
 kill_processes = ["opencode", "OpenCode", "Update"]
 

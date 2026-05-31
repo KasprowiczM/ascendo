@@ -211,9 +211,21 @@ def test_web_start_help_documents_auto_open_default() -> None:
 
 def test_web_restart_help_mirrors_start_defaults() -> None:
     """`ascendo web restart` should match `start` defaults so muscle
-    memory transfers — same --open auto-fire, same --no-open opt-out."""
-    runner = CliRunner()
-    # Wide terminal — see test_web_start_help_documents_auto_open_default.
-    result = runner.invoke(app, ["web", "restart", "--help"], env={"COLUMNS": "200"})
-    assert result.exit_code == 0
-    assert "no-open" in result.output.lower()
+    memory transfers — same --open auto-fire, same --no-open opt-out.
+
+    Introspect the command's parameters instead of grepping rendered
+    --help text: typer/rich truncates long option names (`--no-open` ->
+    `--no-…`) in narrow terminals, and the truncation threshold varies by
+    rich version, so a substring check on the help output is not reliable
+    across CI runners.
+    """
+    import typer
+
+    web = typer.main.get_command(app).commands["web"]
+    restart_opts = [
+        opt
+        for param in web.commands["restart"].params
+        for opt in (list(param.opts) + list(param.secondary_opts))
+    ]
+    assert "--open" in restart_opts, restart_opts
+    assert "--no-open" in restart_opts, restart_opts
