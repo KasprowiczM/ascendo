@@ -107,7 +107,13 @@ EOF
     [ "$status" -eq 0 ]
     [ -f "$JSON_OUT" ]
     grep -q '"id": "probe:dead-keepalive"' "$JSON_OUT"
-    grep -q '"status":' "$JSON_OUT"
+    # Prove finalize actually ran (not just that the buffer had the item):
+    # "exit_code" is synthesised ONLY by cmd_finalize in lib/_json_emit.py —
+    # it never appears in the buffer files (meta.json/items.jsonl). Per-phase
+    # sidecars have no top-level "status" field (that lives on run.json, the
+    # run-level aggregate, per docs/agents/contract.md), so the old
+    # `grep '"status":'` assertion could never match the emitter's output.
+    grep -q '"exit_code":' "$JSON_OUT"
 }
 
 

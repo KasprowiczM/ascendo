@@ -21,7 +21,8 @@
   "properties": {
     "schema": {
       "type": "string",
-      "const": "ascendo/v1"
+      "comment": "Both literals are accepted at this legacy-validation layer. The bash emitter (lib/_json_emit.py) stamps 'ubuntu-aktualizacje/v1' on purpose: the core reader (core/ascendo/models/legacy.py _LEGACY_SCHEMA) uses that literal to recognise legacy-shape sidecars (kind/summary{ok,warn,err}/items[{result}]) and route them through translate_legacy_v1(). Changing the emitter to 'ascendo/v1' would mis-route legacy-shape JSON as canonical and reintroduce the Sesja 82 KeyError. This enum mirrors the core reader's dual-acceptance.",
+      "enum": ["ascendo/v1", "ubuntu-aktualizacje/v1"]
     },
     "kind": {
       "type": "string",

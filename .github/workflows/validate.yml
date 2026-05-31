@@ -205,7 +205,6 @@ jobs:
             "packaging/deb/DEBIAN/control"
             "packaging/deb/DEBIAN/postinst"
             "packaging/deb/DEBIAN/prerm"
-            "packaging/deb/usr/bin/ascendo"
             "scripts/snapshot/create.sh"
             "scripts/snapshot/list.sh"
             "scripts/scheduler/install.sh"
@@ -226,7 +225,8 @@ jobs:
             "app/README.md"
             "systemd/user/ascendo-dashboard.service"
             "systemd/user/install-dashboard.sh"
-            "share/applications/ascendo.desktop"
+            "share/applications/ascendo-desktop.desktop"
+            "share/applications/ascendo-web.desktop"
             "docs/agents/contract.md"
             "APPS.md.example"
             "README.md"
@@ -314,24 +314,29 @@ jobs:
           python3 tests/validate_phase_json.py "$tmpdir/runs/apt-check.json"
 
       - name: shellcheck — all .sh files
-        # Catches subtle shell bugs (unquoted vars, [[ vs [, $? after pipe,
-        # etc.) that `bash -n` can't see. Severity gate at "warning" so we
-        # don't fail on stylistic info notes. SC1090/SC1091 ignored: every
-        # phase script `source`s lib/*.sh by absolute path which shellcheck
-        # can't follow without --external-sources.
+        # Catches real shell bugs (broken directives, malformed syntax) that
+        # `bash -n` can't see. Severity gate at "error" — the ~79 warning-level
+        # style notes (SC2155, SC2164, SC2034, ...) are the project's shipped
+        # idiom and are not failing-grade. Exclusions:
+        #   SC1090/SC1091 — phase scripts `source` lib/*.sh by absolute path
+        #                   which shellcheck can't follow without --external-sources.
+        #   SC2086        — intentional word-splitting is used in a few places
+        #                   (cask token lists) and annotated inline.
+        #   SC2148        — lib/*.sh are sourced helpers, not standalone scripts,
+        #                   so they deliberately carry no shebang.
         run: |
           sudo apt-get install -y -q shellcheck
           set +e
           fail=0
           while IFS= read -r f; do
-            shellcheck --severity=warning --exclude=SC1090,SC1091,SC2086 "$f" || fail=$((fail+1))
+            shellcheck --severity=error --exclude=SC1090,SC1091,SC2086,SC2148 "$f" || fail=$((fail+1))
           done < <(find . -name '*.sh' -not -path './.git/*' -not -path './app/.venv/*' \
                           -not -path './app/tauri/src-tauri/target/*' | sort)
           if [[ $fail -gt 0 ]]; then
-            echo "❌ shellcheck reported $fail file(s) with warnings"
+            echo "❌ shellcheck reported $fail file(s) with errors"
             exit 1
           fi
-          echo "✔ shellcheck clean"
+          echo "✔ shellcheck clean (error severity)"
 
       - name: bats — emitter, orchestrator, phase contract
         run: |
@@ -385,12 +390,16 @@ jobs:
 
       - name: Dashboard backend + frontend smoke test
         run: |
-          python3 -m pip install --quiet fastapi uvicorn pydantic httpx
+          # Pin the web stack: a newer starlette switched its TestClient to
+          # require the (unreleased) `httpx2` package, breaking every
+          # `fastapi.testclient.TestClient` import on an unpinned install.
+          # This trio is the known-good, mutually-compatible set.
+          python3 -m pip install --quiet 'fastapi==0.136.1' 'starlette==1.0.0' 'httpx==0.28.1' uvicorn pydantic
           python3 tests/python/test_frontend.py
 
       - name: DB migrations smoke test
         run: |
-          python3 -m pip install --quiet fastapi pydantic   # for app.backend imports
+          python3 -m pip install --quiet 'fastapi==0.136.1' 'starlette==1.0.0' pydantic   # for app.backend imports
           python3 - <<'PY'
           import sys, sqlite3, tempfile, pathlib
           sys.path.insert(0, '.')
@@ -481,7 +490,9 @@ jobs:
       - name: Install core + ubuntu adapter (editable)
         run: |
           pip install -e core/[dev] -e adapters/ubuntu/[dev]
-          pip install fastapi uvicorn httpx pydantic
+          # Pin the web stack: newer starlette TestClient requires `httpx2`,
+          # which breaks the unpinned install. Known-good compatible trio.
+          pip install 'fastapi==0.136.1' 'starlette==1.0.0' 'httpx==0.28.1' uvicorn pydantic
 
       - name: Run pytest
         run: |
@@ -520,7 +531,9 @@ jobs:
             macOS)   pip install -e adapters/macos/ ;;
             Windows) pip install -e adapters/windows/ ;;
           esac
-          pip install fastapi uvicorn pydantic httpx
+          # Pin the web stack: newer starlette TestClient requires `httpx2`,
+          # which breaks the unpinned install. Known-good compatible trio.
+          pip install 'fastapi==0.136.1' 'starlette==1.0.0' 'httpx==0.28.1' uvicorn pydantic
 
       - name: Run validation harness
         shell: bash

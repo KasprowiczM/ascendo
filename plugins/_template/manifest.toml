@@ -60,16 +60,14 @@ plugins        = []   # other Ascendo plugins this depends on
 # ── Phase scripts (REQUIRED if phase listed in `phases`) ─────────────────────
 # Convention: <os>/<phase>.<ext> — script paths relative to manifest dir.
 # Core selects the correct script based on detected OS.
+# Inline tables MUST be single-line — TOML 1.0.0 forbids newlines inside
+# `{ ... }` (Python tomllib rejects multi-line inline tables). For a more
+# readable layout use the sub-table form instead, e.g. `[scripts.linux]`
+# with one key=value per line.
 [scripts]
-linux = { check = "linux/check.sh", plan = "linux/plan.sh",
-          apply = "linux/apply.sh", verify = "linux/verify.sh",
-          cleanup = "linux/cleanup.sh" }
-windows = { check = "windows/check.ps1", plan = "windows/plan.ps1",
-            apply = "windows/apply.ps1", verify = "windows/verify.ps1",
-            cleanup = "windows/cleanup.ps1" }
-macos = { check = "macos/check.sh", plan = "macos/plan.sh",
-          apply = "macos/apply.sh", verify = "macos/verify.sh",
-          cleanup = "macos/cleanup.sh" }
+linux   = { check = "linux/check.sh", plan = "linux/plan.sh", apply = "linux/apply.sh", verify = "linux/verify.sh", cleanup = "linux/cleanup.sh" }
+windows = { check = "windows/check.ps1", plan = "windows/plan.ps1", apply = "windows/apply.ps1", verify = "windows/verify.ps1", cleanup = "windows/cleanup.ps1" }
+macos   = { check = "macos/check.sh", plan = "macos/plan.sh", apply = "macos/apply.sh", verify = "macos/verify.sh", cleanup = "macos/cleanup.sh" }
 
 # ── Permissions allowlist (OPTIONAL but recommended for risk=medium+) ───────
 # Defense in depth. Declares what this plugin needs.

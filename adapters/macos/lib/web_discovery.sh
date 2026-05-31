@@ -79,7 +79,8 @@ if [ -z "${ASCENDO_WEB_BREW_CASKS+x}" ]; then
             #   zap.trash entries    -- ~/Library/.../<bundle>.plist paths
             #
             # App filename source: artifacts[].app[]
-            # shellcheck disable=SC2086 — intentional word-split on tokens
+            # Intentional word-split on $_brew_tokens (space-separated cask tokens).
+            # shellcheck disable=SC2086
             _brew_bids=$(brew info --cask --json=v2 $_brew_tokens 2>/dev/null | python3 -c '
 import json, os, re, sys
 try:

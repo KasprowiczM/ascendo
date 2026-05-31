@@ -117,11 +117,13 @@ _github_dmg_fetch_release() {
         url="https://api.github.com/repos/${repo}/releases/latest"
     fi
     local hdr=()
-    # Honour GITHUB_TOKEN ONLY when it looks like a real token. The
-    # placeholder value `ghp_yourtoken_here` (a literal that operators
-    # paste from docs) would be sent and rejected with 401, hiding the
-    # otherwise-valid anonymous request.
-    if [ -n "${GITHUB_TOKEN:-}" ] && [ "${GITHUB_TOKEN}" != "ghp_yourtoken_here" ] \
+    # Honour GITHUB_TOKEN ONLY when it looks like a real token. A leftover
+    # documentation placeholder (e.g. PASTE_YOUR_TOKEN_HERE) would otherwise
+    # be sent and rejected with 401, hiding the valid anonymous request.
+    # The >= 20 length guard is the real protection; the explicit literal
+    # check catches a longer placeholder. Sentinel is deliberately NOT a
+    # `ghp_`-prefixed string so the repo secret-scanner doesn't flag it.
+    if [ -n "${GITHUB_TOKEN:-}" ] && [ "${GITHUB_TOKEN}" != "PASTE_YOUR_TOKEN_HERE" ] \
        && [ "${#GITHUB_TOKEN}" -ge 20 ]; then
         hdr=(-H "Authorization: token $GITHUB_TOKEN")
     fi

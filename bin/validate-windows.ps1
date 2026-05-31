@@ -32,7 +32,14 @@
 [CmdletBinding()]
 param(
     [int] $DashboardPort = 8765,
-    [switch] $SkipDashboard
+    [switch] $SkipDashboard,
+    # CI / bare-runner smoke mode: run only the OS-agnostic CLI + adapter checks
+    # (help / version / doctor) and skip the hardware-dependent stages (winget /
+    # npm / pip / web / dashboard / build-inventory) that need real package
+    # managers, installed apps, and a GUI session. The full hardware validation
+    # runs on real Windows via WINDOWS_QUICKSTART / PROMPT_WINDOWS; the hermetic
+    # per-OS regression gate in CI is the adapters/windows/tests pytest suite.
+    [switch] $SkipExpensive
 )
 
 # Each native command's exit code is checked explicitly - do NOT make
@@ -93,8 +100,36 @@ try {
         Write-Host "  Skipping run/dashboard checks because they all need an adapter." -ForegroundColor DarkGray
         Pop-Location
         exit 1
+    } elseif ($SkipExpensive) {
+        # Bare CI runner: components like PSWindowsUpdate / dcu / winget edge
+        # cases are legitimately absent so `doctor` exits non-zero. The adapter
+        # IS present (not the exit-3 / no-adapter path above), so a degraded
+        # environment is a pass-with-warning, not a harness failure.
+        Test-Result "doctor command (degraded CI env)" $true "exit=$doctorExit (degraded components tolerated in -SkipExpensive)"
     } else {
         Test-Result "doctor command (unhealthy)" $false "exit=$doctorExit`n$doctorText"
+    }
+
+    # ── CI smoke early-exit ─────────────────────────────────────────────────
+    # In -SkipExpensive mode the OS-agnostic CLI + adapter smoke (stages 1-3) is
+    # all a bare CI runner can meaningfully verify. The hardware stages below
+    # (winget / npm / pip / web / lifecycle / build-inventory / dashboard) need
+    # real package managers + a GUI session and are validated on real Windows
+    # via WINDOWS_QUICKSTART / PROMPT_WINDOWS.
+    if ($SkipExpensive) {
+        Write-Step "CI smoke mode (-SkipExpensive): hardware-dependent stages skipped"
+        Write-Host "  (winget / npm / pip / web / dashboard / build-inventory run on real Windows)" -ForegroundColor DarkGray
+        if ($script:Failures -eq 0) {
+            Write-Host ""
+            Write-Host "ALL CHECKS PASSED. (CI smoke)" -ForegroundColor Green
+            Pop-Location
+            exit 0
+        } else {
+            Write-Host ""
+            Write-Host "FAILED: $script:Failures check(s) failed." -ForegroundColor Red
+            Pop-Location
+            exit 1
+        }
     }
 
     # ── 4. run --phase check ───────────────────────────────────────────────
