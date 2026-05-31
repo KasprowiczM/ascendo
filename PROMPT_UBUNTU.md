@@ -4,6 +4,14 @@
 > on the **Ubuntu** box (`~/Dev_Env/Ascendo`). Run the **macOS session first** —
 > it lands the shared-core changes you pull here.
 
+> **Status (Sesja 85): CI is GREEN.** The `Validate Config` workflow passes
+> 6/6 (incl. `Validate (ubuntu-24.04)` + the `adapters/ubuntu/tests` gate).
+> `git pull origin main` first. CI runs `bash bin/validate-ubuntu.sh
+> --skip-dashboard --skip-scheduler --skip-web`; as a FINAL real-hardware check,
+> run the **full** `bash bin/validate-ubuntu.sh` (no `--skip-*`) and confirm a
+> real apt/snap apply + the dashboard + systemd scheduler — CI does not cover
+> those.
+
 You are a senior engineer finishing the Linux/Ubuntu side of Ascendo for a
 **v1.0-beta production push**. Read `ASCENDO_ULTRA_REVIEW_2.md` §4(Linux)/§7.
 The honest-status fix, the deduplicator fail-safe (core), and Ubuntu's

@@ -5,6 +5,15 @@
 > when a step needs Administrator. Run the **macOS session first** — it lands the
 > shared-core changes you pull here.
 
+> **Status (Sesja 85): CI is GREEN.** The `Validate Config` workflow passes
+> 6/6 (incl. `Validate (windows-latest)`). `git pull origin main` first — it
+> includes the Sesja-85 `opencode` registry fix (`silent_args ["/S"]→["--silent"]`,
+> `windows_uninstall_key → "OpenCode"`) that turned `adapters/windows/tests`
+> green. CI runs `pwsh bin/validate-windows.ps1 -SkipExpensive`; as a FINAL
+> real-hardware check, run the **full** `pwsh bin/validate-windows.ps1` (no
+> `-SkipExpensive`) from an elevated PowerShell and confirm a real winget apply
+> + the dashboard — CI does not cover those.
+
 You are a senior engineer finishing the Windows side of Ascendo for a
 **v1.0-beta production push**. Read `ASCENDO_ULTRA_REVIEW_2.md` §2/§4(Windows)/§7.
 The honest-status fix, the deduplicator fail-safe (core), and the 2 macOS test

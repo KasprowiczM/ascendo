@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI — Validate Config workflow green on all 3 OSes (Sesja 85, 2026-05-31)
+
+- **Fixed: the `Validate Config` GitHub Actions workflow now passes 6/6 jobs**
+  (`validate-configs`, `check-readme`, `python-tests`, and the
+  `validate-cross-platform` matrix on ubuntu/macos/windows). It had been
+  failing on every push to `main`; the job aborted early and masked a cascade
+  of pre-existing/latent failures.
+- **Schema/emitter contract** — `schemas/phase-result.schema.json` now accepts
+  both `"ascendo/v1"` and `"ubuntu-aktualizacje/v1"` (enum) at the legacy-
+  validation layer, matching the bash emitter's intentional
+  `ubuntu-aktualizacje/v1` literal (the core reader needs it to translate
+  legacy sidecars — see Sesja 82). Unblocks the phase-JSON-contract step +
+  `test_json_emit` + `test_phase_contract`.
+- **Valid plugin template** — `plugins/_template/manifest.toml` `[scripts]`
+  collapsed from (invalid) multi-line inline tables to single-line; the plugin
+  scanner now validates all three shipped manifests.
+- **Test corrections** — `test_require_sudo_trap.bats` asserts the finalize-only
+  `"exit_code"` field (per-phase sidecars have no `status`);
+  `test_cli_web` introspects command parameters instead of grepping rich-
+  truncated `--help` text; `test_installers` pwsh AST harness pre-declares
+  `$tokens`/`$errors` before `[ref]`.
+- **Workflow deps** — dashboard-smoke installs `pytest`; the adapter-test matrix
+  step installs `pytest-asyncio` (root `asyncio_mode="auto"` + strict
+  `filterwarnings` made the missing-plugin warning fatal); the python-tests job
+  installs the macOS adapter so the web-registry contract tests (which import
+  `ascendo_macos.web_registry` by design) run instead of 503'ing.
+- **Windows registry data** — corrected the `opencode` entry in
+  `adapters/windows/config/web_apps.toml`: `silent_args` `["/S"]` → `["--silent"]`
+  (Squirrel.Windows, not NSIS — also a latent runtime apply fix) and
+  `windows_uninstall_key` GUID → `"OpenCode"` (DisplayName fallback).
+
 ### Linux/Ubuntu — v1.0-beta production push (Sesja 84, 2026-05-31)
 
 - **Deduplicator is report-only on Linux (no implicit mutation).** In the

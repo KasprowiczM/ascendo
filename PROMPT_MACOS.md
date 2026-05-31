@@ -5,6 +5,15 @@
 > **shared-core** items plus macOS-specific work. Run it FIRST — the Windows
 > and Ubuntu sessions pull your core changes.
 
+> **Status (Sesja 85): CI is GREEN.** The `Validate Config` workflow passes
+> 6/6 on `main`. `git pull origin main` first. CI runs the harness in
+> **reduced** mode (`--quick`), so as a FINAL real-hardware check this session
+> run the **full** `bash bin/validate-macos.sh` (no `--quick`) and confirm a
+> real `brew`/`mas` apply + the dashboard work — CI does not cover those.
+> Note: PROMPT §4 (A5 core→adapter coupling) is still open — CI sidesteps it by
+> installing the macOS adapter in the python-tests job; the proper decoupling
+> is the real fix.
+
 You are a senior engineer finishing Ascendo for a **v1.0-beta production push**.
 Read `ASCENDO_ULTRA_REVIEW_2.md` (the 2nd-pass audit) §9–§11 for context. The P0
 silent-uninstall fail-safe and the 2 macOS test regressions are already fixed and
