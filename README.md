@@ -120,6 +120,10 @@ the platform quickstarts below.
 | Windows 11 / 10 (build 17763+) | 🟡 functional (v0.6.x) — winget + msstore + ARP + PSWindowsUpdate + VSS + Task Scheduler + UAC. Parity with macOS still in progress (web auto-updates, Dell driver plugin shipped) | [WINDOWS_QUICKSTART.md](WINDOWS_QUICKSTART.md) |
 | Ubuntu 22.04+ / Debian 12+ | 🟡 functional (v0.6.x) — apt + snap + brew + npm + pip + flatpak inventory; legacy bash adapters bridged into Python orchestrator. Scheduler/snapshot/elevation Python wrappers pending | [LINUX_QUICKSTART.md](LINUX_QUICKSTART.md) |
 
+> **Linux scope (v1): Ubuntu/Debian only.** Other distributions
+> (Fedora/RHEL/`dnf`, Arch/`pacman`, …) are planned for a later release and are
+> not supported in v1.
+
 See [docs/PLATFORM_STATUS.md](docs/PLATFORM_STATUS.md) for the full
 per-feature matrix (which package managers, schedulers, snapshot
 backends, and elevation methods are wired on each OS).

@@ -98,26 +98,44 @@ def test_verify_signature_apt_gpg(dummy_host, tmp_path):
         source.verify_signature(dummy_host, metadata, str(deb_path), None)
 
 
-def test_verify_debs_passes_real_hash_from_print_uris(dummy_host, monkeypatch):
+class _FakeProc:
+    """Minimal subprocess.CompletedProcess stand-in."""
+
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def _make_apt_manager():
+    """Build an AptManager without invoking __init__ (constructor wiring is
+    not under test here); only ``_elevation`` is read by the verify path."""
+    from ascendo_ubuntu.managers.apt import AptManager
+
+    mgr = AptManager.__new__(AptManager)
+    mgr._elevation = None
+    return mgr
+
+
+def test_verify_apt_signatures_passes_real_hash_from_print_uris(dummy_host, monkeypatch):
     """Wiring: the apply path feeds the SHA-256 parsed from `apt-get
     --print-uris` (a real hash, NOT None) into verify_signature."""
-    from ascendo_ubuntu.managers.apt import AptManager, _AptCmdResult
-    from ascendo.models.package import PackagePlan
+    import ascendo_ubuntu.managers.apt as apt_mod
 
-    mgr = AptManager()
+    mgr = _make_apt_manager()
     real_hash = "a" * 64
     print_uris = (
         "'http://archive.ubuntu.com/ubuntu/pool/main/f/foo/foo_1.2_amd64.deb' "
         f"foo_1.2_amd64.deb 12345 SHA256:{real_hash}\n"
     )
 
-    def fake_run_apt(host, args, elevated=False, timeout=300):
-        if "--print-uris" in args:
-            return _AptCmdResult(0, print_uris, "")
-        return _AptCmdResult(0, "", "")  # download-only
+    def fake_run(cmd, *a, **k):
+        if "--print-uris" in cmd:
+            return _FakeProc(0, print_uris)
+        return _FakeProc(0, "")  # download-only
 
-    monkeypatch.setattr(mgr, "_run_apt", fake_run_apt)
-    monkeypatch.setattr("pathlib.Path.is_file", lambda self: True)
+    monkeypatch.setattr(apt_mod.subprocess, "run", fake_run)
+    monkeypatch.setattr("os.path.exists", lambda p: True)
 
     captured = {}
 
@@ -129,35 +147,29 @@ def test_verify_debs_passes_real_hash_from_print_uris(dummy_host, monkeypatch):
         "ascendo_ubuntu.managers.source.UbuntuSource.verify_signature", fake_verify
     )
 
-    plan = [PackagePlan(package_id="foo", name="foo", target_version="1.2")]
-    ok, errors = mgr._verify_debs(dummy_host, plan)
-    assert ok is True
-    assert errors == []
-    assert captured["hash"] == real_hash  # real GPG-manifest hash, never None
+    # Must not raise; must pass the real manifest hash (never None).
+    mgr._verify_apt_signatures(dummy_host)
+    assert captured["hash"] == real_hash
 
 
-def test_verify_debs_fail_closed_on_mismatch(dummy_host, monkeypatch):
+def test_verify_apt_signatures_fail_closed_on_mismatch(dummy_host, monkeypatch):
     """Wiring: a hash mismatch from verify_signature aborts the apply."""
-    from ascendo_ubuntu.managers.apt import AptManager, _AptCmdResult
-    from ascendo.models.package import PackagePlan
+    import ascendo_ubuntu.managers.apt as apt_mod
+    from ascendo.interfaces.package_manager import ManagerError
 
-    mgr = AptManager()
+    mgr = _make_apt_manager()
     print_uris = "'http://x/foo_1.2_amd64.deb' foo_1.2_amd64.deb 12345 SHA256:" + "b" * 64 + "\n"
 
     monkeypatch.setattr(
-        mgr,
-        "_run_apt",
-        lambda host, args, elevated=False, timeout=300: (
-            _AptCmdResult(0, print_uris, "") if "--print-uris" in args else _AptCmdResult(0, "", "")
-        ),
+        apt_mod.subprocess,
+        "run",
+        lambda cmd, *a, **k: _FakeProc(0, print_uris) if "--print-uris" in cmd else _FakeProc(0, ""),
     )
-    monkeypatch.setattr("pathlib.Path.is_file", lambda self: True)
+    monkeypatch.setattr("os.path.exists", lambda p: True)
     monkeypatch.setattr(
         "ascendo_ubuntu.managers.source.UbuntuSource.verify_signature",
         lambda self, host, source, artifact_path, expected_sha256=None: False,
     )
 
-    plan = [PackagePlan(package_id="foo", name="foo", target_version="1.2")]
-    ok, errors = mgr._verify_debs(dummy_host, plan)
-    assert ok is False
-    assert errors
+    with pytest.raises(ManagerError):
+        mgr._verify_apt_signatures(dummy_host)

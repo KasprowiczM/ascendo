@@ -7,6 +7,10 @@ Python 3.14, apt 2.8, snapd 2.75, flatpak 1.14, Linuxbrew 5.1.
 Compatible with Ubuntu 22.04+ and Debian 12+; Pop!_OS / Mint should
 work via the `ID_LIKE=ubuntu` ancestor match.
 
+> **Scope (v1): Ubuntu/Debian only.** Other Linux distributions
+> (Fedora/RHEL/`dnf`, Arch/`pacman`, …) are coming in a later release and are
+> not supported in v1.
+
 > **As of v0.6.1, Ubuntu adapter is at full feature-parity with macOS.**
 > All 5 IAdapter capabilities declared (`PACKAGE_MANAGEMENT |
 > INVENTORY | SNAPSHOTS | SCHEDULING | ELEVATION`), 8 IPackageManager

@@ -4,8 +4,10 @@ Single-page, copy-paste-ready guide for testing Ascendo end-to-end on
 a real Linux machine. Tested on **Ubuntu 24.04 LTS, mk-uP5520 (Dell
 Precision 5520), bash 5.2, Python 3.14, apt 2.8, snap 2.75, flatpak
 1.14, Linuxbrew 5.1**. As of v0.6.1 the Ubuntu adapter is full
-feature-parity with macOS — see [`PLAN.md`](PLAN.md) for the milestone
-banner.
+feature-parity with macOS.
+
+> **Scope (v1): Ubuntu/Debian only.** Other distributions (Fedora/RHEL/`dnf`,
+> Arch/`pacman`, …) are deferred to a later release.
 
 ---
 

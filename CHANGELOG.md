@@ -25,12 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docs: Linux v1 = Ubuntu/Debian only.** README + LINUX_QUICKSTART +
   LINUX_TESTING now state that other distros (Fedora/RHEL/`dnf`, Arch/`pacman`)
   are deferred to a later release.
-- **W10/W2/W11 parity — N/A on Ubuntu (documented).** The Ubuntu `web` check is
-  an intentional no-op for v1 (empty curated feed; Linux apps ship via
-  apt/snap/flatpak). `lib/web_handlers.sh` already uses a pure-bash
-  `version_gt` (no `sort -V`) and its probes already fail-loud on regex
-  no-match, so there is no live discovery/regex/`sort -V` path to fix.
-- Ubuntu adapter test suite green natively (158 passed, 1 xfailed) and now
+- **W10/W2/W11 on Ubuntu — assessed, GNU `sort -V` kept (documented).** The
+  Ubuntu `web` category (`adapters/ubuntu/scripts/web/check.sh` +
+  `lib/ascendo_web.sh`) is real but ships an effectively-empty curated feed for
+  v1 (Linux apps flow through apt/snap/flatpak). `_version_gt` uses GNU
+  coreutils `sort -V`, which is correct version-sort on Linux — the macOS W11
+  concern targets BSD `sort`'s differing `-V`, so it does not apply on
+  Ubuntu/Debian. Aligning Ubuntu's comparator with the macOS Python helper is
+  tracked as a post-v1 consistency follow-up, not a v1 blocker.
+- Ubuntu adapter test suite green natively (160 passed, 1 xfailed) and now
   gated by CI on `ubuntu-24.04`.
 
 ### Fixed — 2nd-pass production audit (2026-05-31)
