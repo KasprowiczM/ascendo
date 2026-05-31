@@ -1,5 +1,51 @@
 # Handoff
 
+## 2026-05-31 — CI green: Validate Config workflow 6/6 on all 3 OSes (Sesja 85)
+
+The `.github/workflows/validate.yml` workflow was failing on every push to
+`main` (jobs: `validate-configs`, `check-readme`, `python-tests`, and the
+`validate-cross-platform` matrix × ubuntu/macos/windows). Root-caused + fixed a
+masked cascade of latent/pre-existing failures and drove it to a fully green
+run, verified live via `gh run watch` (run `26724790115` = success). Three
+commits on `main` (`4766beb`, `6be48f7`, `0a6e91a`):
+
+- **Schema/emitter contract** — `schemas/phase-result.schema.json` now accepts
+  both `"ascendo/v1"` and `"ubuntu-aktualizacje/v1"` (enum). The bash emitter
+  (`lib/_json_emit.py`) deliberately stamps `ubuntu-aktualizacje/v1` so the core
+  reader translates legacy-shape sidecars (the Sesja-82 trap — changing the
+  emitter would reintroduce the `KeyError`). Fixes the phase-JSON-contract step
+  + `test_json_emit` + all 14 `test_phase_contract`.
+- **`plugins/_template/manifest.toml`** — `[scripts]` collapsed from invalid
+  multi-line inline tables to single-line (TOML 1.0.0 / `tomllib`). Fixes the
+  plugin-scanner step.
+- **Test corrections** — `test_require_sudo_trap.bats` asserts the finalize-only
+  `"exit_code"` field (per-phase sidecars have no `status`); `test_cli_web`
+  introspects command params instead of grepping rich-truncated `--help`;
+  `test_installers` pwsh AST harness pre-declares `$tokens`/`$errors`.
+- **Workflow deps** — dashboard-smoke installs `pytest`; the matrix adapter-test
+  step installs `pytest-asyncio` (root `asyncio_mode="auto"` + strict
+  `filterwarnings` → fatal `INTERNALERROR` without it); the python-tests job
+  installs the macOS adapter so the web-registry contract tests (which import
+  `ascendo_macos.web_registry` by design) run instead of 503'ing.
+- **Windows registry data** — `opencode` in `adapters/windows/config/web_apps.toml`:
+  `silent_args ["/S"]→["--silent"]` (Squirrel, not NSIS — also a latent runtime
+  apply fix) and `windows_uninstall_key` GUID → `"OpenCode"` (DisplayName
+  fallback).
+
+**Caveat:** CI runs the harnesses in reduced mode (`--quick`/`-SkipExpensive`/
+`--skip-*`). Full real-hardware validation + the v1.0-beta MUST-DO items
+(`PROMPT_*.md`) remain the next step. The A5 core→adapter coupling was
+pragmatically sidestepped in CI (install macOS adapter in python-tests), not
+resolved.
+
+**Validation:** bats `test_json_emit` 7/7, `test_phase_contract` 14/14,
+`test_require_sudo_trap` 6/6, plugin scanner, overlay guard (fresh clone = 1
+file); contract 558 passed; macOS harness 18/18 + `adapters/macos` 417 passed;
+`adapters/ubuntu` 149 passed; `test_cli_web` 16/16 at `COLUMNS=40`. Windows/pwsh
+paths verified on the CI windows runner (run 26724790115 green).
+
+---
+
 ## 2026-05-29 — macOS Deduplicator Integration & Production Hardening Audit
 
 ### Co poszło na produkcję
