@@ -85,6 +85,26 @@ layer N or any inner layer; never from an outer layer.** Specifically:
 6. **Layer 3 (FastAPI) MUST NOT call native scripts directly.** It
    delegates to Layer 4 orchestrator, which delegates to Layer 5
    adapters, which call Layer 6 scripts.
+7. **Layer 3 (FastAPI) MUST NOT import an adapter package to reach an
+   OS-specific surface.** Dashboard routes that need an OS-specific
+   capability (the macOS web-app registry, the Windows service manager)
+   obtain it from the active adapter via an **optional `IAdapter`
+   accessor** that returns `None` when unsupported:
+   `IAdapter.web_registry()` and `IAdapter.service_manager()`. These are
+   concrete (not `@abstractmethod`) with a default `None`, so existing
+   adapters inherit safe behaviour; an adapter that supports the surface
+   overrides the method and returns its provider. The macOS adapter
+   returns a `MacWebRegistryProvider` (satisfying
+   `ascendo.interfaces.web_registry.IWebRegistryProvider`); the Windows
+   adapter returns its `WindowsServiceManager`.
+   - **v1.0-beta status (audit A5):** `routes/web_config.py` and
+     `routes/service.py` now resolve through the adapter first. A
+     guarded direct import survives as a *documented fallback* for the
+     few call paths that run with no adapter registered (e.g. the AI
+     web-config resolver invoked outside a dashboard request). The
+     dashboard request path itself no longer depends on a hard adapter
+     import. Eliminating the residual fallback entirely is post-beta
+     cleanup.
 
 ## Consequences
 

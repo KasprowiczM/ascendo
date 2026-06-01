@@ -29,11 +29,45 @@ _log = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# ── Adapter-resolved web registry provider (A5 decoupling) ───────────────────
+#
+# core MUST NOT import an adapter package (ADR-0005). The dashboard lifespan
+# registers the active adapter here via set_active_adapter(); the helpers below
+# then resolve the web registry through ``adapter.web_registry()`` instead of
+# importing ``ascendo_macos`` directly. The legacy direct import survives only
+# as a documented fallback for callers that run with no adapter registered
+# (e.g. a unit test exercising load_web_registry() in isolation).
+
+_ACTIVE_ADAPTER: Any = None
+
+
+def set_active_adapter(adapter: Any) -> None:
+    """Called by the dashboard lifespan once the active adapter is resolved."""
+    global _ACTIVE_ADAPTER
+    _ACTIVE_ADAPTER = adapter
+
+
+def _provider() -> Any | None:
+    """The active adapter's web-registry provider, or ``None``."""
+    adapter = _ACTIVE_ADAPTER
+    if adapter is None:
+        return None
+    try:
+        return adapter.web_registry()
+    except Exception:  # noqa: BLE001 — a broken accessor must not 500 the route
+        _log.exception("adapter.web_registry() raised")
+        return None
+
+
 # ── Shared registry helpers (reused by Phase C) ──────────────────────────────
 
 
 def _shipped_registry_path() -> Path | None:
-    """Absolute path to the shipped ``adapters/macos/config/web_apps.toml``."""
+    """Absolute path to the OS adapter's shipped ``web_apps.toml``."""
+    prov = _provider()
+    if prov is not None and prov.shipped_registry_path is not None:
+        return prov.shipped_registry_path
+    # Fallback (no adapter registered): legacy direct resolution.
     try:
         import ascendo_macos  # type: ignore
 
@@ -57,6 +91,10 @@ def load_web_registry() -> Any | None:
     Never raises — returns ``None`` when the adapter / registry is
     unavailable (e.g. non-macOS host, parse error).
     """
+    prov = _provider()
+    if prov is not None:
+        return prov.load_merged(_user_registry_path())
+    # Fallback (no adapter registered): legacy direct load.
     shipped = _shipped_registry_path()
     if shipped is None or not shipped.is_file():
         return None
@@ -126,6 +164,10 @@ _NO_PROBE_HANDLERS = {"squirrel", "builtin"}
 
 
 def _adapter_lib_dir() -> Path | None:
+    prov = _provider()
+    if prov is not None and prov.lib_dir is not None:
+        return prov.lib_dir
+    # Fallback (no adapter registered): legacy direct resolution.
     try:
         import ascendo_macos  # type: ignore
 
@@ -135,12 +177,21 @@ def _adapter_lib_dir() -> Path | None:
 
 
 def _validate_entry(raw: dict) -> Any:
-    """Validate a candidate entry against the macOS WebApp model.
+    """Validate a candidate entry against the OS WebApp model.
 
     Returns the WebApp instance, or raises HTTPException(422) with the
-    pydantic error detail. HTTPException(503) when the adapter model is
-    unavailable (non-macOS host).
+    pydantic error detail. HTTPException(503) when the model is unavailable
+    (no adapter with a web registry on this host).
     """
+    from pydantic import ValidationError
+
+    prov = _provider()
+    if prov is not None:
+        try:
+            return prov.validate_app(raw)
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=exc.errors()) from exc
+    # Fallback (no adapter registered): legacy direct import.
     try:
         from ascendo_macos.web_registry import WebApp  # type: ignore
     except Exception as exc:  # noqa: BLE001
@@ -148,8 +199,6 @@ def _validate_entry(raw: dict) -> Any:
             status_code=503, detail="web registry model unavailable"
         ) from exc
     try:
-        from pydantic import ValidationError
-
         return WebApp.model_validate(raw)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors()) from exc
@@ -237,8 +286,6 @@ def write_user_override(app: Any) -> Path:
     before the temp→replace so a bad merge can never corrupt the file."""
     import tomllib
 
-    from ascendo_macos.web_registry import WebRegistry  # type: ignore
-
     path = _user_registry_path()
     existing: list[dict] = []
     if path.is_file():
@@ -254,7 +301,15 @@ def write_user_override(app: Any) -> Path:
     merged.append(new_app)
 
     # Hard gate: the merged registry MUST validate before we touch disk.
-    WebRegistry.model_validate({"schema": "ascendo-web-apps/v2", "app": merged})
+    prov = _provider()
+    if prov is not None:
+        prov.validate_registry(merged)
+    else:
+        from ascendo_macos.web_registry import WebRegistry  # type: ignore
+
+        WebRegistry.model_validate(
+            {"schema": "ascendo-web-apps/v2", "app": merged}
+        )
     rendered = _dump_registry(merged)
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -278,11 +333,21 @@ def apply_web_override(slug: str, toml_snippet: str) -> dict:
     iterating). Never raises for expected failures."""
     import tomllib
 
-    try:
-        from ascendo_macos.web_registry import WebApp  # type: ignore
-        from pydantic import ValidationError
-    except Exception:  # noqa: BLE001
-        return {"ok": False, "error": "web registry model unavailable"}
+    from pydantic import ValidationError
+
+    # Validate via the adapter's provider (A5); fall back to the legacy direct
+    # model import only when no adapter is registered.
+    prov = _provider()
+    _validate_app = None
+    if prov is not None:
+        _validate_app = prov.validate_app
+    else:
+        try:
+            from ascendo_macos.web_registry import WebApp  # type: ignore
+
+            _validate_app = WebApp.model_validate
+        except Exception:  # noqa: BLE001
+            return {"ok": False, "error": "web registry model unavailable"}
 
     try:
         doc = tomllib.loads(toml_snippet)
@@ -298,7 +363,7 @@ def apply_web_override(slug: str, toml_snippet: str) -> dict:
         candidate = {k: v for k, v in doc.items() if k != "schema"}
 
     try:
-        app = WebApp.model_validate(candidate)
+        app = _validate_app(candidate)
     except ValidationError as exc:
         return {"ok": False, "error": "schema invalid", "detail": exc.errors()}
 

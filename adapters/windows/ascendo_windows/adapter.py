@@ -145,6 +145,16 @@ class WindowsAdapter(IAdapter):
     def elevation(self) -> IElevation | None:
         return WindowsElevation()
 
+    def service_manager(self):
+        """Windows AscendoDashboard service manager (A5 decoupling).
+
+        Lets the dashboard's /service routes resolve the manager off the
+        active adapter instead of importing ``ascendo_windows`` in core.
+        """
+        from .managers.service import WindowsServiceManager, default_repo_root
+
+        return WindowsServiceManager(repo_root=default_repo_root())
+
     def detect_host(self) -> HostInfo:
         if self._cached_host is not None:
             return self._cached_host

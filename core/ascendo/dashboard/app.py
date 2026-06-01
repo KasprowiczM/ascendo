@@ -29,6 +29,7 @@ from .routes.apps import router as apps_router
 from .routes.chat import router as chat_router
 from .routes.dedup import router as dedup_router
 from .routes.elevation import router as elevation_router
+from .routes.web_config import set_active_adapter as _set_web_active_adapter
 from .routes.health import router as health_router
 from .routes.onboarding import router as onboarding_router
 from .routes.runs import router as runs_router
@@ -210,9 +211,16 @@ def create_app(
             except NoAdapterAvailableError as exc:
                 _log.warning("dashboard: no adapter -- endpoints will return 503: %s", exc)
                 app.state.adapter = None
+        # A5 decoupling: register the active adapter so the web-config routes
+        # resolve the registry through adapter.web_registry() instead of
+        # importing an adapter package in core (ADR-0005).
+        _set_web_active_adapter(getattr(app.state, "adapter", None))
 
         yield
-        # Teardown: close the inventory DB (no-op today; future-proofing).
+        # Teardown: drop the active-adapter registration so a subsequent app
+        # in the same process (tests) can't inherit a stale provider.
+        _set_web_active_adapter(None)
+        # Close the inventory DB (no-op today; future-proofing).
         db = getattr(app.state, "inventory_db", None)
         if db is not None:
             try:

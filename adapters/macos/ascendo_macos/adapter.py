@@ -193,6 +193,19 @@ class MacOSAdapter(IAdapter):
             self._cached_elevation = MacElevation()
         return self._cached_elevation
 
+    def web_registry(self):
+        """macOS WebManager registry provider (A5 decoupling).
+
+        Lets the dashboard's web-config routes resolve the registry off the
+        active adapter instead of hard-importing ``ascendo_macos`` in core.
+        """
+        from .web_registry_provider import MacWebRegistryProvider
+
+        return MacWebRegistryProvider(
+            shipped_registry_path=self.LIB_DIR.parent / "config" / "web_apps.toml",
+            lib_dir=self.LIB_DIR,
+        )
+
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
     def detect_host(self) -> HostInfo:

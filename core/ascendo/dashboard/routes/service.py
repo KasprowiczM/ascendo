@@ -95,6 +95,17 @@ def _service_manager(request: Request):
     fake = getattr(request.app.state, "service_manager", None)
     if fake is not None:
         return fake
+    # A5 decoupling (ADR-0005): prefer the active adapter's service manager so
+    # core doesn't import ascendo_windows directly. Falls through to the legacy
+    # lazy import below when the adapter doesn't provide one.
+    adapter = getattr(request.app.state, "adapter", None)
+    if adapter is not None:
+        try:
+            mgr = adapter.service_manager()
+        except Exception:  # noqa: BLE001 — a broken accessor must not 500
+            mgr = None
+        if mgr is not None:
+            return mgr
     if not _is_windows():
         return None
     try:

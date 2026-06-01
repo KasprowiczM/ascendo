@@ -117,6 +117,25 @@ class IAdapter(ABC):
     def elevation(self) -> IElevation | None:
         """Elevation backend, or None if ``ELEVATION`` capability is unset."""
 
+    # ── Optional cross-platform surfaces (concrete, default None) ────────
+    #
+    # These are NOT abstract so existing adapters inherit a safe ``None``.
+    # The dashboard resolves them off the active adapter instead of
+    # hard-importing an adapter package in core (ADR-0005: core MUST NOT
+    # import from adapters/*). An adapter that supports the surface
+    # overrides the method and returns its provider.
+
+    def web_registry(self):  # -> IWebRegistryProvider | None
+        """Web-app registry provider, or ``None`` when this OS has no web
+        category (e.g. the macOS WebManager registry). Duck-typed shape in
+        :mod:`ascendo.interfaces.web_registry`."""
+        return None
+
+    def service_manager(self):  # -> object | None
+        """Background-service manager, or ``None`` when the OS has no managed
+        service surface (e.g. the Windows AscendoDashboard service)."""
+        return None
+
     # ── Lifecycle ────────────────────────────────────────────────────
 
     @abstractmethod
