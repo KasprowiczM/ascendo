@@ -110,6 +110,27 @@ try {
         Test-Result "doctor command (unhealthy)" $false "exit=$doctorExit`n$doctorText"
     }
 
+    # ── 3.5 PowerShell execution tests (T2 / audit sec.4) ───────────────────
+    # Real PS execution of the safety-critical native paths: the deduplicator
+    # uninstall GATE (a stray DEDUPLICATION_TASKS.json must never auto-
+    # uninstall) and the release_feed version_regex fail-loud (W2). These are
+    # cheap + hardware-independent, so they run even in -SkipExpensive (CI).
+    Write-Step "PowerShell execution tests (dedup gate + release_feed regex)"
+    $psTestDir = Join-Path $RepoRoot 'adapters\windows\tests\ps'
+    $psTests = @(
+        @{ Name = 'dedup uninstall gate';      Path = (Join-Path $psTestDir 'Dedup.Gate.Tests.ps1') },
+        @{ Name = 'release_feed version_regex'; Path = (Join-Path $psTestDir 'ReleaseFeed.Regex.Tests.ps1') }
+    )
+    foreach ($t in $psTests) {
+        if (-not (Test-Path -LiteralPath $t.Path)) {
+            Test-Result "PS test present: $($t.Name)" $false "missing: $($t.Path)"
+            continue
+        }
+        $psExe = if ($PSVersionTable.PSVersion.Major -ge 6) { 'pwsh' } else { 'powershell' }
+        $out = & $psExe -NoProfile -NonInteractive -File $t.Path 2>&1
+        Test-Result "PS exec: $($t.Name)" ($LASTEXITCODE -eq 0) (($out | Select-Object -Last 1) -join '')
+    }
+
     # ── CI smoke early-exit ─────────────────────────────────────────────────
     # In -SkipExpensive mode the OS-agnostic CLI + adapter smoke (stages 1-3) is
     # all a bare CI runner can meaningfully verify. The hardware stages below
