@@ -81,6 +81,54 @@ decision — no unsupported-distro guard is added this round.
   `_version_gt` uses the shared PEP-440 `ascendo.utils.version.version_gt`
   comparator instead of `sort -V`.
 
+### v1.0-beta production push — Windows (Sesja 88, 2026-06-01)
+
+Windows leg of the v1.0-beta push (`ASCENDO_ULTRA_REVIEW_2.md` sec.2/4/7). The
+Windows adapter shipped the executor for `DEDUPLICATION_TASKS.json`, so this is
+the leg that closes the audit P0 at the point of execution.
+
+- **P1.1 — Dedup uninstall executor gated behind explicit opt-in.** The
+  winget/npm/pip `apply.ps1` scripts read `DEDUPLICATION_TASKS.json` and run
+  `winget/npm/pip uninstall`. Core only writes that file on consent, but the
+  executor was still unconditional — a stray file could trigger a silent
+  uninstall. New shared `Get-AscendoDedupUninstalls` (`AscendoJson.psm1`)
+  returns the per-source ids **only** when authorized: `$env:ASCENDO_DEDUP_AUTO_
+  UNINSTALL=1` **or** a per-run `DEDUPLICATION_APPROVED` marker. Otherwise it
+  returns `@()` and emits an info message ("resolve via the dashboard").
+  `DryRun` still honored. The consent surfaces now drop the marker:
+  `POST /dedup/apply` (dashboard click) and the core deduplicator opt-in path
+  both write `DEDUPLICATION_APPROVED` beside the tasks file.
+- **P2 (A2/A3) — Adapter caches sub-interface singletons.** `WindowsAdapter`
+  rebuilt a new `WindowsInventory`/`Snapshot`/`Scheduler`/`Elevation` on every
+  accessor; the in-memory elevation token registered on one instance was
+  invisible to a manager that fetched another. Now caches singletons like the
+  macOS adapter.
+- **P2 (W2) — `release_feed` fails loud on regex no-match.**
+  `_RF-ApplyRegexTransform` silently returned the raw value when a configured
+  `version_regex` did not match (reporting the whole HTTP body as the
+  candidate). Now a configured regex that does not match — or won't compile —
+  returns `$null` (probe_broken); `scripts/web/check.ps1` classifies the row as
+  `skipped`. No-regex passthrough unchanged. Mirrors the macOS rc=28 contract.
+- **W10 (discovery signal) — assessed, no code change.** Windows web discovery
+  is **supplemental** (adds inventory rows on top of the curated registry), not
+  the primary enumerator as on macOS; `scripts/web/check.ps1` already fails loud
+  (registry-validate failure → error + failed item + exit 1; discovery /
+  enumeration failures → warn). The macOS "silent exit 0 read as all-current"
+  failure mode does not exist here.
+- **Security hardening (P8/P11/P3/P6) — verified already landed (commit
+  `cf1d5c4`).** ChatsDB restrictive Windows ACL via ctypes
+  (`SetFileSecurityW`); `WindowsElevation._run_uac` raises `NotImplementedError`
+  when given an `env` override (fail-fast, not silent drop); UAC argv[0]
+  resolved + compared by full real path before `runas`; `register_password`
+  callsites wrapped in try/finally. Confirmed green; no new change needed.
+- **T2 — first PowerShell execution tests.** `adapters/windows/tests/ps/`
+  gains `Dedup.Gate.Tests.ps1` (proves "stray tasks file + no opt-in ⇒ NO
+  uninstall"; +env / +marker authorize) and `ReleaseFeed.Regex.Tests.ps1` (the
+  W2 contract). pytest wrappers (`test_dedup_gate_ps.py`,
+  `test_release_feed_regex_ps.py`) run them on the `windows-latest` CI leg; a new
+  stage 3.5 in `validate-windows.ps1` runs them in CI-smoke + full modes.
+  Windows adapter suite: **459 passed / 1 skipped**.
+
 ### CI — Validate Config workflow green on all 3 OSes (Sesja 85, 2026-05-31)
 
 - **Fixed: the `Validate Config` GitHub Actions workflow now passes 6/6 jobs**

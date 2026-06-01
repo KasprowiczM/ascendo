@@ -1,5 +1,31 @@
 # Handoff
 
+## 2026-06-01 — v1.0-beta production push: Windows leg (Sesja 88)
+
+Windows P1/P2 items from `ASCENDO_ULTRA_REVIEW_2.md` sec.2/4/7. Five commits on
+`main` (`3451f03`, `cf747e3`, `1e9dcd1`, `765f4e4`, + this docs commit):
+
+- **P1.1 — Dedup uninstall executor gated.** winget/npm/pip `apply.ps1` no
+  longer auto-uninstall from a stray `DEDUPLICATION_TASKS.json`. New shared
+  `Get-AscendoDedupUninstalls` (`AscendoJson.psm1`) authorizes only on
+  `$env:ASCENDO_DEDUP_AUTO_UNINSTALL=1` **or** a per-run `DEDUPLICATION_APPROVED`
+  marker (written by `POST /dedup/apply` and the core opt-in path). pwsh
+  execution test proves "stray file + no opt-in ⇒ no uninstall".
+- **P2 A2/A3 — adapter caches sub-interface singletons** (elevation token now
+  visible across accessors).
+- **P2 W2 — `release_feed` regex no-match ⇒ probe_broken (`$null` ⇒ skipped)**,
+  was a silent raw-value fallback. **W10** assessed as not-applicable on Windows
+  (discovery is supplemental; `check.ps1` already fails loud / exit 1 on a
+  registry-validate failure).
+- **Security P8/P11/P3/P6 — verified already landed** in `cf1d5c4` (ChatsDB ACL,
+  UAC `env` fail-fast, full-path argv[0] resolve, password try/finally).
+- **T2 — first PowerShell execution tests** (`adapters/windows/tests/ps/`) +
+  pytest wrappers (windows-latest CI leg) + a stage 3.5 in `validate-windows.ps1`.
+
+Verification: `python -m pytest adapters/windows/tests/ -q` → 459 passed / 1
+skipped; `pwsh bin/validate-windows.ps1 -SkipExpensive` → ALL CHECKS PASSED.
+PLAN/HANDOFF session logs also updated in the private overlay (gitignored).
+
 ## 2026-05-31 — CI green: Validate Config workflow 6/6 on all 3 OSes (Sesja 85)
 
 The `.github/workflows/validate.yml` workflow was failing on every push to
