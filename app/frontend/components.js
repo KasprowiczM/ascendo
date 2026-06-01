@@ -30,8 +30,28 @@
     return parent;
   }
   function STATUS(s) {
-    var ok = { ok: 1, warn: 1, err: 1, info: 1, neutral: 1 };
-    return ok[s] ? s : "neutral";
+    // Raw visual variants pass through unchanged.
+    var variants = { ok: 1, warn: 1, err: 1, info: 1, neutral: 1 };
+    if (variants[s]) return s;
+    // Honest domain status -> visual variant (Sesja 86 / audit P2). Before
+    // this, anything not a raw variant collapsed to "neutral" grey — so a
+    // failed apply, a triggered-but-unconfirmed update, and an up-to-date
+    // package all looked identical. A failed apply must read RED, never grey,
+    // never green.
+    var map = {
+      up_to_date: "ok",
+      success: "ok",
+      outdated: "warn",
+      planned: "warn",
+      triggered: "warn",
+      triggered_pending: "warn",  // pending vendor reconciliation
+      failed: "err",
+      partial: "err",
+      missing: "err",
+      skipped: "neutral",
+      unknown: "neutral"
+    };
+    return map[s] || "neutral";
   }
 
   /* ---- mount ------------------------------------------- */

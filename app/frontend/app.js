@@ -2448,7 +2448,7 @@ const ui = {
     tbl.appendChild(thead);
 
     const tbody = document.createElement("tbody");
-    const stMap = { ok: "ok", outdated: "warn", missing: "err", unknown: "neutral" };
+    const stMap = { ok: "ok", up_to_date: "ok", success: "ok", outdated: "warn", planned: "warn", triggered: "warn", triggered_pending: "warn", failed: "err", partial: "err", missing: "err", skipped: "neutral", unknown: "neutral" };
     items.forEach(it => {
       const isOut = it.status === "outdated" || it.status === "missing";
       const r = document.createElement("tr");
@@ -2956,7 +2956,7 @@ const ui = {
       thead.appendChild(trh);
       tbl.appendChild(thead);
       const tb = document.createElement("tbody");
-      const stMap = { ok: "ok", outdated: "warn", missing: "err", unknown: "neutral" };
+      const stMap = { ok: "ok", up_to_date: "ok", success: "ok", outdated: "warn", planned: "warn", triggered: "warn", triggered_pending: "warn", failed: "err", partial: "err", missing: "err", skipped: "neutral", unknown: "neutral" };
       items.forEach(it => {
         const r = document.createElement("tr");
         const tn = document.createElement("td");
