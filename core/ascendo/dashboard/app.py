@@ -27,6 +27,7 @@ from .routes.about import router as about_router
 from .routes.ai import router as ai_router
 from .routes.apps import router as apps_router
 from .routes.chat import router as chat_router
+from .routes.dedup import router as dedup_router
 from .routes.elevation import router as elevation_router
 from .routes.health import router as health_router
 from .routes.onboarding import router as onboarding_router
@@ -335,6 +336,11 @@ def create_app(
     # implementation lands.
     app.include_router(spa_stubs_router, prefix="")
     app.include_router(runs_router, prefix="/runs")
+    # Cross-source deduplication consent surface (/dedup/*). GET /dedup/pending
+    # reports recommended duplicate fixes read-only; POST /dedup/apply records
+    # explicit consent and triggers the uninstall apply. Registered before the
+    # SPA bundle so the REST routes win.
+    app.include_router(dedup_router, prefix="")
     # Windows service management (/service/*). Registered last among API
     # routers so it sits next to runs in the OpenAPI tag list. On non-
     # Windows hosts every endpoint returns the typed-empty "unsupported"
@@ -386,6 +392,10 @@ def create_app(
             # loaded after shell.js (no-dropdown controls, mobile bottom
             # nav, run stepper, responsive history cards).
             ("ui-components.js", "application/javascript"),
+            # Cross-source deduplication consent card (Sesja 86): self-
+            # contained, additive; polls /dedup/pending and POSTs
+            # /dedup/apply on explicit "Resolve" click.
+            ("dedup.js", "application/javascript"),
             # UI redesign overlay (Sesja 75): progressive design-system
             # layer loaded LAST so it wins by source order. CSS-only,
             # zero DOM/JS — reversible by removing this entry + the

@@ -51,20 +51,21 @@ def _confirm_uninstall(app_name: str, src_name: str, preferred: str) -> bool:
         return res.lower() in ("y", "yes")
 
 
-def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, config_path: Path | None = None) -> None:
-    """Analyzes check phase sidecars, identifies duplicates, and ignores non-preferred sources.
-    
-    Generates a DEDUPLICATION_REPORT.md if actionable duplicates are found.
-    Mutates the `sidecars` list items in-place and rewrites them to disk.
+def _resolve_config_path(config_path: Path | None) -> Path | None:
+    """Resolve the per-OS app-sources config, copying the shipped default into
+    the user profile on first use. Returns ``None`` when no config is available.
+
+    Shared by :func:`apply_deduplication` (report/queue at run time) and
+    :func:`compute_dedup_fixes` (the read-only dashboard consent endpoints) so
+    both see the same source-of-truth.
     """
     import os
     import shutil
-    
     import sys
+
     is_linux = sys.platform.startswith("linux")
     is_macos = sys.platform == "darwin"
-    
-    # Look for config in user profile
+
     user_config_dir = Path(os.environ.get("ASCENDO_HOME") or Path.home() / ".ascendo")
     if config_path is None:
         if is_linux:
@@ -73,7 +74,7 @@ def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, c
             config_path = user_config_dir / "macos_app_sources.toml"
         else:
             config_path = user_config_dir / "windows_app_sources.toml"
-        
+
     if not config_path.exists():
         if is_linux:
             default_path = Path(__file__).parent.parent.parent.parent / "adapters" / "ubuntu" / "config" / "ubuntu_app_sources.toml"
@@ -81,34 +82,34 @@ def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, c
             default_path = Path(__file__).parent.parent.parent.parent / "adapters" / "macos" / "config" / "macos_app_sources.toml"
         else:
             default_path = Path(__file__).parent.parent.parent.parent / "adapters" / "windows" / "config" / "app_sources.toml"
-            
+
         if default_path.exists():
             user_config_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(default_path, config_path)
             _log.info("Initialized default app sources at %s", config_path)
         else:
-            return
+            return None
+    return config_path
 
-    registry = AppSourcesRegistry.load(config_path)
-    if not registry.apps:
-        return
 
-    # Map package ID -> Sidecar Item for quick lookup
-    # We only care about installed items (current_version is not None)
+def _analyze(sidecars: list[Sidecar], registry: AppSourcesRegistry) -> list[dict]:
+    """Pure analysis: find logical apps installed via more than one source (or
+    not via their absolute-preferred source). No mutation, no disk writes.
+
+    Each returned fix carries the live ``(sidecar, item)`` tuples so the
+    run-time queue/report path can mutate them; :func:`compute_dedup_fixes`
+    strips those refs for the JSON endpoints.
+    """
     installed_items = []
     for sidecar in sidecars:
         for item in sidecar.items:
             if item.current_version:
                 installed_items.append((sidecar, item))
 
-    actionable_fixes = []
-    uninstall_tasks = defaultdict(list)
-
+    fixes: list[dict] = []
     for app in registry.apps:
-        # Check which sources are installed for this logical app
-        installed_sources = {}
+        installed_sources: dict[str, tuple] = {}
         for sidecar, item in installed_items:
-            # Does this item match one of the mapped sources for this app?
             for source_name, source_pkg_id in app.sources.items():
                 if sidecar.category.value == source_name and item.id == source_pkg_id:
                     installed_sources[source_name] = (sidecar, item)
@@ -117,7 +118,7 @@ def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, c
         if not installed_sources:
             continue
 
-        # Find the best installed source according to preferred_order
+        # Best installed source according to preferred_order.
         best_installed_idx = 999
         best_source = None
         for source_name in installed_sources:
@@ -126,20 +127,100 @@ def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, c
                 if idx < best_installed_idx:
                     best_installed_idx = idx
                     best_source = source_name
-
         if not best_source:
-            # None of the installed sources are in the preferred list, fallback
             best_source = list(installed_sources.keys())[0]
 
-        # Check if the BEST INSTALLED source is actually the absolute preferred (index 0)
         absolute_preferred = app.preferred_order[0] if app.preferred_order else best_source
 
-        # If they don't match, or if multiple are installed, we have a deduplication action
         if len(installed_sources) > 1 or best_source != absolute_preferred:
+            fixes.append({
+                "app": app,
+                "installed_sources": installed_sources,
+                "preferred": absolute_preferred,
+                "best_source": best_source,
+            })
+    return fixes
+
+
+def _serialize_fix(fix: dict) -> dict:
+    """Convert an internal :func:`_analyze` fix (with live object refs) into a
+    JSON-safe dict for the dashboard consent endpoints.
+
+    ``recommended_uninstall`` mirrors the run-time queue semantics: every
+    installed source other than the *best installed* one is a candidate, so the
+    best working source is always kept.
+    """
+    app = fix["app"]
+    best_source = fix["best_source"]
+    installed = []
+    for src_name, (sidecar, item) in fix["installed_sources"].items():
+        installed.append({
+            "source": src_name,
+            "category": sidecar.category.value,
+            "id": item.id,
+            "name": item.name,
+            "current_version": item.current_version,
+            "is_best_installed": src_name == best_source,
+            "recommended_uninstall": src_name != best_source,
+        })
+    return {
+        "app_id": app.id,
+        "app_name": app.name,
+        "preferred": fix["preferred"],
+        "best_installed": best_source,
+        "installed": installed,
+    }
+
+
+def compute_dedup_fixes(sidecars: list[Sidecar], config_path: Path | None = None) -> list[dict]:
+    """Read-only analysis of CHECK sidecars → JSON-safe list of cross-source
+    duplicates. No mutation, no ``DEDUPLICATION_TASKS.json``, no report.
+
+    Backs the dashboard consent surface (``GET /dedup/pending``): the operator
+    sees the recommended fixes and approves them explicitly via
+    ``POST /dedup/apply`` — consent is always an explicit click, never an
+    implicit non-TTY default.
+    """
+    resolved = _resolve_config_path(config_path)
+    if resolved is None:
+        return []
+    registry = AppSourcesRegistry.load(resolved)
+    if not registry.apps:
+        return []
+    return [_serialize_fix(f) for f in _analyze(sidecars, registry)]
+
+
+def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, config_path: Path | None = None) -> None:
+    """Analyzes check phase sidecars, identifies duplicates, and ignores non-preferred sources.
+
+    Generates a DEDUPLICATION_REPORT.md if actionable duplicates are found.
+    In the opt-in (auto-uninstall) path it also mutates the sidecar items
+    in-place + rewrites them and queues DEDUPLICATION_TASKS.json; in the
+    fail-safe report-only default it leaves the CHECK sidecars untouched.
+    """
+    import os  # noqa: F401  (kept for parity / future env reads)
+
+    resolved = _resolve_config_path(config_path)
+    if resolved is None:
+        return
+
+    registry = AppSourcesRegistry.load(resolved)
+    if not registry.apps:
+        return
+
+    fixes = _analyze(sidecars, registry)
+    actionable_fixes = []
+    uninstall_tasks = defaultdict(list)
+
+    for fix in fixes:
+            app = fix["app"]
+            installed_sources = fix["installed_sources"]
+            absolute_preferred = fix["preferred"]
+            best_source = fix["best_source"]
             actionable_fixes.append({
                 "app": app,
                 "installed_sources": installed_sources,
-                "preferred": absolute_preferred
+                "preferred": absolute_preferred,
             })
 
             # Ignore updates for non-best installed sources

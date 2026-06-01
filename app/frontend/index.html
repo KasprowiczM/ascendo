@@ -234,6 +234,10 @@
            Populated by ui.loadActionRequired(runId) on the SSE done
            event. Guarantees no non-silent web app is silently missing. -->
       <div id="action-required-panel" class="hidden"></div>
+      <!-- Cross-source deduplication consent (Sesja 86): rendered by
+           dedup.js from GET /dedup/pending. "Resolve duplicate" POSTs to
+           /dedup/apply — explicit consent, never an implicit uninstall. -->
+      <div id="dedup-panel" class="hidden"></div>
       <form id="run-form" hidden style="display:none">
         <label><span data-i18n="run.profile">Profile</span>
           <select name="profile" id="profile-select"></select>
@@ -1680,6 +1684,11 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
   <!-- Touch-first UI kit (Sesja 74): no-dropdown progressive disclosure,
        mobile bottom nav, run stepper, responsive history cards. -->
   <script defer src="/ui-components.js"></script>
+  <!-- Cross-source deduplication consent card (Sesja 86): self-contained,
+       additive. Polls /dedup/pending and renders an "Action required →
+       resolve duplicate" card; "Resolve" POSTs /dedup/apply (explicit
+       consent). No coupling to app.js's run lifecycle. -->
+  <script defer src="/dedup.js"></script>
   <!-- M1 (Sesja 76): ui-redesign.js + layout-editor.js deleted. The M2
        shell.js owns the router/IA; ui-redesign.js's shadow renderer is
        gone. ui-redesign.css (P0 + M4 rules) stays and is still linked. -->
