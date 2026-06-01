@@ -84,6 +84,14 @@ class WindowsAdapter(IAdapter):
 
     def __init__(self) -> None:
         self._cached_host: HostInfo | None = None
+        # A2/A3 (audit sec.3): cache sub-interface singletons so per-instance
+        # state — most importantly the in-memory elevation token — registered
+        # via one accessor is visible to a manager that fetched another. Mirror
+        # of the macOS adapter's cached singletons.
+        self._cached_inventory: WindowsInventory | None = None
+        self._cached_snapshot: WindowsSnapshot | None = None
+        self._cached_scheduler: WindowsScheduler | None = None
+        self._cached_elevation: WindowsElevation | None = None
 
     @property
     def name(self) -> str:
@@ -128,22 +136,44 @@ class WindowsAdapter(IAdapter):
         ]
 
     def inventory(self) -> IInventory:
-        return WindowsInventory(
-            scripts_dir=self.SCRIPTS_DIR,
-            lib_dir=self.LIB_DIR,
-        )
+        """Returns a cached WindowsInventory singleton (A2/A3)."""
+        if self._cached_inventory is None:
+            self._cached_inventory = WindowsInventory(
+                scripts_dir=self.SCRIPTS_DIR,
+                lib_dir=self.LIB_DIR,
+            )
+        return self._cached_inventory
 
     def snapshot(self) -> ISnapshot | None:
-        return WindowsSnapshot(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR)
+        """Returns a cached WindowsSnapshot singleton (A2/A3)."""
+        if self._cached_snapshot is None:
+            self._cached_snapshot = WindowsSnapshot(
+                scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR
+            )
+        return self._cached_snapshot
 
     def scheduler(self) -> IScheduler | None:
-        return WindowsScheduler(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR)
+        """Returns a cached WindowsScheduler singleton (A2/A3)."""
+        if self._cached_scheduler is None:
+            self._cached_scheduler = WindowsScheduler(
+                scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR
+            )
+        return self._cached_scheduler
 
     def source(self) -> ISource | None:
         return None
 
     def elevation(self) -> IElevation | None:
-        return WindowsElevation()
+        """Returns a cached WindowsElevation singleton (A2/A3).
+
+        Critical for the in-memory elevation token: the dashboard registers
+        the operator's allow-list / password on the elevation object one route
+        fetched; a manager that fetches ``elevation()`` later MUST get the same
+        instance or the token is invisible to it.
+        """
+        if self._cached_elevation is None:
+            self._cached_elevation = WindowsElevation()
+        return self._cached_elevation
 
     def service_manager(self):
         """Windows AscendoDashboard service manager (A5 decoupling).
