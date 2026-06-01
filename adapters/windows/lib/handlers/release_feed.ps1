@@ -113,25 +113,37 @@ function _RF-WalkJsonPath {
 function _RF-ApplyRegexTransform {
     <#
     .SYNOPSIS
-        Apply (version_regex, version_replace) to the raw value. Falls back
-        to raw on no match (graceful degradation per macOS M5.7.4 spec).
+        Apply (version_regex, version_replace) to the raw value.
+
+    .DESCRIPTION
+        W2 fail-loud (audit ASCENDO_ULTRA_REVIEW_2 sec.4): a CONFIGURED
+        version_regex is an explicit promise that the version is extracted
+        from the raw body. If that regex does NOT match (or won't compile),
+        returning the raw value would silently report a wrong candidate
+        (e.g. the whole HTTP body) as the version -- a dishonest "planned" /
+        "up_to_date". Instead we return ``$null`` (probe_broken); the caller
+        (Invoke-ReleaseFeedCheck) propagates it and scripts/web/check.ps1
+        classifies the row as ``skipped`` (probe unavailable). Mirror of the
+        macOS release_feed rc=28 contract.
+
+        No regex configured => passthrough (return raw) -- unchanged.
     #>
     param(
         [Parameter(Mandatory)] [AllowEmptyString()] [string] $Raw,
         [Parameter()] [string] $Pattern,
         [Parameter()] [string] $Replacement
     )
-    if (-not $Pattern) { return $Raw }
-    if ([string]::IsNullOrEmpty($Raw)) { return $Raw }
+    if (-not $Pattern) { return $Raw }            # no regex => passthrough
+    if ([string]::IsNullOrEmpty($Raw)) { return $null }
     try {
         $rx = [System.Text.RegularExpressions.Regex]::new($Pattern)
     } catch {
-        Write-Verbose "release_feed regex invalid: $_"
-        return $Raw
+        Write-Verbose "release_feed version_regex won't compile ('$Pattern'); probe_broken"
+        return $null
     }
     if (-not $rx.IsMatch($Raw)) {
-        Write-Verbose "release_feed regex didn't match raw value '$Raw'; falling back"
-        return $Raw
+        Write-Verbose "release_feed version_regex did not match raw value '$Raw'; probe_broken"
+        return $null
     }
     return $rx.Replace($Raw, $Replacement, 1)
 }
