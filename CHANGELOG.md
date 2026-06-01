@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0-beta] — 2026-06-01 — first production beta (macOS + Windows + Ubuntu)
+
+### Fixed — macOS npm Node version track + apply target (Sesja 89, 2026-06-01)
+
+- **Node verify-failed every full run on the Current line.** `check`/`plan`
+  computed the Node target via `ascendo_npm_node_latest_version`, but
+  `scripts/npm/apply.sh::apply_native_node` ran a hardcoded `n lts` — so apply
+  installed a *different* version than the picker reported, downgrading the
+  toolchain Node to the LTS line and making `verify` (recomputing the Current
+  target) report `failed` while REPORT.md still said "all updates applied
+  successfully". Apply now installs the picker's target (`n "$_latest"`),
+  falling back to `lts` only when the picker returns nothing (offline / fresh
+  box). The picker's track heuristic also changed `installed_major -ge
+  lts_major` → `-gt`: a user *on* the active LTS line (installed major == LTS
+  major) stays on LTS instead of being pushed onto the pre-LTS Current line.
+  New `adapters/macos/tests/test_npm_node_version.py` (4 tests) pins both
+  defects; full macOS adapter suite green (422 passed).
+
 ### v1.0-beta production push — macOS + core (Sesja 86, 2026-06-01)
 
 P1 (must-do) + P2 (should-do) items from `ASCENDO_ULTRA_REVIEW_2.md`:
@@ -1333,4 +1351,5 @@ For full pre-monorepo history, see git log:
 git log --oneline pre-monorepo-restructure
 ```
 
-[Unreleased]: https://github.com/KasprowiczM/ascendo/compare/pre-monorepo-restructure...HEAD
+[Unreleased]: https://github.com/KasprowiczM/ascendo/compare/v1.0-beta...HEAD
+[1.0-beta]: https://github.com/KasprowiczM/ascendo/compare/v0.6.0...v1.0-beta

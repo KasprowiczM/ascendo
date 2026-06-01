@@ -6,7 +6,9 @@ Cross-platform unified-updates orchestrator. macOS · Windows · Linux. Open sou
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Made for: Windows | Linux | macOS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux%20%7C%20macOS-blue)](docs/PLATFORM_STATUS.md)
-[![Tests: 477 green](https://img.shields.io/badge/tests-477%20green-brightgreen)](#tests)
+[![Version: v1.0-beta](https://img.shields.io/badge/version-v1.0--beta-blue)](CHANGELOG.md)
+[![Tests: 1600+ green](https://img.shields.io/badge/tests-1600%2B%20green-brightgreen)](CHANGELOG.md)
+[![CI: 6/6 green](https://img.shields.io/badge/CI-6%2F6%20green-brightgreen)](.github/workflows/validate.yml)
 
 ---
 
@@ -109,16 +111,19 @@ the platform quickstarts below.
 
 ## Platforms
 
-> **Pre-1.0 release.** APIs and CLI flags may still change between
-> minor versions. macOS is the most mature; Windows + Linux are
-> functional and at parity for inventory + check + apply but have
-> fewer integrations wired (see the matrix below).
+> **v1.0-beta (`1.0.0b1`).** First production beta — a controlled
+> rollout, not yet GA. All three platform legs landed (Sesjas 86–88)
+> and CI's `Validate Config` workflow is green 6/6 across
+> ubuntu/macos/windows. APIs and CLI flags are stabilizing but may
+> still shift before `1.0.0`. macOS is the most mature; Windows + Linux
+> are functional and at parity for inventory + check + apply (see the
+> matrix below).
 
 | Platform | Status | Quickstart |
 |----------|--------|------------|
-| macOS (Apple Silicon + Intel) | ✅ feature-complete (v0.6.8-rc1) — 12 health components, 6 package managers, full web category coverage (AI-maintained), Time Machine snapshots, launchd scheduler, Touch ID-first sudo | [MACOS_QUICKSTART.md](MACOS_QUICKSTART.md) |
-| Windows 11 / 10 (build 17763+) | 🟡 functional (v0.6.x) — winget + msstore + ARP + PSWindowsUpdate + VSS + Task Scheduler + UAC. Parity with macOS still in progress (web auto-updates, Dell driver plugin shipped) | [WINDOWS_QUICKSTART.md](WINDOWS_QUICKSTART.md) |
-| Ubuntu 22.04+ / Debian 12+ | 🟡 functional (v0.6.x) — apt + snap + brew + npm + pip + flatpak inventory; legacy bash adapters bridged into Python orchestrator. Scheduler/snapshot/elevation Python wrappers pending | [LINUX_QUICKSTART.md](LINUX_QUICKSTART.md) |
+| macOS (Apple Silicon + Intel) | ✅ feature-complete (v1.0-beta) — 12 health components, 6 package managers, full web category coverage (AI-maintained), Time Machine snapshots, launchd scheduler, Touch ID-first sudo, cross-source dedup with explicit consent | [MACOS_QUICKSTART.md](MACOS_QUICKSTART.md) |
+| Windows 11 / 10 (build 17763+) | 🟢 functional (v1.0-beta) — winget + msstore + ARP + PSWindowsUpdate + npm + pip + curated web (Tier-A silent install) + Dell DCU plugin + VSS + Task Scheduler + UAC; dedup uninstall executor gated behind explicit consent | [WINDOWS_QUICKSTART.md](WINDOWS_QUICKSTART.md) |
+| Ubuntu 22.04+ / Debian 12+ | 🟢 functional (v1.0-beta) — apt + snap + brew + npm + pip + flatpak + web; systemd scheduler + timeshift snapshots + sudo-askpass elevation all wired; legacy bash adapters bridged into the Python orchestrator (159 adapter tests green) | [LINUX_QUICKSTART.md](LINUX_QUICKSTART.md) |
 
 > **Linux scope (v1): Ubuntu/Debian only.** Other distributions
 > (Fedora/RHEL/`dnf`, Arch/`pacman`, …) are planned for a later release and are
