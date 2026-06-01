@@ -47,6 +47,40 @@ P1 (must-do) + P2 (should-do) items from `ASCENDO_ULTRA_REVIEW_2.md`:
   the inert inventory-hardening dead code + `plugins_loader` decided KEEP for
   the beta freeze (ADR-0005 appendix), CHANGELOG note clarified.
 
+### v1.0-beta production push — Ubuntu/Linux (Sesja 87, 2026-06-01)
+
+Linux leg of the v1.0-beta push. **Linux v1 scope = Ubuntu/Debian only**;
+Fedora/Arch/RHEL (dnf/pacman) are deferred to a later release by operator
+decision — no unsupported-distro guard is added this round.
+
+- **P1.1 — Ubuntu adapter suite green natively + CI-gated.** `python3 -m pytest
+  adapters/ubuntu/tests/` passes (159 tests) on a real Ubuntu box; the
+  `validate-cross-platform` matrix already runs it on the `ubuntu-24.04` runner
+  (with `pytest-asyncio`). The pre-existing `systemctl` health test passes on
+  Linux (it only fails when the Ubuntu adapter is run on macOS).
+- **P1.2 — Deduplicator is report-only on Ubuntu (no executor).** Ubuntu ships
+  a real `ubuntu_app_sources.toml` (claude/docker/vscode/spotify) but has **no
+  uninstall executor** — only the Windows `apply.ps1` consumes
+  `DEDUPLICATION_TASKS.json`. New adapter tests drive the **shipped** config:
+  the fail-safe default (non-TTY, no opt-in) writes `DEDUPLICATION_REPORT.md`
+  only, never mutates the read-only CHECK sidecars, never queues a tasks file;
+  the destructive queue path is reachable **only** behind the explicit
+  `ASCENDO_DEDUP_AUTO_UNINSTALL=1` opt-in (mirrors the Windows env gate) and is
+  inert until a future apt/snap/flatpak uninstall step lands.
+- **P2.3 — `verify_signature` wired + tested.** Confirmed `AptManager.run_phase`
+  calls `_verify_apt_signatures` on the non-dry-run apply path, extracting real
+  SHA-256 hashes from `apt-get --print-uris` (fail-closed: missing hash →
+  `SourceVerificationError`, mismatch → abort). Contract + wiring tests cover
+  valid/missing/mismatch.
+- **P2.4 — W10/W2/W11 web-handler honesty parity with macOS.** W10:
+  `web_discovery.sh` emits a `DISCOVERY_OK`/`DISCOVERY_FAILED` sentinel and
+  `scripts/web/check.sh` treats a missing OK sentinel as a real failure instead
+  of a misleading "0 apps up to date". W2: `release_feed.sh` `_rf_apply_regex`
+  now fails loud (`probe_broken` rc=28) on a bad/zero-match `version_regex` in
+  both the text and JSON paths (was a silent raw-value fallback). W11:
+  `_version_gt` uses the shared PEP-440 `ascendo.utils.version.version_gt`
+  comparator instead of `sort -V`.
+
 ### CI — Validate Config workflow green on all 3 OSes (Sesja 85, 2026-05-31)
 
 - **Fixed: the `Validate Config` GitHub Actions workflow now passes 6/6 jobs**
