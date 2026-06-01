@@ -877,7 +877,10 @@ def dashboard(
     from ..dashboard import create_app
 
     base_dir = runs_dir or _default_runs_dir()
-    app_instance = create_app(runs_dir=base_dir)
+    # Thread host + allow_remote so create_app applies the LAN-safety guard
+    # (refusal + capability-token gate) — defence in depth alongside the
+    # CLI-level refusal above.
+    app_instance = create_app(runs_dir=base_dir, host=host, allow_remote=allow_remote)
     typer.secho(
         f"ascendo dashboard listening on http://{host}:{port}/  (runs_dir={base_dir})",
         fg=typer.colors.GREEN,

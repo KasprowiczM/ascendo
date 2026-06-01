@@ -173,6 +173,8 @@ def create_app(
     runs_dir: Path | None = None,
     cors_origins: list[str] | None = None,
     inventory_db_path: Path | None = None,
+    host: str = "127.0.0.1",
+    allow_remote: bool = False,
 ) -> FastAPI:
     """Build the dashboard FastAPI application.
 
@@ -284,13 +286,63 @@ def create_app(
         "tauri://localhost",
         "http://tauri.localhost",
     ]
+    _effective_cors = (
+        cors_origins if cors_origins is not None else _DEFAULT_CORS_ORIGINS
+    )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=cors_origins if cors_origins is not None else _DEFAULT_CORS_ORIGINS,
+        allow_origins=_effective_cors,
         allow_methods=["*"],
         allow_headers=["*"],
         allow_credentials=False,
     )
+
+    # ── LAN safety (audit P2/§7) ─────────────────────────────────────────
+    # Loopback-only by default. A non-loopback bind exposes privileged
+    # mutating endpoints to the network, so it must be an explicit opt-in;
+    # combined with wildcard CORS it is outright dangerous. Refuse unless the
+    # operator opted in via allow_remote / ASCENDO_ALLOW_REMOTE=1 (defence in
+    # depth — the CLI already gates this, but create_app can be called
+    # programmatically). When opted in, gate mutating requests from
+    # non-loopback peers behind a per-process capability token.
+    _loopback = {"127.0.0.1", "localhost", "::1"}
+    _allow_remote = allow_remote or os.environ.get("ASCENDO_ALLOW_REMOTE") == "1"
+    _is_remote_bind = host not in _loopback
+    _cors_wildcard = "*" in _effective_cors
+    if _is_remote_bind and not _allow_remote:
+        raise RuntimeError(
+            f"Refusing to bind the dashboard to non-loopback host {host!r} "
+            "without allow_remote=True / ASCENDO_ALLOW_REMOTE=1. The dashboard "
+            "exposes privileged update operations; binding to the network "
+            "without an explicit opt-in would let any host execute updates."
+        )
+    if _is_remote_bind and _allow_remote:
+        _log.warning(
+            "dashboard bound to non-loopback host %r — LAN-exposed. Mutating "
+            "endpoints now require an X-Ascendo-Token header from remote peers.",
+            host,
+        )
+        if _cors_wildcard:
+            _log.warning(
+                "DANGER: wildcard CORS ('*') + non-loopback bind exposes "
+                "privileged endpoints to ANY web page. Set a loopback CORS "
+                "allowlist instead."
+            )
+        import secrets
+
+        from .middleware.lan_guard import LanGuardMiddleware
+
+        token = os.environ.get("ASCENDO_DASHBOARD_TOKEN")
+        if not token:
+            token = secrets.token_urlsafe(32)
+            _log.warning(
+                "Generated a dashboard capability token (set "
+                "ASCENDO_DASHBOARD_TOKEN to pin it). Remote clients must send "
+                "X-Ascendo-Token: %s",
+                token,
+            )
+        app.state.capability_token = token
+        app.add_middleware(LanGuardMiddleware, token=token)
 
     # Edition gate: 404s dev-only routes when running in basic edition.
     # Reads app.state.edition (set above).
