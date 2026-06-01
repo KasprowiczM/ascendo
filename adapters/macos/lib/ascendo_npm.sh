@@ -254,9 +254,15 @@ ascendo_npm_node_installed_version() {
 # Latest applicable Node version. Tracks BOTH tracks (LTS + Current)
 # and returns whichever is appropriate for what's installed:
 #
-#   * If installed major >= latest LTS major, the user is on Current.
-#     Return the latest Current release (so display matches reality).
-#   * Otherwise return latest LTS (stable users see the LTS line).
+#   * If installed major is STRICTLY GREATER than the latest LTS major,
+#     the user is genuinely ahead on the Current line. Return the latest
+#     Current release (so display matches reality).
+#   * Otherwise (installed major <= latest LTS major — on the active LTS
+#     line or an older line) return the latest LTS. A user sitting on the
+#     current LTS (installed major == LTS major) must NOT be pushed onto
+#     the pre-LTS Current line: apply only ever installs the picker's
+#     target, so a Current target it can't keep would verify-fail every
+#     run (Sesja 89). Use `-gt`, not `-ge`.
 #
 # Pre-fix this helper always returned latest LTS. On a box running
 # Node 26.1.0 (Current), the check sidecar showed cur=26.1.0,
@@ -281,7 +287,7 @@ ascendo_npm_node_latest_version() {
         if [ -n "$_lts" ] || [ -n "$_current" ]; then
             if [ -n "$_installed_major" ] && [ -n "$_lts" ] && [ -n "$_current" ]; then
                 local _lts_major="${_lts%%.*}"
-                if [ "$_installed_major" -ge "$_lts_major" ] 2>/dev/null; then
+                if [ "$_installed_major" -gt "$_lts_major" ] 2>/dev/null; then
                     printf '%s' "$_current"
                 else
                     printf '%s' "$_lts"
@@ -305,7 +311,7 @@ ascendo_npm_node_latest_version() {
     _current="$(printf '%s' "$_json" | jq -r '.[0].version // empty' 2>/dev/null | sed 's/^v//')"
     if [ -n "$_installed_major" ] && [ -n "$_lts" ] && [ -n "$_current" ]; then
         local _lts_major="${_lts%%.*}"
-        if [ "$_installed_major" -ge "$_lts_major" ] 2>/dev/null; then
+        if [ "$_installed_major" -gt "$_lts_major" ] 2>/dev/null; then
             printf '%s' "$_current"
         else
             printf '%s' "$_lts"

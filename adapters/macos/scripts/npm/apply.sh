@@ -165,7 +165,15 @@ apply_native_node() {
             return
         fi
     fi
-    # Install `n` to user prefix, then run `n lts` to put node in TOOLCHAIN_HOME.
+    # Install `n` to user prefix, then install the version the picker
+    # resolved. check / plan / verify all derive their target from
+    # ascendo_npm_node_latest_version; apply MUST install that same
+    # version. Sesja 89: this used to hardcode `n lts`, which installed a
+    # different version than the picker reported — on a Current-line box
+    # apply downgraded Node to LTS and verify (recomputing the Current
+    # target) failed every run. Install `$_latest`; fall back to `lts`
+    # only when the picker returned nothing (offline / fresh box) so the
+    # bootstrap path still works.
     _run_npm install -g n 2>&1 | _stream_tee >/dev/null
     if [ "${PIPESTATUS[0]:-1}" -ne 0 ]; then
         json_add_item "$_display" "" "" "failed" "npm" "native-node"
@@ -179,10 +187,12 @@ apply_native_node() {
         json_add_message "error" "n CLI not on PATH after install"
         return
     fi
-    N_PREFIX="$(ascendo_npm_n_prefix)" "$_N" lts 2>&1 | _stream_tee >/dev/null
+    local _n_arg="$_latest"
+    [ -z "$_n_arg" ] && _n_arg="lts"
+    N_PREFIX="$(ascendo_npm_n_prefix)" "$_N" "$_n_arg" 2>&1 | _stream_tee >/dev/null
     if [ "${PIPESTATUS[0]:-1}" -ne 0 ]; then
         json_add_item "$_display" "" "" "failed" "npm" "native-node"
-        json_add_message "error" "'n lts' failed"
+        json_add_message "error" "'n $_n_arg' failed"
         return
     fi
     local _new="$(ascendo_npm_node_installed_version)"
