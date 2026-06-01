@@ -92,18 +92,17 @@ try {
         if ($itemFilterArray.Count -eq 0) { $itemFilterArray = $null }
     }
 
-    # ── Read DEDUPLICATION_TASKS.json for uninstalls ───────────────
-    $uninstallFilterArray = $null
-    $dedupFile = Join-Path $OutputDir "$RunId\DEDUPLICATION_TASKS.json"
-    if (Test-Path -LiteralPath $dedupFile) {
-        try {
-            $dedupJson = Get-Content -LiteralPath $dedupFile -Raw | ConvertFrom-Json
-            if ($null -ne $dedupJson.npm) {
-                $uninstallFilterArray = @($dedupJson.npm)
-            }
-        } catch {}
-    }
-    
+    # -- Read GATED DEDUPLICATION_TASKS.json for uninstalls ---------
+    # Stray tasks file must never auto-uninstall - gate on the explicit
+    # opt-in or the dashboard approval marker (audit sec.4 P0). See
+    # Get-AscendoDedupUninstalls in AscendoJson.psm1.
+    $runDir = Join-Path $OutputDir $RunId
+    $uninstallFilterArray = @(
+        Get-AscendoDedupUninstalls -RunDir $runDir -Source 'npm' -Sidecar $sidecar
+    )
+    if ($uninstallFilterArray.Count -eq 0) { $uninstallFilterArray = $null }
+
+
     if ($null -ne $uninstallFilterArray) {
         foreach ($pkg in $uninstallFilterArray) {
             if ($DryRun) {

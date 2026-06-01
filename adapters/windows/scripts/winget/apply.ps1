@@ -244,7 +244,7 @@ function Invoke-WingetMutation {
         Stderr is captured to a separate temp file via
         `Start-Process -RedirectStandardError` so we can surface the
         actual failure reason (registry 404, EACCES, etc.) in the
-        sidecar message — parity with the macOS apply.sh pattern from
+        sidecar message - parity with the macOS apply.sh pattern from
         Sesja 34.
     #>
     [CmdletBinding()]
@@ -450,7 +450,7 @@ $sidecar = $null
 $prevEnc = $null
 
 try {
-    # ── 1. Initialise sidecar ──────────────────────────────────────────
+    # -- 1. Initialise sidecar ------------------------------------------
     $toolVersion    = Get-WingetVersion
     $toolBinaryPath = Get-WingetBinaryPath
 
@@ -469,10 +469,10 @@ try {
     }
     $sidecar = New-Sidecar @newSidecarArgs
 
-    # ── 2. Configure winget output encoding ────────────────────────────
+    # -- 2. Configure winget output encoding ----------------------------
     $prevEnc = Initialize-WingetEnvironment
 
-    # ── 3. Parse the item filter (comma-separated IDs) ─────────────────
+    # -- 3. Parse the item filter (comma-separated IDs) -----------------
     $itemFilterArray = $null
     if ($null -ne $ItemFilter -and $ItemFilter.Trim() -ne '') {
         $itemFilterArray = @(
@@ -489,19 +489,17 @@ try {
         Write-Verbose 'ItemFilter: <none>'
     }
 
-    # ── 3.5 Read DEDUPLICATION_TASKS.json for uninstalls ───────────────
-    $uninstallFilterArray = $null
-    $dedupFile = Join-Path $OutputDir "$RunId\DEDUPLICATION_TASKS.json"
-    if (Test-Path -LiteralPath $dedupFile) {
-        try {
-            $dedupJson = Get-Content -LiteralPath $dedupFile -Raw | ConvertFrom-Json
-            if ($null -ne $dedupJson.winget) {
-                $uninstallFilterArray = @($dedupJson.winget)
-            }
-        } catch {
-            Write-Verbose "Failed to parse DEDUPLICATION_TASKS.json: $_"
-        }
-    }
+    # -- 3.5 Read GATED DEDUPLICATION_TASKS.json for uninstalls ---------
+    # A stray tasks file must NEVER trigger an uninstall: the gate requires
+    # an explicit opt-in ($env:ASCENDO_DEDUP_AUTO_UNINSTALL=1) OR the
+    # dashboard's per-run approval marker (DEDUPLICATION_APPROVED). See
+    # Get-AscendoDedupUninstalls in AscendoJson.psm1 - the Windows half of
+    # the audit P0 (ASCENDO_ULTRA_REVIEW_2 sec.4).
+    $runDir = Join-Path $OutputDir $RunId
+    $uninstallFilterArray = @(
+        Get-AscendoDedupUninstalls -RunDir $runDir -Source 'winget' -Sidecar $sidecar
+    )
+    if ($uninstallFilterArray.Count -eq 0) { $uninstallFilterArray = $null }
     if ($null -ne $uninstallFilterArray) {
         Write-Verbose ("UninstallFilter: {0} ID(s) -> {1}" -f
             $uninstallFilterArray.Count, ($uninstallFilterArray -join ', '))
@@ -509,7 +507,7 @@ try {
         Write-Verbose 'UninstallFilter: <none>'
     }
 
-    # ── 4. Enumerate upgradable + installed packages ───────────────────
+    # -- 4. Enumerate upgradable + installed packages -------------------
     $upgradable = @()
     try {
         $upgradable = @(Get-WingetUpgradable -ErrorAction Stop)
@@ -536,7 +534,7 @@ try {
         }
     }
 
-    # ── 5. Uninstall loop ──────────────────────────────────────────────
+    # -- 5. Uninstall loop ----------------------------------------------
     if ($null -ne $uninstallFilterArray) {
         foreach ($uid in $uninstallFilterArray) {
             $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -605,12 +603,12 @@ try {
         }
     }
 
-    # ── 6. Apply loop (Upgrades) ───────────────────────────────────────
+    # -- 6. Apply loop (Upgrades) ---------------------------------------
     $rebootRequired = $false
 
     # Heartbeat keeps the SSE log stream visibly alive during long
     # `winget upgrade` invocations (a 250 MB package can be silent for
-    # several minutes). Skipped on dry-run — no mutation = no silence.
+    # several minutes). Skipped on dry-run - no mutation = no silence.
     # See Start-AscendoHeartbeat in AscendoJson.psm1 (mirror of
     # Ubuntu Sesja 55 heartbeat work in lib/json.sh).
     $hb = $null
@@ -921,7 +919,7 @@ try {
         }
 
         # Surface stderr excerpt on non-zero exit (parity with macOS
-        # apply.sh — last 12 non-empty lines, capped at 1500 chars).
+        # apply.sh - last 12 non-empty lines, capped at 1500 chars).
         # Mapped to 'error' level so the SPA + post-apply REPORT.md can
         # filter on it. PowerShell's [pscustomobject] supports direct
         # property access without PSObject.Properties when the property
@@ -1023,7 +1021,7 @@ try {
         Stop-AscendoHeartbeat $hb
     }
 
-    # ── 6. Phase-level reboot message ──────────────────────────────────
+    # -- 6. Phase-level reboot message ----------------------------------
     if ($rebootRequired) {
         Add-SidecarMessage -Sidecar $sidecar -Level 'warn' `
             -Text 'Reboot required to complete one or more upgrades.'
@@ -1039,7 +1037,7 @@ try {
             -Text 'DryRun: no mutations were performed.'
     }
 
-    # ── 7. Save sidecar atomically ─────────────────────────────────────
+    # -- 7. Save sidecar atomically -------------------------------------
     $written = Save-Sidecar -Sidecar $sidecar -OutputDir $OutputDir
     Write-Verbose ("Wrote sidecar: {0}" -f $written.FullName)
 

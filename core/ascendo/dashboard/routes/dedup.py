@@ -144,6 +144,14 @@ async def dedup_apply(req: DedupApplyRequest, request: Request) -> dict:
     (new_run_dir / "DEDUPLICATION_TASKS.json").write_text(
         json.dumps(dict(uninstall_tasks)), encoding="utf-8",
     )
+    # Per-run approval marker. The Windows winget/npm/pip apply.ps1 executor
+    # (Get-AscendoDedupUninstalls) performs an uninstall ONLY when this marker
+    # — or the ASCENDO_DEDUP_AUTO_UNINSTALL=1 opt-in — is present, so a stray
+    # tasks file alone can never trigger one. This is the explicit-consent
+    # record (audit ASCENDO_ULTRA_REVIEW_2 §4, the Windows half of the P0).
+    (new_run_dir / "DEDUPLICATION_APPROVED").write_text(
+        datetime.now(timezone.utc).isoformat(), encoding="utf-8",
+    )
 
     # Trigger an apply scoped to the affected categories + exactly the
     # duplicate items (item_filter), so the run never fans out to upgrade the

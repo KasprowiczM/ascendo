@@ -121,6 +121,13 @@ def test_dedup_apply_writes_validated_tasks_and_triggers_run(client: TestClient)
     assert tasks_file.is_file()
     assert json.loads(tasks_file.read_text()) == {"brew": ["claude"]}
 
+    # Explicit consent must drop a per-run approval marker beside the tasks
+    # file. The Windows winget/npm/pip apply.ps1 executor will ONLY perform an
+    # uninstall when this marker (or the ASCENDO_DEDUP_AUTO_UNINSTALL=1 opt-in)
+    # is present — so a stray tasks file alone can never auto-uninstall.
+    marker = runs_dir / new_run_id / "DEDUPLICATION_APPROVED"
+    assert marker.is_file()
+
 
 def test_dedup_apply_400_when_no_pending(client: TestClient) -> None:
     # No check run at all → nothing to apply.

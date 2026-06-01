@@ -257,9 +257,20 @@ def apply_deduplication(sidecars: list[Sidecar], run_id: UUID, base_dir: Path, c
 
     if uninstall_tasks:
         import json
-        tasks_path = base_dir / str(run_id) / "DEDUPLICATION_TASKS.json"
+        run_dir = base_dir / str(run_id)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        tasks_path = run_dir / "DEDUPLICATION_TASKS.json"
         tasks_path.write_text(json.dumps(uninstall_tasks), encoding="utf-8")
-        _log.info("Written DEDUPLICATION_TASKS.json")
+        # Tasks are only queued here after explicit consent (the env opt-in or
+        # an interactive TTY confirm — see _confirm_uninstall). Record that
+        # consent as a per-run approval marker so the Windows apply.ps1
+        # executor (Get-AscendoDedupUninstalls) authorizes the uninstall even
+        # in a later, separate apply process that no longer carries the env
+        # var (audit ASCENDO_ULTRA_REVIEW_2 §4 — the Windows half of the P0).
+        (run_dir / "DEDUPLICATION_APPROVED").write_text(
+            "auto-uninstall consent recorded", encoding="utf-8",
+        )
+        _log.info("Written DEDUPLICATION_TASKS.json + approval marker")
 
     if actionable_fixes:
         _generate_report(actionable_fixes, run_id, base_dir)

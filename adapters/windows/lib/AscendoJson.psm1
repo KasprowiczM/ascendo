@@ -1069,6 +1069,85 @@ function Find-AscendoSiblingSidecar {
     return $null
 }
 
+function Get-AscendoDedupUninstalls {
+    <#
+    .SYNOPSIS
+        Return the per-source uninstall list from a run's
+        DEDUPLICATION_TASKS.json — but ONLY when the destructive
+        auto-uninstall has been explicitly authorized.
+
+    .DESCRIPTION
+        The cross-source deduplicator
+        (core/ascendo/orchestrator/deduplicator.py) may write
+        ``<run-dir>/DEDUPLICATION_TASKS.json`` listing duplicate packages it
+        recommends uninstalling; the winget / npm / pip ``apply.ps1`` scripts
+        consume it. Auto-uninstall is DESTRUCTIVE, so a stray tasks file must
+        NEVER trigger an uninstall on its own (audit ASCENDO_ULTRA_REVIEW_2
+        §4, the Windows half of the P0).
+
+        Authorization — either is sufficient:
+          1. ``$env:ASCENDO_DEDUP_AUTO_UNINSTALL -eq '1'`` — the unattended
+             opt-in (mirrors the core deduplicator env gate).
+          2. a per-run approval marker ``DEDUPLICATION_APPROVED`` written next
+             to the tasks file by the dashboard ``POST /dedup/apply`` consent
+             surface (an explicit operator click).
+
+        When the tasks file exists but neither authorization is present the
+        function returns ``@()`` (no uninstalls) and, if a ``$Sidecar`` is
+        supplied, records an info message so the operator learns the duplicate
+        was detected but deliberately skipped.
+
+    .PARAMETER RunDir
+        The run directory the executor inspects (``<OutputDir>/<RunId>``).
+    .PARAMETER Source
+        Source key in the tasks JSON: ``winget`` | ``npm`` | ``pip``.
+    .PARAMETER Sidecar
+        Optional New-Sidecar hashtable; receives the skip info message.
+
+    .OUTPUTS
+        [string[]] package ids to uninstall for ``$Source``; empty array when
+        there is no file, no entry for the source, or no authorization.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)] [string]    $RunDir,
+        [Parameter(Mandatory)] [string]    $Source,
+        [Parameter()]          [hashtable] $Sidecar
+    )
+
+    $dedupFile = Join-Path $RunDir 'DEDUPLICATION_TASKS.json'
+    if (-not (Test-Path -LiteralPath $dedupFile)) { return @() }
+
+    $authorized = $false
+    if ($env:ASCENDO_DEDUP_AUTO_UNINSTALL -eq '1') { $authorized = $true }
+    if (Test-Path -LiteralPath (Join-Path $RunDir 'DEDUPLICATION_APPROVED')) {
+        $authorized = $true
+    }
+
+    if (-not $authorized) {
+        if ($PSBoundParameters.ContainsKey('Sidecar') -and $null -ne $Sidecar) {
+            Add-SidecarMessage -Sidecar $Sidecar -Level 'info' -Text (
+                ("Duplicate package(s) detected for source '{0}', but " +
+                 "auto-uninstall is not authorized — skipping. Resolve via " +
+                 "the dashboard (Duplicates) or set " +
+                 "ASCENDO_DEDUP_AUTO_UNINSTALL=1.") -f $Source)
+        }
+        return @()
+    }
+
+    try {
+        $dedupJson = Get-Content -LiteralPath $dedupFile -Raw | ConvertFrom-Json
+    } catch {
+        Write-Verbose "Failed to parse DEDUPLICATION_TASKS.json: $_"
+        return @()
+    }
+    if ($null -eq $dedupJson) { return @() }
+    $prop = $dedupJson.PSObject.Properties[$Source]
+    if ($null -eq $prop -or $null -eq $prop.Value) { return @() }
+    return @($prop.Value)
+}
+
 # -----------------------------------------------------------------------------
 # Exports
 # -----------------------------------------------------------------------------
@@ -1083,5 +1162,6 @@ Export-ModuleMember -Function @(
     'Write-AscendoStreamFile',
     'Start-AscendoHeartbeat',
     'Stop-AscendoHeartbeat',
-    'Find-AscendoSiblingSidecar'
+    'Find-AscendoSiblingSidecar',
+    'Get-AscendoDedupUninstalls'
 )
