@@ -54,8 +54,29 @@ COUNT_PLANNED=0
 COUNT_UTD=0
 COUNT_SKIPPED=0
 
-# Discovery: walk web apps on disk
-DISC_OUT=$(bash "$ADAPTER_LIB/web_discovery.sh" 2>/dev/null || true)
+# Discovery: walk web apps on disk.
+# W10 (audit §4): a crashed discovery must NOT read as "0 web apps, all up to
+# date". web_discovery.sh emits a trailing `DISCOVERY_OK<TAB>count` sentinel on
+# a clean walk and `DISCOVERY_FAILED<TAB>reason` + non-zero exit on a
+# precondition failure. Distinguish the three outcomes here.
+DISC_RC=0
+DISC_OUT=$(bash "$ADAPTER_LIB/web_discovery.sh" 2>/dev/null) || DISC_RC=$?
+
+if printf '%s\n' "$DISC_OUT" | grep -q '^DISCOVERY_FAILED'; then
+    _disc_reason=$(printf '%s\n' "$DISC_OUT" | grep '^DISCOVERY_FAILED' | head -1 | cut -f2-)
+    json_add_diag error WEB-DISCOVERY-FAILED "web discovery failed: ${_disc_reason:-unknown}"
+    json_count_err
+    exit 2
+fi
+if [ "$DISC_RC" -ne 0 ] || ! printf '%s\n' "$DISC_OUT" | grep -q '^DISCOVERY_OK'; then
+    json_add_diag error WEB-DISCOVERY-INCOMPLETE \
+        "web discovery did not complete (rc=$DISC_RC, no DISCOVERY_OK sentinel); reporting failure instead of a misleading '0 apps up to date'"
+    json_count_err
+    exit 2
+fi
+
+# Strip the TAB-prefixed sentinel lines before processing app rows.
+DISC_OUT=$(printf '%s\n' "$DISC_OUT" | grep -vE '^DISCOVERY_(OK|FAILED)')
 
 # Track which app_ids we've already emitted (avoid double-counting from
 # discovery + registry passes).

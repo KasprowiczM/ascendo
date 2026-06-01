@@ -100,6 +100,19 @@ def test_handler_subtable_must_match_handler() -> None:
 # ── Discovery ─────────────────────────────────────────────────────────────
 
 
+def _discovery_rows(out: str) -> list[dict]:
+    """Parse discovery NDJSON, skipping the W10 DISCOVERY_OK/DISCOVERY_FAILED
+    TAB-prefixed sentinel lines (not JSON)."""
+    rows = []
+    for line in out.splitlines():
+        if not line.strip():
+            continue
+        if line.startswith("DISCOVERY_OK") or line.startswith("DISCOVERY_FAILED"):
+            continue
+        rows.append(json.loads(line))
+    return rows
+
+
 def test_discovery_emits_appimage(tmp_path: Path) -> None:
     """Fake AppImage in ASCENDO_WEB_APPS_ROOT/Applications is discovered."""
     apps = tmp_path / "Applications"
@@ -113,11 +126,13 @@ def test_discovery_emits_appimage(tmp_path: Path) -> None:
         ["bash", str(LIB_DIR / "web_discovery.sh")],
         env=env, text=True, timeout=30,
     )
-    rows = [json.loads(line) for line in out.splitlines() if line.strip()]
+    rows = _discovery_rows(out)
     obs = [r for r in rows if "obsidian" in r["app_id"].lower()]
     assert obs, f"no obsidian row in discovery output: {rows}"
     assert obs[0]["handler_hint"] == "appimage"
     assert obs[0]["owned_by"] == "user"
+    # W10: clean walk ends with a DISCOVERY_OK sentinel.
+    assert any(line.startswith("DISCOVERY_OK") for line in out.splitlines())
 
 
 def test_discovery_skips_when_no_appimages(tmp_path: Path) -> None:
@@ -127,11 +142,14 @@ def test_discovery_skips_when_no_appimages(tmp_path: Path) -> None:
         ["bash", str(LIB_DIR / "web_discovery.sh")],
         env=env, text=True, timeout=30,
     )
-    rows = [json.loads(line) for line in out.splitlines() if line.strip()]
+    rows = _discovery_rows(out)
     # /opt binaries may still match if they exist on this host; check
     # only that no appimage rows came out of the empty fake root.
     appimage_rows = [r for r in rows if r["handler_hint"] == "appimage"]
     assert appimage_rows == []
+    # W10: even with zero apps, the walk reports a DISCOVERY_OK sentinel so
+    # check.sh can tell "0 web apps" from a crash.
+    assert any(line.startswith("DISCOVERY_OK") for line in out.splitlines())
 
 
 # ── Handler check probes ──────────────────────────────────────────────────
@@ -168,6 +186,104 @@ def test_release_feed_check_walks_json_path(tmp_path: Path) -> None:
     out = subprocess.check_output(["bash", "-c", script], env=env,
                                    text=True, timeout=15)
     assert out.strip() == "1.2.3"
+
+
+# ── W2: release_feed version_regex fail-loud (audit §4) ───────────────────
+
+
+def _run_release_feed_check(cfg: dict, env: dict) -> tuple[str, int]:
+    """Run release_feed_check and return (version, rc)."""
+    script = (
+        f'source "{LIB_DIR}/handlers/release_feed.sh"\n'
+        f"v=$(release_feed_check x '{json.dumps(cfg)}'); rc=$?\n"
+        'printf "VER=%s RC=%s\\n" "$v" "$rc"\n'
+    )
+    out = subprocess.check_output(["bash", "-c", script], env=env,
+                                   text=True, timeout=15).strip()
+    ver = out.split("VER=", 1)[1].split(" RC=", 1)[0]
+    rc = int(out.rsplit("RC=", 1)[1])
+    return ver, rc
+
+
+def test_release_feed_regex_no_match_is_probe_broken(tmp_path: Path) -> None:
+    """W2: a configured version_regex that does not match the JSON value is a
+    broken probe (rc 28 + empty), NOT a silent fallback to the raw value."""
+    env = _setup_fake_curl(tmp_path, '{"version": "1.2.3"}')
+    cfg = {
+        "app_id": "x", "handler": "release_feed",
+        "release_feed": {
+            "url": "https://example.com/v.json",
+            "version_path": "version",
+            "version_regex": r"NOMATCH-(\d+)",
+            "version_replace": r"\1",
+        },
+    }
+    ver, rc = _run_release_feed_check(cfg, env)
+    assert rc == 28
+    assert ver == ""
+
+
+def test_release_feed_regex_match_transforms(tmp_path: Path) -> None:
+    """W2: a matching version_regex transforms the value (rc 0)."""
+    env = _setup_fake_curl(tmp_path, '{"version": "release-9.9.9"}')
+    cfg = {
+        "app_id": "x", "handler": "release_feed",
+        "release_feed": {
+            "url": "https://example.com/v.json",
+            "version_path": "version",
+            "version_regex": r"release-(.+)",
+            "version_replace": r"\1",
+        },
+    }
+    ver, rc = _run_release_feed_check(cfg, env)
+    assert rc == 0
+    assert ver == "9.9.9"
+
+
+# ── W10: discovery failure sentinel (audit §4) ────────────────────────────
+
+
+def test_discovery_failed_sentinel_without_python3(tmp_path: Path) -> None:
+    """W10: a crashed discovery must be distinguishable from '0 web apps'. With
+    python3 unavailable (empty PATH), discovery emits DISCOVERY_FAILED and
+    exits non-zero instead of silently producing zero rows."""
+    import shutil
+
+    bash = shutil.which("bash") or "/bin/bash"
+    empty = tmp_path / "emptybin"
+    empty.mkdir()
+    env = {"PATH": str(empty), "ASCENDO_WEB_APPS_ROOT": str(tmp_path)}
+    res = subprocess.run(
+        [bash, str(LIB_DIR / "web_discovery.sh")],
+        env=env, text=True, capture_output=True, timeout=30,
+    )
+    assert res.returncode == 3
+    assert "DISCOVERY_FAILED" in res.stdout
+    assert "no-python3" in res.stdout
+
+
+# ── W11: PEP-440 version comparator replaces sort -V (audit §4) ────────────
+
+
+def test_version_gt_orders_prerelease_below_release() -> None:
+    """W11: `sort -V` wrongly ranks 1.0.0-beta above 1.0.0. The Python
+    comparator (ascendo.utils.version.version_gt) orders the release above the
+    pre-release."""
+    env = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "core")}
+    script = (
+        f'source "{LIB_DIR}/ascendo_web.sh"\n'
+        '_version_gt "1.0.0" "1.0.0-beta"; echo "a=$?"\n'
+        '_version_gt "1.0.0-beta" "1.0.0"; echo "b=$?"\n'
+        '_version_gt "2.0.0" "10.0.0"; echo "c=$?"\n'
+    )
+    out = subprocess.check_output(["bash", "-c", script], env=env,
+                                   text=True, timeout=15)
+    # a: 1.0.0 > 1.0.0-beta  -> exit 0
+    assert "a=0" in out
+    # b: 1.0.0-beta > 1.0.0  -> exit 1 (false)
+    assert "b=1" in out
+    # c: 2.0.0 > 10.0.0      -> exit 1 (false; numeric, not lexical)
+    assert "c=1" in out
 
 
 def test_github_release_check_extracts_tag_name(tmp_path: Path) -> None:

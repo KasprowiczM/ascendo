@@ -11,14 +11,33 @@
 # Test seam: ASCENDO_WEB_APPS_ROOT (default $HOME) — root directory whose
 # children are scanned for AppImages.
 #
-# Output format: NDJSON (one JSON object per line). Empty output is a
-# valid result (host has no web apps installed).
+# Output format: NDJSON (one JSON object per line). Empty NDJSON output is a
+# valid result (host has no web apps installed) — BUT it is always followed by
+# a trailing sentinel line so a crash can be told apart from "0 apps":
 #
-# Exit code: always 0. Errors writing to stderr (warnings only).
+#   DISCOVERY_OK<TAB><count>       — walk completed cleanly (count may be 0)
+#   DISCOVERY_FAILED<TAB><reason>  — precondition failed; non-zero exit
+#
+# W10 (audit §4): without this sentinel a discovery crash was swallowed by
+# check.sh's `|| true` and read as "0 web apps, all up to date". check.sh now
+# strips the sentinels and treats "no DISCOVERY_OK" as a real failure.
+#
+# Exit code: 0 on a clean walk, 3 on a precondition failure.
 # =============================================================================
 set -o pipefail
 
 ROOT="${ASCENDO_WEB_APPS_ROOT:-$HOME}"
+
+# W10: python3 is a hard precondition (every _emit serialises via python3). If
+# it is missing the walk would silently emit nothing — distinguish that from an
+# empty host by failing loud.
+if ! command -v python3 >/dev/null 2>&1; then
+    printf 'DISCOVERY_FAILED\tno-python3\n'
+    exit 3
+fi
+
+# Count of apps actually emitted; reported in the trailing DISCOVERY_OK sentinel.
+_DISC_COUNT=0
 
 # Candidate directories where AppImages typically live (relative to ROOT
 # unless absolute). Read-only scanning; no mutation.
@@ -125,6 +144,7 @@ for d in "${APPIMAGE_DIRS[@]}"; do
         owned=$(_dpkg_owner "$ai")
         [ -z "$owned" ] && owned="user"
         _emit "$app_id" "$ai" "$ver" "appimage" "$owned" "$base"
+        _DISC_COUNT=$((_DISC_COUNT + 1))
     done < <(find "$d" -maxdepth 2 -type f -iname '*.AppImage' 2>/dev/null)
 done
 
@@ -142,6 +162,10 @@ for entry in "${OPT_BINARIES[@]}"; do
               | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1) || true
     fi
     _emit "$app_id" "$path" "$ver" "opt_binary" "$owned"
+    _DISC_COUNT=$((_DISC_COUNT + 1))
 done
 
+# W10: trailing success sentinel. check.sh treats "no DISCOVERY_OK line" as a
+# discovery FAILURE (crash/truncation), not as "0 web apps".
+printf 'DISCOVERY_OK\t%d\n' "$_DISC_COUNT"
 exit 0

@@ -8,15 +8,19 @@ _web_is_running() {
     pgrep -f "$pat" >/dev/null 2>&1
 }
 
-# _version_gt <a> <b> -- True if version a > b (semver-ish, sort -V).
+# _version_gt <a> <b> -- True (exit 0) iff version a > b (strict).
+# W11 (audit §4): compare via the shared PEP-440-aware Python comparator
+# (ascendo.utils.version.version_gt) instead of `sort -V`. `sort -V` mis-orders
+# pre-releases (treats 1.0.0-beta as > 1.0.0) and build/epoch shapes; the Python
+# comparator handles semver/PEP-440 with a dotted-integer + string fallback and
+# never raises. Same fix the macOS adapter applies.
 _version_gt() {
     local a="$1" b="$2"
     [ -z "$a" ] && return 1
     [ -z "$b" ] && return 0
     [ "$a" = "$b" ] && return 1
-    local top
-    top=$(printf '%s\n%s\n' "$a" "$b" | sort -V | tail -1)
-    [ "$top" = "$a" ]
+    python3 -c "import sys; from ascendo.utils.version import version_gt; sys.exit(0 if version_gt(sys.argv[1], sys.argv[2]) else 1)" "$a" "$b" 2>/dev/null
+    return $?
 }
 
 # _web_cache_dir -- echoes ~/.cache/ascendo/web (created on demand).

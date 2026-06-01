@@ -87,13 +87,19 @@ import os, re, sys
 raw = os.environ.get("ASCENDO_RF_RAW", "")
 pattern = os.environ.get("ASCENDO_RF_PATTERN", "")
 replace = os.environ.get("ASCENDO_RF_REPLACE", "")
+# W2 (audit §4): empty pattern is an explicit passthrough.
 if not pattern:
     print(raw); sys.exit(0)
 try:
-    out = re.sub(pattern, replace, raw)
+    out, count = re.subn(pattern, replace, raw)
 except re.error:
-    print(raw); sys.exit(0)
-print(out if out != raw else raw)
+    # Bad regex in the registry is a broken probe, not a silent raw fallback.
+    sys.exit(28)
+# W2: a configured version_regex that does not match is a broken probe
+# (rc=28), NOT a silent degrade to the raw value. The caller propagates 28.
+if count == 0:
+    sys.exit(28)
+print(out)
 PY_EOF
 }
 
@@ -150,9 +156,12 @@ release_feed_check() {
     body=$(printf '%s' "$body" | head -c 2097152)
 
     if [ "$format" = "text" ]; then
-        local extracted
+        local extracted rc
         extracted=$(_rf_apply_regex "$body" "$version_regex" "$version_replace")
-        if [ -z "$extracted" ] || [ "$extracted" = "$body" ]; then
+        rc=$?
+        # W2: regex no-match / bad-regex => probe_broken (rc 28), never a
+        # silent fallback to the raw feed body.
+        if [ "$rc" -ne 0 ] || [ -z "$extracted" ]; then
             echo ""; return 28
         fi
         printf '%s' "$extracted" | awk 'NR==1{$1=$1; print}'
@@ -165,8 +174,14 @@ release_feed_check() {
     if [ "$rc" -ne 0 ]; then echo ""; return "$rc"; fi
     if [ -z "$version" ]; then echo ""; return 28; fi
 
+    # Optional version_regex / version_replace transform.
+    # W2: a configured regex that does not match exits 28 in _rf_apply_regex;
+    # propagate the failure instead of silently keeping the raw JSON value.
     if [ -n "$version_regex" ]; then
+        local rc
         version=$(_rf_apply_regex "$version" "$version_regex" "$version_replace")
+        rc=$?
+        if [ "$rc" -ne 0 ]; then echo ""; return "$rc"; fi
     fi
     echo "$version"
     return 0
