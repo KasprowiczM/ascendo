@@ -53,8 +53,13 @@ from .runner import RunReport, run_phases
 # `_stream_tee` (see adapters/<os>/scripts/<source>/apply.sh). The SSE
 # endpoint tails this file and emits ``log_line`` + ``progress`` events
 # so the Run Center can show every line of stdout/stderr in real time.
-STREAM_LOG_FILENAME = "_stream.log"
-STREAM_LOG_ENV_VAR = "ASCENDO_STREAM_LOG"
+# Re-exported from .stream_log (single source of truth) for back-compat —
+# callers that did ``from .run_async import STREAM_LOG_*`` keep working.
+from .stream_log import (  # noqa: E402,F401
+    STREAM_LOG_ENV_VAR,
+    STREAM_LOG_FILENAME,
+    stream_log_context,
+)
 
 if TYPE_CHECKING:
     from ..interfaces.adapter import IAdapter
@@ -576,26 +581,28 @@ async def start_run_async(
     def _worker() -> None:
         state.status = RunStatus.RUNNING
         state.started_at = datetime.now(timezone.utc)
-        # Stream-log race fix: store the path on the per-run state so
-        # concurrent workers don't clobber each other. The env var is
-        # still set for subprocess inheritance but keyed off state.
+        # Stream-log race fix (audit P2): bind the per-run path to THIS
+        # worker thread via a thread-local instead of mutating the
+        # process-global os.environ. Managers run synchronously in this
+        # thread and read it via child_env_with_stream_log() when building
+        # the child env they pass to Popen(env=...), so two concurrent runs
+        # can never inherit each other's log path.
         state.stream_log_path = stream_log_path
-        prior_env = os.environ.get(STREAM_LOG_ENV_VAR)
-        os.environ[STREAM_LOG_ENV_VAR] = str(state.stream_log_path)
         try:
             from .runner import DEFAULT_PHASE_ORDER  # noqa: PLC0415
 
-            report = run_phases(
-                adapter,
-                run,
-                host,
-                phases=phases or DEFAULT_PHASE_ORDER,
-                categories=categories,
-                base_dir=base_dir,
-                stop_on_failure=stop_on_failure,
-                item_filter=item_filter,
-                should_cancel=lambda: state.cancel_event.is_set(),
-            )
+            with stream_log_context(stream_log_path):
+                report = run_phases(
+                    adapter,
+                    run,
+                    host,
+                    phases=phases or DEFAULT_PHASE_ORDER,
+                    categories=categories,
+                    base_dir=base_dir,
+                    stop_on_failure=stop_on_failure,
+                    item_filter=item_filter,
+                    should_cancel=lambda: state.cancel_event.is_set(),
+                )
             state.report = report
             # E11: if cooperative cancel was signalled during run_phases,
             # the run is CANCELLED, not COMPLETED. run_phases may have
@@ -609,10 +616,6 @@ async def start_run_async(
             state.error = f"{type(exc).__name__}: {exc}"
             state.status = RunStatus.FAILED
         finally:
-            if prior_env is None:
-                os.environ.pop(STREAM_LOG_ENV_VAR, None)
-            else:
-                os.environ[STREAM_LOG_ENV_VAR] = prior_env
             # E11: skip inventory flush on cancel — partial sidecars
             # from a cancelled run are unreliable and should not update
             # the inventory DB. Completed/failed runs still flush.

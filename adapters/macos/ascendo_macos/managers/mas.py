@@ -32,6 +32,7 @@ from ascendo.models.host import HostInfo, OperatingSystem
 from ascendo.models.package import SourceType
 from ascendo.models.run import Phase, RunInfo
 from ascendo.models.sidecar import Sidecar
+from ascendo.orchestrator.stream_log import child_env_with_stream_log
 from ascendo.orchestrator.sidecar_io import (
     SidecarIOError,
     SidecarReadError,
@@ -236,7 +237,9 @@ class MasManager(IPackageManager):
         ``sudo -A mas upgrade`` can authenticate non-interactively from
         the dashboard.
         """
-        env = dict(os.environ)
+        # child_env_with_stream_log() = os.environ + the per-run stream-log
+        # path for THIS worker thread (race-free; not the racy global).
+        env = child_env_with_stream_log()
         # mas 7.x runs a Spotlight auto-indexer after every upgrade and
         # prints a noisy multi-line "Found a likely App Store app that is
         # not indexed in Spotlight … Indexing now" warning for EVERY

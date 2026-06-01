@@ -33,6 +33,7 @@ from ascendo_macos.managers.elevation import MacElevation
 from ascendo.models.host import HostInfo, OperatingSystem
 from ascendo.models.package import SourceType
 from ascendo.models.run import Phase, RunInfo
+from ascendo.orchestrator.stream_log import child_env_with_stream_log
 from ascendo.models.sidecar import Sidecar
 from ascendo.orchestrator.sidecar_io import (
     SidecarIOError,
@@ -229,7 +230,8 @@ class SoftwareUpdateManager(IPackageManager):
         ``sudo -A softwareupdate ...`` can authenticate non-interactively
         from the dashboard.
         """
-        env = dict(os.environ)
+        # os.environ + the per-run stream-log path for THIS worker thread.
+        env = child_env_with_stream_log()
         if phase is Phase.APPLY and self._elevation.has_password_registered():
             helper = self._elevation.askpass_path()
             if helper is not None:

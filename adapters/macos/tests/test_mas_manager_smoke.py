@@ -278,3 +278,23 @@ def test_build_env_suppresses_mas_spotlight_auto_index(monkeypatch):
 def test_build_env_does_not_clobber_operator_mas_no_auto_index(monkeypatch):
     monkeypatch.setenv("MAS_NO_AUTO_INDEX", "0")
     assert _make_manager()._build_env(Phase.APPLY)["MAS_NO_AUTO_INDEX"] == "0"
+
+
+def test_build_env_uses_thread_local_stream_log_not_global(monkeypatch):
+    """Stream-log race fix (audit P2): _build_env must take ASCENDO_STREAM_LOG
+    from the current thread's run (thread-local), never from the process
+    global — so two concurrent runs can't clobber each other's log path."""
+    from ascendo.orchestrator.stream_log import stream_log_context
+
+    monkeypatch.delenv("ASCENDO_STREAM_LOG", raising=False)
+    m = _make_manager()
+
+    # No run bound -> no stream-log var leaks into the child env.
+    assert "ASCENDO_STREAM_LOG" not in m._build_env(Phase.CHECK)
+
+    # Bound to this thread's run -> the child env carries exactly that path.
+    with stream_log_context(Path("/tmp/runX/_stream.log")):
+        env = m._build_env(Phase.APPLY)
+    assert env["ASCENDO_STREAM_LOG"] == "/tmp/runX/_stream.log"
+    # The process global was never touched.
+    assert "ASCENDO_STREAM_LOG" not in __import__("os").environ

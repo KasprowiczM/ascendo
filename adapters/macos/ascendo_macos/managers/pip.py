@@ -36,6 +36,7 @@ from ascendo.interfaces.package_manager import IPackageManager, ManagerError
 from ascendo.models.host import HostInfo, OperatingSystem
 from ascendo.models.package import SourceType
 from ascendo.models.run import Phase, RunInfo
+from ascendo.orchestrator.stream_log import child_env_with_stream_log
 from ascendo.models.sidecar import Sidecar
 from ascendo.orchestrator.sidecar_io import (
     SidecarIOError,
@@ -231,6 +232,8 @@ class PipManager(IPackageManager):
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            # Per-run stream-log path from this thread's run (race-free).
+            env=child_env_with_stream_log(),
         )
         captured: list[str] = []
         started = time.monotonic()

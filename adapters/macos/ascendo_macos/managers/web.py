@@ -42,6 +42,7 @@ from ascendo.interfaces.package_manager import IPackageManager, ManagerError
 from ascendo.models.host import HostInfo, OperatingSystem
 from ascendo.models.package import SourceType
 from ascendo.models.run import Phase, RunInfo
+from ascendo.orchestrator.stream_log import child_env_with_stream_log
 from ascendo.models.sidecar import Sidecar
 from ascendo.orchestrator.sidecar_io import (
     SidecarIOError,
@@ -227,7 +228,8 @@ class WebManager(IPackageManager):
         path and fires a Touch ID prompt for every web run — exactly
         the duplicate-prompt UX the operator reported on Mac.r12.home.
         """
-        env = dict(os.environ)
+        # os.environ + the per-run stream-log path for THIS worker thread.
+        env = child_env_with_stream_log()
         if (
             phase is Phase.APPLY
             and self._elevation is not None
