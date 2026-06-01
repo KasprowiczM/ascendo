@@ -111,8 +111,18 @@ if ! bash "$ADAPTER_LIB/web_discovery.sh" --emit-json > "$_DISC_TMP" 2>/dev/null
     exit 2
 fi
 
+_DISC_SAW_OK=0
+_DISC_APP_LINES=0
 while IFS= read -r DISC_LINE; do
     [ -z "$DISC_LINE" ] && continue
+
+    # W10: discovery sentinels. DISCOVERY_OK = clean completion (with count);
+    # DISCOVERY_FAILED = explicit crash. Both are TAB-prefixed, never JSON.
+    case "$DISC_LINE" in
+        DISCOVERY_OK*)     _DISC_SAW_OK=1; continue ;;
+        DISCOVERY_FAILED*) _DISC_SAW_OK=0; break ;;
+    esac
+    _DISC_APP_LINES=$((_DISC_APP_LINES + 1))
 
     # Single python3 invocation extracts all 5 fields → eliminates 4
     # cold-start fork penalties per app (was ~150ms × 5 calls per item).
@@ -173,6 +183,16 @@ print(json.dumps(out))
     printf '%d\n' "$WORK_IDX" >> "$INDICES_FILE"
     WORK_IDX=$((WORK_IDX + 1))
 done < "$_DISC_TMP"
+
+# W10: distinguish a CRASHED discovery from a genuine "0 web apps". A clean
+# run always emits the DISCOVERY_OK sentinel; its absence (with no app lines)
+# means discovery was interrupted/truncated/crashed — report it as a failure
+# instead of silently claiming everything is current.
+if [ "$_DISC_SAW_OK" -ne 1 ] && [ "$_DISC_APP_LINES" -eq 0 ]; then
+    json_add_message "error" "web discovery did not complete (no DISCOVERY_OK sentinel; treating as failure, not '0 apps')"
+    rm -rf "$RESULTS_DIR" "$INDICES_FILE" "$_DISC_TMP" 2>/dev/null
+    exit 2
+fi
 
 if [ "$WORK_IDX" -eq 0 ]; then
     json_add_message "warn" "web_discovery.sh yielded 0 apps (is ASCENDO_WEB_APPS_ROOT empty?)"

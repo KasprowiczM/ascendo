@@ -20,12 +20,14 @@ assert_eq() {
 }
 
 run_disc() {
+    # Filter out the W10 DISCOVERY_OK/FAILED sentinel lines so the app-line
+    # counts below stay about the JSON records only.
     ASCENDO_WEB_APPS_ROOT="$FIXTURES" \
     ASCENDO_WEB_BREW_CASKS="${1:-}" \
     ASCENDO_WEB_MAS_BUNDLE_IDS="${2:-}" \
     ASCENDO_WEB_APPLE_BUNDLES="${3:-}" \
     ASCENDO_WEB_INCLUDE_OWNED="${4:-0}" \
-    bash "$ADAPTER_LIB/web_discovery.sh" --emit-json
+    bash "$ADAPTER_LIB/web_discovery.sh" --emit-json | grep -v '^DISCOVERY_'
 }
 
 extract_field() {

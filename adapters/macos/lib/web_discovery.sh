@@ -323,8 +323,16 @@ _classify() {
 
 # -- Walk --------------------------------------------------------------------
 
-cd "$APPS_ROOT" 2>/dev/null || exit 0
+# W10 (audit): a crashed discovery must be distinguishable from "0 web apps".
+# If we can't even enter the apps root, emit an explicit DISCOVERY_FAILED
+# sentinel + non-zero exit so check.sh reports a real failure instead of a
+# misleading "everything is up to date".
+if ! cd "$APPS_ROOT" 2>/dev/null; then
+    printf 'DISCOVERY_FAILED\tcd-failed:%s\n' "$APPS_ROOT"
+    exit 3
+fi
 
+_DISC_COUNT=0
 for app_dir in *.app; do
     [ -d "$app_dir" ] || continue
     plist="$app_dir/Contents/Info.plist"
@@ -372,5 +380,10 @@ try:
 except BrokenPipeError:
     pass
 PY
+    _DISC_COUNT=$((_DISC_COUNT + 1))
 done
+
+# W10: trailing success sentinel. check.sh treats "no DISCOVERY_OK and no app
+# lines" as a discovery FAILURE (crash/truncation), not as "0 web apps".
+printf 'DISCOVERY_OK\t%d\n' "$_DISC_COUNT"
 exit 0

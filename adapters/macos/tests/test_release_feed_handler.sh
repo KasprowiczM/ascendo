@@ -172,7 +172,11 @@ print(json.dumps(d))
 # M5.7.4: when the regex doesn't match, fall back to the raw value
 # rather than failing the probe — vendor format change degrades to
 # raw detection rather than silently breaking.
-test_version_regex_no_match_falls_back_to_raw() {
+test_version_regex_no_match_returns_probe_broken() {
+    # W2 (audit): a configured version_regex that does NOT match must
+    # fail-loud (probe_broken, rc=28, empty output) — NOT silently degrade
+    # to the raw version. This used to assert the raw fallback; that was the
+    # exact dishonest behaviour the W2 fix removed.
     local cfg
     cfg=$(python3 -c "
 import json
@@ -191,10 +195,15 @@ d = {
 }
 print(json.dumps(d))
 ")
-    local v
-    v=$(release_feed_check "warp" "$cfg")
-    assert_eq "test_version_regex_no_match_falls_back_to_raw" \
-        "v0.2026.05.06.15.42.stable_02" "$v"
+    local v rc
+    v=$(release_feed_check "warp" "$cfg") ; rc=$?
+    if [ -z "$v" ] && [ "$rc" -eq 28 ]; then
+        echo "PASS test_version_regex_no_match_returns_probe_broken"
+        PASS=$((PASS+1))
+    else
+        echo "FAIL test_version_regex_no_match_returns_probe_broken: v='$v' rc=$rc (want empty + rc=28)"
+        FAIL=$((FAIL+1))
+    fi
 }
 
 # M5.7.5: download_asset_pattern selects from GitHub Releases assets[]
@@ -241,7 +250,7 @@ test_missing_path_is_skipped
 test_arch_mismatch_is_skipped
 test_arch_match_succeeds
 test_version_regex_transforms_raw_version
-test_version_regex_no_match_falls_back_to_raw
+test_version_regex_no_match_returns_probe_broken
 test_pick_asset_url_matches_first_qualifying_asset
 test_pick_asset_url_no_match_returns_empty_nonzero
 test_pick_asset_url_malformed_json_returns_empty_nonzero

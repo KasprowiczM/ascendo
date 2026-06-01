@@ -572,3 +572,14 @@ jobs:
             macOS)   python -m pytest adapters/macos/tests/   -q ;;
             Windows) python -m pytest adapters/windows/tests/ -q ;;
           esac
+
+      # bats-only handler tests (not collected by pytest) — currently the
+      # macOS web-handler honesty guard (W10 discovery sentinel + W2
+      # release_feed fail-loud regex). Gates the bash handlers the python
+      # suite can't reach.
+      - name: macOS web-handler bats tests
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew install bats-core
+          bats adapters/macos/tests/test_web_handler_honesty.bats
