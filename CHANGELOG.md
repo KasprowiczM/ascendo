@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### v1.0-beta production push — macOS + core (Sesja 86, 2026-06-01)
+
+P1 (must-do) + P2 (should-do) items from `ASCENDO_ULTRA_REVIEW_2.md`:
+
+- **P1.1 — Deduplicator explicit-consent surface.** The deduplicator stays
+  fail-safe report-only by default (non-TTY → no mutation, no
+  `DEDUPLICATION_TASKS.json`). New `compute_dedup_fixes()` (pure) +
+  `GET /dedup/pending` / `POST /dedup/apply` (server-validated — the uninstall
+  set is recomputed server-side; the client only selects which apps) +
+  self-contained `dedup.js` "Action required → resolve duplicate" card. A
+  duplicate uninstall is now always an explicit click, never an implicit default.
+- **P1.2 — Honest statuses reach the UI pills.** `components.js` `STATUS()` is
+  now the canonical domain→variant translator: `failed`/`partial`/`missing`→err
+  (red), `triggered_pending`/`outdated`/`planned`→warn (amber),
+  `up_to_date`→ok (green), `skipped`→neutral. A failed apply renders clearly
+  RED (was neutral grey). Local Apps/Categories stMaps extended to match.
+- **P2.3 — Race-free stream-log path.** New `orchestrator/stream_log.py`
+  conveys the per-run `_stream.log` path via a thread-local; the async worker
+  no longer mutates the process-global `os.environ`. macOS managers inject the
+  path into the child env (`Popen(env=child_env_with_stream_log())`). Two
+  concurrent runs can no longer clobber each other's log.
+- **P2.4 — Core decoupled from adapter packages (A5).** New optional
+  `IAdapter.web_registry()` / `service_manager()` (concrete, default `None`) +
+  `interfaces/web_registry.py` provider protocol. `routes/web_config.py` +
+  `routes/service.py` resolve OS-specific surfaces off the active adapter
+  (registered by the lifespan); the direct adapter import survives only as a
+  documented fallback. ADR-0005 rule #7.
+- **P2.5 — LAN safety.** `create_app(host, allow_remote)` refuses a non-loopback
+  bind without explicit opt-in (`allow_remote` / `ASCENDO_ALLOW_REMOTE=1`), and
+  when LAN-exposed installs `LanGuardMiddleware` requiring an `X-Ascendo-Token`
+  on mutating requests from non-loopback peers (loopback + safe methods pass).
+- **P2.6 — macOS web-handler honesty.** W10: `web_discovery.sh` emits a
+  `DISCOVERY_OK`/`DISCOVERY_FAILED` sentinel and `check.sh` treats a missing OK
+  (with no app lines) as a failure, not a misleading "0 apps". W2: verified the
+  `release_feed.sh` regex-no-match `probe_broken` (rc=28) path with a bats test;
+  fixed a stale `.sh` test that still asserted the old silent-raw-fallback.
+- **P3 — cleanup.** W11 (`sort -V` → Python comparator) confirmed already done;
+  the inert inventory-hardening dead code + `plugins_loader` decided KEEP for
+  the beta freeze (ADR-0005 appendix), CHANGELOG note clarified.
+
 ### CI — Validate Config workflow green on all 3 OSes (Sesja 85, 2026-05-31)
 
 - **Fixed: the `Validate Config` GitHub Actions workflow now passes 6/6 jobs**
@@ -93,8 +133,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > NOTE: the "Added — Inventory hardening" entries below (`reconcile()`,
 > `scan_meta`/`set_scan_complete`) are present + unit-tested but have **zero
 > production call sites** — orphan eviction already works via
-> `_replace_buckets_in_db` (clear+replace per full scan), so this is dead code
-> to wire-or-remove, not a live data fix. See `ASCENDO_ULTRA_REVIEW_2.md` §2.
+> `_replace_buckets_in_db` (clear+replace per full scan), so this is dead code,
+> not a live data fix. See `ASCENDO_ULTRA_REVIEW_2.md` §2.
+> **DECISION (v1.0-beta, audit A6):** KEEP — the methods are inert (no data
+> bug, no behaviour) and removing them would churn four contract-test files
+> during the beta stabilization freeze for no functional gain. Removal-or-wiring
+> (with `core/ascendo/plugins_loader/`) is tracked as post-beta cleanup. See
+> ADR-0005 → Appendix: Feature Deferrals. W11 (`sort -V` → Python comparator in
+> the macOS npm/pip scripts + `ascendo_web.sh`) is **done**.
 
 ### Fixed — Sparkle architecture selection and Bash 3.2 compatibility
 

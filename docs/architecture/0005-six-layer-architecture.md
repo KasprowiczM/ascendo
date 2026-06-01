@@ -196,3 +196,16 @@ Why rejected:
 ### Appendix: Feature Deferrals
 
 - **`ISource.verify_signature` (T2/T3 threat model):** Implemented for `apt` (Ubuntu) as a Layer 5 validation before invoking Layer 6 scripts. For Windows and macOS, signature verification is currently deferred and `source()` returns `None`. These platforms rely on native OS mechanisms (e.g., Authenticode, macOS Gatekeeper/spctl) during installation, meaning the abstraction the threat model relies on at the core layer is intentionally empty for them until a programmatic validation can be wired in.
+
+- **Inert inventory-hardening methods (audit A6, decided for v1.0-beta):**
+  `InventoryDB.reconcile()` and the `scan_meta` family
+  (`set_scan_complete` / `get_scan_meta`) plus the `core/ascendo/plugins_loader/`
+  package are present + unit-tested but have **zero production call sites**
+  (orphan eviction already works via `_replace_buckets_in_db`'s clear+replace
+  per full scan; plugins are not yet dispatched). **Decision: KEEP, do not
+  delete, for the v1.0-beta window.** They are inert (no data bug, no behaviour),
+  removing them would touch four contract-test files during a stabilization
+  freeze for no functional gain, and `plugins_loader` is the documented forward
+  surface for ADR-0007. Removal-or-wiring is tracked as post-beta cleanup; the
+  CHANGELOG `[Unreleased]` note flags the dead code so the entries are not read
+  as live features.
