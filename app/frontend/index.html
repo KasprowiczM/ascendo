@@ -1681,6 +1681,9 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
   <script defer src="/i18n.pl.js"></script>
   <script defer src="/i18n.js"></script>
   <script defer src="/platform.js"></script>
+  <!-- run-store.js: observable run state + SSE reduce (UX redesign Phase 2);
+       before app.js so window.runStore exists when attachStream runs. -->
+  <script defer src="/run-store.js"></script>
   <script defer src="/app.js"></script>
   <!-- M4: component foundation (window.AC). Must exist before shell.init
        runs and before app.js's ui.loadOverview renders. app.js defines

@@ -469,6 +469,10 @@ def create_app(
             # Served so the Dashboard rebuild can mount AC primitives.
             ("components.css", "text/css"),
             ("components.js", "application/javascript"),
+            # run-store.js: observable run state + SSE reduce (UX redesign
+            # Phase 2). Self-contained IIFE defining window.runStore; loaded
+            # before app.js so attachStream can feed it.
+            ("run-store.js", "application/javascript"),
             # P0: layout-editor assets removed from the served whitelist.
             # The drag-reorder "Edit layout" power tool + always-visible
             # drag handles were leaking into the default end-user surface.
