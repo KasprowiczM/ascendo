@@ -29,6 +29,9 @@ out/
 *.egg
 __pycache__/
 
+# ── Brainstorm / design scratch (superpowers visual companion) ───────────────
+.superpowers/
+
 # ── Native installer artifacts ───────────────────────────────────────────────
 # These are produced by bin/build-dmg.sh, bin/build-installer.ps1, and
 # packaging/build-deb.sh. NEVER commit them — they're large binary blobs
