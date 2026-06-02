@@ -125,6 +125,11 @@
         state.lifecycle = ev.state || mapStatus(ev.status);
         if (ev.counts) state.counts = ev.counts;
         if (ev.needs_reboot != null) state.needsReboot = ev.needs_reboot;
+        // Settle the stepper: a finished run must not leave a phase stuck
+        // "running". Mark the in-flight phase done (or failed on a failed run);
+        // pending phases that never ran stay pending.
+        var term = (state.lifecycle === "failed") ? "failed" : "done";
+        state.phases.forEach(function (p) { if (p.status === "running") p.status = term; });
         break;
     }
     emit();

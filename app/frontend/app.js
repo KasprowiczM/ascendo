@@ -382,6 +382,9 @@ const ui = {
     if (view === "overview"   && !ui._loaded.overview)   { ui._loaded.overview = true;   ui.loadOverview(); }
     if (view === "categories" && !ui._loaded.categories) { ui._loaded.categories = true; ui.loadCategories(); }
     if (view === "history"    && !ui._loaded.history)    { ui._loaded.history = true;    ui.loadHistory(); }
+    // Active = the live-run monitor (Phase 2.5). Always re-render on visit —
+    // it reflects the live runStore, not a one-time cached load.
+    if (view === "active") { try { ui.renderActiveRun(); } catch {} }
     if (view === "sync"       && !ui._loaded.sync)       { ui._loaded.sync = true;       ui.loadSync(); }
     if (view === "settings"   && !ui._loaded.settings)   { ui._loaded.settings = true;   ui.loadSettings(); }
     if (view === "settings") { try { window.aitoolsBackends && window.aitoolsBackends.load(); } catch {} }
@@ -4210,7 +4213,20 @@ const ui = {
     }
   },
 
-  attachStream(runId) {
+  attachStream(runId, intent) {
+    // Phase 2.5: feed the observable runStore (live-run monitor in the
+    // Active tab) IN ADDITION to the legacy panels below. reset() clears any
+    // prior run; we seed started_at so elapsed/ETA tick from now (the SSE
+    // status event does not yet carry it). intent is the human label of
+    // what's running ("Safe update" etc.) — optional, callers may pass it.
+    ui._activeRunIntent = intent || (window.tr && window.tr("active.intent_default")) || "Update run";
+    ui._activeStopping = false;
+    if (window.runStore) {
+      try {
+        window.runStore.reset(runId);
+        window.runStore.reduce({ type: "status", status: "running", started_at: new Date().toISOString() });
+      } catch {}
+    }
     // Sesja 50 fix — 4× duplicate output bug. Each call to attachStream
     // used to create a fresh EventSource without closing any prior one.
     // If the user clicked "Full update" twice, or if the wizard had
@@ -4344,6 +4360,16 @@ const ui = {
     let es = new EventSource(perRunUrl);
     window._ascendoActiveStreams.push(es);
     let usingLegacy = false;
+    // Phase 2.5: tee every parsed SSE event into the observable runStore so
+    // the Active-tab monitor (subscribed to runStore) updates live. These are
+    // ADDITIONAL listeners — the legacy renderers below are untouched.
+    if (window.runStore) {
+      ["status", "sidecar", "done", "log_line", "log", "phase", "attention"].forEach(function (name) {
+        es.addEventListener(name, function (e) {
+          try { var d = JSON.parse(e.data); d.type = name; window.runStore.reduce(d); } catch {}
+        });
+      });
+    }
     const phaseRows = new Map();
     function ensureProgVisible() { prog.classList.remove("hidden"); }
     function renderSidecar(sc) {
@@ -4474,6 +4500,123 @@ const ui = {
         };
       }
     };
+  },
+
+  // ── Phase 2.5: live-run monitor (Runs → Active) ───────────────────────
+  // Renders the runStore snapshot into #active-root and re-paints on every
+  // runStore emit. Additive to the legacy Run Center panels (#run-progress
+  // / #run-stream / runDetail) which attachStream still drives.
+  renderActiveRun() {
+    const root = document.getElementById("active-root");
+    if (!root || !window.runStore || !window.AC) return;
+    if (!ui._activeSubbed) {
+      ui._activeSubbed = true;
+      try {
+        window.runStore.subscribe(function () { ui._scheduleActivePaint(); });
+      } catch {}
+      // Tick elapsed once a second while a run is in flight.
+      ui._activeTicker = setInterval(function () {
+        const s = window.runStore.get();
+        if (s && (s.lifecycle === "running" || s.lifecycle === "preparing" || s.lifecycle === "finalizing")) {
+          window.runStore.tickElapsed();
+          ui._scheduleActivePaint();
+        }
+      }, 1000);
+    }
+    ui._paintActiveRun();
+  },
+  _scheduleActivePaint() {
+    // Coalesce bursts of runStore emits (every log line emits) into one
+    // paint per frame so a long apply doesn't thrash the DOM.
+    if (ui._activePaintQueued) return;
+    ui._activePaintQueued = true;
+    const run = function () { ui._activePaintQueued = false; ui._paintActiveRun(); };
+    if (window.requestAnimationFrame) window.requestAnimationFrame(run);
+    else setTimeout(run, 16);
+  },
+  _paintActiveRun() {
+    const root = document.getElementById("active-root");
+    if (!root || !window.runStore || !window.AC) return;
+    // Skip painting while the Active view is hidden — runStore keeps
+    // reducing; the router repaints the current snapshot when Active opens.
+    const va = document.getElementById("view-active");
+    if (va && va.classList.contains("hidden")) return;
+    const AC = window.AC;
+    const s = window.runStore.get();
+    const T = (k, fb) => (window.tr && window.tr(k)) || fb;
+    const active = s.lifecycle === "running" || s.lifecycle === "preparing" || s.lifecycle === "finalizing";
+    if (!active) ui._activeStopping = false;
+    const sources = Object.keys(s.sources).map(function (k) {
+      return Object.assign({ name: k }, s.sources[k]);
+    });
+    if (!s.runId && !sources.length && !active) {
+      AC.mount(root, AC.EmptyState({
+        glyph: "—",
+        title: T("active.empty_title", "No active run"),
+        line: T("active.empty_line", "Start a run to watch it live here."),
+        action: AC.Button({
+          variant: "primary",
+          label: T("active.empty_cta", "Go to Start"),
+          onClick: function () { ui.show("runs/start"); }
+        })
+      }));
+      return;
+    }
+    let done = 0, total = 0;
+    sources.forEach(function (r) { done += (r.done || 0); total += (r.total || 0); });
+    let etaMs = null;
+    if (active && total > 0 && done > 0 && done < total && s.elapsedMs > 0) {
+      const frac = done / total;
+      etaMs = Math.round(s.elapsedMs * (1 - frac) / frac);
+    }
+    const mon = document.createElement("div");
+    mon.className = "asc-runmonitor";
+    mon.appendChild(AC.RunHeader({
+      intent: ui._activeRunIntent || T("active.intent_default", "Update run"),
+      state: s.lifecycle,
+      stateLabel: T("runstate." + s.lifecycle, s.lifecycle),
+      elapsedMs: s.elapsedMs,
+      etaMs: etaMs,
+      etaSuffix: T("active.eta_suffix", "left (est.)"),
+      value: done, total: total,
+      onStop: active ? function () { ui._stopActiveRun(); } : null,
+      stopLabel: ui._activeStopping ? T("active.stopping", "Stopping…") : T("active.stop", "Stop")
+    }));
+    mon.appendChild(AC.PhaseStepper(s.phases.map(function (p) {
+      return { id: p.id, status: p.status, label: T("runphase." + p.id, p.id) };
+    })));
+    const attn = AC.AttentionList((s.attention || []).map(function (a) {
+      return { tone: "warn", title: a.message || a.source || "", detail: a.source || "" };
+    }));
+    if (attn) {
+      mon.appendChild(AC.Card({ title: T("active.attention_title", "Needs your attention"), children: attn }));
+    }
+    if (sources.length) {
+      const wrap = document.createElement("div");
+      wrap.className = "asc-srcrows";
+      sources.forEach(function (r) {
+        wrap.appendChild(AC.SourceProgressRow({
+          name: r.name, status: r.status, done: r.done, total: r.total, current: r.current,
+          statusLabel: T("runstate." + r.status, r.status)
+        }));
+      });
+      mon.appendChild(AC.Card({ title: T("active.sources_title", "Sources"), children: wrap }));
+    }
+    // Preserve the LogViewer open-state across re-renders (re-mount loses it).
+    const prevOpen = !!root.querySelector(".asc-log--open");
+    mon.appendChild(AC.LogViewer({
+      lines: s.logs, collapsed: !prevOpen,
+      showLabel: T("active.log_show", "Show log"),
+      hideLabel: T("active.log_hide", "Hide log"),
+      filterPlaceholder: T("active.log_filter", "Filter…"),
+      linesSuffix: T("active.lines", " lines")
+    }));
+    AC.mount(root, mon);
+  },
+  _stopActiveRun() {
+    ui._activeStopping = true;
+    ui._paintActiveRun();
+    fetch("/runs/active/stop", { method: "POST" }).catch(function () {});
   },
 };
 

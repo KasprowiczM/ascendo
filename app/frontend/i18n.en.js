@@ -5,6 +5,27 @@
 window.I18N = window.I18N || {};
 window.I18N.en = {
     brand: { tagline: "unified updates" },
+    runphase: {
+      scanning: "Scanning", planning: "Planning", applying: "Applying",
+      verifying: "Verifying", cleaning_up: "Cleaning up"
+    },
+    runstate: {
+      queued: "Queued", preparing: "Preparing…", running: "Running",
+      finalizing: "Finalizing…", completed: "Completed",
+      completed_with_warnings: "Completed with warnings",
+      failed: "Failed", cancelled: "Cancelled"
+    },
+    active: {
+      empty_title: "No active run",
+      empty_line: "Start a run from the Start tab to watch it live here.",
+      empty_cta: "Go to Start",
+      stop: "Stop", stopping: "Stopping…",
+      log_show: "Show log", log_hide: "Hide log", log_filter: "Filter…",
+      lines: " lines", eta_suffix: "left (est.)",
+      attention_title: "Needs your attention",
+      sources_title: "Sources",
+      intent_default: "Update run"
+    },
     nav: {
       overview:   "Overview",
       categories: "Categories",

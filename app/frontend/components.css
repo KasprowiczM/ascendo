@@ -734,6 +734,10 @@
 .asc-log__row--debug { opacity: .55; }
 .asc-log__src { opacity: .55; margin-right: 8px; }
 
+/* live-run monitor layout (Phase 2.5) */
+.asc-runmonitor { display: flex; flex-direction: column; gap: var(--space-4); }
+.asc-srcrows { display: flex; flex-direction: column; gap: 8px; }
+
 @keyframes asc-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: .4; }

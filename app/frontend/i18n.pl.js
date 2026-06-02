@@ -4,6 +4,27 @@
 window.I18N = window.I18N || {};
 window.I18N.pl = {
     brand: { tagline: "ujednolicone aktualizacje" },
+    runphase: {
+      scanning: "Skanowanie", planning: "Planowanie", applying: "Instalowanie",
+      verifying: "Weryfikacja", cleaning_up: "Sprzątanie"
+    },
+    runstate: {
+      queued: "W kolejce", preparing: "Przygotowywanie…", running: "W toku",
+      finalizing: "Finalizowanie…", completed: "Ukończono",
+      completed_with_warnings: "Ukończono z ostrzeżeniami",
+      failed: "Niepowodzenie", cancelled: "Anulowano"
+    },
+    active: {
+      empty_title: "Brak aktywnego przebiegu",
+      empty_line: "Rozpocznij przebieg w zakładce Start, aby śledzić go tutaj na żywo.",
+      empty_cta: "Przejdź do Start",
+      stop: "Zatrzymaj", stopping: "Zatrzymywanie…",
+      log_show: "Pokaż dziennik", log_hide: "Ukryj dziennik", log_filter: "Filtruj…",
+      lines: " wierszy", eta_suffix: "pozostało (szac.)",
+      attention_title: "Wymaga uwagi",
+      sources_title: "Źródła",
+      intent_default: "Przebieg aktualizacji"
+    },
     nav: {
       overview:   "Przegląd",
       categories: "Kategorie",
