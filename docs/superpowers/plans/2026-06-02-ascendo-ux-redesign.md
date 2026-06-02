@@ -60,16 +60,13 @@ This is a **4-phase, multi-session effort**. **Phase 1** and **Phase 2's data la
 
 **Outcome:** the structural foundation — new AC primitives + CSS exist, the dead CSS layer is retired, the "Active" Runs sub-tab is wired, and the Dashboard container is ready — with zero behaviour regression.
 
-### Task 1.1 — Branch + retire the dead `ui-redesign.css` layer
+### Task 1.1 — ⚠ REVISED (2026-06-02): `ui-redesign.css` is load-bearing — DO NOT remove in Phase 1
 
-**Files:** Modify `app/frontend/index.html:47`, `core/ascendo/dashboard/app.py` (`_spa_assets`, ~line 463)
+**Finding during execution:** the grounding agent's "dead layer" claim was wrong. `ui-redesign.css` has no JS companion (`ui-redesign.js` was removed Sesja 76), BUT the **CSS itself still styles the current screens** — `index.html:46/49/1694` comments confirm it *"restores the previous look byte-for-byte"* and carries *"P0 + M4 rules"*; HANDOFF Sesja 77 marks its removal *"high-regression, deferred."* Removing it in Phase 1 (which adds no replacement screens) would regress the live UI with zero benefit.
 
-- [ ] **Step 1: Branch.** `git switch -c feat/ux-redesign-phase1`
-- [ ] **Step 2: Confirm `ui-redesign.css` has no live JS companion.** Run: `grep -rn "ui-redesign" app/frontend core/ascendo/dashboard/app.py` → expect only the `index.html` `<link>` (line 47) + the `_spa_assets` tuple entry; `ui-redesign.js` should already be gone (Sesja 76).
-- [ ] **Step 3: Remove the `<link>`** at `index.html:47` (`<link rel="stylesheet" href="/ui-redesign.css" />`).
-- [ ] **Step 4: Remove the `_spa_assets` entry** for `ui-redesign.css` in `app.py`.
-- [ ] **Step 5: Verify live (all five screens, both themes).** `preview_start` "ascendo"; for each of dashboard/library/runs/insights/settings: `preview_eval ui.show('<dest>')`, `preview_console_logs level=error` (0 errors), `preview_screenshot`. Toggle `data-theme` light/dark and re-screenshot. Confirm no layout regression.
-- [ ] **Step 6: Commit.** `git add -A && git commit -m "chore(ui): retire dead ui-redesign.css layer"`
+**Decision:** **keep** `ui-redesign.css`. `components.css` already loads AFTER it (`index.html:50` > `:47`), so new `.asc-*` rules win by source order — Phase 1's primitives are unaffected. Removal is deferred to the phase where redesigned screens supersede its rules (revisit Phase 3/4 with full per-screen re-verify). Commit to `main` (repo convention), no feature branch.
+
+- [x] Confirmed load-bearing; removal deferred. No edit. Proceed to 1.2.
 
 ### Task 1.2 — `ProgressBar` AC primitive
 

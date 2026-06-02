@@ -631,3 +631,40 @@
   .asc-runpanel__head #stop-btn,
   .asc-runpanel__head .asc-btn--danger { margin-left: 0; flex: 1 1 100%; }
 }
+
+/* ============================================================
+   Phase 1 (UX redesign) — ProgressBar / VerdictHeader / AttentionList
+   .asc-* only, tokens only. components.css loads AFTER ui-redesign.css
+   so these win by source order.
+   ============================================================ */
+.asc-progress { height: 8px; border-radius: 999px; background: var(--bg-sunk); overflow: hidden; }
+.asc-progress__fill { height: 100%; border-radius: 999px; transition: width var(--motion-base, .3s) ease; }
+.asc-progress__fill--accent { background: var(--accent); }
+.asc-progress__fill--ok { background: var(--ok); }
+.asc-progress__fill--warn { background: var(--warn); }
+.asc-progress__fill--err { background: var(--err); }
+
+.asc-verdict { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+.asc-verdict__line { display: flex; align-items: center; gap: var(--space-2); }
+.asc-verdict__title { font-family: var(--font-sans); font-size: var(--fs-h2, 1.5rem); font-weight: 700; line-height: 1.2; color: var(--fg); }
+.asc-verdict__dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+.asc-verdict__dot--ok { background: var(--ok); }
+.asc-verdict__dot--warn { background: var(--warn); }
+.asc-verdict__dot--err { background: var(--err); }
+.asc-verdict__dot--info { background: var(--info, var(--accent)); }
+.asc-verdict__dot--neutral { background: var(--fg-faint); }
+.asc-verdict__sub { margin: var(--space-1) 0 0; color: var(--fg-muted); font-family: var(--font-sans); font-size: var(--fs-body, .95rem); line-height: var(--lh-snug, 1.4); }
+
+.asc-attn-list { display: flex; flex-direction: column; gap: var(--space-2); }
+.asc-attn { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 15px; }
+.asc-attn--warn { border-left: 3px solid var(--warn); }
+.asc-attn--err { border-left: 3px solid var(--err); }
+.asc-attn--ok { border-left: 3px solid var(--ok); }
+.asc-attn--neutral { border-left: 3px solid var(--fg-faint); }
+.asc-attn__title { font-weight: 600; color: var(--fg); }
+.asc-attn__detail { color: var(--fg-muted); font-size: .82rem; margin-top: 2px; }
+.asc-attn__actions { display: flex; gap: 8px; flex: none; }
+@media (max-width: 768px) {
+  .asc-attn { flex-direction: column; align-items: stretch; }
+  .asc-attn__actions { margin-top: 8px; }
+}

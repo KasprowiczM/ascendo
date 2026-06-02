@@ -333,6 +333,62 @@
     }
   };
 
+  /* ---- ProgressBar ------------------------------------- */
+  function ProgressBar(o) {
+    o = o || {};
+    var pct = (o.total > 0)
+      ? Math.max(0, Math.min(100, Math.round((o.value / o.total) * 100)))
+      : (o.pct != null ? o.pct : 0);
+    var variant = o.variant || "accent"; // accent | ok | warn | err
+    var wrap = el("div", "asc-progress");
+    wrap.setAttribute("role", "progressbar");
+    wrap.setAttribute("aria-valuenow", String(pct));
+    wrap.setAttribute("aria-valuemin", "0");
+    wrap.setAttribute("aria-valuemax", "100");
+    var fill = el("div", "asc-progress__fill asc-progress__fill--" + variant);
+    fill.style.width = pct + "%";
+    wrap.appendChild(fill);
+    return wrap;
+  }
+
+  /* ---- VerdictHeader ----------------------------------- */
+  function VerdictHeader(o) {
+    o = o || {}; // {status, title, sub, cta:{label,onClick,variant}}
+    var h = el("div", "asc-verdict");
+    var main = el("div", "asc-verdict__main");
+    var line = el("div", "asc-verdict__line");
+    line.appendChild(el("span", "asc-verdict__dot asc-verdict__dot--" + STATUS(o.status)));
+    line.appendChild(el("span", "asc-verdict__title", o.title != null ? o.title : ""));
+    main.appendChild(line);
+    if (o.sub != null) main.appendChild(el("p", "asc-verdict__sub", o.sub));
+    h.appendChild(main);
+    if (o.cta) h.appendChild(Button(o.cta));
+    return h;
+  }
+
+  /* ---- AttentionList ----------------------------------- */
+  function AttentionCard(it) {
+    it = it || {}; // {tone, title, detail, actions:[Button opts]}
+    var c = el("div", "asc-attn asc-attn--" + STATUS(it.tone || "warn"));
+    var body = el("div", "asc-attn__body");
+    body.appendChild(el("div", "asc-attn__title", it.title != null ? it.title : ""));
+    if (it.detail != null) body.appendChild(el("div", "asc-attn__detail", it.detail));
+    c.appendChild(body);
+    if (it.actions && it.actions.length) {
+      var acts = el("div", "asc-attn__actions");
+      it.actions.forEach(function (a) { acts.appendChild(Button(a)); });
+      c.appendChild(acts);
+    }
+    return c;
+  }
+  function AttentionList(items) {
+    items = items || [];
+    if (!items.length) return null; // caller skips the section entirely
+    var list = el("div", "asc-attn-list");
+    items.forEach(function (it) { list.appendChild(AttentionCard(it)); });
+    return list;
+  }
+
   /* ---- export ------------------------------------------ */
   window.AC = {
     mount: mount,
@@ -345,6 +401,10 @@
     Banner: Banner,
     Skeleton: Skeleton,
     Timeline: Timeline,
-    Drawer: Drawer
+    Drawer: Drawer,
+    ProgressBar: ProgressBar,
+    VerdictHeader: VerdictHeader,
+    AttentionCard: AttentionCard,
+    AttentionList: AttentionList
   };
 })();
