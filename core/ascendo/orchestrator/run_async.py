@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from ..models.run import Phase, RunInfo
+from ..models.run import Phase, PhaseStatus, RunInfo
 from .runner import RunReport, run_phases
 
 # Convention: per-run streaming log, written to by bash apply scripts via
@@ -106,6 +106,30 @@ class RunState:
     # os.environ for subprocess inheritance, but saves/restores using this
     # per-run value instead of relying on a single global.
     stream_log_path: Path | None = None
+
+    # ── Phase 2.2 lifecycle sub-states ──────────────────────────────────────
+    # Fine-grained lifecycle the SSE `status` event exposes as a `state` field.
+    # "preparing"  — worker has started but run_phases not yet called
+    # "running"    — run_phases is executing (implicit while status=RUNNING)
+    # "finalizing" — run_phases returned; post-run bookkeeping in progress
+    # None         — pending (not yet started)
+    lifecycle: str | None = None
+
+    # Refined terminal descriptor. One of:
+    #   "completed"               — all sidecars clean (no failures/skips/warnings)
+    #   "completed_with_warnings" — done but had skipped/partial/reboot/warn messages
+    #   "failed"                  — worker raised (catastrophic) or all sidecars failed
+    #   "cancelled"               — cooperative cancel fired
+    # None while the run is in progress.
+    terminal_state: str | None = None
+
+    # ── Phase 2.3 per-phase tracking (set by on_phase callback in _worker) ─
+    # Current phase being executed (Phase.value string) or None.
+    current_phase: str | None = None
+    # 0-based index of the current phase within the ordered phase list.
+    phase_index: int = 0
+    # Total number of phases in this run's ordered plan.
+    phase_total: int = 0
 
 
 class RunRegistry:
@@ -520,6 +544,46 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
     return flushed
 
 
+def _report_has_warnings(report: RunReport) -> bool:
+    """True if any sidecar carries a soft-warning signal.
+
+    Signals: skipped / partial / triggered items, a needs-reboot flag, or a
+    warn/error-level message. Distinguishes a clean ``completed`` run from
+    ``completed_with_warnings`` (Phase 2.2). ``planned`` is NOT a warning —
+    "N updates available" is normal check output, not a run problem.
+    """
+    for sc in report.sidecars:
+        if sc.needs_reboot:
+            return True
+        sm = sc.summary
+        if sm.skipped or sm.partial or sm.triggered:
+            return True
+        for msg in (sc.messages or []):
+            # MessageLevel is a str-Enum, so comparing to the literal works.
+            if msg.level in ("warn", "error"):
+                return True
+    return False
+
+
+def _terminal_from_report(report: RunReport | None) -> str:
+    """Refine a finished run into a UI-facing terminal descriptor.
+
+    Returns one of ``completed`` / ``completed_with_warnings`` / ``failed``.
+    The ``RunStatus`` enum the registry's conflict logic depends on stays
+    unchanged (still COMPLETED); this is the honest descriptor the SSE
+    ``done`` event + ``/runs/{id}/status`` expose so the dashboard can paint
+    a green / amber / red verdict.
+    """
+    if report is None:
+        return "failed"
+    overall = report.overall_status
+    if overall == PhaseStatus.FAILED:
+        return "failed"
+    if overall == PhaseStatus.PARTIAL or _report_has_warnings(report):
+        return "completed_with_warnings"
+    return "completed"
+
+
 async def start_run_async(
     *,
     registry: RunRegistry,
@@ -580,6 +644,7 @@ async def start_run_async(
 
     def _worker() -> None:
         state.status = RunStatus.RUNNING
+        state.lifecycle = "preparing"
         state.started_at = datetime.now(timezone.utc)
         # Stream-log race fix (audit P2): bind the per-run path to THIS
         # worker thread via a thread-local instead of mutating the
@@ -591,6 +656,7 @@ async def start_run_async(
         try:
             from .runner import DEFAULT_PHASE_ORDER  # noqa: PLC0415
 
+            state.lifecycle = "running"
             with stream_log_context(stream_log_path):
                 report = run_phases(
                     adapter,
@@ -607,15 +673,23 @@ async def start_run_async(
             # E11: if cooperative cancel was signalled during run_phases,
             # the run is CANCELLED, not COMPLETED. run_phases may have
             # returned early with partial results.
+            # Phase 2.2: set the refined terminal_state BEFORE flipping the
+            # registry status, so a /status poller that observes a terminal
+            # `status` always sees a populated `terminal_state` too — no race
+            # window where status=completed but terminal_state is still None.
             if state.cancel_event.is_set():
+                state.terminal_state = "cancelled"
                 state.status = RunStatus.CANCELLED
             else:
+                state.terminal_state = _terminal_from_report(report)
                 state.status = RunStatus.COMPLETED
         except Exception as exc:  # noqa: BLE001
             _log.exception("async run %s worker crashed", run.id)
             state.error = f"{type(exc).__name__}: {exc}"
+            state.terminal_state = "failed"
             state.status = RunStatus.FAILED
         finally:
+            state.lifecycle = "finalizing"
             # E11: skip inventory flush on cancel — partial sidecars
             # from a cancelled run are unreliable and should not update
             # the inventory DB. Completed/failed runs still flush.

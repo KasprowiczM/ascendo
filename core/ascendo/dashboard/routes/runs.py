@@ -654,6 +654,12 @@ async def get_run_status(run_id: UUID, request: Request) -> dict:
     return {
         "run_id": str(run_id),
         "status": state.status.value,
+        # Phase 2.2: refined terminal descriptor (completed / completed_with_
+        # warnings / failed / cancelled) + live lifecycle sub-state
+        # (preparing / running / finalizing). getattr keeps the endpoint
+        # resilient if a RunState predates these fields.
+        "terminal_state": getattr(state, "terminal_state", None),
+        "lifecycle": getattr(state, "lifecycle", None),
         "started_at": state.started_at.isoformat() if state.started_at else None,
         "finished_at": state.finished_at.isoformat() if state.finished_at else None,
         "error": state.error,
