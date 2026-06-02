@@ -336,10 +336,11 @@
   /* ---- ProgressBar ------------------------------------- */
   function ProgressBar(o) {
     o = o || {};
-    var pct = (o.total > 0)
-      ? Math.max(0, Math.min(100, Math.round((o.value / o.total) * 100)))
+    var raw = (o.total > 0)
+      ? Math.round((o.value / o.total) * 100)
       : (o.pct != null ? o.pct : 0);
-    var variant = o.variant || "accent"; // accent | ok | warn | err
+    var pct = Math.max(0, Math.min(100, raw)); // clamp both paths (review M2)
+    var variant = o.variant || "accent"; // accent | ok | warn | err | info
     var wrap = el("div", "asc-progress");
     wrap.setAttribute("role", "progressbar");
     wrap.setAttribute("aria-valuenow", String(pct));
