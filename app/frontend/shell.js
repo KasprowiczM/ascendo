@@ -62,6 +62,7 @@
       defaultView: "run",
       tabs: [
         { id: "start",     labelKey: "shell.tabs.start",     view: "run" },
+        { id: "active",    labelKey: "shell.tabs.active",    view: "active" },
         { id: "scheduled", labelKey: "shell.tabs.scheduled", view: "schedule" },
         { id: "history",   labelKey: "shell.tabs.history",   view: "history" },
       ],

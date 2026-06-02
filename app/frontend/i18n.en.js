@@ -58,6 +58,7 @@ window.I18N.en = {
         apps:         "Apps",
         tools:        "Tools",
         start:        "Start",
+        active:       "Active",
         scheduled:    "Scheduled",
         history:      "History",
         trends:       "Trends",

@@ -57,6 +57,7 @@ window.I18N.pl = {
         apps:         "Aplikacje",
         tools:        "Narzędzia",
         start:        "Uruchom",
+        active:       "Aktywne",
         scheduled:    "Harmonogram",
         history:      "Historia",
         trends:       "Trendy",
