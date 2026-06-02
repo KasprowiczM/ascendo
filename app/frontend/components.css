@@ -670,3 +670,80 @@
   .asc-attn { flex-direction: column; align-items: stretch; }
   .asc-attn__actions { margin-top: 8px; }
 }
+
+/* ── RunHeader (Phase 2.4) ─────────────────────────────────────────────── */
+.asc-runhead { display: flex; flex-direction: column; gap: var(--space-3); }
+.asc-runhead__top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.asc-runhead__line { display: flex; align-items: center; gap: var(--space-2); }
+.asc-runhead__dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+.asc-runhead__dot--ok { background: var(--ok); }
+.asc-runhead__dot--warn { background: var(--warn); }
+.asc-runhead__dot--err { background: var(--err); }
+.asc-runhead__dot--info { background: var(--info); }
+.asc-runhead__dot--neutral { background: var(--fg-faint); }
+.asc-runhead__dot--live { animation: asc-pulse 1.4s var(--ease-out) infinite; }
+.asc-runhead__intent { font-size: 1.4rem; font-weight: var(--fw-bold); color: var(--fg); line-height: 1.2; }
+.asc-runhead__meta { display: flex; align-items: center; gap: var(--space-2); margin-top: 4px; color: var(--fg-muted); font-size: .85rem; }
+.asc-runhead__meta .asc-runhead__time,
+.asc-runhead__meta .asc-runhead__eta { font-family: var(--font-mono, ui-monospace, monospace); font-variant-numeric: tabular-nums; }
+.asc-runhead__sep { color: var(--fg-faint); }
+
+/* ── PhaseStepper (Phase 2.4) ──────────────────────────────────────────── */
+.asc-stepper { display: flex; align-items: center; gap: 0; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
+.asc-stepper__step { display: flex; align-items: center; gap: var(--space-2); flex: 1 1 auto; min-width: 0; position: relative; }
+.asc-stepper__step + .asc-stepper__step::before { content: ""; height: 2px; flex: 1 1 16px; min-width: 16px; background: var(--border); margin: 0 var(--space-2); border-radius: 2px; }
+.asc-stepper__marker { width: 24px; height: 24px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: var(--fw-semibold); background: var(--bg-sunk); color: var(--fg-muted); border: 1px solid var(--border); }
+.asc-stepper__label { font-size: .85rem; color: var(--fg-muted); white-space: nowrap; }
+.asc-stepper__step--done .asc-stepper__marker { background: var(--ok); color: var(--bg); border-color: var(--ok); }
+.asc-stepper__step--done .asc-stepper__label { color: var(--fg); }
+.asc-stepper__step--running .asc-stepper__marker { background: var(--info); color: var(--bg); border-color: var(--info); animation: asc-pulse 1.4s var(--ease-out) infinite; }
+.asc-stepper__step--running .asc-stepper__label { color: var(--fg); font-weight: var(--fw-semibold); }
+.asc-stepper__step--failed .asc-stepper__marker { background: var(--err); color: var(--bg); border-color: var(--err); }
+.asc-stepper__step--failed .asc-stepper__label { color: var(--fg); }
+
+/* ── SourceProgressRow (Phase 2.4) ─────────────────────────────────────── */
+.asc-srcrow { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-md, 10px); background: var(--bg-elev); }
+.asc-srcrow--err { border-left: 3px solid var(--err); }
+.asc-srcrow--ok { border-left: 3px solid var(--ok); }
+.asc-srcrow--info { border-left: 3px solid var(--info); }
+.asc-srcrow__head { display: flex; align-items: center; gap: var(--space-2); }
+.asc-srcrow__dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.asc-srcrow__dot--ok { background: var(--ok); }
+.asc-srcrow__dot--warn { background: var(--warn); }
+.asc-srcrow__dot--err { background: var(--err); }
+.asc-srcrow__dot--info { background: var(--info); }
+.asc-srcrow__dot--neutral { background: var(--fg-faint); }
+.asc-srcrow__name { font-weight: var(--fw-semibold); color: var(--fg); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asc-srcrow__counts { font-family: var(--font-mono, ui-monospace, monospace); font-variant-numeric: tabular-nums; font-size: .8rem; color: var(--fg-muted); flex: none; }
+.asc-srcrow__current { font-size: .8rem; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── LogViewer (Phase 2.4) — dark console in both themes ───────────────── */
+.asc-log { border: 1px solid var(--border); border-radius: var(--radius-md, 10px); overflow: hidden; }
+.asc-log__head { display: flex; align-items: center; gap: var(--space-2); padding: 8px 10px; background: var(--bg-elev); }
+.asc-log__toggle { display: inline-flex; align-items: center; gap: 6px; background: none; border: none; color: var(--fg); cursor: pointer; font: inherit; padding: 2px 4px; border-radius: var(--radius-xs, 4px); }
+.asc-log__caret { width: 0; height: 0; border-left: 5px solid var(--fg-muted); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: transform var(--dur-2) var(--ease-out); }
+.asc-log--open .asc-log__caret { transform: rotate(90deg); }
+.asc-log__count { font-size: .78rem; color: var(--fg-faint); font-variant-numeric: tabular-nums; }
+.asc-log__filter { margin-left: auto; background: var(--bg-sunk); border: 1px solid var(--border); border-radius: var(--radius-xs, 4px); color: var(--fg); font: inherit; font-size: .8rem; padding: 3px 8px; max-width: 180px; }
+.asc-log__body { background: var(--code-bg); }
+.asc-log__view { max-height: 320px; overflow: auto; padding: 8px 10px; font-family: var(--font-mono, ui-monospace, monospace); font-size: .78rem; line-height: 1.5; color: var(--code-fg); }
+.asc-log__row { white-space: pre-wrap; word-break: break-word; }
+.asc-log__row--warn { color: var(--warn); }
+.asc-log__row--err { color: var(--err); }
+.asc-log__row--error { color: var(--err); }
+.asc-log__row--debug { opacity: .55; }
+.asc-log__src { opacity: .55; margin-right: 8px; }
+
+@keyframes asc-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .4; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .asc-runhead__dot--live,
+  .asc-stepper__step--running .asc-stepper__marker { animation: none; }
+}
+@media (max-width: 768px) {
+  .asc-runhead__top { flex-direction: column; align-items: stretch; }
+  .asc-stepper__label { display: none; }
+  .asc-stepper__step { flex: none; }
+}

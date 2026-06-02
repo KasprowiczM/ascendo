@@ -390,6 +390,182 @@
     return list;
   }
 
+  /* ---- run-monitor helpers (internal) ------------------ */
+  function fmtDur(ms) {
+    if (ms == null || ms < 0 || isNaN(ms)) return "0:00";
+    var s = Math.floor(ms / 1000);
+    var h = Math.floor(s / 3600);
+    var m = Math.floor((s % 3600) / 60);
+    var sec = s % 60;
+    var mm = (h > 0 && m < 10) ? "0" + m : String(m);
+    var ss = sec < 10 ? "0" + sec : String(sec);
+    return (h > 0 ? h + ":" : "") + mm + ":" + ss;
+  }
+  function runVariant(state) {
+    switch (state) {
+      case "completed": return "ok";
+      case "completed_with_warnings": return "warn";
+      case "failed": return "err";
+      case "cancelled": return "neutral";
+      default: return "info"; // queued|preparing|running|finalizing|unknown active
+    }
+  }
+  function srcVariant(status) {
+    switch (status) {
+      case "completed": case "success": case "up_to_date": return "ok";
+      case "running": return "info";
+      case "failed": case "partial": return "err";
+      case "warn": case "triggered": return "warn";
+      default: return "neutral"; // queued|pending|skipped
+    }
+  }
+  function humanizePhase(id) {
+    return String(id || "").replace(/_/g, " ").replace(/^\w/, function (c) {
+      return c.toUpperCase();
+    });
+  }
+
+  /* ---- RunHeader --------------------------------------- */
+  // {intent, state, elapsedMs, etaMs, value, total, pct, onStop,
+  //  stateLabel, stopLabel, etaSuffix}
+  function RunHeader(o) {
+    o = o || {};
+    var variant = runVariant(o.state);
+    var active = variant === "info";
+    var h = el("div", "asc-runhead");
+    var top = el("div", "asc-runhead__top");
+
+    var main = el("div", "asc-runhead__main");
+    var line = el("div", "asc-runhead__line");
+    var dot = el("span", "asc-runhead__dot asc-runhead__dot--" + variant + (active ? " asc-runhead__dot--live" : ""));
+    line.appendChild(dot);
+    line.appendChild(el("span", "asc-runhead__intent", o.intent != null ? o.intent : ""));
+    main.appendChild(line);
+
+    var meta = el("div", "asc-runhead__meta");
+    meta.appendChild(el("span", "asc-runhead__state", o.stateLabel != null ? o.stateLabel : (o.state != null ? o.state : "")));
+    if (o.elapsedMs != null) {
+      meta.appendChild(el("span", "asc-runhead__sep", "·"));
+      meta.appendChild(el("span", "asc-runhead__time", fmtDur(o.elapsedMs)));
+    }
+    if (active && o.etaMs != null && o.etaMs > 0) {
+      meta.appendChild(el("span", "asc-runhead__sep", "·"));
+      meta.appendChild(el("span", "asc-runhead__eta", "~" + fmtDur(o.etaMs) + " " + (o.etaSuffix != null ? o.etaSuffix : "left (est.)")));
+    }
+    main.appendChild(meta);
+    top.appendChild(main);
+
+    if (typeof o.onStop === "function") {
+      top.appendChild(Button({ variant: "danger", label: o.stopLabel != null ? o.stopLabel : "Stop", onClick: o.onStop }));
+    }
+    h.appendChild(top);
+    h.appendChild(ProgressBar({ value: o.value, total: o.total, pct: o.pct, variant: variant }));
+    return h;
+  }
+
+  /* ---- PhaseStepper ------------------------------------ */
+  // phases: [{id, status, label?}]  status: pending|running|done|failed
+  function PhaseStepper(phases) {
+    phases = phases || [];
+    var ol = el("ol", "asc-stepper");
+    phases.forEach(function (p, i) {
+      p = p || {};
+      var st = p.status || "pending";
+      var li = el("li", "asc-stepper__step asc-stepper__step--" + st);
+      var marker = el("span", "asc-stepper__marker");
+      if (st === "done") marker.textContent = "✓";
+      else if (st === "failed") marker.textContent = "!";
+      else marker.textContent = String(i + 1);
+      li.appendChild(marker);
+      li.appendChild(el("span", "asc-stepper__label", p.label != null ? p.label : humanizePhase(p.id)));
+      ol.appendChild(li);
+    });
+    return ol;
+  }
+
+  /* ---- SourceProgressRow ------------------------------- */
+  // {name, status, done, total, current, statusLabel}
+  function SourceProgressRow(o) {
+    o = o || {};
+    var v = srcVariant(o.status);
+    var row = el("div", "asc-srcrow asc-srcrow--" + v);
+    var head = el("div", "asc-srcrow__head");
+    head.appendChild(el("span", "asc-srcrow__dot asc-srcrow__dot--" + v));
+    head.appendChild(el("span", "asc-srcrow__name", o.name != null ? o.name : ""));
+    if (o.total > 0) {
+      head.appendChild(el("span", "asc-srcrow__counts", (o.done || 0) + " / " + o.total));
+    }
+    head.appendChild(StatusPill({ status: v, label: o.statusLabel != null ? o.statusLabel : (o.status != null ? o.status : "") }));
+    row.appendChild(head);
+    row.appendChild(ProgressBar({ value: o.done, total: o.total, variant: v }));
+    if (o.current) row.appendChild(el("div", "asc-srcrow__current", o.current));
+    return row;
+  }
+
+  /* ---- LogViewer --------------------------------------- */
+  // {lines:[{ts,source,level,text}], collapsed:true, showLabel, hideLabel,
+  //  filterPlaceholder, linesSuffix}
+  function LogViewer(o) {
+    o = o || {};
+    var lines = o.lines || [];
+    var collapsed = (o.collapsed !== false); // default collapsed
+    var wrap = el("div", "asc-log" + (collapsed ? "" : " asc-log--open"));
+
+    var head = el("div", "asc-log__head");
+    var toggle = el("button", "asc-log__toggle");
+    toggle.setAttribute("type", "button");
+    toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    toggle.appendChild(el("span", "asc-log__caret"));
+    var toggleTxt = el("span", "asc-log__toggle-txt", collapsed ? (o.showLabel || "Show log") : (o.hideLabel || "Hide log"));
+    toggle.appendChild(toggleTxt);
+    head.appendChild(toggle);
+    head.appendChild(el("span", "asc-log__count", String(lines.length) + (o.linesSuffix != null ? o.linesSuffix : " lines")));
+    var filter = el("input", "asc-log__filter");
+    filter.setAttribute("type", "text");
+    var fph = o.filterPlaceholder != null ? o.filterPlaceholder : "Filter…";
+    filter.setAttribute("placeholder", fph);
+    filter.setAttribute("aria-label", fph);
+    head.appendChild(filter);
+    wrap.appendChild(head);
+
+    var body = el("div", "asc-log__body");
+    if (collapsed) body.setAttribute("hidden", "");
+    var view = el("div", "asc-log__view");
+    // Cap rendered rows for DOM perf — runStore already ring-buffers at 2000.
+    var slice = lines.length > 600 ? lines.slice(-600) : lines;
+    slice.forEach(function (ln) {
+      ln = ln || {};
+      var r = el("div", "asc-log__row asc-log__row--" + (ln.level || "info"));
+      if (ln.source) r.appendChild(el("span", "asc-log__src", ln.source));
+      r.appendChild(el("span", "asc-log__text", ln.text != null ? ln.text : ""));
+      view.appendChild(r);
+    });
+    body.appendChild(view);
+    wrap.appendChild(body);
+
+    function autoscroll() { view.scrollTop = view.scrollHeight; }
+
+    toggle.addEventListener("click", function () {
+      var open = wrap.classList.toggle("asc-log--open");
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      toggleTxt.textContent = open ? (o.hideLabel || "Hide log") : (o.showLabel || "Show log");
+      if (open) { body.removeAttribute("hidden"); autoscroll(); }
+      else { body.setAttribute("hidden", ""); }
+    });
+    filter.addEventListener("input", function () {
+      var q = filter.value.toLowerCase();
+      var rows = view.childNodes;
+      for (var i = 0; i < rows.length; i++) {
+        var node = rows[i];
+        if (node.nodeType !== 1) continue;
+        if (!q || node.textContent.toLowerCase().indexOf(q) !== -1) node.removeAttribute("hidden");
+        else node.setAttribute("hidden", "");
+      }
+    });
+    if (!collapsed) autoscroll();
+    return wrap;
+  }
+
   /* ---- export ------------------------------------------ */
   window.AC = {
     mount: mount,
@@ -406,6 +582,10 @@
     ProgressBar: ProgressBar,
     VerdictHeader: VerdictHeader,
     AttentionCard: AttentionCard,
-    AttentionList: AttentionList
+    AttentionList: AttentionList,
+    RunHeader: RunHeader,
+    PhaseStepper: PhaseStepper,
+    SourceProgressRow: SourceProgressRow,
+    LogViewer: LogViewer
   };
 })();
