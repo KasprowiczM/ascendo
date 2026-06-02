@@ -656,6 +656,13 @@ async def start_run_async(
         try:
             from .runner import DEFAULT_PHASE_ORDER  # noqa: PLC0415
 
+            def _on_phase(name: str, index: int, total: int) -> None:
+                # Phase 2.3: record the live phase on the shared RunState so
+                # GET /runs/{id}/status reflects current progress.
+                state.current_phase = name
+                state.phase_index = index
+                state.phase_total = total
+
             state.lifecycle = "running"
             with stream_log_context(stream_log_path):
                 report = run_phases(
@@ -668,6 +675,7 @@ async def start_run_async(
                     stop_on_failure=stop_on_failure,
                     item_filter=item_filter,
                     should_cancel=lambda: state.cancel_event.is_set(),
+                    on_phase=_on_phase,
                 )
             state.report = report
             # E11: if cooperative cancel was signalled during run_phases,

@@ -698,8 +698,15 @@ async def stream_run_events(run_id: UUID, request: Request):
         import json as _json
 
         from ...orchestrator.run_async import STREAM_LOG_FILENAME
+        from ...orchestrator.runner import DEFAULT_PHASE_ORDER
 
         seen: set[str] = set()
+        # Phase 2.3: first-class `phase` events, derived from the on-disk
+        # sidecars (durable) so a client that connects after the run finished
+        # still replays the phase sequence — live state-diffing would emit
+        # nothing post-hoc.
+        announced_phases: set[str] = set()
+        _phase_order = [p.value for p in DEFAULT_PHASE_ORDER]
         # Per-log-file byte offset so we only stream NEW lines on each
         # poll cycle (not the whole file every 500 ms). Key = log path.
         # Per-request bookkeeping — every connected client gets its own
@@ -720,6 +727,12 @@ async def stream_run_events(run_id: UUID, request: Request):
                     seen.add(path.name)
                     try:
                         sc = read_sidecar(path)
+                        ph = sc.phase.value if hasattr(sc.phase, "value") else str(sc.phase)
+                        if ph not in announced_phases:
+                            announced_phases.add(ph)
+                            idx = _phase_order.index(ph) if ph in _phase_order else len(announced_phases) - 1
+                            total = getattr(state, "phase_total", 0) or len(_phase_order)
+                            yield _sse("phase", {"phase": ph, "index": idx, "total": total})
                         yield _sse("sidecar", sc.model_dump(mode="json", by_alias=True))
                     except SidecarReadError as exc:
                         yield _sse("sidecar_error", {"path": str(path), "error": str(exc)})
@@ -812,9 +825,34 @@ async def stream_run_events(run_id: UUID, request: Request):
                                 "source": log_path.stem,  # e.g. "apply__winget"
                                 "line": line,
                             })
-            if state.status in (RunStatus.COMPLETED, RunStatus.FAILED):
+            # Phase 2.3: CANCELLED is terminal too — before the fix it was
+            # omitted here, so a cancelled run looped forever (the stream
+            # never closed and `done` never fired).
+            if state.status in (
+                RunStatus.COMPLETED,
+                RunStatus.FAILED,
+                RunStatus.CANCELLED,
+            ):
+                # Attention events (durable — from the on-disk apply sidecars)
+                # before the terminal frame, so the dashboard can populate
+                # "Needs your attention" without a second fetch.
+                try:
+                    from ...orchestrator.report import (  # noqa: PLC0415
+                        collect_action_required,
+                    )
+
+                    for action in (collect_action_required(run_dir) if run_dir else []):
+                        yield _sse("attention", _attention_payload(action))
+                except Exception:  # noqa: BLE001
+                    pass
+                counts, needs_reboot = _done_summary(state)
                 yield _sse("done", {
                     "status": state.status.value,
+                    # Refined terminal: completed / completed_with_warnings /
+                    # failed / cancelled (falls back to the raw status).
+                    "state": getattr(state, "terminal_state", None) or state.status.value,
+                    "counts": counts,
+                    "needs_reboot": needs_reboot,
                     "error": state.error,
                     "duration_ms": (
                         int((state.finished_at - state.started_at).total_seconds() * 1000)
@@ -857,3 +895,51 @@ def _parse_progress(line: str) -> dict | None:
     label = parts[1] if len(parts) > 1 else ""
     pct = max(0, min(100, pct))
     return {"pct": pct, "label": label}
+
+
+def _done_summary(state: object) -> tuple[dict, bool]:
+    """Aggregate the run's sidecars into the four UI counts + a reboot flag.
+
+    Counts come from the APPLY-phase sidecars when an apply ran (those are
+    the phases that actually mutate); otherwise from all sidecars (so a
+    check-only run still reports its skipped/deferred items). needs_reboot
+    is OR'd across every sidecar. Reads the in-memory RunReport
+    (authoritative) rather than re-parsing disk.
+    """
+    counts = {"updated": 0, "deferred": 0, "warned": 0, "failed": 0}
+    needs_reboot = False
+    report = getattr(state, "report", None)
+    if report is not None:
+        def _ph(sc: object) -> str:
+            ph = getattr(sc, "phase", None)
+            return ph.value if hasattr(ph, "value") else str(ph)
+
+        sidecars = list(report.sidecars)
+        apply_scs = [sc for sc in sidecars if _ph(sc) == "apply"]
+        relevant = apply_scs or sidecars
+        for sc in relevant:
+            sm = sc.summary
+            counts["updated"] += sm.success
+            counts["deferred"] += sm.skipped + sm.triggered
+            counts["warned"] += sm.partial
+            counts["failed"] += sm.failed
+        needs_reboot = any(getattr(sc, "needs_reboot", False) for sc in sidecars)
+    return counts, needs_reboot
+
+
+def _attention_payload(action: object) -> dict:
+    """Map a ``report.ActionItem`` → the SSE ``attention`` shape runStore
+    reduces (``{source, code, message, action}``).
+    """
+    name = getattr(action, "name", "") or getattr(action, "slug", "")
+    reason_text = getattr(action, "reason_text", "") or ""
+    message = name + (f" — {reason_text}" if reason_text else "")
+    return {
+        "source": getattr(action, "category", ""),
+        "code": getattr(action, "reason", ""),
+        "message": message,
+        "action": {
+            "slug": getattr(action, "slug", ""),
+            "open_hint": getattr(action, "open_hint", ""),
+        },
+    }

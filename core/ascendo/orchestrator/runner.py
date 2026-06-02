@@ -148,6 +148,7 @@ def run_phases(
     stop_on_failure: bool = True,
     item_filter: Iterable[str] | None = None,
     should_cancel: Callable[[], bool] | None = None,
+    on_phase: Callable[[str, int, int], None] | None = None,
 ) -> RunReport:
     """Run the requested phases for every available package manager.
 
@@ -188,7 +189,7 @@ def run_phases(
             adapter=adapter, run=run, host=host, ordered=ordered,
             categories=categories, base_dir=base_dir,
             stop_on_failure=stop_on_failure, item_filter=item_filter,
-            should_cancel=should_cancel,
+            should_cancel=should_cancel, on_phase=on_phase,
         )
 
 
@@ -203,6 +204,7 @@ def _run_phases_inner(
     stop_on_failure,
     item_filter,
     should_cancel,
+    on_phase=None,
 ):
     available_managers = adapter.package_managers(host)
     selected = _select_managers(available_managers, categories, host)
@@ -229,7 +231,7 @@ def _run_phases_inner(
             return False
 
     cancelled = False
-    for phase in ordered:
+    for idx, phase in enumerate(ordered):
         # Cooperative cancel is checked at phase + manager boundaries (NOT
         # mid-subprocess): a Stop click takes effect before the next
         # phase/manager starts, so an in-flight install is never killed
@@ -240,6 +242,14 @@ def _run_phases_inner(
             aborted = phase
             cancelled = True
             break
+        # Phase 2.3: announce phase entry so the async worker can record the
+        # live phase on RunState (the SSE generator also derives durable
+        # `phase` events from on-disk sidecars for post-hoc replay).
+        if on_phase is not None:
+            try:
+                on_phase(phase.value, idx, len(ordered))
+            except Exception:  # noqa: BLE001
+                _log.exception("on_phase callback raised for phase %s", phase.value)
         phase_results: list[Sidecar] = []
         for mgr in selected:
             if _cancelled():
