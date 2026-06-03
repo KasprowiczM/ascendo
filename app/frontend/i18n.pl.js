@@ -25,6 +25,21 @@ window.I18N.pl = {
       sources_title: "Źródła",
       intent_default: "Przebieg aktualizacji"
     },
+    completion: {
+      verdict: {
+        completed: "Wszystko zaktualizowane",
+        completed_with_warnings: "Gotowe, z ostrzeżeniami",
+        failed: "Przebieg nie powiódł się",
+        cancelled: "Przebieg anulowany"
+      },
+      reboot: "Wymagane ponowne uruchomienie, aby zakończyć.",
+      changed: "Co się zmieniło",
+      report: "Zobacz pełny raport",
+      count_updated: "Zaktualizowano",
+      count_deferred: "Odroczono",
+      count_warned: "Ostrzeżenia",
+      count_failed: "Niepowodzenia"
+    },
     nav: {
       overview:   "Przegląd",
       categories: "Kategorie",

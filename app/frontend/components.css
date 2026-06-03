@@ -784,3 +784,12 @@
 .asc-danger__input:focus { outline: 2px solid var(--err); outline-offset: 1px; }
 .asc-danger__actions { display: flex; align-items: center; gap: 8px; width: 100%; }
 .asc-danger__spacer { flex: 1 1 auto; }
+
+/* ── CompletionSummary (Phase 2.7) ─────────────────────────────────────── */
+.asc-completion { display: flex; flex-direction: column; gap: var(--space-3); }
+.asc-completion__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.asc-changed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.asc-changed__row { display: flex; align-items: center; gap: var(--space-2); padding: 6px 0; border-bottom: 1px solid var(--border); }
+.asc-changed__row:last-child { border-bottom: 0; }
+.asc-changed__name { font-weight: var(--fw-medium); color: var(--fg); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asc-changed__ver { font-family: var(--font-mono, ui-monospace, monospace); font-size: .78rem; color: var(--fg-muted); flex: none; }

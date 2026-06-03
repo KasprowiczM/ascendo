@@ -26,6 +26,21 @@ window.I18N.en = {
       sources_title: "Sources",
       intent_default: "Update run"
     },
+    completion: {
+      verdict: {
+        completed: "All updated",
+        completed_with_warnings: "Done, with warnings",
+        failed: "Run failed",
+        cancelled: "Run cancelled"
+      },
+      reboot: "A restart is required to finish.",
+      changed: "What changed",
+      report: "View full report",
+      count_updated: "Updated",
+      count_deferred: "Deferred",
+      count_warned: "Warnings",
+      count_failed: "Failed"
+    },
     nav: {
       overview:   "Overview",
       categories: "Categories",

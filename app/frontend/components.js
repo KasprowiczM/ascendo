@@ -648,6 +648,61 @@
     return null;
   }
 
+  /* ---- CompletionSummary (Phase 2.7) ------------------- */
+  // Verdict-first summary of a finished run. Reused by the live monitor (on
+  // done) and the History run-detail drawer. {verdict, verdictLabel, sub,
+  // needsReboot, rebootText, counts, countLabels, attention, attentionTitle,
+  // changed, changedTitle, actions}
+  function CompletionSummary(o) {
+    o = o || {};
+    var v = el("div", "asc-completion");
+    // Map the terminal lifecycle (completed / completed_with_warnings /
+    // failed / cancelled) → a status variant; STATUS() doesn't know these.
+    v.appendChild(VerdictHeader({
+      status: runVariant(o.verdict),
+      title: o.verdictLabel != null ? o.verdictLabel : "",
+      sub: o.sub
+    }));
+    if (o.needsReboot) {
+      v.appendChild(Banner({ tone: "warn", text: o.rebootText || "A restart is required to finish." }));
+    }
+    if (o.counts) {
+      var labels = o.countLabels || {};
+      var kpis = [];
+      ["updated", "deferred", "warned", "failed"].forEach(function (k) {
+        var val = o.counts[k];
+        if (val == null) return;
+        var st = (k === "failed" && val > 0) ? "err"
+          : (k === "warned" && val > 0) ? "warn"
+          : (k === "updated" && val > 0) ? "ok" : "neutral";
+        kpis.push({ value: val, label: labels[k] || k, status: st });
+      });
+      if (kpis.length) v.appendChild(KpiStrip(kpis));
+    }
+    var attn = AttentionList(o.attention || []);
+    if (attn) {
+      v.appendChild(Card({ title: o.attentionTitle || "Needs your attention", children: attn }));
+    }
+    if (o.changed && o.changed.length) {
+      var list = el("ul", "asc-changed");
+      o.changed.forEach(function (c) {
+        var li = el("li", "asc-changed__row");
+        li.appendChild(StatusPill({ status: c.status, label: "" }));
+        li.appendChild(el("span", "asc-changed__name", c.name || ""));
+        var ver = (c.from && c.to) ? (c.from + " → " + c.to) : (c.to || c.from || "");
+        if (ver) li.appendChild(el("span", "asc-changed__ver", ver));
+        list.appendChild(li);
+      });
+      v.appendChild(Card({ title: o.changedTitle || "What changed", children: list }));
+    }
+    if (o.actions && o.actions.length) {
+      var acts = el("div", "asc-completion__actions");
+      o.actions.forEach(function (a) { acts.appendChild(Button(a)); });
+      v.appendChild(acts);
+    }
+    return v;
+  }
+
   /* ---- export ------------------------------------------ */
   window.AC = {
     mount: mount,
@@ -670,6 +725,7 @@
     SourceProgressRow: SourceProgressRow,
     LogViewer: LogViewer,
     IntentRunCard: IntentRunCard,
-    DangerConfirm: DangerConfirm
+    DangerConfirm: DangerConfirm,
+    CompletionSummary: CompletionSummary
   };
 })();

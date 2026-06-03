@@ -3432,6 +3432,42 @@ const ui = {
       </div>`;
     if (window.shell && typeof window.shell.openDrawer === "function") {
       window.shell.openDrawer(html);
+      // Phase 2.7: prepend a verdict-first CompletionSummary above the <dl>,
+      // built from the run's sidecars + action-required (same primitive the
+      // live monitor uses on `done`).
+      (async () => {
+        try {
+          const body = document.getElementById("run-drawer-body");
+          if (!body || !window.AC) return;
+          const T = (k, fb) => (window.tr && window.tr(k)) || fb;
+          const [sidecars, ar] = await Promise.all([
+            api.get("/runs/" + encodeURIComponent(r.id)).catch(() => []),
+            api.get("/runs/" + encodeURIComponent(r.id) + "/action-required").catch(() => ({ items: [] })),
+          ]);
+          const counts = ui._countsFromSidecars(sidecars);
+          const changed = ui._changedFromSidecars(sidecars);
+          const verdict = ui._verdictFromStatus(r.status, counts, r.needs_reboot);
+          const attention = ((ar && ar.items) || []).map(a => ({
+            tone: "warn", title: a.message || a.name || a.slug || "", detail: a.source || a.category || ""
+          }));
+          const node = AC.CompletionSummary({
+            verdict: verdict,
+            verdictLabel: T("completion.verdict." + verdict, T("runstate." + verdict, verdict)),
+            needsReboot: r.needs_reboot,
+            rebootText: T("completion.reboot", "A restart is required to finish."),
+            counts: counts,
+            countLabels: ui._countLabels(),
+            attention: attention,
+            attentionTitle: T("active.attention_title", "Needs your attention"),
+            changed: changed,
+            changedTitle: T("completion.changed", "What changed"),
+            actions: [],
+          });
+          node.classList.add("asc-completion--drawer");
+          if (body.firstChild) body.insertBefore(node, body.firstChild);
+          else body.appendChild(node);
+        } catch (e) {}
+      })();
       const lb = document.getElementById("drawer-logs-btn");
       if (lb) lb.addEventListener("click", () => {
         window.shell.closeDrawer();
@@ -4349,6 +4385,9 @@ const ui = {
           try { var d = JSON.parse(e.data); d.type = name; window.runStore.reduce(d); } catch {}
         });
       });
+      // Phase 2.7: on completion, fetch the per-item change set (one-time,
+      // cached per run) for the CompletionSummary "What changed" section.
+      es.addEventListener("done", function () { try { ui._fetchRunChanged(runId); } catch (e) {} });
     }
     const phaseRows = new Map();
     function ensureProgVisible() { prog.classList.remove("hidden"); }
@@ -4551,25 +4590,53 @@ const ui = {
     }
     const mon = document.createElement("div");
     mon.className = "asc-runmonitor";
-    mon.appendChild(AC.RunHeader({
-      intent: ui._activeRunIntent || T("active.intent_default", "Update run"),
-      state: s.lifecycle,
-      stateLabel: T("runstate." + s.lifecycle, s.lifecycle),
-      elapsedMs: s.elapsedMs,
-      etaMs: etaMs,
-      etaSuffix: T("active.eta_suffix", "left (est.)"),
-      value: done, total: total,
-      onStop: active ? function () { ui._stopActiveRun(); } : null,
-      stopLabel: ui._activeStopping ? T("active.stopping", "Stopping…") : T("active.stop", "Stop")
-    }));
+    if (active) {
+      mon.appendChild(AC.RunHeader({
+        intent: ui._activeRunIntent || T("active.intent_default", "Update run"),
+        state: s.lifecycle,
+        stateLabel: T("runstate." + s.lifecycle, s.lifecycle),
+        elapsedMs: s.elapsedMs,
+        etaMs: etaMs,
+        etaSuffix: T("active.eta_suffix", "left (est.)"),
+        value: done, total: total,
+        onStop: function () { ui._stopActiveRun(); },
+        stopLabel: ui._activeStopping ? T("active.stopping", "Stopping…") : T("active.stop", "Stop")
+      }));
+    } else {
+      // Phase 2.7: a finished run reads as a verdict, not a frozen progress
+      // view. CompletionSummary already renders the attention section.
+      const changed = (ui._activeChanged && ui._activeChanged.runId === s.runId)
+        ? ui._activeChanged.items : [];
+      mon.appendChild(AC.CompletionSummary({
+        verdict: s.lifecycle,
+        verdictLabel: T("completion.verdict." + s.lifecycle, T("runstate." + s.lifecycle, s.lifecycle)),
+        needsReboot: s.needsReboot,
+        rebootText: T("completion.reboot", "A restart is required to finish."),
+        counts: s.counts,
+        countLabels: ui._countLabels(),
+        attention: (s.attention || []).map(function (a) {
+          return { tone: "warn", title: a.message || a.source || "", detail: a.source || "" };
+        }),
+        attentionTitle: T("active.attention_title", "Needs your attention"),
+        changed: changed,
+        changedTitle: T("completion.changed", "What changed"),
+        actions: s.runId ? [{
+          variant: "primary",
+          label: T("completion.report", "View full report"),
+          onClick: function () { window.open("/runs/" + encodeURIComponent(s.runId) + "/report", "_blank", "noopener"); }
+        }] : []
+      }));
+    }
     mon.appendChild(AC.PhaseStepper(s.phases.map(function (p) {
       return { id: p.id, status: p.status, label: T("runphase." + p.id, p.id) };
     })));
-    const attn = AC.AttentionList((s.attention || []).map(function (a) {
-      return { tone: "warn", title: a.message || a.source || "", detail: a.source || "" };
-    }));
-    if (attn) {
-      mon.appendChild(AC.Card({ title: T("active.attention_title", "Needs your attention"), children: attn }));
+    if (active) {
+      const attn = AC.AttentionList((s.attention || []).map(function (a) {
+        return { tone: "warn", title: a.message || a.source || "", detail: a.source || "" };
+      }));
+      if (attn) {
+        mon.appendChild(AC.Card({ title: T("active.attention_title", "Needs your attention"), children: attn }));
+      }
     }
     if (sources.length) {
       const wrap = document.createElement("div");
@@ -4597,6 +4664,65 @@ const ui = {
     ui._activeStopping = true;
     ui._paintActiveRun();
     fetch("/runs/active/stop", { method: "POST" }).catch(function () {});
+  },
+
+  // ── Phase 2.7: completion-summary data helpers (shared by the live
+  // monitor + the History run-detail drawer) ───────────────────────────
+  _changedFromSidecars(sidecars) {
+    const out = [];
+    const seen = {};
+    (sidecars || []).forEach(function (sc) {
+      if (!sc || !sc.items) return;
+      if (sc.phase !== "apply" && sc.phase !== "verify") return;
+      sc.items.forEach(function (it) {
+        if (it.status !== "success" && it.status !== "triggered") return;
+        const from = it.current_version;
+        const to = it.resolved_version || it.target_version;
+        if (!to || from === to) return;
+        const key = (sc.category || "") + "/" + (it.name || it.id);
+        if (seen[key]) return; seen[key] = 1;
+        out.push({ name: it.name || it.id, from: from, to: to, status: it.status, category: sc.category });
+      });
+    });
+    return out;
+  },
+  _countsFromSidecars(sidecars) {
+    const apply = (sidecars || []).filter(function (sc) { return sc && sc.phase === "apply"; });
+    const rel = apply.length ? apply : (sidecars || []).filter(function (sc) { return sc && sc.summary; });
+    const c = { updated: 0, deferred: 0, warned: 0, failed: 0 };
+    rel.forEach(function (sc) {
+      const s = sc.summary || {};
+      c.updated += (s.success || 0);
+      c.deferred += (s.skipped || 0) + (s.triggered || 0);
+      c.warned += (s.partial || 0);
+      c.failed += (s.failed || 0);
+    });
+    return c;
+  },
+  _verdictFromStatus(status, counts, needsReboot) {
+    if (status === "failed") return "failed";
+    if (status === "cancelled") return "cancelled";
+    if (counts && counts.failed > 0) return "failed";
+    if ((counts && (counts.deferred > 0 || counts.warned > 0)) || needsReboot || status === "partial") {
+      return "completed_with_warnings";
+    }
+    return "completed";
+  },
+  _countLabels() {
+    const T = (k, fb) => (window.tr && window.tr(k)) || fb;
+    return {
+      updated: T("completion.count_updated", "Updated"),
+      deferred: T("completion.count_deferred", "Deferred"),
+      warned: T("completion.count_warned", "Warnings"),
+      failed: T("completion.count_failed", "Failed"),
+    };
+  },
+  async _fetchRunChanged(runId) {
+    try {
+      const sidecars = await api.get("/runs/" + encodeURIComponent(runId));
+      ui._activeChanged = { runId: runId, items: ui._changedFromSidecars(sidecars) };
+      ui._scheduleActivePaint();
+    } catch (e) {}
   },
 };
 
