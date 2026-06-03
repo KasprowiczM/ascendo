@@ -1204,16 +1204,28 @@ header h1.brand .brand-tagline {
 .run-detail-diag.lvl-error .run-detail-diag-text { color: var(--err); }
 
 /* Ã¢ÂÂÃ¢ÂÂ Help doc styling Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */
-.help-toc { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; font-size: 1rem; }
-.help-toc a { color: var(--accent-fg); text-decoration: none; padding: 0.2rem 0; }
-.help-toc a:hover { text-decoration: underline; }
-.help-doc { font-size: 1rem; line-height: 1.6; }
-.help-doc h3 { margin-top: 2rem; padding-top: 0.8rem; border-top: 1px solid var(--border); color: var(--accent-fg); font-size: 1.25rem; }
+/* Modern doc page: pill table-of-contents + clean section dividers +
+   recessed code blocks (tokens only; readable on both themes). */
+.help-toc { display: flex; flex-wrap: wrap; gap: 8px; font-size: 0.9rem; }
+.help-toc a {
+  color: var(--fg-muted); text-decoration: none;
+  padding: 5px 11px; border-radius: 999px;
+  background: var(--bg-sunk); border: 1px solid var(--border);
+  transition: background var(--dur-fast, .12s) ease, color var(--dur-fast, .12s) ease, border-color var(--dur-fast, .12s) ease;
+}
+.help-toc a:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--fg); text-decoration: none; }
+.help-doc { font-size: 1rem; line-height: 1.65; }
+.help-doc h3 {
+  margin-top: 2.2rem; padding-top: 1rem; border-top: 1px solid var(--border);
+  color: var(--fg); font-size: 1.2rem; font-weight: 700; letter-spacing: -0.01em;
+}
 .help-doc h3:first-child { margin-top: 0.4rem; padding-top: 0; border-top: 0; }
-.help-doc p { font-size: 1rem; }
-.help-doc pre { background: var(--bg); padding: 0.85rem 1rem; border-radius: 6px;
-  font-family: var(--mono); font-size: 0.9rem; line-height: 1.5; overflow-x: auto; }
-.help-doc code { background: var(--bg); padding: 0.08em 0.4em; border-radius: 3px; font-family: var(--mono); font-size: 0.92em; }
+.help-doc p { font-size: 1rem; color: var(--fg); }
+.help-doc pre { background: var(--bg-sunk); padding: 0.9rem 1.05rem; border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono, var(--mono)); font-size: 0.875rem; line-height: 1.55; overflow-x: auto; }
+.help-doc pre code { background: transparent; padding: 0; border: 0; }
+.help-doc code { background: var(--bg-sunk); padding: 0.1em 0.42em; border-radius: 4px; border: 1px solid var(--border); font-family: var(--font-mono, var(--mono)); font-size: 0.9em; }
 .help-doc ul { padding-left: 1.5rem; }
 .help-doc li { margin: 0.3rem 0; font-size: 1rem; }
 .help-doc table.tbl { font-size: 0.95rem; }
