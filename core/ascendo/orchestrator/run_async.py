@@ -697,6 +697,12 @@ async def start_run_async(
             state.terminal_state = "failed"
             state.status = RunStatus.FAILED
         finally:
+            # I3 (review): stamp finished_at BEFORE the post-run inventory /
+            # history flush so the SSE `done` event — which fires the moment
+            # `status` goes terminal, possibly mid-flush for large inventories
+            # — reports an accurate run duration. The flush is post-run
+            # bookkeeping, not part of the run's wall-clock.
+            state.finished_at = datetime.now(timezone.utc)
             state.lifecycle = "finalizing"
             # E11: skip inventory flush on cancel — partial sidecars
             # from a cancelled run are unreliable and should not update
@@ -725,7 +731,11 @@ async def start_run_async(
                 backfill_triggered_history(run_dir, str(run.id), inventory_db)
             except Exception:  # noqa: BLE001
                 _log.exception("post-run update_history flush failed")
-            state.finished_at = datetime.now(timezone.utc)
+            # I1 (review): converge the live lifecycle sub-state to the
+            # terminal descriptor — otherwise GET /runs/{id}/status reports a
+            # permanent "finalizing" for a finished run (non-SSE clients poll
+            # /status, not the SSE done.state).
+            state.lifecycle = state.terminal_state or state.status.value
             state._completion_event.set()
 
     # Use asyncio.to_thread so we don't block the FastAPI event loop while

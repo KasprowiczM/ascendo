@@ -433,3 +433,8 @@ def test_status_endpoint_exposes_terminal_state(tmp_path: Path) -> None:
     assert "terminal_state" in status, (
         f"'terminal_state' key missing from /status response: {status!r}"
     )
+    # I1 (review): the live lifecycle sub-state must converge to the terminal
+    # descriptor — not stay "finalizing" forever for a finished run.
+    assert status.get("lifecycle") == status.get("terminal_state"), (
+        f"lifecycle should converge to terminal_state, got {status!r}"
+    )

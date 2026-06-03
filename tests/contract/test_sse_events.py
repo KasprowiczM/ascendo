@@ -100,8 +100,15 @@ def test_sse_emits_phase_events_and_enriched_done(tmp_path: Path) -> None:
     assert isinstance(d.get("counts"), dict), f"done.counts not a dict: {d!r}"
     for k in ("updated", "deferred", "warned", "failed"):
         assert k in d["counts"], f"done.counts missing {k}: {d['counts']!r}"
-    # _WarnMgr emits one skipped item per phase → deferred should count them.
-    assert d["counts"]["deferred"] >= 1, f"expected deferred>=1: {d['counts']!r}"
+    # I2 (review): a single check-phase pass — _WarnMgr emits one skipped item
+    # in BOTH the check and plan sidecars, but counts must NOT double-count
+    # (no apply phase → count the check pass only).
+    assert d["counts"]["deferred"] == 1, (
+        f"expected deferred==1 (no cross-phase double-count): {d['counts']!r}"
+    )
+    # I3 (review): finished_at is stamped before the post-run flush, so the
+    # done event always carries a real duration.
+    assert isinstance(d.get("duration_ms"), int), f"duration_ms should be set: {d!r}"
     assert "state" in d, "done missing refined terminal state"
     assert d["state"] == "completed_with_warnings", f"unexpected state: {d!r}"
     assert "needs_reboot" in d, "done missing needs_reboot"

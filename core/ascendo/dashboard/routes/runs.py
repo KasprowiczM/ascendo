@@ -916,7 +916,12 @@ def _done_summary(state: object) -> tuple[dict, bool]:
 
         sidecars = list(report.sidecars)
         apply_scs = [sc for sc in sidecars if _ph(sc) == "apply"]
-        relevant = apply_scs or sidecars
+        check_scs = [sc for sc in sidecars if _ph(sc) == "check"]
+        # Prefer apply-phase counts (the mutating phase). Else use a SINGLE
+        # check-phase pass — counting across all phases double-counts a package
+        # that is e.g. skipped in both check AND plan (review I2). Else fall
+        # back to every sidecar.
+        relevant = apply_scs or check_scs or sidecars
         for sc in relevant:
             sm = sc.summary
             counts["updated"] += sm.success
