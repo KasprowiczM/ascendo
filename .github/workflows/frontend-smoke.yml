@@ -1,0 +1,61 @@
+name: Frontend smoke
+
+# Headless browser smoke for the dashboard SPA — boots the real FastAPI
+# dashboard and drives it in Chromium (Playwright). Guards the redesign
+# against render regressions the i18n/hygiene scripts can't see. Isolated
+# from validate.yml so it can never destabilise the config gate.
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'app/frontend/**'
+      - 'core/ascendo/dashboard/**'
+      - 'tests/e2e/**'
+      - '.github/workflows/frontend-smoke.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'app/frontend/**'
+      - 'core/ascendo/dashboard/**'
+      - 'tests/e2e/**'
+      - '.github/workflows/frontend-smoke.yml'
+
+jobs:
+  smoke:
+    name: Dashboard SPA smoke (Chromium)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Ascendo (core + ubuntu adapter + web deps)
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -e core/
+          pip install -e adapters/ubuntu/ --no-deps
+          pip install 'fastapi==0.136.1' 'starlette==1.0.0' 'uvicorn[standard]' 'httpx==0.28.1'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright (Chromium)
+        working-directory: tests/e2e
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Run dashboard smoke
+        working-directory: tests/e2e
+        env:
+          # The Playwright webServer launches `python -m ascendo dashboard`;
+          # PYTHONPATH must expose core + the installed adapter.
+          PYTHONPATH: ${{ github.workspace }}/core:${{ github.workspace }}/adapters/ubuntu
+        run: npx playwright test
