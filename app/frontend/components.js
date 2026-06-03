@@ -703,6 +703,53 @@
     return v;
   }
 
+  /* ---- SourceListItem (Phase 4.2) ----------------------- */
+  // One Library source row, weight-differentiated. {outdated}>0 renders
+  // the heavy "update" variant (amber left-stripe + tinted count badge +
+  // secondary Update action); otherwise the compact "current" one-liner.
+  // Advanced (raw 5-phase) actions hide behind a `⋯` overflow button.
+  function SourceListItem(o) {
+    o = o || {};
+    // {id, displayName, total, outdated, totalLabel, outdatedLabel,
+    //  updateLabel, advancedLabel, onUpdate, onAdvanced}
+    var needsUpdate = (o.outdated || 0) > 0;
+    var row = el("div", "asc-source asc-source--" + (needsUpdate ? "update" : "current"));
+
+    var name = el("div", "asc-source__name");
+    name.appendChild(el("b", "asc-source__id", o.id != null ? o.id : ""));
+    if (o.displayName) name.appendChild(el("span", "asc-source__sub", o.displayName));
+    row.appendChild(name);
+
+    var meta = el("div", "asc-source__meta");
+    if (needsUpdate) {
+      meta.appendChild(el("span", "asc-source__badge", String(o.outdated || 0)));
+      if (o.outdatedLabel) meta.appendChild(el("span", "asc-source__metalbl", o.outdatedLabel));
+    } else {
+      meta.appendChild(StatusPill({
+        status: "ok",
+        label: (o.total || 0) + (o.totalLabel ? " " + o.totalLabel : ""),
+      }));
+    }
+    row.appendChild(meta);
+
+    var acts = el("div", "asc-source__acts");
+    if (needsUpdate && typeof o.onUpdate === "function") {
+      acts.appendChild(Button({
+        variant: "secondary",
+        label: (o.updateLabel || "Update") + (o.outdated ? " " + o.outdated : ""),
+        onClick: o.onUpdate,
+      }));
+    }
+    if (typeof o.onAdvanced === "function") {
+      var more = Button({ variant: "ghost", label: "⋯", onClick: o.onAdvanced });
+      more.classList.add("asc-source__more");
+      if (o.advancedLabel) more.setAttribute("aria-label", o.advancedLabel);
+      acts.appendChild(more);
+    }
+    row.appendChild(acts);
+    return row;
+  }
+
   /* ---- export ------------------------------------------ */
   window.AC = {
     mount: mount,
@@ -726,6 +773,7 @@
     LogViewer: LogViewer,
     IntentRunCard: IntentRunCard,
     DangerConfirm: DangerConfirm,
-    CompletionSummary: CompletionSummary
+    CompletionSummary: CompletionSummary,
+    SourceListItem: SourceListItem
   };
 })();

@@ -2837,62 +2837,54 @@ const ui = {
     }
     window.INV_SUMMARY = summary;
 
-    const list = document.createElement("div");
-    list.className = "asc-srclist";
-    for (const c of cats) {
+    // Split sources by weight (plan §4.2): outdated-bearing sources rise
+    // into an "Updates available" group (heavy, amber, Update N); the rest
+    // collapse into a quiet "Up to date" group. Advanced 5-phase actions
+    // hide behind a per-row ⋯ overflow (ui._sourceAdvancedDrawer). Same
+    // data + same callees as before — just regrouped + de-emphasised.
+    const decorated = cats.map(c => {
       const counts = (summary.categories && summary.categories[c.id]) ||
         { ok: 0, outdated: 0, missing: 0, total: 0 };
       const out = (counts.outdated || 0) + (counts.missing || 0);
+      return { c, counts, out };
+    });
+    const updates = decorated.filter(d => d.out > 0).sort((a, b) => b.out - a.out);
+    const current = decorated.filter(d => d.out === 0);
 
-      const rowName = document.createElement("div");
-      rowName.className = "asc-srcrow__name";
-      const strong = document.createElement("b");
-      strong.textContent = c.id;
-      const sub = document.createElement("span");
-      sub.className = "asc-srcrow__sub";
-      sub.textContent = c.display_name || "";
-      rowName.appendChild(strong);
-      rowName.appendChild(sub);
+    const mkItem = (d) => AC.SourceListItem({
+      id: d.c.id,
+      displayName: d.c.display_name || "",
+      total: d.counts.total || 0,
+      outdated: d.out,
+      totalLabel: tr("lib.total_label", "tracked"),
+      outdatedLabel: tr("lib.outdated_summary", "outdated"),
+      updateLabel: tr("lib.update_label", "Update"),
+      advancedLabel: tr("lib.advanced", "Advanced") + " — " + d.c.id,
+      onUpdate: () => ui._appsRunApply(d.c.id, null),
+      onAdvanced: () => ui._sourceAdvancedDrawer(d.c, d.counts),
+    });
+    const mkGroup = (titleKey, titleFb, rows) => {
+      const g = document.createElement("div");
+      g.className = "asc-srcgroup";
+      const head = document.createElement("div");
+      head.className = "asc-srcgroup__head";
+      const h = document.createElement("h3");
+      h.className = "asc-srcgroup__title";
+      h.textContent = tr(titleKey, titleFb);
+      const cnt = document.createElement("span");
+      cnt.className = "asc-srcgroup__count";
+      cnt.textContent = String(rows.length);
+      head.appendChild(h);
+      head.appendChild(cnt);
+      g.appendChild(head);
+      rows.forEach(d => g.appendChild(mkItem(d)));
+      return g;
+    };
 
-      const stats = document.createElement("div");
-      stats.className = "asc-srcrow__stats";
-      stats.appendChild(AC.StatPair({
-        value: counts.total || 0, label: tr("categories.col_total", "Total"),
-        status: "neutral",
-      }));
-      stats.appendChild(AC.StatPair({
-        value: out, label: tr("lib.outdated_summary", "outdated"),
-        status: out === 0 ? "ok" : "warn",
-      }));
-      stats.appendChild(AC.StatusPill({
-        status: out === 0 ? "ok" : "warn",
-        label: out === 0
-          ? tr("lib.none_outdated", "all up to date")
-          : `${out} ${tr("lib.outdated_summary", "outdated")}`,
-      }));
-
-      const acts = document.createElement("div");
-      acts.className = "asc-srcrow__acts";
-      if (out > 0) {
-        acts.appendChild(AC.Button({
-          variant: "primary",
-          label: tr("lib.update_source", "Update source"),
-          onClick: () => ui._appsRunApply(c.id, null),
-        }));
-      }
-      acts.appendChild(AC.Button({
-        variant: "ghost",
-        label: tr("lib.advanced", "Advanced") + " ▸",
-        onClick: () => ui._sourceAdvancedDrawer(c, counts),
-      }));
-
-      const rowEl = document.createElement("div");
-      rowEl.className = "asc-srcrow";
-      rowEl.appendChild(rowName);
-      rowEl.appendChild(stats);
-      rowEl.appendChild(acts);
-      list.appendChild(rowEl);
-    }
+    const list = document.createElement("div");
+    list.className = "asc-srclist";
+    if (updates.length) list.appendChild(mkGroup("lib.group_updates", "Updates available", updates));
+    if (current.length) list.appendChild(mkGroup("lib.group_current", "Up to date", current));
 
     // Inventory controls (operator: "there are no buttons to build /
     // rebuild / delete inventory"). Rebuild = full live rescan + DB

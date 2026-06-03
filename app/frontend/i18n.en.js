@@ -381,6 +381,10 @@ window.I18N.en = {
       exclude:          "Exclude",
       include:          "Include",
       none_outdated:    "all up to date",
+      group_updates:    "Updates available",
+      group_current:    "Up to date",
+      total_label:      "tracked",
+      update_label:     "Update",
     },
     wizard: {
       title:        "Welcome to Ascendo",

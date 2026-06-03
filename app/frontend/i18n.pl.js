@@ -457,6 +457,10 @@ window.I18N.pl = {
       exclude:          "Wyklucz",
       include:          "Włącz",
       none_outdated:    "wszystko aktualne",
+      group_updates:    "Dostępne aktualizacje",
+      group_current:    "Aktualne",
+      total_label:      "śledzonych",
+      update_label:     "Aktualizuj",
     },
     wizard: {
       title:        "Witaj w Ascendo",
