@@ -26,11 +26,22 @@ web dashboard, a native desktop shell, and a CLI for power users — all
 backed by the same Python core, all writing the same JSON receipt
 ("sidecar") for every change so you can audit, replay, or roll back.
 
+## The dashboard
+
+An answer-first operations console — calm, fast, and fully themed (dark + light):
+
+- **Dashboard** opens with a plain-language verdict (*"2 ready · 3 need you"*) and a **Needs your attention** list that surfaces failed runs and apps to open — nothing hides behind a calm screen.
+- **Runs** has a safe-by-default start (Quick / Safe / Full intents), a **live execution monitor** (phase stepper, per-source progress, log viewer), and a completion summary.
+- **Library** splits sources into *Updates available* vs *Up to date*; **Insights** owns the time axis (trends, durations, failures); **History** leads with a KPI strip + per-run detail.
+- The **Assistant** is a modern, layered chat backed by your installed `claude` / `gemini` / `codex` / `opencode` CLI (or an API key) that can diagnose runs and propose one-click actions.
+
+> Screenshots: see [`docs/screenshots/`](docs/screenshots/) for a capture checklist (run `ascendo web start`, grab each destination in both themes).
+
 ## Editions
 
 | Edition | Who it's for | Features |
 |---------|--------------|----------|
-| **Basic** *(default)* | Everyday users — install, update, click-to-run | 5-destination AppShell: Dashboard, Library (Sources, Apps, Tools), Runs (Start, Scheduled, History), Insights, Settings (General, Help/About). Includes AI Tools chat. |
+| **Basic** *(default)* | Everyday users — install, update, click-to-run | 5-destination AppShell: Dashboard, Library (Sources, Apps, Assistant), Runs (Start, Active, Scheduled, History), Insights, Settings (General, Help/About). Includes the AI Assistant chat. |
 | **Dev** | Maintainers + contributors | Above + Sync, Hosts, raw-events stream, dev-sync overlay tooling, GitHub repo config, push capability |
 
 The edition is recorded in `$ASCENDO_HOME/.ascendo-edition`; the
