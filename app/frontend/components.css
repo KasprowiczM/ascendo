@@ -800,20 +800,24 @@
 .asc-srcgroup__head { display: flex; align-items: baseline; gap: var(--space-2); }
 .asc-srcgroup__title { font-size: var(--fs-eyebrow, .72rem); text-transform: uppercase; letter-spacing: .08em; color: var(--fg-muted); font-weight: 700; margin: 0; }
 .asc-srcgroup__count { font-size: .72rem; color: var(--fg-faint); }
-.asc-source { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-md, 10px); padding: 12px 15px; }
+.asc-source { display: flex; align-items: center; gap: var(--space-3); background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-md, 10px); padding: 12px 15px; }
 .asc-source--update { border-left: 3px solid var(--warn); }
 .asc-source--current { padding: 9px 15px; background: transparent; }
-.asc-source__name { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.asc-source__id { color: var(--fg); font-weight: 600; }
+/* Name grows; meta + actions are fixed-basis right-aligned columns so the
+   status tags and overflow buttons line up vertically across every row. */
+.asc-source__name { display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto; min-width: 0; }
+.asc-source__id { color: var(--fg); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .asc-source__sub { color: var(--fg-muted); font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.asc-source__meta { display: flex; align-items: center; gap: var(--space-2); flex: none; }
+.asc-source__meta { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); flex: 0 0 150px; }
 .asc-source__badge { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn); font-weight: 700; font-size: .78rem; }
 .asc-source__metalbl { color: var(--fg-muted); font-size: .8rem; }
-.asc-source__acts { display: flex; align-items: center; gap: 8px; flex: none; }
+.asc-source__acts { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 140px; }
 .asc-source__more { min-width: 38px; }
 @media (max-width: 640px) {
   .asc-source { flex-wrap: wrap; }
-  .asc-source__acts { width: 100%; justify-content: flex-end; }
+  .asc-source__name { flex: 1 1 100%; }
+  .asc-source__meta { flex: 1 1 auto; justify-content: flex-start; }
+  .asc-source__acts { flex: 0 0 auto; }
 }
 
 /* ── Settings groups (Phase 4.1) ───────────────────────────────────────── */
