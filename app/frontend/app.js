@@ -1877,28 +1877,29 @@ const ui = {
     const root = $("#overview-root");
     if (!root || !AC) return;
 
-    // #hostbadge still lives in the shell footer — keep feeding it
-    // (unchanged behavior; not part of the Dashboard render).
-    try {
-      const h0 = await api.get("/health");
-      const hb = $("#hostbadge");
-      if (hb) hb.textContent = h0.repo_root || "";
-    } catch {}
-
     // Loading state: one skeleton primitive (blueprint §2.7).
     AC.mount(root, [
       AC.Skeleton({ rows: 2, variant: "rows" }),
       AC.Skeleton({ rows: 4, variant: "rows" }),
     ]);
 
-    // ---- gather data (same endpoints as before) ----------------------
-    let summary = null, runs = [], health = null;
-    try { summary = await frontendCache.get("/inventory/summary", { refresh }); }
-    catch { summary = null; }
-    try { runs = (await api.get("/runs?limit=5")).runs || []; }
-    catch { runs = []; }
-    try { health = await api.get("/health/check"); }
-    catch { health = null; }
+    // ---- gather data — fire the independent reads in PARALLEL. Was four
+    // serial round-trips (the answer-zone paint waited on their SUM); now
+    // it waits on the slowest single call. /health is fetched ONCE here and
+    // reused for both the host badge and the component rollup below.
+    const [healthR, summaryR, runsR, healthCheckR] = await Promise.allSettled([
+      api.get("/health"),
+      frontendCache.get("/inventory/summary", { refresh }),
+      api.get("/runs?limit=5"),
+      api.get("/health/check"),
+    ]);
+    const h0      = healthR.status === "fulfilled" ? healthR.value : null;
+    const summary = summaryR.status === "fulfilled" ? summaryR.value : null;
+    const runs    = (runsR.status === "fulfilled" && runsR.value && runsR.value.runs) ? runsR.value.runs : [];
+    const health  = healthCheckR.status === "fulfilled" ? healthCheckR.value : null;
+
+    // #hostbadge (shell footer) — unchanged behavior, now from the shared fetch.
+    try { const hb = $("#hostbadge"); if (hb) hb.textContent = (h0 && h0.repo_root) || ""; } catch {}
 
     const totals  = (summary && summary.totals) || { ok: 0, outdated: 0, missing: 0, total: 0 };
     const managed = totals.total || ((totals.ok || 0) + (totals.outdated || 0) + (totals.missing || 0));
@@ -2010,11 +2011,9 @@ const ui = {
     // move OFF the page into a drawer, opened by clicking this StatPair).
     // /health/check carries the numeric score; /health carries the
     // per-component map we surface in the drawer.
-    let hComps = {};
-    try {
-      const hc = await api.get("/health");
-      hComps = (hc && typeof hc.components === "object") ? hc.components : {};
-    } catch { hComps = {}; }
+    // Reuse the /health response fetched in parallel above (was a 5th
+    // serial round-trip to the same endpoint).
+    const hComps = (h0 && typeof h0.components === "object") ? h0.components : {};
     const compNames = Object.keys(hComps);
     const compTotal = compNames.length;
     const compOk = compNames.filter(n => {
@@ -2895,7 +2894,7 @@ const ui = {
     const invCtrls = document.createElement("div");
     invCtrls.className = "asc-srcrow__acts";
     const rebuildBtn = AC.Button({
-      variant: "primary",
+      variant: "secondary",
       label: tr("lib.inv_rebuild", "Rebuild inventory"),
       onClick: async () => {
         rebuildBtn.disabled = true;
@@ -3959,19 +3958,19 @@ const ui = {
         actGroup.className = "schedule-row-actions";
         const trigBtn = document.createElement("button");
         trigBtn.type = "button";
-        trigBtn.className = "secondary";
+        trigBtn.className = "asc-btn asc-btn--secondary";
         trigBtn.style.fontSize = "0.78rem";
         trigBtn.textContent = tr("schedule.trigger_now", "Run now");
         trigBtn.addEventListener("click", () => ui.scheduleTrigger(it.name));
         const delBtn = document.createElement("button");
         delBtn.type = "button";
-        delBtn.className = "secondary";
+        delBtn.className = "asc-btn asc-btn--danger";
         delBtn.style.fontSize = "0.78rem";
         delBtn.textContent = tr("schedule.delete", "Delete");
         delBtn.addEventListener("click", () => ui.scheduleRemove(it.name));
         const editBtn = document.createElement("button");
         editBtn.type = "button";
-        editBtn.className = "secondary";
+        editBtn.className = "asc-btn asc-btn--secondary";
         editBtn.style.fontSize = "0.78rem";
         editBtn.textContent = tr("schedule.edit", "Edit");
         editBtn.addEventListener("click", () => ui.scheduleEdit(it));
