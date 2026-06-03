@@ -146,6 +146,7 @@ window.I18N.pl = {
         total_runs:      "Wszystkie uruchomienia",
         success_rate:    "Wskaźnik sukcesu",
         avg_duration:    "Średni czas",
+        packages_updated: "Zaktualizowane pakiety",
         last_run:        "Ostatnie uruchomienie",
         t_success:       "Udane",
         t_partial:       "Częściowe",

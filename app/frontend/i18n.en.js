@@ -147,6 +147,7 @@ window.I18N.en = {
         total_runs:      "Total runs",
         success_rate:    "Success rate",
         avg_duration:    "Avg duration",
+        packages_updated: "Packages updated",
         last_run:        "Last run",
         t_success:       "Successful",
         t_partial:       "Partial",

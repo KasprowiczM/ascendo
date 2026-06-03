@@ -775,10 +775,12 @@ dialog.modal-dialog #apply-modal-confirm:disabled {
 .ins-dur__fill {
   width: 100%; max-width: 34px;
   border-radius: 3px 3px 0 0;
+  background: var(--info);          /* single-hue: duration measures time, not status */
 }
-.ins-dur__fill--ok   { background: var(--ok); }
-.ins-dur__fill--warn { background: var(--warn); }
-.ins-dur__fill--err  { background: var(--err); }
+/* Non-success runs are de-emphasised by opacity, not recoloured — the
+   outcome trend + recent-failures own status; this chart owns the time
+   axis only (plan §3.2). */
+.ins-dur__fill--muted { opacity: 0.4; }
 .ins-dur__lbl {
   font: var(--fw-medium) 0.66rem / 1 var(--font-mono);
   color: var(--fg-muted);

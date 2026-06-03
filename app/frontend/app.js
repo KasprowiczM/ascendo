@@ -3605,29 +3605,25 @@ const ui = {
     const fmtDur = (s) => s >= 60 ? `${Math.floor(s/60)}m${Math.round(s%60)}s` : `${s}s`;
 
     // KPIs — standardized on the shared AC.KpiStrip (matches Dashboard).
+    // Packages updated across the window — apply-phase ok totals. This is
+    // the throughput metric Insights owns; "last run" freshness lives on
+    // the Dashboard KPI strip, so Insights doesn't duplicate it (plan §3.2).
+    const pkgUpdated = rows.reduce((acc, r) => {
+      const ph = (r.summary && r.summary.phases) || [];
+      return acc + ph.filter(p => p.phase === "apply")
+                     .reduce((a, p) => a + ((p.summary && p.summary.ok) || 0), 0);
+    }, 0);
+
     const kpis = $("#insights-kpis");
     if (kpis && window.AC) {
-      const lastSt = (rows[0].status || "").toLowerCase();
-      // Relative last-run (consistent with the Dashboard KPI strip) —
-      // an absolute timestamp is too long for the KPI cell and
-      // 3-line-wraps at tablet/mobile widths.
-      let lastRel;
-      try {
-        const st = ui.staleness(rows[0].started_at);
-        lastRel = st && st.label
-          ? st.label.replace(tr("overview.staleness_prefix", "Last run:") + " ", "")
-          : ui.fmtTime(rows[0].started_at);
-      } catch { lastRel = ui.fmtTime(rows[0].started_at); }
       AC.mount(kpis, AC.KpiStrip([
         { value: total, label: tr("shell.ins.total_runs","Total runs"), status: "neutral" },
         { value: `${successPct}%`, label: tr("shell.ins.success_rate","Success rate"),
           status: successPct >= 90 ? "ok" : successPct >= 60 ? "warn" : "err" },
         { value: avg ? fmtDur(avg) : "—", label: tr("shell.ins.avg_duration","Avg duration"),
           status: "neutral" },
-        { value: lastRel, label: tr("shell.ins.last_run","Last run"),
-          status: lastSt === "success" || lastSt === "ok" ? "ok"
-                : lastSt === "failed" || lastSt === "error" ? "err"
-                : lastSt === "partial" ? "warn" : "neutral" },
+        { value: pkgUpdated, label: tr("shell.ins.packages_updated","Packages updated"),
+          status: pkgUpdated > 0 ? "ok" : "neutral" },
       ]));
     }
 
@@ -3705,12 +3701,13 @@ const ui = {
           try { s = Math.max(0,(new Date(r.ended_at)-new Date(r.started_at))/1000); } catch {}
           const h = Math.max(4, Math.round((s/max)*70));
           const st = (r.status||"").toLowerCase();
-          const cls = st === "failed" || st === "error" ? "err"
-                    : st === "partial" ? "warn" : "ok";
+          // Single-hue: only de-emphasise non-success bars (this chart owns
+          // the time axis; status lives in the outcome trend + failures).
+          const muted = st === "failed" || st === "error" || st === "partial";
           const dlabel = fmtDur(Math.round(s));
           return `<div class="ins-dur__bar"
               title="${ui.fmtTime(r.started_at)} · ${dlabel} · ${r.status||"ok"}">
-              <span class="ins-dur__fill ins-dur__fill--${cls}" style="height:${h}px"></span>
+              <span class="ins-dur__fill${muted ? " ins-dur__fill--muted" : ""}" style="height:${h}px"></span>
               <span class="ins-dur__lbl">${dlabel}</span>
             </div>`;
         }).join("") + `</div>`;
