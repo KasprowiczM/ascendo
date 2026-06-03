@@ -204,7 +204,17 @@
         line.addEventListener("click", r.onOpen);
       }
       line.appendChild(el("time", "asc-timeline__time", r.time != null ? r.time : ""));
-      line.appendChild(el("span", "asc-timeline__label", r.label != null ? r.label : ""));
+      var mid = el("div", "asc-timeline__mid");
+      mid.appendChild(el("span", "asc-timeline__label", r.label != null ? r.label : ""));
+      if (r.detail != null && r.detail !== "") mid.appendChild(el("span", "asc-timeline__detail", r.detail));
+      line.appendChild(mid);
+      if (r.tags && r.tags.length) {
+        var tags = el("div", "asc-timeline__tags");
+        r.tags.forEach(function (tg) {
+          if (tg) tags.appendChild(StatusPill({ status: tg.tone, label: tg.label != null ? tg.label : "" }));
+        });
+        line.appendChild(tags);
+      }
       line.appendChild(
         StatusPill({ status: r.status, label: r.statusLabel != null ? r.statusLabel : "" })
       );

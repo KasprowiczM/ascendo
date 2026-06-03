@@ -862,6 +862,10 @@ window.I18N.en = {
     },
     history: {
       title:   "History",
+      summary_title: "At a glance",
+      phases:  "phase results",
+      updated: "updated",
+      failed:  "failed",
       help_summary: "Browse past runs — see status, profile, duration, and which phases executed. Click a row for full details.",
       help_details_label: "What info is in History? Click to expand",
       help_li1_b: "Started column", help_li1_t: "Date and time the run began.",

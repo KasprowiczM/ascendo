@@ -1516,6 +1516,10 @@ window.I18N.pl = {
     },
     history: {
       title:   "Historia",
+      summary_title: "W skrócie",
+      phases:  "wyników faz",
+      updated: "zaktualizowano",
+      failed:  "błędów",
       help_summary: "Przeglądaj przeszłe runy — zobacz status, profil, czas trwania, i które fazy się wykonały. Kliknij wiersz dla szczegółów.",
       help_details_label: "Jakie info jest w Historii? Kliknij aby rozwinąć",
       help_li1_b: "Kolumna Rozpoczęto", help_li1_t: "Data i czas rozpoczęcia runu.",

@@ -3426,30 +3426,62 @@ const ui = {
       return;
     }
 
+    // At-a-glance summary (operator: History had too little info up front).
+    const lc = (r) => (r.status || "").toLowerCase();
+    const total = rows.length;
+    const okCount = rows.filter(r => lc(r) === "success" || lc(r) === "ok").length;
+    const failedCount = rows.filter(r => lc(r) === "failed" || lc(r) === "error").length;
+    const successPct = total ? Math.round((okCount / total) * 100) : 0;
+    const applyOk = (r) => ((r.summary && r.summary.phases) || [])
+      .filter(p => p.phase === "apply")
+      .reduce((a, p) => a + ((p.summary && p.summary.ok) || 0), 0);
+    const errItems = (r) => ((r.summary && r.summary.phases) || [])
+      .reduce((a, p) => a + ((p.summary && p.summary.err) || 0), 0);
+    const pkgUpdated = rows.reduce((a, r) => a + applyOk(r), 0);
+
+    const kpis = AC.KpiStrip([
+      { value: total, label: tr("shell.ins.total_runs", "Total runs"), status: "neutral" },
+      { value: `${successPct}%`, label: tr("shell.ins.success_rate", "Success rate"),
+        status: successPct >= 90 ? "ok" : successPct >= 60 ? "warn" : "err" },
+      { value: pkgUpdated, label: tr("shell.ins.packages_updated", "Packages updated"),
+        status: pkgUpdated > 0 ? "ok" : "neutral" },
+      { value: failedCount, label: tr("shell.ins.t_failed", "Failed"),
+        status: failedCount === 0 ? "ok" : "err" },
+    ]);
+
     const tlRows = rows.map(r => {
-      const rs = (r.status || "").toLowerCase();
+      const rs = lc(r);
       const st = (rs === "success" || rs === "ok") ? "ok"
                : (rs === "failed" || rs === "error") ? "err"
                : rs === "skipped" ? "neutral" : "warn";
       const rel = ui.staleness(r.started_at).label
         .replace(tr("overview.staleness_prefix", "Last run:") + " ", "");
       const label = (r.profile || tr("overview.run_label", "run")) +
-        (r.dry_run ? " · " + tr("run.dry_run", "dry run") : "") +
-        (r.source === "cli" ? " · cli" : "") +
-        " · " + ui._runDuration(r);
+        (r.dry_run ? " · " + tr("run.dry_run", "dry run") : "");
+      const phaseCount = (r.summary && r.summary.phases) ? r.summary.phases.length : 0;
+      const detailBits = [ui._runDuration(r)];
+      if (r.source === "cli") detailBits.push("cli");
+      if (phaseCount) detailBits.push(phaseCount + " " + tr("history.phases", "phase results"));
+      const up = applyOk(r), er = errItems(r);
+      const tags = [];
+      if (up > 0) tags.push({ tone: "ok", label: up + " " + tr("history.updated", "updated") });
+      if (er > 0) tags.push({ tone: "err", label: er + " " + tr("history.failed", "failed") });
+      if (r.needs_reboot) tags.push({ tone: "warn", label: tr("overview.reboot_pending", "reboot pending") });
       return {
         time: rel,
         label: label,
+        detail: detailBits.join(" · "),
+        tags: tags,
         status: st,
         statusLabel: r.status || "?",
         onOpen: () => ui.openRunDrawer(r),
       };
     });
 
-    AC.mount(root, AC.Card({
-      title: tr("history.title", "History"),
-      children: AC.Timeline(tlRows),
-    }));
+    AC.mount(root, [
+      AC.Card({ title: tr("history.summary_title", "At a glance"), children: kpis }),
+      AC.Card({ title: tr("history.title", "History"), children: AC.Timeline(tlRows) }),
+    ]);
   },
 
   // Right-side slide-over with the technical detail the History table
