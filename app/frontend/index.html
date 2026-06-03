@@ -773,7 +773,10 @@
         </details>
       </section>
       <form id="settings-form">
-        <div class="grid" data-layout-id="settings-main">
+        <div class="asc-settings-groups" data-layout-id="settings-main">
+          <div class="asc-settings-group">
+            <h3 class="asc-settings-group__title" data-i18n="settings.group_general">General</h3>
+            <div class="grid">
           <div class="card">
             <h3 data-i18n="settings.defaults">Defaults</h3>
             <label><span data-i18n="settings.default_profile">Default profile</span>
@@ -823,6 +826,11 @@
             </p>
             <div id="profiles-list">…</div>
           </div>
+            </div>
+          </div>
+          <div class="asc-settings-group">
+            <h3 class="asc-settings-group__title" data-i18n="settings.group_maintenance">Maintenance</h3>
+            <div class="grid">
           <div class="card" data-edition-only="dev">
             <h3 data-i18n="settings.updates_title">Update notifier</h3>
             <p class="dim" data-i18n="settings.updates_hint">
@@ -865,6 +873,11 @@
               <button type="button" id="service-refresh-btn"   class="secondary" data-i18n="service.btn_refresh">Refresh</button>
             </div>
           </div>
+            </div>
+          </div>
+          <div class="asc-settings-group">
+            <h3 class="asc-settings-group__title" data-i18n="settings.group_automation">Automation</h3>
+            <div class="grid">
           <div class="card">
             <h3 data-i18n="settings.scheduler">Scheduler (systemd timer)</h3>
             <label class="inline">
@@ -917,6 +930,11 @@
               <button type="button" id="scheduler-remove-btn"  class="secondary" data-i18n="settings.btn_remove_t">Remove timer</button>
             </div>
           </div>
+            </div>
+          </div>
+          <div class="asc-settings-group">
+            <h3 class="asc-settings-group__title" data-i18n="settings.group_ai">AI &amp; Integrations</h3>
+            <div class="grid">
           <!-- AI Tools backend selector (Sesja 71). Picks which installed
                CLI Ascendo should prefer for the AI Tools chat tab. -->
           <div class="card" id="settings-ai-backends">
@@ -1009,6 +1027,8 @@
                 </div>
               </section>
             </div>
+          </div>
+        </div>
           </div>
         </div>
         <div style="margin-top:1rem; display:flex; gap:0.75rem; flex-wrap:wrap; align-items:center;">

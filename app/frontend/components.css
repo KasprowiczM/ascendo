@@ -815,3 +815,8 @@
   .asc-source { flex-wrap: wrap; }
   .asc-source__acts { width: 100%; justify-content: flex-end; }
 }
+
+/* ── Settings groups (Phase 4.1) ───────────────────────────────────────── */
+.asc-settings-groups { display: flex; flex-direction: column; gap: var(--space-6, 2rem); }
+.asc-settings-group { display: flex; flex-direction: column; gap: var(--space-3); }
+.asc-settings-group__title { font-size: var(--fs-eyebrow, .72rem); text-transform: uppercase; letter-spacing: .08em; color: var(--fg-muted); font-weight: 700; margin: 0; padding-bottom: var(--space-2); border-bottom: 1px solid var(--border); }
