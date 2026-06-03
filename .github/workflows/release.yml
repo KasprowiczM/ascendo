@@ -1,0 +1,98 @@
+name: Release
+
+# Cut a GitHub Release when a version tag is pushed (e.g. `v1.0-beta`,
+# `v1.0.0`). No code signing yet (deferred until the project is
+# commercial) — we publish the Python core wheel/sdist, a full source
+# tarball for the `curl install.sh | bash` / `iwr install.ps1 | iex`
+# path, and a SHA256SUMS file so downloads are verifiable.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # required to create the GitHub Release
+
+jobs:
+  release:
+    name: Build artifacts + publish release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout (full history for release notes)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Resolve version
+        id: ver
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          PKG_VER="$(python -c 'import re,pathlib; t=pathlib.Path("core/ascendo/__version__.py").read_text(); print(re.search(r"__version__\s*=\s*\"([^\"]+)\"", t).group(1))')"
+          echo "tag=$TAG"             >> "$GITHUB_OUTPUT"
+          echo "pkg_version=$PKG_VER" >> "$GITHUB_OUTPUT"
+          # Pre-release if the tag carries a pre-release marker (beta/rc/alpha or a PEP440 bN).
+          if echo "$TAG" | grep -qiE 'alpha|beta|rc|-|b[0-9]'; then
+            echo "prerelease=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Tag $TAG  ·  package __version__ $PKG_VER"
+          # Informational only — the tag convention (v1.0-beta) intentionally
+          # differs from the PEP 440 package version (1.0.0b1), so we do NOT
+          # fail on a literal mismatch.
+
+      - name: Build Python core (wheel + sdist)
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip build
+          python -m build core/ --outdir dist/
+          ls -la dist/
+
+      - name: Build source tarball
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.ver.outputs.tag }}"
+          git archive --format=tar.gz --prefix="ascendo-${TAG}/" -o "dist/ascendo-${TAG}-source.tar.gz" HEAD
+          ls -la dist/
+
+      - name: Generate SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum * > SHA256SUMS
+          echo "── SHA256SUMS ──"
+          cat SHA256SUMS
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Ascendo ${{ steps.ver.outputs.tag }}"
+          prerelease: ${{ steps.ver.outputs.prerelease == 'true' }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            Ascendo ${{ steps.ver.outputs.tag }} (package version `${{ steps.ver.outputs.pkg_version }}`).
+
+            **Install (no signing yet — verify against `SHA256SUMS`):**
+
+            ```bash
+            # macOS / Linux
+            curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.sh | bash
+            ```
+            ```powershell
+            # Windows
+            iwr -useb https://raw.githubusercontent.com/KasprowiczM/ascendo/main/install.ps1 | iex
+            ```
+
+            Artifacts: Python core wheel + sdist, a full source tarball, and `SHA256SUMS`.
+            Auto-generated changelog below.
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/SHA256SUMS
