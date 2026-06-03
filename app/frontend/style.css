@@ -1979,75 +1979,100 @@ button.is-refreshing::before {
     border: 1px solid var(--border);
 }
 
+/* ── AI Assistant — modern chat layout (rails · recessed thread · composer).
+ * The shell sits in an .asc-card (bg-elev). The thread is a RECESSED well
+ * (bg-sunk) so the conversation reads as a distinct surface; assistant
+ * bubbles are raised (bg-elev + border + shadow) so they contrast against
+ * the well — the old all-bg-elev scheme made the chat window invisible.
+ * Tokens only; adapts to both themes. */
 #aitools-grid {
     display: grid;
-    grid-template-columns: 240px 1fr 260px;
+    grid-template-columns: 248px 1fr 268px;
     gap: 0;
-    min-height: 480px;
+    min-height: 560px;
+    border-radius: var(--radius-md, 10px);
+    overflow: hidden;
 }
 
 .aitools-rail {
-    padding: 12px;
+    padding: 14px;
     overflow-y: auto;
-    max-height: 70vh;
+    max-height: 72vh;
+    background: var(--bg-elev);
 }
 
 #aitools-conversations { border-right: 1px solid var(--border); }
 #aitools-library       { border-left:  1px solid var(--border); }
 
 .aitools-rail h3 {
-    margin: 0 0 8px;
+    margin: 2px 0 10px;
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.12em;
     color: var(--fg-muted);
+    font-weight: 700;
 }
 
 #aitools-new-chat { width: 100%; margin-bottom: 12px; }
 
 .aitools-conv-item {
-    padding: 8px 10px;
+    padding: 9px 11px;
     cursor: pointer;
-    border-radius: 6px;
+    border-radius: 8px;
+    border-left: 2px solid transparent;
     font-size: 13px;
-    color: var(--fg);
+    color: var(--fg-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    transition: background var(--dur-fast, .12s) ease, color var(--dur-fast, .12s) ease;
 }
-.aitools-conv-item:hover         { background: var(--bg-elev); }
-.aitools-conv-item.active        { background: var(--accent-soft); color: var(--fg); }
+.aitools-conv-item:hover  { background: var(--bg-sunk); color: var(--fg); }
+.aitools-conv-item.active {
+    background: var(--accent-soft);
+    border-left-color: var(--accent);
+    color: var(--fg);
+    font-weight: 600;
+}
 
 #aitools-main {
     display: flex;
     flex-direction: column;
-    min-height: 480px;
+    min-height: 560px;
+    background: var(--bg-sunk);
 }
 
 #aitools-thread {
     flex: 1;
     overflow-y: auto;
-    padding: 16px;
-    max-height: 60vh;
+    padding: 20px 22px;
+    max-height: 64vh;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .aitools-empty {
     text-align: center;
-    margin-top: 60px;
+    margin: auto;
+    max-width: 320px;
+    color: var(--fg-faint);
 }
 
 .aitools-msg {
-    margin-bottom: 14px;
+    margin-bottom: 16px;
     display: flex;
     flex-direction: column;
+    max-width: 100%;
 }
+.aitools-msg-user { align-items: flex-end; }
 
 .aitools-msg-role {
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    color: var(--fg-muted);
-    margin-bottom: 4px;
+    color: var(--fg-faint);
+    margin-bottom: 5px;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -2065,32 +2090,39 @@ button.is-refreshing::before {
 }
 .aitools-msg-failed .aitools-msg-body {
     border-left: 3px solid var(--err);
-    color: var(--err);
-    background: transparent;
+    color: var(--err-text, var(--err));
+    background: var(--err-bg, transparent);
 }
 
 .aitools-msg-body {
-    padding: 10px 12px;
-    border-radius: 10px;
-    line-height: 1.5;
-    max-width: 88%;
+    padding: 12px 15px;
+    border-radius: 14px;
+    line-height: 1.55;
+    max-width: 86%;
     word-wrap: break-word;
+    color: var(--fg);
 }
 
+/* User: filled accent-tint bubble, right side, tail flattened bottom-right. */
 .aitools-msg-user  .aitools-msg-body {
     background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-bottom-right-radius: 4px;
     align-self: flex-end;
 }
+/* Assistant: raised card above the recessed thread, tail bottom-left. */
 .aitools-msg-assistant .aitools-msg-body {
     background: var(--bg-elev);
     border: 1px solid var(--border);
+    border-bottom-left-radius: 4px;
+    box-shadow: var(--shadow-sm);
     align-self: flex-start;
 }
 .aitools-msg-system .aitools-msg-body {
     color: var(--fg-muted);
     font-style: italic;
     border-left: 3px solid var(--accent-soft);
-    padding-left: 10px;
+    padding-left: 12px;
     background: transparent;
 }
 
@@ -2108,27 +2140,29 @@ button.is-refreshing::before {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 8px;
+    margin-top: 10px;
 }
 .aitools-chip {
-    padding: 6px 12px;
-    border-radius: 16px;
+    padding: 6px 13px;
+    border-radius: 999px;
     cursor: pointer;
-    background: var(--accent);
-    color: var(--bg);
-    border: none;
+    background: var(--accent-soft);
+    color: var(--accent-fg);
+    border: 1px solid var(--accent);
     font-size: 12px;
     font-weight: 600;
 }
-.aitools-chip:hover            { filter: brightness(1.1); }
-.aitools-chip-medium           { background: var(--warn); color: var(--bg); }
-.aitools-chip-high             { background: var(--err);  color: white; }
+.aitools-chip:hover            { background: var(--accent); color: var(--accent-ink); }
+.aitools-chip-medium           { background: var(--warn-bg); color: var(--warn-text); border-color: var(--warn); }
+.aitools-chip-high             { background: var(--err-bg);  color: var(--err-text);  border-color: var(--err); }
 
+/* Composer: a clear, raised input bar pinned under the thread. */
 #aitools-input-row {
-    padding: 12px;
+    padding: 14px;
     border-top: 1px solid var(--border);
+    background: var(--bg-elev);
     display: flex;
-    gap: 8px;
+    gap: 10px;
     align-items: flex-end;
 }
 /* The shell is a .card, so the global `.card button { width: 100% }` rule
@@ -2138,10 +2172,21 @@ button.is-refreshing::before {
     flex: 1 1 auto;
     width: 100%;
     box-sizing: border-box;
-    min-height: 44px;
-    padding: 8px;
-    font: 13px var(--font-sans);
+    min-height: 46px;
+    padding: 11px 13px;
+    font: 14px/1.5 var(--font-sans);
+    color: var(--fg);
+    background: var(--bg-sunk);
+    border: 1px solid var(--border-strong, var(--border));
+    border-radius: 12px;
     resize: vertical;
+    transition: border-color var(--dur-fast, .12s) ease;
+}
+#aitools-input::placeholder { color: var(--fg-faint); }
+#aitools-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
 }
 #aitools-shell #aitools-send {
     flex: 0 0 auto;
@@ -2149,7 +2194,9 @@ button.is-refreshing::before {
     width: auto;
     min-width: 96px;
     max-width: 140px;
+    min-height: 46px;
     margin-bottom: 0;
+    border-radius: 12px;
 }
 /* New chat lives in the left rail; stay full-width but shed the
  * global .card button bottom margin so it hugs the conv list. */
@@ -2159,7 +2206,7 @@ button.is-refreshing::before {
 }
 
 #aitools-library-list h4 {
-    margin: 10px 0 6px;
+    margin: 12px 0 6px;
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.1em;
@@ -2169,16 +2216,18 @@ button.is-refreshing::before {
     display: block;
     width: 100%;
     text-align: left;
-    padding: 8px 10px;
-    margin-bottom: 4px;
-    background: var(--bg-elev);
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    background: var(--bg-sunk);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 10px;
     cursor: pointer;
     font-size: 12px;
+    line-height: 1.45;
     color: var(--fg);
+    transition: background var(--dur-fast, .12s) ease, border-color var(--dur-fast, .12s) ease;
 }
-.aitools-prompt:hover { background: var(--accent-soft); }
+.aitools-prompt:hover { background: var(--accent-soft); border-color: var(--accent); }
 
 @media (max-width: 1100px) {
     #aitools-grid {
@@ -2188,8 +2237,9 @@ button.is-refreshing::before {
     #aitools-library {
         border: none;
         border-bottom: 1px solid var(--border);
-        max-height: 200px;
+        max-height: 220px;
     }
+    #aitools-main { min-height: 440px; }
 }
 
 /* ============================================================================
