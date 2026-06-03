@@ -751,3 +751,36 @@
   .asc-stepper__label { display: none; }
   .asc-stepper__step { flex: none; }
 }
+
+/* ── IntentRunCard + DangerConfirm (Phase 2.6) ─────────────────────────── */
+.asc-runstart { display: flex; flex-direction: column; gap: var(--space-4); }
+.asc-intents { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-3); }
+.asc-intent {
+  display: flex; flex-direction: column; gap: 6px; text-align: left; cursor: pointer;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-md, 10px);
+  padding: 16px; font: inherit; color: var(--fg); transition: border-color var(--dur-2) var(--ease-out), background var(--dur-2) var(--ease-out);
+}
+.asc-intent:hover { background: var(--bg-nested); }
+.asc-intent.is-busy { opacity: .6; pointer-events: none; }
+.asc-intent__head { display: flex; align-items: center; gap: var(--space-2); }
+.asc-intent__title { font-size: var(--fs-lg, 1.1rem); font-weight: var(--fw-semibold); color: var(--fg); }
+.asc-intent__tag { font-size: .62rem; font-weight: var(--fw-semibold); letter-spacing: .08em; text-transform: uppercase; padding: 2px 6px; border-radius: var(--radius-xs, 4px); background: var(--bg-sunk); color: var(--fg-muted); }
+.asc-intent__desc { color: var(--fg-muted); font-size: .85rem; margin: 0; }
+.asc-intent__cta { align-self: flex-start; margin-top: 4px; font-size: .85rem; font-weight: var(--fw-semibold); padding: 5px 12px; border-radius: var(--radius-sm, 8px); background: var(--bg-sunk); color: var(--fg); border: 1px solid var(--border-strong); }
+/* hero = the one lime action on this screen */
+.asc-intent--hero { border-color: var(--accent); }
+.asc-intent--hero:hover { border-color: var(--accent-strong); }
+.asc-intent--hero .asc-intent__cta { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+/* caution = demoted destructive; amber-flagged, no lime */
+.asc-intent--caution { border-left: 3px solid var(--warn); }
+.asc-intent--caution .asc-intent__tag { background: var(--warn-bg); color: var(--warn-text); }
+.asc-intent-more { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+.asc-danger { display: flex; flex-direction: column; gap: var(--space-3); }
+.asc-danger__body { color: var(--fg-muted); margin: 0; }
+.asc-danger__field { display: flex; flex-direction: column; gap: 6px; }
+.asc-danger__hint { font-size: .82rem; color: var(--fg-muted); }
+.asc-danger__input { background: var(--bg-sunk); border: 1px solid var(--border-strong); border-radius: var(--radius-xs, 4px); color: var(--fg); font: inherit; padding: 8px 10px; }
+.asc-danger__input:focus { outline: 2px solid var(--err); outline-offset: 1px; }
+.asc-danger__actions { display: flex; align-items: center; gap: 8px; width: 100%; }
+.asc-danger__spacer { flex: 1 1 auto; }

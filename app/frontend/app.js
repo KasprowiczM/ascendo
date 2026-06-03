@@ -3207,99 +3207,79 @@ const ui = {
     };
     const startProfile = (profile) => startAndShow({ profile });
 
-    const grid = document.createElement("div");
-    grid.className = "asc-runsteps";
-    const colL = document.createElement("div");
-    colL.className = "asc-runsteps__col";
-    const colR = document.createElement("div");
-    colR.className = "asc-runsteps__col";
+    // Three intent cards (spec §4.2): Quick (secondary) · Safe (the one
+    // lime hero) · Full (demoted, amber-flagged → type-to-confirm). The
+    // numbered scope+phase builder is demoted into Advanced ▸ below.
+    const intents = document.createElement("div");
+    intents.className = "asc-intents";
+    intents.appendChild(AC.IntentRunCard({
+      weight: "secondary",
+      title: tr("runs.quick_title", "Quick check"),
+      desc: tr("runs.quick_desc", "Read-only sweep — find what's outdated without changing anything."),
+      tag: tr("runs.tag_readonly", "READ-ONLY"),
+      ctaLabel: tr("runs.quick_cta", "Scan"),
+      onClick: () => startProfile("quick"),
+    }));
+    intents.appendChild(AC.IntentRunCard({
+      weight: "hero",
+      title: tr("runs.safe_title", "Safe update"),
+      desc: tr("runs.safe_desc", "Check, plan, and apply available updates across all sources."),
+      ctaLabel: tr("runs.safe_title", "Safe update"),
+      onClick: () => startProfile("safe"),
+    }));
+    intents.appendChild(AC.IntentRunCard({
+      weight: "caution",
+      title: tr("runs.full_title", "Full update"),
+      desc: tr("runs.full_desc", "Check, plan, and apply everything including drivers. Asks for elevation."),
+      tag: tr("runs.tag_full", "ADMIN · DRIVERS"),
+      ctaLabel: tr("runs.review", "Review…"),
+      onClick: () => AC.DangerConfirm({
+        title: tr("runs.full_confirm_title", "Run a full update?"),
+        body: tr("runs.full_confirm_body", "This applies every available update, including drivers and OS updates, and asks for administrator elevation."),
+        confirmWord: tr("runs.full_confirm_word", "update"),
+        typeHint: tr("runs.full_confirm_hint", "Type “{w}” to enable"),
+        confirmLabel: tr("runs.full_confirm_cta", "Run full update"),
+        cancelLabel: tr("runs.cancel", "Cancel"),
+        onConfirm: () => startProfile("full"),
+      }),
+    }));
 
-    const mkStep = (num, titleText, descText, variant, onClick) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "asc-runstep" +
-        (variant === "primary" ? " asc-runstep--primary" : "");
-      const numEl = document.createElement("span");
-      numEl.className = "asc-runstep__num";
-      numEl.textContent = String(num);
-      numEl.setAttribute("aria-hidden", "true");
-      const bodyEl = document.createElement("span");
-      bodyEl.className = "asc-runstep__body";
-      const t = document.createElement("span");
-      t.className = "asc-runstep__title";
-      t.textContent = titleText;
-      const d = document.createElement("span");
-      d.className = "asc-runstep__desc";
-      d.textContent = descText;
-      bodyEl.appendChild(t);
-      bodyEl.appendChild(d);
-      b.appendChild(numEl);
-      b.appendChild(bodyEl);
-      b.setAttribute("aria-label",
-        `${tr("runs.step_aria", "Step")} ${num}: ${titleText}`);
-      b.addEventListener("click", () => {
-        if (b.classList.contains("is-busy")) return;
-        onClick(b);
-      });
-      return b;
-    };
-
-    // 1 — Build inventory (read-only rescan + DB repopulate)
-    colL.appendChild(mkStep(1,
-      tr("runs.build_title", "Build inventory"),
-      tr("runs.build_desc", "Rescan every source and refresh the local inventory cache. No changes to your system."),
-      null, async (b) => {
-        b.classList.add("is-busy");
+    // Quiet secondary actions (build inventory · full dry run ·
+    // drivers/NVIDIA on Win/Ubuntu). De-emphasized — not primary intents.
+    const more = document.createElement("div");
+    more.className = "asc-intent-more";
+    more.appendChild(AC.Button({
+      variant: "ghost", label: tr("runs.build_title", "Build inventory"),
+      onClick: async () => {
         ui.status(tr("runs.qa_building", "Building inventory…"));
         try {
           await api.post("/inventory/db/refresh", {});
           frontendCache.invalidate && frontendCache.invalidate();
           ui.status(tr("runs.qa_built", "Inventory built."));
         } catch (e) { ui.status(String(e)); }
-        b.classList.remove("is-busy");
-      }));
-    // 2 — Quick check (read-only)
-    colL.appendChild(mkStep(2,
-      tr("runs.quick_title", "Quick check"),
-      tr("runs.quick_desc", "Read-only sweep — find what's outdated without changing anything."),
-      null, () => startProfile("quick")));
-    // 3 — Safe update
-    colL.appendChild(mkStep(3,
-      tr("runs.safe_title", "Safe update"),
-      tr("runs.safe_desc", "Check, plan, and apply available updates across all sources."),
-      null, () => startProfile("safe")));
-
-    // 4 — Full dry run (preview, mutates nothing)
-    colR.appendChild(mkStep(4,
-      tr("runs.fulldry_title", "Full dry run"),
-      tr("runs.fulldry_desc", "Run the full pipeline in preview mode — shows exactly what a real update would do, changes nothing."),
-      null, () => startAndShow({ profile: "full", dry_run: true },
-        tr("run.dry_run", "dry run"))));
-    // 5 — Full update (the single primary accent)
-    colR.appendChild(mkStep(5,
-      tr("runs.full_title", "Full update"),
-      tr("runs.full_desc", "Check, plan, and apply everything including drivers. Asks for elevation."),
-      "primary", () => startProfile("full")));
-
-    // 6·7 — drivers + NVIDIA, Windows/Ubuntu only (as it used to be).
-    // macOS: Platform.allow() is false → these never render.
-    let stepN = 6;
+      },
+    }));
+    more.appendChild(AC.Button({
+      variant: "ghost", label: tr("runs.fulldry_title", "Full dry run"),
+      onClick: () => startAndShow({ profile: "full", dry_run: true }, tr("run.dry_run", "dry run")),
+    }));
     if (window.Platform && Platform.allow("drivers")) {
-      colR.appendChild(mkStep(stepN++,
-        tr("runs.drivers_title", "Update drivers"),
-        tr("runs.drivers_desc", "Apply pending firmware / hardware driver updates."),
-        null, () => startAndShow({ categories: ["drivers"] })));
+      more.appendChild(AC.Button({
+        variant: "ghost", label: tr("runs.drivers_title", "Update drivers"),
+        onClick: () => startAndShow({ categories: ["drivers"] }),
+      }));
     }
     if (window.Platform && Platform.allow("nvidia")) {
-      colR.appendChild(mkStep(stepN++,
-        tr("runs.nvidia_title", "Update NVIDIA"),
-        tr("runs.nvidia_desc", "Upgrade the held NVIDIA driver. Confirms first — DKMS rebuilds can fail."),
-        null, () => startAndShow(
-          { categories: ["drivers"], extra_args: ["--nvidia"] })));
+      more.appendChild(AC.Button({
+        variant: "ghost", label: tr("runs.nvidia_title", "Update NVIDIA"),
+        onClick: () => startAndShow({ categories: ["drivers"], extra_args: ["--nvidia"] }),
+      }));
     }
 
-    grid.appendChild(colL);
-    grid.appendChild(colR);
+    const startSurface = document.createElement("div");
+    startSurface.className = "asc-runstart";
+    startSurface.appendChild(intents);
+    startSurface.appendChild(more);
 
     // Advanced ▸ — opens an AC.Drawer holding the KEPT #run-form
     // (profile / categories / phase / dry-run). The form's original
@@ -3344,7 +3324,7 @@ const ui = {
     const card = AC.Card({
       title: tr("runs.start_title", "Start a run"),
       action: advBtn,
-      children: [grid],
+      children: [startSurface],
     });
     AC.mount(root, card);
   },

@@ -566,6 +566,88 @@
     return wrap;
   }
 
+  /* ---- IntentRunCard (Phase 2.6) ----------------------- */
+  // {weight:'hero'|'secondary'|'caution', title, desc, tag, ctaLabel, onClick}
+  // The whole card is the button. weight drives emphasis: hero = the one
+  // lime action per screen; secondary = quiet; caution = amber-flagged.
+  function IntentRunCard(o) {
+    o = o || {};
+    var weight = o.weight || "secondary";
+    var card = el("button", "asc-intent asc-intent--" + weight);
+    card.setAttribute("type", "button");
+    var head = el("div", "asc-intent__head");
+    head.appendChild(el("span", "asc-intent__title", o.title != null ? o.title : ""));
+    if (o.tag) head.appendChild(el("span", "asc-intent__tag", o.tag));
+    card.appendChild(head);
+    if (o.desc != null) card.appendChild(el("p", "asc-intent__desc", o.desc));
+    if (o.ctaLabel) card.appendChild(el("span", "asc-intent__cta", o.ctaLabel));
+    if (typeof o.onClick === "function") {
+      card.addEventListener("click", function () {
+        if (card.classList.contains("is-busy")) return;
+        o.onClick(card);
+      });
+    }
+    return card;
+  }
+
+  /* ---- DangerConfirm (Phase 2.6) ----------------------- */
+  // Type-to-confirm destructive gate. Opens the shared Drawer (scrim + Esc +
+  // focus-trap = safe Cancel). The destructive button is DISABLED until the
+  // operator types the confirm word; Cancel is the default and sits far from
+  // the red action. {title, body, confirmWord, typeHint, confirmLabel,
+  // cancelLabel, onConfirm, onCancel}
+  function DangerConfirm(o) {
+    o = o || {};
+    var word = (o.confirmWord || "update");
+    var hint = (o.typeHint || "Type “{w}” to confirm").replace("{w}", word);
+    var body = el("div", "asc-danger");
+    if (o.body != null) body.appendChild(el("p", "asc-danger__body", o.body));
+    var label = el("label", "asc-danger__field");
+    label.appendChild(el("span", "asc-danger__hint", hint));
+    var input = el("input", "asc-danger__input");
+    input.setAttribute("type", "text");
+    input.setAttribute("autocomplete", "off");
+    input.setAttribute("autocapitalize", "off");
+    input.setAttribute("spellcheck", "false");
+    input.setAttribute("aria-label", hint);
+    label.appendChild(input);
+    body.appendChild(label);
+
+    var confirmBtn = Button({
+      variant: "danger",
+      label: o.confirmLabel || "Confirm",
+      onClick: function () {
+        if (input.value.trim().toLowerCase() !== word.toLowerCase()) return;
+        Drawer.close();
+        if (typeof o.onConfirm === "function") o.onConfirm();
+      }
+    });
+    confirmBtn.disabled = true;
+    confirmBtn.setAttribute("aria-disabled", "true");
+    input.addEventListener("input", function () {
+      var ok = input.value.trim().toLowerCase() === word.toLowerCase();
+      confirmBtn.disabled = !ok;
+      confirmBtn.setAttribute("aria-disabled", ok ? "false" : "true");
+    });
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !confirmBtn.disabled) { e.preventDefault(); confirmBtn.click(); }
+    });
+
+    var cancelBtn = Button({
+      variant: "secondary",
+      label: o.cancelLabel || "Cancel",
+      onClick: function () { Drawer.close(); if (typeof o.onCancel === "function") o.onCancel(); }
+    });
+
+    var actions = el("div", "asc-danger__actions");
+    actions.appendChild(cancelBtn);                      // safe default, left
+    actions.appendChild(el("span", "asc-danger__spacer")); // distance the red action
+    actions.appendChild(confirmBtn);                     // destructive, far right
+    Drawer.open({ title: o.title || "Confirm", body: body, footer: actions });
+    setTimeout(function () { try { input.focus(); } catch (e) {} }, 60);
+    return null;
+  }
+
   /* ---- export ------------------------------------------ */
   window.AC = {
     mount: mount,
@@ -586,6 +668,8 @@
     RunHeader: RunHeader,
     PhaseStepper: PhaseStepper,
     SourceProgressRow: SourceProgressRow,
-    LogViewer: LogViewer
+    LogViewer: LogViewer,
+    IntentRunCard: IntentRunCard,
+    DangerConfirm: DangerConfirm
   };
 })();
