@@ -1915,37 +1915,95 @@ const ui = {
       ? stale.label.replace(tr("overview.staleness_prefix", "Last run:") + " ", "")
       : tr("overview.staleness_never", "never");
 
-    // ---- Answer Zone (above the fold) --------------------------------
+    // ---- Attention (Phase 3.1) ---------------------------------------
+    // Surface failed recent runs + the latest run's deferred / needs-you
+    // web apps so the Dashboard never hides a problem behind a calm
+    // verdict (the live-app gap). Reuses the Sesja-79
+    // GET /runs/{id}/action-required collector + the shared run drawer.
+    const attnItems = [];
+    runs.filter(r => {
+      const s = (r.status || "").toLowerCase();
+      return s === "failed" || s === "error";
+    }).slice(0, 3).forEach(r => {
+      const relRun = ui.staleness(r.started_at).label
+        .replace(tr("overview.staleness_prefix", "Last run:") + " ", "");
+      attnItems.push({
+        tone: "err",
+        title: tr("overview.attn_run_failed", "Last run failed"),
+        detail: (r.profile || tr("overview.run_label", "run")) + " · " + relRun,
+        actions: [{
+          variant: "secondary",
+          label: tr("overview.attn_view", "View"),
+          onClick: () => {
+            if (typeof ui.openRunDrawer === "function" && window.shell) ui.openRunDrawer(r);
+            else window.open("/runs/" + encodeURIComponent(r.id) + "/report", "_blank", "noopener");
+          },
+        }],
+      });
+    });
+    if (last && last.id) {
+      try {
+        const ar = await api.get("/runs/" + encodeURIComponent(last.id) + "/action-required");
+        ((ar && ar.items) || []).slice(0, 6).forEach(a => {
+          attnItems.push({
+            tone: "warn",
+            title: a.name || a.slug || a.category || "",
+            detail: a.reason_text || a.category || "",
+            actions: [{
+              variant: "secondary",
+              label: tr("overview.attn_open", "Open"),
+              onClick: async () => {
+                if (a.slug) {
+                  try { await api.post("/web/open", { slug: a.slug }); ui.status(a.slug); return; }
+                  catch (_e) { /* fall through to the report */ }
+                }
+                window.open("/runs/" + encodeURIComponent(last.id) + "/report", "_blank", "noopener");
+              },
+            }],
+          });
+        });
+      } catch (_e) { /* no action-required (404 / pruned run) — fine */ }
+    }
+    const needYou = attnItems.length;
+
+    // ---- Answer Zone (Phase 3.1): VerdictHeader, not a Banner --------
     const isClear = outdated === 0;
-    const answerText = isClear
-      ? `${tr("overview.answer_clear", "Everything is up to date")} · ${managed} ${tr("overview.answer_packages", "packages")} · ${tr("overview.answer_checked", "checked")} ${checkedRel}`
-      : `${outdated} ${tr("overview.answer_updates", "updates available")}${sources.length ? " · " + sources.join(", ") : ""} · ${tr("overview.answer_checked", "checked")} ${checkedRel}`;
+    const verdictTitle = isClear
+      ? tr("overview.answer_clear", "Everything is up to date")
+      : `${outdated} ${tr("overview.verdict_ready", "ready")}` +
+        (needYou ? ` · ${needYou} ${tr("overview.verdict_need_you", "need you")}` : "");
+    const verdictSub = isClear
+      ? `${managed} ${tr("overview.answer_packages", "packages")} · ${tr("overview.answer_checked", "checked")} ${checkedRel}`
+      : `${sources.length ? sources.join(", ") + " · " : ""}${tr("overview.answer_checked", "checked")} ${checkedRel}`;
 
     // Primary action — SAME body the old data-quick buttons posted:
-    //   clear  → {profile:"quick"}  (read-only check, no sudo)
-    //   work   → {profile:"safe"}   (safe update)
+    //   clear → {profile:"quick"} (read-only)   work → {profile:"safe"}
     const primaryBody = isClear ? { profile: "quick" } : { profile: "safe" };
     const primaryLabel = isClear
       ? tr("overview.action_2_quick", "Check for updates")
       : tr("overview.action_3_safe", "Update all safely");
+    // Route through the Phase-2 run-start live panel (intent flow) so a
+    // dashboard-launched run lands on the same monitor the Start tab uses.
     const runPrimary = async () => {
       try {
         const r = await startRunWithSudo(primaryBody);
-        ui.show("run");
         ui.attachStream(r.run_id);
+        ui.show("runs/start");
+        if (typeof ui._renderRunStart === "function") {
+          ui._renderRunStart({ run_id: r.run_id, profile: primaryBody.profile, finished: false });
+        }
         const sb = $("#stop-btn"); if (sb) sb.disabled = false;
         ui.status(`run ${r.run_id} started`);
       } catch (err) { ui.status(String(err)); }
     };
-    const primaryBtn = AC.Button({
-      variant: "primary", label: primaryLabel, onClick: runPrimary,
-    });
 
-    const answer = AC.Banner({
-      tone: isClear ? "ok" : "warn",
-      text: answerText,
-      actions: primaryBtn,
+    const answer = AC.VerdictHeader({
+      status: isClear ? "ok" : "warn",
+      title: verdictTitle,
+      sub: verdictSub,
+      cta: { variant: "primary", label: primaryLabel, onClick: runPrimary },
     });
+    const attn = AC.AttentionList(attnItems);
 
     // ---- KpiStrip ----------------------------------------------------
     // Health: "<ok>/<total>" from /health components rollup (the 12 rows
@@ -2108,8 +2166,12 @@ const ui = {
     }
 
     // ---- compose -----------------------------------------------------
-    AC.mount(root, pieCard ? [answer, kpis, pieCard, recent]
-                           : [answer, kpis, recent]);
+    const blocks = [answer];
+    if (attn) blocks.push(attn);            // only when non-empty
+    blocks.push(kpis);
+    if (pieCard) blocks.push(pieCard);
+    blocks.push(recent);
+    AC.mount(root, blocks);
 
     if (pieCard) {
       ui.renderDonut("overview-status-pie", [
