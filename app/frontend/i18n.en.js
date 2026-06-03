@@ -93,6 +93,7 @@ window.I18N.en = {
         sources:      "Sources",
         apps:         "Apps",
         tools:        "Tools",
+        assistant:    "Assistant",
         start:        "Start",
         active:       "Active",
         scheduled:    "Scheduled",

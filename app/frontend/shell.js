@@ -52,7 +52,7 @@
       tabs: [
         { id: "sources", labelKey: "shell.tabs.sources", view: "categories" },
         { id: "apps",    labelKey: "shell.tabs.apps",    view: "apps" },
-        { id: "tools",   labelKey: "shell.tabs.tools",   view: "suggest" },
+        { id: "tools",   labelKey: "shell.tabs.assistant", view: "suggest" },
       ],
     },
     runs: {

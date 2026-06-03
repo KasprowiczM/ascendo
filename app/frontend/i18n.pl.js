@@ -92,6 +92,7 @@ window.I18N.pl = {
         sources:      "Źródła",
         apps:         "Aplikacje",
         tools:        "Narzędzia",
+        assistant:    "Asystent",
         start:        "Uruchom",
         active:       "Aktywne",
         scheduled:    "Harmonogram",
