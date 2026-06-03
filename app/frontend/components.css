@@ -824,3 +824,20 @@
 .asc-settings-groups { display: flex; flex-direction: column; gap: var(--space-6, 2rem); }
 .asc-settings-group { display: flex; flex-direction: column; gap: var(--space-3); }
 .asc-settings-group__title { font-size: var(--fs-eyebrow, .72rem); text-transform: uppercase; letter-spacing: .08em; color: var(--fg-muted); font-weight: 700; margin: 0; padding-bottom: var(--space-2); border-bottom: 1px solid var(--border); }
+
+/* ── Unified form fields (Schedule · Settings) ─────────────────────────── */
+.asc-form label { display: block; margin: 0 0 var(--space-3); }
+.asc-form label br { display: none; }
+.asc-form label > span:first-child { display: block; font-size: .82rem; font-weight: 600; color: var(--fg-muted); margin-bottom: 5px; }
+.asc-form input[type="text"], .asc-form input[type="password"], .asc-form input[type="number"], .asc-form input:not([type]), .asc-form select, .asc-form textarea {
+  width: 100%; box-sizing: border-box; font: inherit; color: var(--fg);
+  background: var(--bg-sunk); border: 1px solid var(--border-strong); border-radius: var(--radius-sm, 6px);
+  padding: 9px 11px; min-height: 40px;
+  transition: border-color var(--dur-fast, .12s) ease, box-shadow var(--dur-fast, .12s) ease;
+}
+.asc-form textarea { min-height: 72px; resize: vertical; }
+.asc-form input:focus, .asc-form select:focus, .asc-form textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.asc-form label.inline { display: flex; align-items: center; gap: 9px; }
+.asc-form label.inline > span:first-child { margin: 0; display: inline; font-weight: 500; color: var(--fg); }
+.asc-form label.inline input[type="checkbox"] { width: 18px; height: 18px; min-height: 0; flex: none; accent-color: var(--accent); }
+.asc-form small { display: block; color: var(--fg-faint); font-size: .78rem; margin-top: 4px; }

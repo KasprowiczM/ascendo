@@ -686,7 +686,7 @@
         <p class="dim" data-i18n="schedule.add_hint" style="margin:0.3rem 0 1rem">
           Submitting an existing name updates the schedule in place.
         </p>
-        <form id="schedule-form" style="display:grid;gap:0.6rem;grid-template-columns:1fr 1fr">
+        <form id="schedule-form" class="asc-form" style="display:grid;gap:0.6rem;grid-template-columns:1fr;max-width:560px">
           <label style="grid-column:1/-1">
             <span data-i18n="schedule.f_name">Name</span><br>
             <input id="schedule-f-name" name="name" required maxlength="80"
@@ -748,7 +748,7 @@
             <input id="schedule-f-desc" name="description" maxlength="400" style="width:100%">
           </label>
           <div class="schedule-form-buttons">
-            <button type="submit" class="btn btn-primary" data-i18n="schedule.f_save">Save schedule</button>
+            <button type="submit" class="asc-btn asc-btn--primary"><span class="asc-btn__label" data-i18n="schedule.f_save">Save schedule</span></button>
             <span id="schedule-form-status" class="dim" style="margin-left:auto;align-self:center"></span>
           </div>
         </form>
