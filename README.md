@@ -2,7 +2,9 @@
 
 **One CLI + Web + Desktop app to drive every package manager on every OS.**
 
-Cross-platform unified-updates orchestrator. macOS · Windows · Linux. Open source, MIT.
+Cross-platform unified-updates orchestrator. macOS · Windows · Ubuntu/Debian. Open source, MIT.
+
+> **Linux support note:** v1.0-beta targets **Ubuntu/Debian** only. Fedora, Arch, and other distributions are planned for a future release.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Made for: Windows | Linux | macOS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux%20%7C%20macOS-blue)](docs/PLATFORM_STATUS.md)

@@ -415,7 +415,14 @@
   .asc-timeline__line--btn,
   .asc-skel__row,
   .asc-drawer__scrim,
-  .asc-drawer {
+  .asc-drawer,
+  .asc-progress__fill,
+  .asc-log__caret,
+  .asc-intent,
+  .asc-banner__dot,
+  .asc-form input,
+  .asc-form select,
+  .asc-form textarea {
     transition: none;
     animation: none;
   }
@@ -846,3 +853,44 @@
 .asc-form label.inline > span:first-child { margin: 0; display: inline; font-weight: 500; color: var(--fg); }
 .asc-form label.inline input[type="checkbox"] { width: 18px; height: 18px; min-height: 0; flex: none; accent-color: var(--accent); }
 .asc-form small { display: block; color: var(--fg-faint); font-size: .78rem; margin-top: 4px; }
+
+/* ---- Screen-reader only utility ---------------------- */
+.asc-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Focus-visible (global catch-all for .asc-* interactive) ---- */
+.asc-intent:focus-visible,
+.asc-source:focus-visible,
+.asc-attn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/* ---- Skip-to-content link (visible on focus) --------- */
+.asc-skip-link:focus {
+  position: fixed;
+  top: var(--space-2, 8px);
+  left: var(--space-2, 8px);
+  width: auto;
+  height: auto;
+  padding: var(--space-2) var(--space-4);
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+  background: var(--bg-elev);
+  color: var(--fg);
+  border: 2px solid var(--border-focus);
+  border-radius: var(--radius-sm);
+  font: var(--fw-semibold) var(--fs-sm) / var(--lh-snug) var(--font-sans);
+  z-index: 99999;
+}

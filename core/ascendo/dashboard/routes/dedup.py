@@ -21,7 +21,7 @@ import json
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -38,7 +38,7 @@ class DedupApplyRequest(BaseModel):
     """Optional run scoping + a subset of app ids to resolve. ``app_ids=None``
     means "every pending duplicate"."""
 
-    run_id: str | None = None
+    run_id: UUID | None = None
     app_ids: list[str] | None = None
 
 
@@ -63,9 +63,9 @@ def _load_check_sidecars(run_dir: Path) -> list:
     return out
 
 
-def _resolve_source_run(runs_dir: Path, run_id: str | None) -> Path | None:
-    if run_id:
-        run_dir = runs_dir / run_id
+def _resolve_source_run(runs_dir: Path, run_id: UUID | None) -> Path | None:
+    if run_id is not None:
+        run_dir = runs_dir / str(run_id)
         if not run_dir.is_dir():
             raise HTTPException(status_code=404, detail=f"run {run_id} not found")
         return run_dir
@@ -73,7 +73,7 @@ def _resolve_source_run(runs_dir: Path, run_id: str | None) -> Path | None:
 
 
 @router.get("/pending")
-async def dedup_pending(request: Request, run_id: str | None = None) -> dict:
+async def dedup_pending(request: Request, run_id: UUID | None = None) -> dict:
     """Read-only: the recommended cross-source duplicate fixes for a run.
 
     Defaults to the most recent CHECK run. Returns an empty list (never 404)

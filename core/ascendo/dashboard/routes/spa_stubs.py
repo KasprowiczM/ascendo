@@ -183,19 +183,19 @@ async def preflight_stub() -> dict[str, Any]:
 # old-SPA tab that POSTs them; the new model uses /apps/exclude + /apps/include.
 
 
-@router.post("/apps/add")
+@router.post("/apps/add", status_code=501)
 async def apps_add_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True, "message": "deprecated; use /apps/include"}
+    return {"implemented": False, "message": "deprecated; use /apps/include"}
 
 
-@router.post("/apps/remove")
+@router.post("/apps/remove", status_code=501)
 async def apps_remove_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True, "message": "deprecated; use /apps/exclude"}
+    return {"implemented": False, "message": "deprecated; use /apps/exclude"}
 
 
-@router.post("/apt/downgrade")
+@router.post("/apt/downgrade", status_code=501)
 async def apt_downgrade_stub() -> dict[str, Any]:
-    return {"ok": False, "stub": True, "error": "apt is Linux-only"}
+    return {"implemented": False, "message": "apt downgrade is not available"}
 
 
 # -- Hosts -----------------------------------------------------------------
@@ -217,14 +217,14 @@ async def hosts_preflight_stub(host_id: str) -> dict[str, Any]:
     return {"host": host_id, "ok": True, "checks": [], "stub": True}
 
 
-@router.post("/hosts/upsert")
+@router.post("/hosts/upsert", status_code=501)
 async def hosts_upsert_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True}
+    return {"implemented": False, "message": "multi-host management is not yet available"}
 
 
-@router.post("/hosts/delete")
+@router.post("/hosts/delete", status_code=501)
 async def hosts_delete_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True}
+    return {"implemented": False, "message": "multi-host management is not yet available"}
 
 
 # -- Settings / onboarding -------------------------------------------------
@@ -236,10 +236,9 @@ async def settings_get_stub() -> dict[str, Any]:
     return {}
 
 
-@router.put("/settings")
+@router.put("/settings", status_code=501)
 async def settings_put_stub() -> dict[str, Any]:
-    """Drop-on-floor write so Save buttons return 200 cleanly."""
-    return {"ok": True, "stub": True}
+    return {"implemented": False, "message": "persistent settings are not yet available"}
 
 
 # /onboarding/state and /onboarding/complete -- served by routes/onboarding.py
@@ -265,9 +264,9 @@ async def profiles_templates_stub() -> dict[str, Any]:
     return {"templates": []}
 
 
-@router.post("/profiles/import")
+@router.post("/profiles/import", status_code=501)
 async def profiles_import_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True}
+    return {"implemented": False, "message": "profile import is not yet available"}
 
 
 # -- Suggestions -----------------------------------------------------------
@@ -278,19 +277,19 @@ async def suggestions_stub() -> dict[str, Any]:
     return {"suggestions": []}
 
 
-@router.post("/suggestions/apply")
+@router.post("/suggestions/apply", status_code=501)
 async def suggestions_apply_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True}
+    return {"implemented": False, "message": "suggestion apply is not yet available"}
 
 
-@router.post("/suggestions/dismiss")
+@router.post("/suggestions/dismiss", status_code=501)
 async def suggestions_dismiss_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True}
+    return {"implemented": False, "message": "suggestion dismiss is not yet available"}
 
 
-@router.post("/suggestions/test")
+@router.post("/suggestions/test", status_code=501)
 async def suggestions_test_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True, "provider_ok": False, "message": "AI provider unconfigured"}
+    return {"implemented": False, "message": "suggestion test is not yet available"}
 
 
 # -- Exclusions ------------------------------------------------------------
@@ -309,19 +308,19 @@ async def git_status_stub() -> dict[str, Any]:
     return {"branch": None, "ahead": 0, "behind": 0, "dirty": False, "stub": True}
 
 
-@router.post("/git/fetch")
+@router.post("/git/fetch", status_code=501)
 async def git_fetch_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True, "output": ""}
+    return {"implemented": False, "message": "git fetch is not yet available"}
 
 
-@router.post("/git/pull")
+@router.post("/git/pull", status_code=501)
 async def git_pull_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True, "output": ""}
+    return {"implemented": False, "message": "git pull is not yet available"}
 
 
-@router.post("/git/push")
+@router.post("/git/push", status_code=501)
 async def git_push_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True, "output": ""}
+    return {"implemented": False, "message": "git push is not yet available"}
 
 
 @router.get("/sync/status")
@@ -334,14 +333,14 @@ async def sync_provider_stub() -> dict[str, Any]:
     return {"provider": None, "remote_name": "", "remote_path": "", "copy_only": True}
 
 
-@router.post("/sync/provider")
+@router.post("/sync/provider", status_code=501)
 async def sync_provider_set_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True}
+    return {"implemented": False, "message": "sync provider setup is not yet available"}
 
 
-@router.post("/sync/provider/test")
+@router.post("/sync/provider/test", status_code=501)
 async def sync_provider_test_stub() -> dict[str, Any]:
-    return {"ok": False, "stub": True, "message": "rclone not configured"}
+    return {"implemented": False, "message": "sync provider test is not yet available"}
 
 
 @router.get("/sync/remotes")
@@ -354,9 +353,9 @@ async def sync_browse_stub(path: str = "") -> dict[str, Any]:
     return {"path": path, "entries": [], "stub": True}
 
 
-@router.post("/sync/export")
+@router.post("/sync/export", status_code=501)
 async def sync_export_stub(dry_run: bool = False) -> dict[str, Any]:
-    return {"ok": True, "stub": True, "dry_run": dry_run, "output": ""}
+    return {"implemented": False, "message": "sync export is not yet available"}
 
 
 # -- Dev-edition only: dev-sync provider setup wizard helpers --------------
@@ -615,9 +614,9 @@ async def sudo_auth_stub(request: Request) -> dict[str, Any]:
     return {"ok": True, "cached": True}
 
 
-@router.post("/system/reboot")
+@router.post("/system/reboot", status_code=501)
 async def system_reboot_stub(delay: int = 5) -> dict[str, Any]:
-    return {"ok": False, "stub": True, "delay": delay, "message": "reboot stubbed"}
+    return {"implemented": False, "message": "system reboot is not yet available"}
 
 
 # -- Scheduler -------------------------------------------------------------
@@ -655,9 +654,9 @@ async def backup_export_stub() -> Response:
     )
 
 
-@router.post("/backup/import")
+@router.post("/backup/import", status_code=501)
 async def backup_import_stub() -> dict[str, Any]:
-    return {"ok": True, "stub": True}
+    return {"implemented": False, "message": "backup import is not yet available"}
 
 
 # /runs/active, /runs/active/stop, /runs/active/stream -- served by spa_real.

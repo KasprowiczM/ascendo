@@ -230,15 +230,9 @@ def test_generate_apply_report_surfaces_needs_reboot(run_dir: Path) -> None:
     assert changed_idx > banner_idx, "reboot banner must come before What changed"
 
 
-@pytest.mark.xfail(
-    reason="T4: test searches for 'macOS web apps' but report renders "
-    "'Web apps (AppImage / GitHub releases / Sparkle)' — assertion string mismatch",
-    strict=False,
-)
 def test_generate_apply_report_groups_categories(run_dir: Path) -> None:
     """Multi-category run produces sections in canonical order."""
     started = datetime(2026, 5, 8, 22, 47, tzinfo=timezone.utc)
-    # softwareupdate before brew before web in the display order.
     _write(run_dir, _build_sidecar(
         phase=Phase.APPLY, category=SourceType.WEB,
         items=[_build_item(item_id="web:docker", name="web:docker",
@@ -264,10 +258,9 @@ def test_generate_apply_report_groups_categories(run_dir: Path) -> None:
     md = generate_apply_report(run_dir)
 
     assert md is not None
-    # softwareupdate appears before Homebrew which appears before macOS web apps.
     su_idx = md.find("macOS system updates")
     brew_idx = md.find("### Homebrew")
-    web_idx = md.find("macOS web apps")
+    web_idx = md.find("Web apps")
     assert 0 <= su_idx < brew_idx < web_idx
 
 

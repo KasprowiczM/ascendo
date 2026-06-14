@@ -7,7 +7,7 @@ counterpart for ``apply`` in production. Tracked as a follow-up.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -16,7 +16,6 @@ from fastapi import APIRouter, HTTPException, Request
 from ...interfaces.package_manager import ManagerError
 from ...models.run import Phase, RunInfo, Trigger
 from ...orchestrator import DEFAULT_PHASE_ORDER, RunReport, run_phases
-
 
 # Profile -> default phase set. Profiles are the user-facing knob; phases
 # are the orchestrator-facing primitive. The dashboard only exposes
@@ -251,7 +250,7 @@ async def create_run(req: RunRequest, request: Request) -> RunResponse:
 
     try:
         host = adapter.detect_host()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _log.exception("adapter.detect_host() failed")
         raise HTTPException(
             status_code=500,
@@ -263,7 +262,7 @@ async def create_run(req: RunRequest, request: Request) -> RunResponse:
         trigger=Trigger.DASHBOARD,
         profile=req.profile,
         dry_run=req.dry_run,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
     )
 
     resolved_phases = _phases_for_request(req.phases, req.profile)
@@ -280,7 +279,7 @@ async def create_run(req: RunRequest, request: Request) -> RunResponse:
             (m.category.value if hasattr(m.category, "value") else str(m.category))
             for m in adapter.package_managers(host)
         ]
-    except Exception:  # noqa: BLE001
+    except Exception:
         adapter_cats = []
     resolved_categories = _categories_for_request(
         explicit_cats or None, req.profile, adapter_cats,
@@ -571,7 +570,7 @@ async def create_run_async(req: RunRequest, request: Request) -> dict:
         trigger=Trigger.DASHBOARD,
         profile=req.profile,
         dry_run=req.dry_run,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
     )
 
     resolved_phases = _phases_for_request(req.phases, req.profile)
@@ -588,7 +587,7 @@ async def create_run_async(req: RunRequest, request: Request) -> dict:
             (m.category.value if hasattr(m.category, "value") else str(m.category))
             for m in adapter.package_managers(host)
         ]
-    except Exception:  # noqa: BLE001
+    except Exception:
         adapter_cats = []
     resolved_categories = _categories_for_request(
         explicit_cats_strs or None, req.profile, adapter_cats,
@@ -695,7 +694,6 @@ async def stream_run_events(run_id: UUID, request: Request):
 
     async def event_gen():
         import asyncio
-        import json as _json
 
         from ...orchestrator.run_async import STREAM_LOG_FILENAME
         from ...orchestrator.runner import DEFAULT_PHASE_ORDER
@@ -837,13 +835,13 @@ async def stream_run_events(run_id: UUID, request: Request):
                 # before the terminal frame, so the dashboard can populate
                 # "Needs your attention" without a second fetch.
                 try:
-                    from ...orchestrator.report import (  # noqa: PLC0415
+                    from ...orchestrator.report import (
                         collect_action_required,
                     )
 
                     for action in (collect_action_required(run_dir) if run_dir else []):
                         yield _sse("attention", _attention_payload(action))
-                except Exception:  # noqa: BLE001
+                except Exception:
                     pass
                 counts, needs_reboot = _done_summary(state)
                 yield _sse("done", {
@@ -869,7 +867,7 @@ def _sse(event: str, data: object) -> bytes:
     """Build one SSE event frame as bytes."""
     import json as _json
     payload = _json.dumps(data, default=str)
-    return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
+    return f"event: {event}\ndata: {payload}\n\n".encode()
 
 
 def _parse_progress(line: str) -> dict | None:
@@ -947,4 +945,45 @@ def _attention_payload(action: object) -> dict:
             "slug": getattr(action, "slug", ""),
             "open_hint": getattr(action, "open_hint", ""),
         },
+    }
+
+
+# ── Retention / prune ──────────────────────────────────────────────────────
+
+
+@router.post("/prune")
+async def prune_runs_endpoint(
+    request: Request,
+    keep_count: int | None = None,
+    keep_days: int | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """Remove old run directories according to a retention policy.
+
+    Query params:
+        keep_count: Keep at most N runs (newest-first by mtime).
+        keep_days:  Keep runs from the last N days.
+        dry_run:    If true, return what *would* be pruned without deleting.
+
+    If neither keep_count nor keep_days is supplied, defaults to
+    keep_count=50. When both are given a run is kept if it satisfies
+    *either* criterion (union).
+    """
+    from ...orchestrator.retention import prune_runs
+
+    if keep_count is None and keep_days is None:
+        keep_count = 50
+
+    runs_dir: Path = request.app.state.runs_dir
+    pruned = prune_runs(
+        runs_dir,
+        keep_count=keep_count,
+        keep_days=keep_days,
+        dry_run=dry_run,
+    )
+
+    return {
+        "pruned": [p.name for p in pruned],
+        "count": len(pruned),
+        "dry_run": dry_run,
     }

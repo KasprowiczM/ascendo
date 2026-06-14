@@ -25,20 +25,32 @@ from __future__ import annotations
 import json
 import logging
 import os
+import urllib.parse
 from pathlib import Path
 from typing import Any
-import urllib.parse
-from urllib import error as urllib_error
-from urllib import request as urllib_request
+from urllib import error as urllib_error, request as urllib_request
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
+
+from ascendo.ai.secret_store import FileSecretStore, get_secret_store
+from ascendo.interfaces.secret_store import ISecretStore
 
 _log = logging.getLogger(__name__)
 router = APIRouter(tags=["ai"])
 
 _TIMEOUT_SEC = 5.0
 _REDACT = "sk-***"
+
+_secret_store_singleton: ISecretStore | None = None
+
+
+def _get_secret_store() -> ISecretStore:
+    """Lazy-init a module-level ISecretStore (keyring preferred, file fallback)."""
+    global _secret_store_singleton
+    if _secret_store_singleton is None:
+        _secret_store_singleton = get_secret_store(config_path=config_file())
+    return _secret_store_singleton
 
 # Providers that need a base_url field exposed in the wizard.
 _PROVIDERS_WITH_URL = {"ollama", "lm_studio", "litellm", "openrouter"}
@@ -87,6 +99,7 @@ def _write_config(data: dict[str, Any]) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.chmod(0o600)
         tmp.replace(path)
     except OSError as exc:
         _log.exception("failed to persist AI config to %s", path)
@@ -400,14 +413,14 @@ def call_provider_inference(
         body = ""
         try:
             body = exc.read().decode("utf-8", errors="replace")[:200]
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
         return {"ok": False, "error": f"HTTP {exc.code}: {body or exc.reason}"}
     except urllib_error.URLError as exc:
         return {"ok": False, "error": f"network error: {exc.reason}"}
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         return {"ok": False, "error": f"malformed response: {exc}"}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
@@ -433,7 +446,7 @@ def _test_connection(provider: str, api_key: str, base_url: str | None) -> dict[
         body = ""
         try:
             body = exc.read().decode("utf-8", errors="replace")[:200]
-        except Exception:  # noqa: BLE001
+        except Exception:
             body = ""
         msg = f"HTTP {exc.code} from provider"
         if body:
@@ -482,10 +495,16 @@ async def ai_test_connection(req: AITestRequest) -> dict[str, Any]:
 async def ai_config_get() -> dict[str, Any]:
     """Return the saved AI config with ``api_key`` redacted."""
     cfg = _read_config()
+    store = _get_secret_store()
+    stored_key = store.get("api_key")
+    if stored_key is None:
+        stored_key = cfg.get("api_key") or ""
     out = dict(cfg)
-    if cfg.get("api_key"):
+    if stored_key:
         out["api_key"] = _REDACT
-    out["has_api_key"] = bool(cfg.get("api_key"))
+    else:
+        out["api_key"] = ""
+    out["has_api_key"] = bool(stored_key)
     return out
 
 
@@ -493,29 +512,83 @@ async def ai_config_get() -> dict[str, Any]:
 async def ai_config_post(req: AIConfigRequest) -> dict[str, Any]:
     """Persist the AI config. Empty ``api_key`` keeps the previously saved key."""
     cfg = _read_config()
-    new_cfg = {
+    store = _get_secret_store()
+
+    # Resolve the API key: new value > existing store > existing config > empty.
+    if req.api_key and req.api_key != _REDACT:
+        resolved_key = req.api_key
+    else:
+        resolved_key = store.get("api_key") or cfg.get("api_key") or ""
+
+    # Persist the key via the secret store.
+    if resolved_key:
+        store.set("api_key", resolved_key)
+    else:
+        store.delete("api_key")
+
+    # Write non-secret fields to the config file. Keep api_key in the file
+    # for backward compatibility with FileSecretStore (which reads the same
+    # JSON), but do NOT write it when using a keyring backend.
+    new_cfg: dict[str, Any] = {
         "provider": req.provider,
         "base_url": req.base_url,
         "model":    req.model,
     }
-    # Preserve the existing key if the SPA sent the redaction sentinel
-    # (= user opened settings, didn't retype the key).
-    if req.api_key and req.api_key != _REDACT:
-        new_cfg["api_key"] = req.api_key
-    elif cfg.get("api_key"):
-        new_cfg["api_key"] = cfg["api_key"]
+    if isinstance(store, FileSecretStore):
+        new_cfg["api_key"] = resolved_key
     else:
         new_cfg["api_key"] = ""
     path = _write_config(new_cfg)
+
     out = dict(new_cfg)
-    if out.get("api_key"):
+    if resolved_key:
         out["api_key"] = _REDACT
-    out["has_api_key"] = bool(new_cfg.get("api_key"))
+    out["has_api_key"] = bool(resolved_key)
     out["file"] = str(path)
     return out
 
 
+@router.delete("/ai/data")
+async def ai_data_delete(request: Request) -> dict[str, Any]:
+    """Erase all AI data: config file, secret-store keys, and chat history."""
+    cleared: list[str] = []
+
+    # 1. Delete the AI config file.
+    cfg_path = config_file()
+    try:
+        if cfg_path.is_file():
+            cfg_path.unlink()
+        store = _get_secret_store()
+        store.delete("api_key")
+        cleared.append("config")
+    except OSError as exc:
+        _log.warning("failed to remove AI config at %s: %s", cfg_path, exc)
+
+    # 2. Clear chat history.
+    try:
+        from ascendo.ai.persistence import ChatsDB
+
+        chats_db = getattr(request.app.state, "chats_db", None)
+        if chats_db is not None and isinstance(chats_db, ChatsDB):
+            chats_db.clear_all()
+            cleared.append("chats")
+        else:
+            home = Path(os.environ.get("ASCENDO_HOME") or Path.home() / ".ascendo")
+            db_path = home / "chats.db"
+            if db_path.is_file():
+                db_path.unlink()
+                cleared.append("chats")
+    except OSError as exc:
+        _log.warning("failed to clear chat history: %s", exc)
+
+    # Reset the cached secret store so the next call re-initialises.
+    global _secret_store_singleton
+    _secret_store_singleton = None
+
+    return {"ok": True, "cleared": cleared}
+
+
 __all__ = [
-    "router",
     "config_file",
+    "router",
 ]

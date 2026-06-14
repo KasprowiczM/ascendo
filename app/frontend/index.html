@@ -53,6 +53,7 @@
 
 </head>
 <body class="layout-shell">
+  <a href="#view-overview" class="asc-sr-only asc-skip-link">Skip to content</a>
   <!-- Mobile topbar (hidden on desktop) - hamburger + brand only.
        Display/language/font controls now live in the in-page header's
        Preferences popover (one compact utility cluster instead of three
@@ -104,7 +105,7 @@
   </aside>
   <div id="sidebar-backdrop" class="sidebar-backdrop hidden" aria-hidden="true"></div>
 
-  <main>
+  <main role="main">
     <!-- App header — one orientation strip per page: what this page is,
          the single primary action, compact Preferences, OS status, and
          (when the destination has facets) a segmented sub-tab rail.
@@ -229,7 +230,7 @@
            here (module-load click listener binds by reference) and is
            relocated into the always-visible RunPanel header by JS so the
            Sesja-74 "Stop unreachable" bug is impossible by construction. -->
-      <div id="run-root"></div>
+      <div id="run-root" aria-live="polite" aria-atomic="false"></div>
       <!-- Phase A: consolidated post-run "you must open these" panel.
            Populated by ui.loadActionRequired(runId) on the SSE done
            event. Guarantees no non-silent web app is silently missing. -->
@@ -237,7 +238,7 @@
       <!-- Cross-source deduplication consent (Sesja 86): rendered by
            dedup.js from GET /dedup/pending. "Resolve duplicate" POSTs to
            /dedup/apply — explicit consent, never an implicit uninstall. -->
-      <div id="dedup-panel" class="hidden"></div>
+      <div id="dedup-panel" class="hidden" aria-live="polite"></div>
       <form id="run-form" hidden style="display:none">
         <label><span data-i18n="run.profile">Profile</span>
           <select name="profile" id="profile-select"></select>
@@ -276,7 +277,7 @@
         `log_line` events; the bash side (apply.sh) opts in via the
         `_stream_tee` helper.
       -->
-      <section id="run-stream" class="run-stream hidden" aria-live="polite">
+      <section id="run-stream" class="run-stream hidden" aria-live="polite" aria-label="Live run output">
         <div class="run-stream-head">
           <div class="run-stream-progress">
             <div class="run-stream-progress-label">
@@ -299,7 +300,7 @@
         panel exposes the package-by-package "what's actually happening".
         Populated entirely by app.js (renderRunDetail) from SSE sidecar events.
       -->
-      <section id="run-detail-panel" class="run-detail hidden" aria-live="polite">
+      <section id="run-detail-panel" class="run-detail hidden" aria-live="polite" aria-label="Live run detail">
         <header class="run-detail-header">
           <div class="run-detail-title-row">
             <h3 class="run-detail-title" data-i18n="run.detail.title">Live detail</h3>
@@ -554,8 +555,8 @@
             </div>
           </aside>
 
-          <!-- Middle: chat thread + input. Plain div, NOT <main>: the
-               page already has one <main> landmark; a second (nested)
+          <!-- Middle: chat thread + input. Plain div, NOT <main role="main">: the
+               page already has one <main role="main"> landmark; a second (nested)
                main is a WCAG landmark violation. id/CSS unchanged. -->
           <div id="aitools-main">
             <div id="aitools-thread" aria-live="polite">

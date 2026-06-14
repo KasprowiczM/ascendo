@@ -48,6 +48,33 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
+_REDACT_KEYS = {"password", "api_key", "secret", "token", "credential"}
+
+
+class _SecretRedactionFilter(logging.Filter):
+    """Redact sensitive field values from log records."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        for key in _REDACT_KEYS:
+            if key in msg.lower():
+                record.msg = str(record.msg)
+                for k in _REDACT_KEYS:
+                    if k in record.msg.lower():
+                        import re
+                        record.msg = re.sub(
+                            rf'(["\']?{k}["\']?\s*[:=]\s*)["\']?[^"\',\s}}]+["\']?',
+                            r"\1***",
+                            record.msg,
+                            flags=re.IGNORECASE,
+                        )
+                record.args = ()
+                break
+        return True
+
+
+logging.getLogger("ascendo").addFilter(_SecretRedactionFilter())
+
 
 def _default_runs_dir() -> Path:
     """Per-user runs directory. Mirrors the CLI helper.

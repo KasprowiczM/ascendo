@@ -143,6 +143,21 @@ def test_dedup_apply_rejects_unknown_app_id(client: TestClient) -> None:
     assert resp.status_code == 400
 
 
+def test_dedup_pending_rejects_traversal_run_id(client: TestClient) -> None:
+    """Path traversal via run_id must be rejected (422) — never resolve outside runs_dir."""
+    resp = client.get("/dedup/pending", params={"run_id": "../../etc"})
+    assert resp.status_code == 422
+
+    resp = client.get("/dedup/pending", params={"run_id": "../.."})
+    assert resp.status_code == 422
+
+
+def test_dedup_apply_rejects_traversal_run_id(client: TestClient) -> None:
+    """POST body with a non-UUID run_id must be rejected (422)."""
+    resp = client.post("/dedup/apply", json={"run_id": "../../etc"})
+    assert resp.status_code == 422
+
+
 def test_dedup_js_card_is_served(client: TestClient) -> None:
     """The self-contained consent card module is served by the dashboard."""
     resp = client.get("/dedup.js")

@@ -20,6 +20,9 @@ const tr = (key, fallback) => {
   return fallback != null ? fallback : key;
 };
 
+const escHtml = (s) => String(s).replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+
 const api = {
   async get(path) {
     const r = await fetch(path);
@@ -1628,8 +1631,8 @@ const ui = {
   },
   status(msg) { $("#status-line").textContent = msg; },
   badge(status) {
-    const cls = (status || "").toLowerCase();
-    return `<span class="badge ${cls}">${status || "?"}</span>`;
+    const cls = (status || "").toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    return `<span class="badge ${cls}">${escHtml(status || "?")}</span>`;
   },
   fmtTime(s) {
     if (!s) return "-";
@@ -1795,10 +1798,10 @@ const ui = {
         `<div class="health-score ${cls}">${score}<span style="font-size:0.5em;color:var(--dim)">/100</span></div>
          <div style="text-align:center"><b>${lbl}</b></div>
          ${issues.length ? `<div class="health-issues"><ul>${issues.map(i =>
-            `<li><span class="badge ${i.severity === "err" ? "fail" : "warn"}">${i.severity}</span> ${i.msg}</li>`
+            `<li><span class="badge ${i.severity === "err" ? "fail" : "warn"}">${escHtml(i.severity)}</span> ${escHtml(i.msg)}</li>`
           ).join("")}</ul></div>` : ""}
-         ${h.run_id ? `<div class="dim" style="font-size:0.7rem;margin-top:0.4rem">run: <code>${h.run_id}</code></div>` : ""}`;
-    } catch (e) { card.innerHTML = `<p class="dim">${e}</p>`; }
+         ${h.run_id ? `<div class="dim" style="font-size:0.7rem;margin-top:0.4rem">run: <code>${escHtml(h.run_id)}</code></div>` : ""}`;
+    } catch (e) { card.innerHTML = `<p class="dim">${escHtml(e)}</p>`; }
   },
 
   async loadSuggestions() {
@@ -1820,24 +1823,24 @@ const ui = {
         wrap.innerHTML = `<p class="dim">${tr("suggest.empty") || "No suggestions right now."}</p>`;
       } else {
         wrap.innerHTML = items.map(s => {
-          const sev = s.severity || "info";
+          const sev = (s.severity || "info").replace(/[^a-z0-9_-]/g, "");
           const aiBadge = s.ai_generated
             ? `<span class="badge ok">${tr("suggest.ai_badge") || "AI"}</span>`
             : `<span class="badge">${tr("suggest.rule_badge") || "rule"}</span>`;
           const action = s.action || {};
           const apply = (action.type === "run_async" && action.payload)
-            ? `<button data-sg-run-async='${JSON.stringify(action.payload).replace(/'/g, "&#39;")}'>${(action.label || tr("suggest.btn_apply") || "Apply")}</button>`
+            ? `<button data-sg-run-async='${escHtml(JSON.stringify(action.payload))}'>${escHtml(action.label || tr("suggest.btn_apply") || "Apply")}</button>`
             : ((s.diff||[]).length
-                ? `<button data-sg-apply='${JSON.stringify({id:s.id,diff:s.diff})}'>${tr("suggest.btn_apply") || "Apply"}</button>`
+                ? `<button data-sg-apply='${escHtml(JSON.stringify({id:s.id,diff:s.diff}))}'>${escHtml(tr("suggest.btn_apply") || "Apply")}</button>`
                 : "");
           return `
-            <div class="suggest-card severity-${sev}" data-sid="${s.id}">
-              <div class="suggest-card-meta">${sev}${aiBadge ? " · " + aiBadge : ""}${s.category ? " · " + s.category : ""}</div>
-              <div class="suggest-card-title">${s.title || ""}</div>
-              <div class="suggest-card-body">${s.body || s.rationale || ""}</div>
+            <div class="suggest-card severity-${sev}" data-sid="${escHtml(s.id)}">
+              <div class="suggest-card-meta">${escHtml(sev)}${aiBadge ? " · " + aiBadge : ""}${s.category ? " · " + escHtml(s.category) : ""}</div>
+              <div class="suggest-card-title">${escHtml(s.title || "")}</div>
+              <div class="suggest-card-body">${escHtml(s.body || s.rationale || "")}</div>
               <div class="suggest-card-actions">
                 ${apply}
-                <button class="secondary" data-sg-dismiss="${s.id}">${tr("suggest.btn_dismiss") || "Dismiss"}</button>
+                <button class="secondary" data-sg-dismiss="${escHtml(s.id)}">${tr("suggest.btn_dismiss") || "Dismiss"}</button>
               </div>
             </div>`;
         }).join("");
@@ -2241,7 +2244,7 @@ const ui = {
     const rows = Object.entries(perCat).map(([cat, c]) => {
       const total = c.total || 1;
       return `<div class="bar-row">
-        <span class="bar-label mono">${cat}</span>
+        <span class="bar-label mono">${escHtml(cat)}</span>
         <span class="bar-track">
           <span class="bar-fill-ok"       style="width:${(c.ok/total)*100}%"></span>
           <span class="bar-fill-outdated" style="width:${(c.outdated/total)*100}%"></span>
@@ -2789,11 +2792,11 @@ const ui = {
             </tr></thead>
             <tbody>${upd.map(u => `
               <tr class="status-outdated">
-                <td>${u.cat}</td>
-                <td class="pkg-name">${u.name}</td>
-                <td class="dim mono">${u.installed||"-"}</td>
-                <td class="mono"><b>${u.candidate||"-"}</b></td>
-                <td class="dim">${u.source||""}</td>
+                <td>${escHtml(u.cat)}</td>
+                <td class="pkg-name">${escHtml(u.name)}</td>
+                <td class="dim mono">${escHtml(u.installed||"-")}</td>
+                <td class="mono"><b>${escHtml(u.candidate||"-")}</b></td>
+                <td class="dim">${escHtml(u.source||"")}</td>
               </tr>`).join("")}
             </tbody>
           </table>`;
@@ -3082,26 +3085,26 @@ const ui = {
           </tr></thead>
           <tbody>
             ${items.map(it => `
-              <tr class="status-${it.status}">
-                <td class="pkg-name">${it.name}</td>
-                <td class="mono">${it.installed||"-"}</td>
-                <td class="mono">${it.candidate||"-"}</td>
+              <tr class="status-${(it.status||"").replace(/[^a-z0-9_-]/g, "")}">
+                <td class="pkg-name">${escHtml(it.name)}</td>
+                <td class="mono">${escHtml(it.installed||"-")}</td>
+                <td class="mono">${escHtml(it.candidate||"-")}</td>
                 <td>${ui.badge(it.status)}</td>
-                <td class="dim">${it.source||""}</td>
+                <td class="dim">${escHtml(it.source||"")}</td>
                 <td>${it.in_config ? "✔" : "<span class='dim'>-</span>"}</td>
                 <td>
                   ${it.in_config
-                    ? `<button class="secondary" data-cat-rm data-pkg="${it.name}" data-cat="${cat}" title="Remove from config (does NOT uninstall)">remove</button>`
-                    : `<button class="secondary" data-cat-add data-pkg="${it.name}" data-cat="${cat}" title="Add to config so future updates include it">+ add</button>`}
+                    ? `<button class="secondary" data-cat-rm data-pkg="${escHtml(it.name)}" data-cat="${escHtml(cat)}" title="Remove from config (does NOT uninstall)">remove</button>`
+                    : `<button class="secondary" data-cat-add data-pkg="${escHtml(it.name)}" data-cat="${escHtml(cat)}" title="Add to config so future updates include it">+ add</button>`}
                   ${cat === "apt" && it.installed && it.installed !== "-"
-                    ? ` <button class="secondary" data-apt-downgrade data-pkg="${it.name}" data-ver="${it.installed}" title="Roll back / pin to a specific older version (apt --allow-downgrades)" style="font-size:0.72rem">↓ rollback</button>`
+                    ? ` <button class="secondary" data-apt-downgrade data-pkg="${escHtml(it.name)}" data-ver="${escHtml(it.installed)}" title="Roll back / pin to a specific older version (apt --allow-downgrades)" style="font-size:0.72rem">↓ rollback</button>`
                     : ""}
                 </td>
               </tr>`).join("")}
           </tbody>
         </table>`;
     } catch (e) {
-      target.innerHTML = `<p class="badge fail">${e}</p>`;
+      target.innerHTML = `<p class="badge fail">${escHtml(e)}</p>`;
     }
   },
 
@@ -3680,8 +3683,8 @@ const ui = {
           const where = cats.length
             ? `${tr("shell.ins.failed_in","failed in")} ${[...new Set(cats)].join(", ")}` : "";
           return `<li class="ins-row" data-run="${i}" role="button" tabindex="0">
-            <span class="st-pill st-err">${r.profile||"run"}</span>
-            <span class="ins-muted" style="flex:1">${ui.fmtTime(r.started_at)} ${where}</span>
+            <span class="st-pill st-err">${escHtml(r.profile||"run")}</span>
+            <span class="ins-muted" style="flex:1">${escHtml(ui.fmtTime(r.started_at))} ${escHtml(where)}</span>
             <a class="ins-muted" href="/runs/${encodeURIComponent(r.id)}/report" target="_blank" rel="noopener">${tr("shell.ins.view_report","Report")}</a></li>`;
         }).join("") + `</ul>`;
         // §6.6: route a failed-run row through the SAME shared drawer
@@ -3729,7 +3732,7 @@ const ui = {
           const muted = st === "failed" || st === "error" || st === "partial";
           const dlabel = fmtDur(Math.round(s));
           return `<div class="ins-dur__bar"
-              title="${ui.fmtTime(r.started_at)} · ${dlabel} · ${r.status||"ok"}">
+              title="${escHtml(ui.fmtTime(r.started_at))} · ${escHtml(dlabel)} · ${escHtml(r.status||"ok")}">
               <span class="ins-dur__fill${muted ? " ins-dur__fill--muted" : ""}" style="height:${h}px"></span>
               <span class="ins-dur__lbl">${dlabel}</span>
             </div>`;
@@ -3750,7 +3753,7 @@ const ui = {
           const applied = (r.summary.phases||[])
             .filter(p => p.phase === "apply")
             .reduce((a,p)=>a+((p.summary&&p.summary.ok)||0),0);
-          return `<li><span class="ins-muted" style="flex:1">${ui.fmtTime(r.started_at)}</span>
+          return `<li><span class="ins-muted" style="flex:1">${escHtml(ui.fmtTime(r.started_at))}</span>
             <span class="st-pill st-ok">${applied} applied</span>
             <a class="ins-muted" href="/runs/${encodeURIComponent(r.id)}/report" target="_blank" rel="noopener">${tr("shell.ins.view_report","Report")}</a></li>`;
         }).join("") + `</ul>`;
@@ -3805,8 +3808,8 @@ const ui = {
         r = (raw && raw.run) || raw;
       }
       const phases = r.phases || (r.run && r.run.phases) || [];
-      let html = `<h3><code>${r.id || runId}</code> - ${ui.badge(r.status)}</h3>
-        <p class="dim">${ui.fmtTime(r.started_at)} → ${ui.fmtTime(r.ended_at)}</p>
+      let html = `<h3><code>${escHtml(r.id || runId)}</code> - ${ui.badge(r.status)}</h3>
+        <p class="dim">${escHtml(ui.fmtTime(r.started_at))} → ${escHtml(ui.fmtTime(r.ended_at))}</p>
         <table><thead><tr>
           <th>Category</th><th>Phase</th><th>Exit</th><th>OK</th><th>Warn</th><th>Err</th><th>Sidecar</th>
         </tr></thead><tbody>`;
@@ -3814,8 +3817,8 @@ const ui = {
         const s = p.summary || {};
         const cat = p.category, ph = p.phase || p.kind;
         html += `<tr>
-          <td>${cat}</td>
-          <td>${ph}</td>
+          <td>${escHtml(cat)}</td>
+          <td>${escHtml(ph)}</td>
           <td>${p.exit_code ?? "-"}</td>
           <td>${s.ok ?? "-"}</td>
           <td>${s.warn ?? "-"}</td>
@@ -3829,7 +3832,7 @@ const ui = {
       html += "</tbody></table>";
       if (target) target.innerHTML = html;
     } catch (e) {
-      if (target) target.innerHTML = `<p class="badge fail">${e}</p>`;
+      if (target) target.innerHTML = `<p class="badge fail">${escHtml(e)}</p>`;
     }
   },
 
@@ -3876,26 +3879,26 @@ const ui = {
       for (const h of hosts) {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td><b>${h.id || h.hostname || "(unknown)"}</b><br><span class="dim">${h.display_name || h.hostname || ""}</span></td>
+          <td><b>${escHtml(h.id || h.hostname || "(unknown)")}</b><br><span class="dim">${escHtml(h.display_name || h.hostname || "")}</span></td>
           <td colspan="5" class="dim">checking…</td>
           <td>${ui.badge("running")}</td>`;
         tb.appendChild(tr);
         api.get(`/hosts/${encodeURIComponent(h.id)}/preflight`).then(p => {
           const lastRun = p.last_run ? `${p.last_run.status || "?"} (${p.last_run.run_id || ""})` : "-";
           tr.innerHTML = `
-            <td><b>${h.id || h.hostname || "(unknown)"}</b><br><span class="dim">${h.display_name || h.hostname || ""}</span></td>
-            <td>${p.hostname || "-"}</td>
-            <td>${p.os || "-"}</td>
-            <td>${p.kernel || "-"}</td>
-            <td>${p.repo_present ? `<span class='badge ok'>${p.git_head||""}</span>` : "<span class='badge warn'>missing</span>"}</td>
-            <td>${lastRun}</td>
-            <td>${p.ok ? ui.badge("ok") : ui.badge("fail")}<br><span class="dim">${(p.error||"").slice(0,80)}</span></td>`;
+            <td><b>${escHtml(h.id || h.hostname || "(unknown)")}</b><br><span class="dim">${escHtml(h.display_name || h.hostname || "")}</span></td>
+            <td>${escHtml(p.hostname || "-")}</td>
+            <td>${escHtml(p.os || "-")}</td>
+            <td>${escHtml(p.kernel || "-")}</td>
+            <td>${p.repo_present ? `<span class='badge ok'>${escHtml(p.git_head||"")}</span>` : "<span class='badge warn'>missing</span>"}</td>
+            <td>${escHtml(lastRun)}</td>
+            <td>${p.ok ? ui.badge("ok") : ui.badge("fail")}<br><span class="dim">${escHtml((p.error||"").slice(0,80))}</span></td>`;
         }).catch(e => {
-          tr.innerHTML = `<td><b>${h.id}</b></td><td colspan="5" class="dim">error: ${String(e).slice(0,200)}</td><td>${ui.badge("fail")}</td>`;
+          tr.innerHTML = `<td><b>${escHtml(h.id)}</b></td><td colspan="5" class="dim">error: ${escHtml(String(e).slice(0,200))}</td><td>${ui.badge("fail")}</td>`;
         });
       }
     } catch (e) {
-      tb.innerHTML = `<tr><td colspan="7" class="badge fail">${e}</td></tr>`;
+      tb.innerHTML = `<tr><td colspan="7" class="badge fail">${escHtml(e)}</td></tr>`;
     }
   },
 
@@ -4198,11 +4201,11 @@ const ui = {
       }
       wrap.innerHTML = templates.map(t => `
         <div style="border:1px solid var(--border);border-radius:6px;padding:0.5rem 0.7rem;margin:0.4rem 0">
-          <div><b>${t.name}</b> <span class="dim">- ${t.lines} pkg(s)</span></div>
-          <div class="dim" style="font-size:0.78rem;margin:0.2rem 0">${t.summary || ""}</div>
+          <div><b>${escHtml(t.name)}</b> <span class="dim">- ${Number(t.lines)||0} pkg(s)</span></div>
+          <div class="dim" style="font-size:0.78rem;margin:0.2rem 0">${escHtml(t.summary || "")}</div>
           <div style="display:flex;gap:0.3rem">
-            <button class="secondary" data-profile-import="${t.name}" data-dry="1" style="font-size:0.78rem">Preview</button>
-            <button class="secondary" data-profile-import="${t.name}" data-dry="0" style="font-size:0.78rem">Apply</button>
+            <button class="secondary" data-profile-import="${escHtml(t.name)}" data-dry="1" style="font-size:0.78rem">Preview</button>
+            <button class="secondary" data-profile-import="${escHtml(t.name)}" data-dry="0" style="font-size:0.78rem">Apply</button>
           </div>
         </div>`).join("");
     } catch (e) { wrap.textContent = String(e); }
@@ -4280,19 +4283,19 @@ const ui = {
     try {
       const g = await api.get("/git/status");
       $("#sync-git").innerHTML =
-        `branch <code>${g.branch || "(unknown)"}</code> ` +
+        `branch <code>${escHtml(g.branch || "(unknown)")}</code> ` +
         (g.dirty ? "<span class='badge warn'>dirty</span>" : "<span class='badge ok'>clean</span>") +
-        ` <span class="dim">↑${g.ahead} ↓${g.behind}</span>`;
+        ` <span class="dim">↑${Number(g.ahead)||0} ↓${Number(g.behind)||0}</span>`;
     } catch (e) { $("#sync-git").textContent = String(e); }
     try {
       const s = await api.get("/sync/status");
       if (s.available) {
         $("#sync-cloud").innerHTML =
           `${ui.badge(s.overall === "PASS" ? "ok" : "warn")} ` +
-          `last verify: <code>${s.log_path}</code><br>` +
-          `<span class="dim">overall: ${s.overall}</span>`;
+          `last verify: <code>${escHtml(s.log_path)}</code><br>` +
+          `<span class="dim">overall: ${escHtml(s.overall)}</span>`;
       } else {
-        $("#sync-cloud").innerHTML = `<span class="dim">${s.reason || "cloud sync not configured (open Cloud Provider panel below to set it up)"}</span>`;
+        $("#sync-cloud").innerHTML = `<span class="dim">${escHtml(s.reason || "cloud sync not configured (open Cloud Provider panel below to set it up)")}</span>`;
       }
     } catch (e) { $("#sync-cloud").textContent = String(e); }
   },
@@ -4424,7 +4427,7 @@ const ui = {
       if (kind === "start") {
         const total = +parts[3]; const label = parts[4] || parts[2];
         prog.classList.remove("hidden");
-        lbl.innerHTML = `<span><b>${label}</b> - 0/${total}</span><span class="dim">running…</span>`;
+        lbl.innerHTML = `<span><b>${escHtml(label)}</b> - 0/${total}</span><span class="dim">running…</span>`;
         fill.style.width = "0%";
         rec.innerHTML = "";
         prog._total = total;
@@ -4432,7 +4435,7 @@ const ui = {
         const n = +parts[3], total = +parts[4], status = parts[5], msg = parts.slice(6).join("|");
         const pct = total > 0 ? Math.round((n/total) * 100) : 0;
         fill.style.width = pct + "%";
-        lbl.innerHTML = `<span><b>${parts[2]}</b> - ${n}/${total}</span><span class="dim">${pct}%</span>`;
+        lbl.innerHTML = `<span><b>${escHtml(parts[2])}</b> - ${n}/${total}</span><span class="dim">${pct}%</span>`;
         const div = document.createElement("div");
         div.className = status;
         div.textContent = `[${n}/${total}] ${msg}`;
@@ -4441,7 +4444,7 @@ const ui = {
         while (rec.children.length > 12) rec.removeChild(rec.lastChild);
       } else if (kind === "done") {
         const ok = +parts[3], warn = +parts[4], err = +parts[5];
-        lbl.innerHTML = `<span><b>${parts[2]}</b> - done</span>` +
+        lbl.innerHTML = `<span><b>${escHtml(parts[2])}</b> - done</span>` +
           `<span><span class="badge ok">${ok}</span> ` +
           `<span class="badge ${warn?"warn":"ok"}">${warn} warn</span> ` +
           `<span class="badge ${err?"fail":"ok"}">${err} err</span></span>`;
@@ -4489,7 +4492,7 @@ const ui = {
       if (!row) { row = document.createElement("div"); rec.prepend(row); phaseRows.set(key, row);
                   while (rec.children.length > 14) rec.removeChild(rec.lastChild); }
       row.className = cls; row.textContent = text;
-      lbl.innerHTML = `<span><b>${sc.phase}</b> · ${sc.category}</span><span class="dim">${phaseRows.size} sidecars</span>`;
+      lbl.innerHTML = `<span><b>${escHtml(sc.phase)}</b> · ${escHtml(sc.category)}</span><span class="dim">${phaseRows.size} sidecars</span>`;
     }
     es.addEventListener("status", e => { try { const m=JSON.parse(e.data); ui.status(`run ${runId}: ${m.status}`); if(m.status==="running") ensureProgVisible(); if (window.runDetail) window.runDetail.onStatus(runId, m); } catch {} });
     es.addEventListener("sidecar", e => { try { const sc=JSON.parse(e.data); renderSidecar(sc); log.textContent += `[${sc.phase}:${sc.category}] ${sc.status}\n`; log.scrollTop=log.scrollHeight; if (window.runDetail) window.runDetail.onSidecar(runId, sc); } catch {} });
@@ -4813,7 +4816,7 @@ ui.loadLogsList = async function() {
   const sel = $("#logs-run-select");
   const runs = (await api.get("/runs?limit=100")).runs || [];
   sel.innerHTML = `<option value="">- pick a run -</option>` +
-    runs.map(r => `<option value="${r.id}">${ui.fmtTime(r.started_at)} · ${r.profile||"?"} · ${r.status||"?"} · ${r.id}</option>`).join("");
+    runs.map(r => `<option value="${escHtml(r.id)}">${escHtml(ui.fmtTime(r.started_at))} · ${escHtml(r.profile||"?")} · ${escHtml(r.status||"?")} · ${escHtml(r.id)}</option>`).join("");
 };
 ui.openPhaseLog = async function(runId, cat, phase) {
   const v = $("#phase-log-viewer");
@@ -5014,8 +5017,8 @@ ui.loadHosts = async function() {
     const wrap = document.createElement("div");
     wrap.style.marginTop = "0.3rem";
     wrap.innerHTML =
-      `<button class="secondary" data-host-edit="${id}" style="font-size:0.72rem;padding:0.15rem 0.4rem">edit</button>
-       <button class="secondary" data-host-del="${id}" style="font-size:0.72rem;padding:0.15rem 0.4rem">delete</button>`;
+      `<button class="secondary" data-host-edit="${escHtml(id)}" style="font-size:0.72rem;padding:0.15rem 0.4rem">edit</button>
+       <button class="secondary" data-host-del="${escHtml(id)}" style="font-size:0.72rem;padding:0.15rem 0.4rem">delete</button>`;
     lastTd.appendChild(wrap);
   });
 };
@@ -5104,7 +5107,7 @@ async function _loadRemotes() {
       sel.appendChild(o);
     });
     if (r.error) sel.title = r.error;
-  } catch (e) { sel.innerHTML = `<option value="">${e}</option>`; }
+  } catch (e) { sel.innerHTML = `<option value="">${escHtml(e)}</option>`; }
 }
 
 // Browse modal: list folders, support up/in navigation, pick current path.
@@ -5115,13 +5118,13 @@ async function _browseAt(path) {
   try {
     const r = await api.get(`/sync/browse?path=${encodeURIComponent(path)}`);
     if (!r.ok) {
-      list.innerHTML = `<p class="badge fail">${r.error||"failed"}</p>`;
+      list.innerHTML = `<p class="badge fail">${escHtml(r.error||"failed")}</p>`;
       return;
     }
     list.innerHTML = (r.dirs.length
-      ? r.dirs.map(d => `<div data-browse-into="${d}" style="padding:0.3rem 0.4rem;cursor:pointer;border-radius:4px"><span class="dim">📁</span> ${d}</div>`).join("")
+      ? r.dirs.map(d => `<div data-browse-into="${escHtml(d)}" style="padding:0.3rem 0.4rem;cursor:pointer;border-radius:4px"><span class="dim">📁</span> ${escHtml(d)}</div>`).join("")
       : '<p class="dim">(empty folder)</p>');
-  } catch (e) { list.innerHTML = `<p class="badge fail">${e}</p>`; }
+  } catch (e) { list.innerHTML = `<p class="badge fail">${escHtml(e)}</p>`; }
 }
 document.addEventListener("click", async e => {
   if (e.target.id === "sync-remote-refresh") _loadRemotes();
@@ -5247,7 +5250,7 @@ ui._aiRenderProviders = function () {
       ? (p.needs_url ? "local · base url" : "cloud · api key")
       : "coming soon";
     card.innerHTML =
-      `<span class="ai-provider-name">${p.label}</span>` +
+      `<span class="ai-provider-name">${escHtml(p.label)}</span>` +
       `<span class="ai-provider-meta">${meta}</span>`;
     grid.appendChild(card);
   });

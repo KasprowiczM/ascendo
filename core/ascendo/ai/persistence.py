@@ -267,3 +267,13 @@ class ChatsDB:
             return [dict(r) for r in rows]
         finally:
             conn.close()
+
+    def clear_all(self) -> None:
+        """Drop all conversations and messages."""
+        conn = self._connect()
+        try:
+            conn.execute("DELETE FROM messages")
+            conn.execute("DELETE FROM conversations")
+            conn.commit()
+        finally:
+            conn.close()

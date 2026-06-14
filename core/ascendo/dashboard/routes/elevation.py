@@ -22,6 +22,7 @@ Security:
 from __future__ import annotations
 
 import logging
+import time
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -29,6 +30,10 @@ from pydantic import BaseModel, ConfigDict, Field
 _log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/elevation", tags=["elevation"])
+
+_AUTH_RATE_LIMIT_WINDOW = 60.0
+_AUTH_RATE_LIMIT_MAX = 5
+_auth_attempts: list[float] = []
 
 
 # ── Wire models ──────────────────────────────────────────────────────────────
@@ -129,21 +134,32 @@ async def post_auth(body: AuthRequest, request: Request) -> OkResponse:
     On wrong password the endpoint returns 401 with a sanitised error message
     -- no information about valid account names is exposed.
 
+    Rate-limited: max 5 attempts per 60 seconds to mitigate brute-force
+    from local processes. Returns 429 when exceeded.
+
     Raises:
         401: password rejected by the underlying elevation backend.
+        429: too many authentication attempts.
         503: adapter absent or has no IElevation.
     """
+    now = time.monotonic()
+    _auth_attempts[:] = [t for t in _auth_attempts if now - t < _AUTH_RATE_LIMIT_WINDOW]
+    if len(_auth_attempts) >= _AUTH_RATE_LIMIT_MAX:
+        raise HTTPException(
+            status_code=429,
+            detail="too many authentication attempts; try again later",
+        )
+    _auth_attempts.append(now)
+
     elev = _elevation_or_503(request)
 
     try:
         ok, msg = elev.register_password(body.password)
     finally:
-        # P3/P6: best-effort password memory sanitization
         body.password = ""
         del body
-        
+
     if not ok:
-        # Sanitise: strip sudo's raw stderr before returning.
         safe_msg = msg[:300] if msg else "authentication failed"
         raise HTTPException(status_code=401, detail=safe_msg)
 

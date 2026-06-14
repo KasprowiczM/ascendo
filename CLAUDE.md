@@ -29,7 +29,7 @@ Legacy Linux-only top-level paths (`app/`, `lib/`, `scripts/`, `update-all.sh`, 
 
 ## CRITICAL workflow rule — NO new worktrees
 
-**Always work directly in `D:/Dev_Env/Ascendo` on `main`.** Do not run `git worktree add` or otherwise spawn `.claude/worktrees/<name>/`. Earlier sessions accidentally created three parallel worktrees that had to be reconciled by hand. The rule is: one repo, one branch (`main`), commits go straight there and `git push origin main`.
+**Always work directly in the repo root on `main`.** Do not run `git worktree add` or otherwise spawn `.claude/worktrees/<name>/`. Earlier sessions accidentally created three parallel worktrees that had to be reconciled by hand. The rule is: one repo, one branch (`main`), commits go straight there and `git push origin main`.
 
 If you need isolation for an experimental change, create a topic branch in the primary worktree and switch back to `main` when done. Never check it out elsewhere.
 

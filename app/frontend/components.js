@@ -66,9 +66,13 @@
   function StatusPill(o) {
     o = o || {};
     var status = STATUS(o.status);
+    var label = o.label != null ? o.label : status;
     var p = el("span", "asc-pill asc-pill--" + status);
-    p.appendChild(el("span", "asc-pill__dot"));
-    p.appendChild(el("span", "asc-pill__txt", o.label != null ? o.label : status));
+    p.setAttribute("aria-label", label || status);
+    var dot = el("span", "asc-pill__dot");
+    dot.setAttribute("aria-hidden", "true");
+    p.appendChild(dot);
+    p.appendChild(el("span", "asc-pill__txt", label));
     return p;
   }
 
@@ -166,7 +170,9 @@
     var tone = STATUS(o.tone);
     var b = el("div", "asc-banner asc-banner--" + tone);
     b.setAttribute("role", tone === "err" ? "alert" : "status");
-    b.appendChild(el("span", "asc-banner__dot"));
+    var dot = el("span", "asc-banner__dot");
+    dot.setAttribute("aria-hidden", "true");
+    b.appendChild(dot);
     b.appendChild(el("p", "asc-banner__text", o.text || ""));
     if (o.actions) {
       var acts = el("div", "asc-banner__actions");
@@ -368,7 +374,9 @@
     var h = el("div", "asc-verdict");
     var main = el("div", "asc-verdict__main");
     var line = el("div", "asc-verdict__line");
-    line.appendChild(el("span", "asc-verdict__dot asc-verdict__dot--" + STATUS(o.status)));
+    var dot = el("span", "asc-verdict__dot asc-verdict__dot--" + STATUS(o.status));
+    dot.setAttribute("aria-hidden", "true");
+    line.appendChild(dot);
     line.appendChild(el("span", "asc-verdict__title", o.title != null ? o.title : ""));
     main.appendChild(line);
     if (o.sub != null) main.appendChild(el("p", "asc-verdict__sub", o.sub));
@@ -448,6 +456,7 @@
     var main = el("div", "asc-runhead__main");
     var line = el("div", "asc-runhead__line");
     var dot = el("span", "asc-runhead__dot asc-runhead__dot--" + variant + (active ? " asc-runhead__dot--live" : ""));
+    dot.setAttribute("aria-hidden", "true");
     line.appendChild(dot);
     line.appendChild(el("span", "asc-runhead__intent", o.intent != null ? o.intent : ""));
     main.appendChild(line);
@@ -478,16 +487,24 @@
   function PhaseStepper(phases) {
     phases = phases || [];
     var ol = el("ol", "asc-stepper");
+    ol.setAttribute("aria-live", "polite");
+    ol.setAttribute("aria-relevant", "additions text");
     phases.forEach(function (p, i) {
       p = p || {};
       var st = p.status || "pending";
       var li = el("li", "asc-stepper__step asc-stepper__step--" + st);
+      li.setAttribute("aria-current", st === "running" ? "step" : "false");
       var marker = el("span", "asc-stepper__marker");
+      marker.setAttribute("aria-hidden", "true");
       if (st === "done") marker.textContent = "✓";
       else if (st === "failed") marker.textContent = "!";
       else marker.textContent = String(i + 1);
       li.appendChild(marker);
-      li.appendChild(el("span", "asc-stepper__label", p.label != null ? p.label : humanizePhase(p.id)));
+      var lbl = p.label != null ? p.label : humanizePhase(p.id);
+      var labelSpan = el("span", "asc-stepper__label", lbl);
+      li.appendChild(labelSpan);
+      var srStatus = el("span", "asc-sr-only", " (" + st + ")");
+      li.appendChild(srStatus);
       ol.appendChild(li);
     });
     return ol;

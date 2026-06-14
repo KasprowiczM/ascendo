@@ -27,6 +27,7 @@ from .elevation import IElevation
 from .inventory import IInventory
 from .package_manager import IPackageManager
 from .scheduler import IScheduler, ScheduleSpec
+from .secret_store import ISecretStore
 from .snapshot import ISnapshot, SnapshotInfo
 from .source import ISource, SourceMetadata
 
@@ -41,6 +42,7 @@ __all__ = [
     "IScheduler",
     "ISource",
     "IElevation",
+    "ISecretStore",
     # value types declared alongside their interfaces
     "ScheduleSpec",
     "SnapshotInfo",
