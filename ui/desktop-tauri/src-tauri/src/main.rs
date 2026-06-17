@@ -243,6 +243,13 @@ fn spawn_backend(sidecar_path: PathBuf, port: u16) -> Option<Child> {
         "--port",
         &port.to_string(),
     ]);
+    // Tell the Python core it's running inside the desktop shell, and which
+    // shell version, so the self-update check can distinguish a desktop
+    // (Tauri) launch from a plain `ascendo dashboard` and detect when the
+    // native shell binary itself is out of date (ASCENDO_SHELL_VERSION vs
+    // the manifest's shell.version).
+    cmd.env("ASCENDO_DESKTOP", "1");
+    cmd.env("ASCENDO_SHELL_VERSION", env!("CARGO_PKG_VERSION"));
     cmd.stdout(Stdio::null())
         .stderr(Stdio::null())
         .stdin(Stdio::null());

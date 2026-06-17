@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — App self-update (macOS + Windows + Ubuntu)
+
+- **"Check for Ascendo updates" + one-click in-app upgrade.** On every
+  dashboard launch Ascendo now checks a published manifest
+  (`releases/latest.json`) for a newer version and shows a banner with an
+  **Install update** button; the same controls live in Settings → About.
+  Clicking it upgrades in place (git pull + pip reinstall via the existing
+  `update.sh`/`update.ps1`), streams progress, then offers Reload. New
+  `ascendo self-update [--check|--yes]` CLI command and
+  `/api/updates/{check,apply,status}` endpoints share one engine
+  (`core/ascendo/selfupdate/`). The Tauri shell now exports
+  `ASCENDO_DESKTOP` + `ASCENDO_SHELL_VERSION` so native-shell drift is
+  detected and the user is pointed at the right installer. Works for web,
+  CLI, and the `.dmg`/desktop build on all three platforms. See
+  [docs/SELF_UPDATE.md](docs/SELF_UPDATE.md).
+
 ## [1.0-beta] — 2026-06-01 — first production beta (macOS + Windows + Ubuntu)
 
 ### Fixed — macOS npm Node version track + apply target (Sesja 89, 2026-06-01)

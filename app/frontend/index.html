@@ -193,6 +193,16 @@
       <button id="reboot-dismiss-btn" class="reboot-dismiss" title="dismiss">×</button>
     </div>
 
+    <!-- App self-update banner (shown by app.js when a newer Ascendo exists).
+         Same surface for web + desktop (Tauri loads this SPA). -->
+    <div id="app-update-banner" class="reboot-banner hidden">
+      <span class="reboot-banner-icon">⬆</span>
+      <span id="app-update-banner-text" data-i18n="updates.banner">A new version of Ascendo is available.</span>
+      <button id="app-update-install-btn" class="reboot-now-btn" data-i18n="updates.install">Install update</button>
+      <button id="app-update-reload-btn" class="reboot-now-btn hidden" data-i18n="updates.reload">Reload</button>
+      <button id="app-update-dismiss-btn" class="reboot-dismiss" title="dismiss">×</button>
+    </div>
+
     <!-- Overview / Dashboard.
          M4: rebuilt on the window.AC component foundation. The shell
          (shell.js) renders the "Dashboard" page title + primary CTA in
@@ -1513,6 +1523,15 @@ python -m ascendo snapshot restore &lt;id&gt;          # interactive confirm</co
         <div class="card">
           <h3 data-i18n="about.system">Host system</h3>
           <div id="about-system">…</div>
+        </div>
+        <!-- Updates: check + install Ascendo itself. -->
+        <div class="card">
+          <h3 data-i18n="updates.title">Updates</h3>
+          <div id="about-updates" class="dim" data-i18n="updates.idle">Checking for updates…</div>
+          <div style="margin-top:0.6rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+            <button id="about-check-updates-btn" type="button" data-i18n="updates.check">Check for updates</button>
+            <button id="about-install-updates-btn" type="button" class="hidden" data-i18n="updates.install">Install update</button>
+          </div>
         </div>
         <!-- Sesja 67: curated highlights of the last 10 sessions so the
              operator doesn't have to scroll the full release notes to see

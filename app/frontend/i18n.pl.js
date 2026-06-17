@@ -4,6 +4,25 @@
 window.I18N = window.I18N || {};
 window.I18N.pl = {
     brand: { tagline: "ujednolicone aktualizacje" },
+    updates: {
+      title: "Aktualizacje",
+      banner: "Dostępna jest nowa wersja Ascendo.",
+      banner_shell: "Dostępna jest nowa aplikacja Ascendo na komputer.",
+      install: "Zainstaluj aktualizację",
+      download: "Pobierz",
+      reload: "Odśwież",
+      check: "Sprawdź aktualizacje",
+      checking: "Sprawdzanie…",
+      updating: "Aktualizowanie…",
+      done: "Aktualizacja zakończona. Odśwież, aby dokończyć.",
+      failed: "Aktualizacja nie powiodła się.",
+      retry: "Ponów",
+      idle: "Sprawdzanie aktualizacji…",
+      offline: "Nie można połączyć się z serwerem aktualizacji.",
+      available: "Dostępna aktualizacja:",
+      uptodate: "Masz najnowszą wersję.",
+      current: "Zainstalowano",
+    },
     runphase: {
       scanning: "Skanowanie", planning: "Planowanie", applying: "Instalowanie",
       verifying: "Weryfikacja", cleaning_up: "Sprzątanie"

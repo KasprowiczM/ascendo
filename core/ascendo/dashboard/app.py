@@ -40,6 +40,7 @@ from .routes.spa_real import InventoryCache
 from .routes.spa_real import router as spa_real_router
 from .routes.spa_stubs import router as spa_stubs_router
 from .routes.suggestions import router as suggestions_router
+from .routes.updates import router as updates_router
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -396,6 +397,9 @@ def create_app(
     # About + platform-aware release-notes (graduates the about_stub).
     # MUST be BEFORE spa_stubs.
     app.include_router(about_router, prefix="")
+    # Self-update endpoints (/api/updates/{check,apply,status}). Updates
+    # Ascendo itself, distinct from managed-app runs. Before spa_stubs.
+    app.include_router(updates_router, prefix="")
     # AI provider config + connection-test (powers the 3-step Suggestions
     # wizard). MUST be BEFORE spa_stubs (no overlap today, but future-
     # proof).

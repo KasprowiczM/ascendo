@@ -7702,3 +7702,211 @@ window.ui = ui;
 
   window.aitoolsBackends = aitoolsBackends;
 })();
+
+/* ============================================================================
+ * App self-update (check + install Ascendo itself).
+ *
+ * On every dashboard load this silently calls GET /api/updates/check. If a
+ * newer Ascendo is published it shows the #app-update-banner with an
+ * "Install update" button; clicking it POSTs /api/updates/apply and polls
+ * /api/updates/status/{id}, then offers a Reload. The same surface drives
+ * the "Check for updates" / "Install" buttons in the About tab.
+ *
+ * One module, every distribution: the Tauri desktop shell loads this exact
+ * SPA, so macOS / Windows / Linux all get the same behaviour. Installs that
+ * can't self-update (non-git bundles) get a Download link instead.
+ * ========================================================================== */
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const t = (k, f) => (window.tr && window.tr(k)) || f || k;
+  const DISMISS_KEY = "ascendo.update.dismissed";
+
+  let report = null;
+  let job = null;
+  let polling = false;
+
+  function dismissedVersion() {
+    try { return window.localStorage.getItem(DISMISS_KEY) || ""; } catch { return ""; }
+  }
+  function setDismissed(v) {
+    try { window.localStorage.setItem(DISMISS_KEY, v || ""); } catch {}
+  }
+
+  async function jget(path) {
+    const r = await fetch(path);
+    return { status: r.status, body: await r.json().catch(() => ({})) };
+  }
+  async function jpost(path) {
+    const r = await fetch(path, { method: "POST" });
+    return { status: r.status, body: await r.json().catch(() => ({})) };
+  }
+
+  function artifactUrl(rep) {
+    const a = (rep && rep.shell_artifact) || {};
+    return a.dmg_url || a.msi_url || a.appimage_url || rep?.notes_url || null;
+  }
+
+  // ── Banner ────────────────────────────────────────────────────────────
+  function showBanner() {
+    const banner = $("app-update-banner");
+    if (!banner || !report || !report.update_available) return;
+    if (dismissedVersion() && dismissedVersion() === report.latest_core) return;
+    const txt = $("app-update-banner-text");
+    if (txt) {
+      txt.textContent = report.core_update_available
+        ? t("updates.banner", "A new version of Ascendo is available.") +
+          " " + (report.current_core || "") + " → " + (report.latest_core || "")
+        : t("updates.banner_shell", "A new Ascendo desktop app is available.");
+    }
+    const installBtn = $("app-update-install-btn");
+    if (installBtn) {
+      installBtn.classList.remove("hidden");
+      installBtn.textContent = report.can_self_update
+        ? t("updates.install", "Install update")
+        : t("updates.download", "Download");
+    }
+    $("app-update-reload-btn")?.classList.add("hidden");
+    banner.classList.remove("hidden");
+  }
+  function hideBanner() { $("app-update-banner")?.classList.add("hidden"); }
+
+  // ── About-tab card ──────────────────────────────────────────────────────
+  function renderAbout() {
+    const box = $("about-updates");
+    const installBtn = $("about-install-updates-btn");
+    if (!box) return;
+    if (!report) { box.textContent = t("updates.idle", "Checking for updates…"); return; }
+    if (!report.ok) {
+      box.textContent = t("updates.offline", "Couldn't reach the update server.") +
+        " (" + t("updates.current", "Installed") + ": " + (report.current_core || "?") + ")";
+      installBtn?.classList.add("hidden");
+      return;
+    }
+    if (report.update_available) {
+      box.textContent =
+        t("updates.available", "Update available:") + " " +
+        (report.current_core || "") + " → " + (report.latest_core || report.latest_shell || "") +
+        (report.channel ? "  (" + report.channel + ")" : "");
+      if (installBtn) {
+        installBtn.classList.remove("hidden");
+        installBtn.textContent = report.can_self_update
+          ? t("updates.install", "Install update")
+          : t("updates.download", "Download");
+      }
+    } else {
+      box.textContent = t("updates.uptodate", "You're on the latest version.") +
+        " (v" + (report.current_core || "?") + ")";
+      installBtn?.classList.add("hidden");
+    }
+  }
+
+  // ── Check ────────────────────────────────────────────────────────────────
+  async function check(opts) {
+    opts = opts || {};
+    try {
+      const { body } = await jget("/api/updates/check");
+      report = body;
+    } catch (e) {
+      report = { ok: false, error: String(e), current_core: report?.current_core };
+    }
+    renderAbout();
+    if (!opts.silent || (report && report.update_available)) showBanner();
+    return report;
+  }
+
+  // ── Install / apply ───────────────────────────────────────────────────────
+  async function install() {
+    if (!report) await check({ silent: true });
+    if (report && !report.can_self_update) {
+      const url = artifactUrl(report);
+      if (url) {
+        // Open the installer/notes page. In the Tauri shell this routes
+        // through the /open-url helper if present; else a normal new tab.
+        try { await fetch("/open-url", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url }) }); }
+        catch { window.open(url, "_blank"); }
+      }
+      return;
+    }
+    const banner = $("app-update-banner");
+    const installBtn = $("app-update-install-btn");
+    const aboutBtn = $("about-install-updates-btn");
+    if (installBtn) { installBtn.disabled = true; installBtn.textContent = t("updates.updating", "Updating…"); }
+    if (aboutBtn) { aboutBtn.disabled = true; aboutBtn.textContent = t("updates.updating", "Updating…"); }
+    banner?.classList.remove("hidden");
+
+    const { status, body } = await jpost("/api/updates/apply");
+    if (status === 202 && body.job_id) {
+      await pollStatus(body.job_id);
+    } else {
+      // 409 / not supported → offer download.
+      const url = artifactUrl(body) || artifactUrl(report);
+      if (installBtn) { installBtn.disabled = false; installBtn.textContent = t("updates.download", "Download"); }
+      if (aboutBtn) { aboutBtn.disabled = false; aboutBtn.textContent = t("updates.download", "Download"); }
+      const txt = $("app-update-banner-text");
+      if (txt) txt.textContent = body.error || t("updates.failed", "Update failed.");
+      if (url) window.open(url, "_blank");
+    }
+  }
+
+  async function pollStatus(jobId) {
+    if (polling) return;
+    polling = true;
+    const txt = $("app-update-banner-text");
+    const installBtn = $("app-update-install-btn");
+    const reloadBtn = $("app-update-reload-btn");
+    try {
+      for (;;) {
+        const { body } = await jget("/api/updates/status/" + encodeURIComponent(jobId));
+        job = body;
+        const last = (body.log && body.log.length) ? body.log[body.log.length - 1] : "";
+        if (txt) txt.textContent = t("updates.updating", "Updating…") + (last ? "  " + last : "");
+        if (body.state === "success") {
+          if (txt) txt.textContent = t("updates.done", "Update complete. Reload to finish.");
+          installBtn?.classList.add("hidden");
+          if (reloadBtn) {
+            reloadBtn.classList.remove("hidden");
+            reloadBtn.onclick = () => window.location.reload();
+          }
+          if (window.ui && typeof window.ui.status === "function") window.ui.status(t("updates.done", "Update complete. Reload to finish."));
+          break;
+        }
+        if (body.state === "error") {
+          if (txt) txt.textContent = (body.error || t("updates.failed", "Update failed.")) ;
+          if (installBtn) { installBtn.disabled = false; installBtn.textContent = t("updates.retry", "Retry"); }
+          break;
+        }
+        await new Promise((res) => setTimeout(res, 1000));
+      }
+    } finally {
+      polling = false;
+      renderAbout();
+    }
+  }
+
+  // ── Wiring ────────────────────────────────────────────────────────────────
+  function wire() {
+    $("app-update-install-btn")?.addEventListener("click", install);
+    $("app-update-dismiss-btn")?.addEventListener("click", () => {
+      if (report) setDismissed(report.latest_core || "dismissed");
+      hideBanner();
+    });
+    $("about-check-updates-btn")?.addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      const old = btn.textContent;
+      btn.disabled = true; btn.textContent = t("updates.checking", "Checking…");
+      await check({ silent: false });
+      btn.disabled = false; btn.textContent = old;
+    });
+    $("about-install-updates-btn")?.addEventListener("click", install);
+    // Startup auto-check (quiet unless an update exists).
+    check({ silent: true });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", wire, { once: true });
+  } else {
+    wire();
+  }
+
+  window.ascendoUpdates = { check, install };
+})();

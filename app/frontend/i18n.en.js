@@ -5,6 +5,25 @@
 window.I18N = window.I18N || {};
 window.I18N.en = {
     brand: { tagline: "unified updates" },
+    updates: {
+      title: "Updates",
+      banner: "A new version of Ascendo is available.",
+      banner_shell: "A new Ascendo desktop app is available.",
+      install: "Install update",
+      download: "Download",
+      reload: "Reload",
+      check: "Check for updates",
+      checking: "Checking…",
+      updating: "Updating…",
+      done: "Update complete. Reload to finish.",
+      failed: "Update failed.",
+      retry: "Retry",
+      idle: "Checking for updates…",
+      offline: "Couldn't reach the update server.",
+      available: "Update available:",
+      uptodate: "You're on the latest version.",
+      current: "Installed",
+    },
     runphase: {
       scanning: "Scanning", planning: "Planning", applying: "Applying",
       verifying: "Verifying", cleaning_up: "Cleaning up"

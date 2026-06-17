@@ -1,0 +1,47 @@
+{
+  "schema": "ascendo/update-manifest/v1",
+  "channel": "beta",
+  "updated_at": "2026-06-17",
+  "core": {
+    "version": "1.0.0b1",
+    "notes_url": "https://github.com/KasprowiczM/ascendo/blob/main/CHANGELOG.md",
+    "published_at": "2026-06-17"
+  },
+  "shell": {
+    "version": "0.0.7",
+    "artifacts": {
+      "macos_arm64": {
+        "dmg_url": "https://github.com/KasprowiczM/ascendo/releases/latest/download/Ascendo-Basic-arm64.dmg",
+        "sha256": ""
+      },
+      "macos_x64": {
+        "dmg_url": "https://github.com/KasprowiczM/ascendo/releases/latest/download/Ascendo-Basic-x64.dmg",
+        "sha256": ""
+      },
+      "windows_x64": {
+        "msi_url": "https://github.com/KasprowiczM/ascendo/releases/latest/download/Ascendo-Setup-x64.msi",
+        "sha256": ""
+      },
+      "linux_x64": {
+        "appimage_url": "https://github.com/KasprowiczM/ascendo/releases/latest/download/Ascendo-x86_64.AppImage",
+        "sha256": ""
+      }
+    }
+  },
+  "channels": {
+    "stable": {
+      "core": {
+        "version": "1.0.0b1",
+        "notes_url": "https://github.com/KasprowiczM/ascendo/blob/main/CHANGELOG.md"
+      },
+      "shell": { "version": "0.0.7" }
+    },
+    "beta": {
+      "core": {
+        "version": "1.0.0b1",
+        "notes_url": "https://github.com/KasprowiczM/ascendo/blob/main/CHANGELOG.md"
+      },
+      "shell": { "version": "0.0.7" }
+    }
+  }
+}

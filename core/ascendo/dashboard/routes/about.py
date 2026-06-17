@@ -153,6 +153,7 @@ async def about(request: Request) -> dict[str, Any]:
         "arch": host_dict.get("arch"),
         "release_notes_md": "",  # legacy; SPA prefers /about/release-notes now
         "release_notes_url": "/about/release-notes",
+        "updates_url": "/api/updates/check",
     }
 
 

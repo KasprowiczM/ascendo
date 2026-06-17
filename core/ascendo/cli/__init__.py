@@ -20,6 +20,7 @@ from . import (
     run_cmd as _run_cmd,  # noqa: F401
     runs_cmd as _runs_cmd,  # noqa: F401
     schedule_cmd as _schedule_cmd,  # noqa: F401
+    selfupdate_cmd as _selfupdate_cmd,  # noqa: F401
     snapshot_cmd as _snapshot_cmd,  # noqa: F401
 )
 
