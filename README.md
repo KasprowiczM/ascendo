@@ -8,7 +8,7 @@ Cross-platform unified-updates orchestrator. macOS · Windows · Ubuntu/Debian. 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Made for: Windows | Linux | macOS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux%20%7C%20macOS-blue)](docs/PLATFORM_STATUS.md)
-[![Version: v1.0-beta](https://img.shields.io/badge/version-v1.0--beta-blue)](CHANGELOG.md)
+[![Version: v1.0.1](https://img.shields.io/badge/version-v1.0.1-blue)](CHANGELOG.md)
 [![Tests: 1600+ green](https://img.shields.io/badge/tests-1600%2B%20green-brightgreen)](CHANGELOG.md)
 [![CI: 6/6 green](https://img.shields.io/badge/CI-6%2F6%20green-brightgreen)](.github/workflows/validate.yml)
 
@@ -128,21 +128,25 @@ The install step strips the macOS quarantine flag so the unsigned app you
 just compiled launches without a Gatekeeper prompt. See
 [docs/DMG_DISTRIBUTION.md](docs/DMG_DISTRIBUTION.md) for details.
 
-To **update** an existing install, re-run the same install one-liner
-or use the dropped helper:
+To **update** an existing install, Ascendo now checks for a newer version
+on every dashboard launch and offers a one-click in-app upgrade (banner +
+Settings → About). You can also update from the CLI or the dropped helper:
 
 ```bash
+ascendo self-update                 # check + upgrade in place (all OSes)
 ascendo_update                      # macOS / Linux
 ascendo_update.cmd                  # Windows (or just `ascendo_update`)
 ```
 
-Equivalent direct one-liners + unattended/CI usage are documented in
-the platform quickstarts below.
+See [docs/SELF_UPDATE.md](docs/SELF_UPDATE.md) for how the self-updater
+works. Equivalent direct one-liners + unattended/CI usage are documented
+in the platform quickstarts below.
 
 ## Platforms
 
-> **v1.0-beta (`1.0.0b1`).** First production beta — a controlled
-> rollout, not yet GA. All three platform legs landed (Sesjas 86–88)
+> **v1.0.1 (`1.0.1`).** First stable point release after the 1.0 beta,
+> adding in-app self-update (check + one-click upgrade) across all three
+> platforms. All three platform legs landed (Sesjas 86–88)
 > and CI's `Validate Config` workflow is green 6/6 across
 > ubuntu/macos/windows. APIs and CLI flags are stabilizing but may
 > still shift before `1.0.0`. macOS is the most mature; Windows + Linux

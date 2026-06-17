@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-06-17 — in-app self-update (macOS + Windows + Ubuntu)
+
 ### Added — App self-update (macOS + Windows + Ubuntu)
 
 - **"Check for Ascendo updates" + one-click in-app upgrade.** On every

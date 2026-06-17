@@ -65,8 +65,8 @@ Override with `ASCENDO_UPDATE_MANIFEST_URL`; pick a channel with
 ```json
 {
   "schema": "ascendo/update-manifest/v1",
-  "channel": "beta",
-  "core":  { "version": "1.0.0b1", "notes_url": "…" },
+  "channel": "stable",
+  "core":  { "version": "1.0.1", "notes_url": "…" },
   "shell": { "version": "0.0.7", "artifacts": {
       "macos_arm64": { "dmg_url": "…", "sha256": "…" },
       "windows_x64": { "msi_url": "…" },

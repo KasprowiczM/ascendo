@@ -1,9 +1,9 @@
 {
   "schema": "ascendo/update-manifest/v1",
-  "channel": "beta",
+  "channel": "stable",
   "updated_at": "2026-06-17",
   "core": {
-    "version": "1.0.0b1",
+    "version": "1.0.1",
     "notes_url": "https://github.com/KasprowiczM/ascendo/blob/main/CHANGELOG.md",
     "published_at": "2026-06-17"
   },
@@ -31,14 +31,14 @@
   "channels": {
     "stable": {
       "core": {
-        "version": "1.0.0b1",
+        "version": "1.0.1",
         "notes_url": "https://github.com/KasprowiczM/ascendo/blob/main/CHANGELOG.md"
       },
       "shell": { "version": "0.0.7" }
     },
     "beta": {
       "core": {
-        "version": "1.0.0b1",
+        "version": "1.0.1",
         "notes_url": "https://github.com/KasprowiczM/ascendo/blob/main/CHANGELOG.md"
       },
       "shell": { "version": "0.0.7" }
