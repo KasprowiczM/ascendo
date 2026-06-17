@@ -17,6 +17,48 @@ plan for them.
 
 ---
 
+## 0 · Fastest path — build + install on your own Mac (two one-liners)
+
+If you just want a working `Ascendo.app` on **your own** machine and don't
+care about Apple signing, use the two developer one-liners. They produce an
+**unsigned** DMG locally and install it for you, stripping the Gatekeeper
+quarantine flag (safe — you compiled it yourself):
+
+```bash
+# 1. In a fresh folder: clone the repo + install the build toolchain
+#    (Xcode CLT, Homebrew, Rust, Node >= 18, create-dmg)
+mkdir -p ~/Ascendo && cd ~/Ascendo
+curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/bin/macos-dev-bootstrap.sh | bash
+
+# 2. Build the DMG and install it into /Applications
+cd ~/Ascendo            # or ~/Ascendo/ascendo if it cloned into a subdir
+bash bin/macos-build-and-install.sh            # interactive: pick basic / dev / both
+```
+
+Non-interactive variants:
+
+```bash
+bash bin/macos-build-and-install.sh --edition=basic           # build + install basic
+bash bin/macos-build-and-install.sh --edition=dev             # build + install dev
+bash bin/macos-build-and-install.sh --edition=both --install=basic   # build both, install basic
+bash bin/macos-build-and-install.sh --edition=basic --no-install     # build only
+```
+
+Or do the whole thing from the first one-liner:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/bin/macos-dev-bootstrap.sh | bash -s -- --build --edition=basic
+```
+
+> **Why both editions can't be installed at once:** both DMGs ship the same
+> `Ascendo.app` (identifier `dev.ascendo.desktop`), so `--install` picks one.
+> Build both to keep both `.dmg` files in `dist/`; install whichever you want.
+
+The sections below cover the manual build, signing, and notarization for
+when you want to distribute the DMG to *other* people's Macs.
+
+---
+
 ## 1 · Build the DMGs on your Mac
 
 ```bash

@@ -111,6 +111,23 @@ pwsh ./bin/build-installer.ps1 -Edition basic          # Windows .msi + .exe
 bash packaging/build-deb.sh                            # Ubuntu .deb
 ```
 
+**macOS — fastest path (two one-liners, no Apple signing needed).** Build
+an unsigned DMG on your own Mac and install it locally:
+
+```bash
+# 1. In a fresh folder: clone the repo + install the build toolchain
+mkdir -p ~/Ascendo && cd ~/Ascendo
+curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/bin/macos-dev-bootstrap.sh | bash
+
+# 2. Build the DMG (basic / dev / both) and install it into /Applications
+cd ~/Ascendo            # or ~/Ascendo/ascendo if it cloned into a subdir
+bash bin/macos-build-and-install.sh            # interactive edition picker
+```
+
+The install step strips the macOS quarantine flag so the unsigned app you
+just compiled launches without a Gatekeeper prompt. See
+[docs/DMG_DISTRIBUTION.md](docs/DMG_DISTRIBUTION.md) for details.
+
 To **update** an existing install, re-run the same install one-liner
 or use the dropped helper:
 

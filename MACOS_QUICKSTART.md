@@ -58,6 +58,29 @@ Re-running `install-dev-macos.sh` after a `git pull` is safe — it's
 idempotent and re-installs the editable Python packages so the CLI always
 runs the latest code.
 
+**Native desktop app (`.dmg`) — build + install on your own Mac.** Want the
+native window instead of the browser dashboard? Build an **unsigned** DMG
+locally and install it with two one-liners (no Apple Developer account
+needed):
+
+```bash
+# 1. Fresh folder: clone the repo + install the build toolchain
+#    (Xcode CLT, Homebrew, Rust, Node >= 18, create-dmg)
+mkdir -p ~/Ascendo && cd ~/Ascendo
+curl -fsSL https://raw.githubusercontent.com/KasprowiczM/ascendo/main/bin/macos-dev-bootstrap.sh | bash
+
+# 2. Build the DMG and install it into /Applications
+cd ~/Ascendo            # or ~/Ascendo/ascendo if it cloned into a subdir
+bash bin/macos-build-and-install.sh            # interactive: pick basic / dev / both
+```
+
+The build runs `bin/build-dmg.sh`, then mounts the DMG, copies `Ascendo.app`
+into `/Applications`, and strips the `com.apple.quarantine` flag so the
+unsigned app launches without a Gatekeeper warning. Pass `--edition=basic`,
+`--edition=dev`, or `--edition=both --install=basic` to skip the prompt. The
+first Rust compile takes ~5–10 min. Full reference:
+[`docs/DMG_DISTRIBUTION.md`](docs/DMG_DISTRIBUTION.md).
+
 > **Why your dashboard might be showing stale results.** The desktop
 > app, the CLI (`python3 -m ascendo`), and the dashboard all import
 > the macOS adapter as an editable Python install. The install

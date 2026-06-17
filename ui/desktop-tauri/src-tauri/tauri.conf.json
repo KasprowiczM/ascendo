@@ -17,7 +17,6 @@
   },
   "bundle": {
     "active": true,
-    "// targets": "MSI + NSIS Windows targets retired in Sesja 64 (public dist is iwr install.ps1 | iex). Tauri shell still builds locally as .app for contributor dev; explicit allow-list excludes msi/nsis. macOS .dmg retired in earlier session per same rationale.",
     "targets": ["app", "deb", "rpm", "appimage"],
     "icon": [
       "icons/32x32.png",
