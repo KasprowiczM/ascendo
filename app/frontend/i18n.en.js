@@ -20,6 +20,8 @@ window.I18N.en = {
       retry: "Retry",
       idle: "Checking for updates…",
       offline: "Couldn't reach the update server.",
+      stale: "Update service unavailable — quit and reopen Ascendo so it loads the new version.",
+      done_desktop: "Update installed. Quit and reopen Ascendo to finish.",
       available: "Update available:",
       uptodate: "You're on the latest version.",
       current: "Installed",

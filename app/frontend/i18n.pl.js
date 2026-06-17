@@ -19,6 +19,8 @@ window.I18N.pl = {
       retry: "Ponów",
       idle: "Sprawdzanie aktualizacji…",
       offline: "Nie można połączyć się z serwerem aktualizacji.",
+      stale: "Usługa aktualizacji niedostępna — zamknij i otwórz ponownie Ascendo, aby wczytać nową wersję.",
+      done_desktop: "Aktualizacja zainstalowana. Zamknij i otwórz ponownie Ascendo, aby dokończyć.",
       available: "Dostępna aktualizacja:",
       uptodate: "Masz najnowszą wersję.",
       current: "Zainstalowano",

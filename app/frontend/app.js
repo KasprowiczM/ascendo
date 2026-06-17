@@ -7777,7 +7777,10 @@ window.ui = ui;
     if (!box) return;
     if (!report) { box.textContent = t("updates.idle", "Checking for updates…"); return; }
     if (!report.ok) {
-      box.textContent = t("updates.offline", "Couldn't reach the update server.") +
+      const msg = report.endpoint_missing
+        ? t("updates.stale", "Update service unavailable — quit and reopen Ascendo so it loads the new version.")
+        : t("updates.offline", "Couldn't reach the update server.");
+      box.textContent = msg +
         " (" + t("updates.current", "Installed") + ": " + (report.current_core || "?") + ")";
       installBtn?.classList.add("hidden");
       return;
@@ -7800,14 +7803,39 @@ window.ui = ui;
     }
   }
 
+  // Installed version from /about — used as a fallback so we never show "?"
+  // even when the updates endpoint is missing (e.g. a stale dashboard
+  // process started before this build).
+  async function installedVersion() {
+    try {
+      const r = await fetch("/about");
+      if (r.ok) { const a = await r.json(); return a.version || null; }
+    } catch {}
+    return null;
+  }
+
   // ── Check ────────────────────────────────────────────────────────────────
   async function check(opts) {
     opts = opts || {};
     try {
-      const { body } = await jget("/api/updates/check");
-      report = body;
+      const { status, body } = await jget("/api/updates/check");
+      if (status === 200 && body && typeof body.ok !== "undefined") {
+        report = body;
+      } else {
+        // Non-200 / wrong shape → the running backend lacks this endpoint,
+        // which means a stale dashboard process is being served.
+        report = {
+          ok: false,
+          endpoint_missing: status === 404,
+          http_status: status,
+          error: (body && body.detail) || ("HTTP " + status),
+        };
+      }
     } catch (e) {
-      report = { ok: false, error: String(e), current_core: report?.current_core };
+      report = { ok: false, error: String(e) };
+    }
+    if (report && !report.current_core) {
+      report.current_core = await installedVersion();
     }
     renderAbout();
     if (!opts.silent || (report && report.update_available)) showBanner();
@@ -7861,13 +7889,22 @@ window.ui = ui;
         const last = (body.log && body.log.length) ? body.log[body.log.length - 1] : "";
         if (txt) txt.textContent = t("updates.updating", "Updating…") + (last ? "  " + last : "");
         if (body.state === "success") {
-          if (txt) txt.textContent = t("updates.done", "Update complete. Reload to finish.");
+          // The Python sidecar holds the old code in memory until its
+          // process restarts. For a desktop (Tauri) launch the sidecar is
+          // shell-managed, so the user must quit + reopen the app; a plain
+          // web/background dashboard is restarted by update.sh, so a reload
+          // is enough.
+          const desktop = report && report.desktop;
+          const doneMsg = desktop
+            ? t("updates.done_desktop", "Update installed. Quit and reopen Ascendo to finish.")
+            : t("updates.done", "Update complete. Reload to finish.");
+          if (txt) txt.textContent = doneMsg;
           installBtn?.classList.add("hidden");
-          if (reloadBtn) {
+          if (reloadBtn && !desktop) {
             reloadBtn.classList.remove("hidden");
             reloadBtn.onclick = () => window.location.reload();
           }
-          if (window.ui && typeof window.ui.status === "function") window.ui.status(t("updates.done", "Update complete. Reload to finish."));
+          if (window.ui && typeof window.ui.status === "function") window.ui.status(doneMsg);
           break;
         }
         if (body.state === "error") {
