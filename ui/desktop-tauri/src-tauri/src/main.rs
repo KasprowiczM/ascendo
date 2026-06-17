@@ -312,30 +312,28 @@ fn main() {
             // chance to ask for it.
             let sidecar_path = locate_sidecar(&app.handle());
 
-            // Check if a healthy dashboard is already running on the standard port 8765.
-            // If so, we reuse it to avoid duplicate process overhead and port conflicts.
-            let (spawned_ok, target_port) = if port != 8765 && wait_for_health(8765, Duration::from_millis(100)) {
-                println!("ascendo: detected healthy dashboard already running on port 8765. Reusing it.");
-                (true, 8765)
-            } else {
-                // Standard flow: spawn our own sidecar on the picked port
-                let spawned = match spawn_backend(sidecar_path.clone(), port) {
-                    Some(child) => {
-                        if let Some(state) = app.try_state::<SidecarProcess>() {
-                            if let Ok(mut guard) = state.0.lock() {
-                                *guard = Some(child);
-                            }
+            // Always spawn our OWN fresh sidecar — never reuse a dashboard
+            // that happens to be running on 8765. Reusing a stale process
+            // meant an UPDATED app kept serving the old Python code in
+            // memory (wrong version reported, /api/updates/* missing) until
+            // the user manually killed it. pick_port() already fell back to
+            // an ephemeral port when 8765 was taken, so spawning our own
+            // never conflicts with whatever else is on 8765.
+            let target_port = port;
+            let spawned_ok = match spawn_backend(sidecar_path.clone(), port) {
+                Some(child) => {
+                    if let Some(state) = app.try_state::<SidecarProcess>() {
+                        if let Ok(mut guard) = state.0.lock() {
+                            *guard = Some(child);
                         }
-                        true
                     }
-                    None => false,
-                };
-                (spawned, port)
+                    true
+                }
+                None => false,
             };
 
-            // 60s window: wait for health if we spawned a new sidecar.
-            // If we're reusing an existing healthy one, we can skip the wait.
-            if spawned_ok && target_port == port && !wait_for_health(port, Duration::from_secs(60)) {
+            // 60s window: wait for the freshly-spawned sidecar to become healthy.
+            if spawned_ok && !wait_for_health(port, Duration::from_secs(60)) {
                 // Don't bail — let the WebView render a connection-
                 // refused page so the user can read the troubleshooting
                 // hint at the top of ui/desktop-tauri/README.md.
