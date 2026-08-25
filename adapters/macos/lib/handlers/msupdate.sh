@@ -62,6 +62,79 @@ for b in blocks:
 ' "$app_id"
 }
 
+# MAU --list writes a spinner with CR overwrites:
+#   Checking for updates... / Update Assistant: Idle / No updates available
+# Pre-2026-08-19 parsers treated "Update Assistant: Idle" as a pending
+# update. Ported from macOS_updates mau_sanitize_output / mau_parse_pending.
+_MSUPDATE_KNOWN_IDS="MSau04 MSWD2019 XCEL2019 PPT32019 OPIM2019 ONMC2019 TEAMS21 WDAVSHIM OLIC02"
+
+_msupdate_sanitize_output() {
+    local esc
+    esc="$(printf '\033')"
+    printf '%s\n' "$1" \
+        | tr '\r' '\n' \
+        | sed "s/${esc}\\[[0-9;?]*[0-9A-Za-z]//g" \
+        | tr -d '\001-\010\013\014\016-\037\177' \
+        | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d'
+}
+
+_msupdate_has_no_updates_sentinel() {
+    _msupdate_sanitize_output "$1" | grep -qi '^no updates available$'
+}
+
+_msupdate_parse_pending_ids() {
+    if _msupdate_has_no_updates_sentinel "$1"; then
+        return 0
+    fi
+    _msupdate_sanitize_output "$1" | awk -v known=" $_MSUPDATE_KNOWN_IDS " '
+        function is_product_id(tok) {
+            if (tok == "") return 0
+            if (index(known, " " tok " ") > 0) return 1
+            if (length(tok) < 5 || length(tok) > 8) return 0
+            if (tok !~ /^[A-Z]/) return 0
+            if (tok !~ /[0-9]/) return 0
+            if (tok ~ /^[A-Z][A-Z0-9]*$/) return 1
+            return 0
+        }
+        {
+            if ($0 ~ /^[Uu]pdate [Aa]ssistant:/ \
+                || $0 ~ /^Checking for updates/ \
+                || $0 ~ /^Detecting and downloading/ \
+                || $0 ~ /^Found the following/ \
+                || $0 ~ /[Nn]o updates available/) next
+            rest = $0
+            while (match(rest, /\([A-Za-z0-9]+\)/)) {
+                tok = substr(rest, RSTART + 1, RLENGTH - 2)
+                if (is_product_id(tok)) { print tok; next }
+                rest = substr(rest, RSTART + RLENGTH)
+            }
+            n = split($0, parts, /[^A-Za-z0-9]+/)
+            for (i = 1; i <= n; i++) {
+                if (is_product_id(parts[i])) { print parts[i]; next }
+            }
+        }
+    ' | awk '!seen[$0]++'
+}
+
+# DeferralVersions.TEAMS21 pins the MAXIMUM version MAU will ever offer.
+# A pin equal to the installed build blocks Teams forever. Tests must set
+# ASCENDO_MAU_MUTATE_PREFS=0 so we never touch the operator's real domain.
+_msupdate_clear_stale_teams_deferral() {
+    [ "${ASCENDO_MAU_MUTATE_PREFS:-1}" = "1" ] || return 0
+    local tmp
+    tmp="$(mktemp "${TMPDIR:-/tmp}/ascendo_mau_prefs.XXXXXX")" || return 0
+    if ! defaults export com.microsoft.autoupdate2 "$tmp" >/dev/null 2>&1; then
+        rm -f "$tmp"
+        return 0
+    fi
+    if plutil -extract "OptionalUpdatesDeferrals.DeferralVersions.TEAMS21" raw -o - "$tmp" >/dev/null 2>&1; then
+        plutil -remove "OptionalUpdatesDeferrals.DeferralVersions.TEAMS21" "$tmp" >/dev/null 2>&1 || true
+        defaults import com.microsoft.autoupdate2 "$tmp" >/dev/null 2>&1 || true
+    fi
+    rm -f "$tmp"
+    return 0
+}
+
 # _msupdate_has_pending_for <app_id>
 # Echoes "yes" if msupdate --list reports an update for this app id,
 # else echoes nothing. Empty app_id => global pending check.
@@ -71,15 +144,18 @@ _msupdate_has_pending_for() {
     bin=$(_msupdate_bin) || return 1
     local out
     out=$("$bin" --list 2>/dev/null || true)
+    if _msupdate_has_no_updates_sentinel "$out"; then
+        return 0
+    fi
+    local ids
+    ids="$(_msupdate_parse_pending_ids "$out")"
     if [ -n "$app_id" ]; then
-        # MAU lists pending updates as "AppID: vX.Y.Z" lines (and a header).
-        if /usr/bin/printf '%s' "$out" | /usr/bin/grep -qE "(^|[[:space:]])${app_id}([[:space:]]|:|/|$)"; then
+        if printf '%s\n' "$ids" | grep -qx "$app_id"; then
             echo "yes"
-            return 0
         fi
         return 0
     fi
-    if /usr/bin/printf '%s' "$out" | /usr/bin/grep -qiE 'pending|update available|update is available'; then
+    if [ -n "$ids" ]; then
         echo "yes"
     fi
 }
@@ -159,9 +235,20 @@ msupdate_apply() {
     local app_id
     app_id=$(_msupdate_app_id "$cfg")
 
-    # The user specifically requested to remove msupdate from silent updates
-    # because `msupdate --install` can hang or take too long silently.
-    # We return 95 to trigger the "needs manual update" UI flow in Ascendo.
+    # Break the Teams DeferralVersions deadlock even when apply stays
+    # GUI-gated (RC 95). Clearing the pin is safe and read-repairing.
+    _msupdate_clear_stale_teams_deferral || true
+
+    # Microsoft documents TEAMS21 as not installable via msupdate --apps.
+    # Keep the GUI sentinel so we never hang on a scoped Teams install.
+    if [ "$app_id" = "TEAMS21" ]; then
+        printf "Otwórz aplikację Microsoft Teams — MAU nie zarządza aktualizacjami TEAMS21.\n" >&2
+        return 95
+    fi
+
+    # The silent `msupdate --install` path still hangs on some MAU builds
+    # even after sanitizing --list. Keep the documented RC 95 GUI gate
+    # for Word/Excel/etc.; check is now honest (noise is not pending).
     printf "Otwórz aplikację 'Microsoft AutoUpdate', aby sprawdzić i zainstalować aktualizacje.\n" >&2
     return 95
 }

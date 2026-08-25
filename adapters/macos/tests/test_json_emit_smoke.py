@@ -143,6 +143,48 @@ def test_finalize_round_trips_through_pydantic(tmp_path: Path) -> None:
     assert sc.items[0].id == "node"
 
 
+def test_add_message_accepts_code(tmp_path: Path) -> None:
+    """json_add_message third arg --code must round-trip through parse_sidecar."""
+    bufdir = tmp_path / "buf"
+    out = tmp_path / "check__brew.json"
+    _run([
+        "init", "--bufdir", str(bufdir),
+        "--phase", "check", "--category", "brew",
+        "--run-id", "00000000-0000-0000-0000-000000000002",
+        "--trigger", "cli", "--profile-name", "default",
+        "--tool-name", "brew", "--tool-version", "4.4.0",
+        "--started-at", "2026-05-03T12:00:00Z",
+        "--host-name", "macbook.local",
+        "--host-os", "macos",
+        "--host-os-version", "14.5",
+        "--host-arch", "arm64",
+        "--host-user", "mk",
+        "--host-is-elevated", "false",
+    ], cwd=tmp_path)
+    res = _run([
+        "add-message", "--bufdir", str(bufdir),
+        "--level", "error",
+        "--text", "brew outdated --json=v2 failed unexpectedly",
+        "--code", "BREW_OUTDATED_FAIL",
+    ], cwd=tmp_path)
+    assert res.returncode == 0, res.stderr
+    res = _run([
+        "finalize", "--bufdir", str(bufdir),
+        "--out", str(out),
+        "--exit-code", "30",
+        "--ended-at", "2026-05-03T12:00:01Z",
+    ], cwd=tmp_path)
+    assert res.returncode == 0, res.stderr
+    sys.path.insert(0, str(ADAPTER_ROOT.parent.parent / "core"))
+    try:
+        from ascendo.models.sidecar import parse_sidecar
+        sc = parse_sidecar(out.read_text())
+    finally:
+        sys.path.pop(0)
+    assert sc.messages[0].code == "BREW_OUTDATED_FAIL"
+    assert "brew outdated" in sc.messages[0].text
+
+
 def test_finalize_tolerates_truncated_jsonl(tmp_path: Path) -> None:
     """A SIGKILL'd phase script can leave a partial JSON object on the last
     line of items.jsonl. Finalize must skip the bad line, surface a warning

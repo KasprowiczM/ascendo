@@ -119,3 +119,32 @@ def test_shipped_registry_has_perplexity_macv3_entry() -> None:
     assert p.bundle_id == "ai.perplexity.macv3"
     assert p.handler == "builtin"
     assert p.enabled is True
+
+
+def test_shipped_registry_drops_chatgpt_atlas() -> None:
+    """ChatGPT Atlas was uninstalled 2026-08-19 (browser discontinued)."""
+    reg = WebRegistry.load(SHIPPED, None)
+    assert reg.find("chatgpt-atlas") is None
+    slugs = [a.slug for a in reg.apps]
+    assert "chatgpt-atlas" not in slugs
+
+
+def test_shipped_registry_ledger_wallet_display_name() -> None:
+    """Vendor renamed Ledger Live.app → Ledger Wallet.app; bundle id stays."""
+    reg = WebRegistry.load(SHIPPED, None)
+    ledger = reg.find("ledger-live")
+    assert ledger is not None
+    assert ledger.bundle_id == "com.ledger.live"
+    assert ledger.display_name == "Ledger Wallet"
+
+
+def test_shipped_registry_has_capcut_and_dji() -> None:
+    """2026-08-25 inventory sync: CapCut (brew cask) + DJI Assistant 2."""
+    reg = WebRegistry.load(SHIPPED, None)
+    capcut = reg.find("capcut")
+    assert capcut is not None
+    assert capcut.bundle_id == "com.lemon.lvoverseas"
+    dji = reg.find("dji-assistant")
+    assert dji is not None
+    assert dji.bundle_id == "DJI.Assistant"
+    assert dji.handler == "builtin"

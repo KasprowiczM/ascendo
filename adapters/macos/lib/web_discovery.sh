@@ -274,6 +274,8 @@ _owned_by() {
         com.google.Chrome.app.*)        printf 'ineligible'; return ;;
         com.microsoft.wdav.shim)        printf 'ineligible'; return ;;
         com.microsoft.wdav.*.shim)      printf 'ineligible'; return ;;
+        com.openai.atlas)               printf 'ineligible'; return ;;
+        # ChatGPT Atlas was discontinued and uninstalled 2026-08-19.
         dev.ascendo.*)                  printf 'ineligible'; return ;;
     esac
     if [ -n "${ASCENDO_WEB_INELIGIBLE_PATTERNS:-}" ]; then

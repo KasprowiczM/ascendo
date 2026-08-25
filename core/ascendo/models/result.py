@@ -70,6 +70,10 @@ class Message(BaseModel):
         default=None,
         description="ISO-8601 timestamp at message emission. Optional.",
     )
+    code: str | None = Field(
+        default=None,
+        description="Optional machine-readable code (e.g. BREW_OUTDATED_FAIL).",
+    )
 
 
 class Item(BaseModel):

@@ -10,6 +10,8 @@
 #   native-bun   — installed via curl https://bun.sh/install | bash
 #                  under $BUN_INSTALL.
 #   npm          — `npm install -g <package_name>`. Honors $NPM_GLOBAL_PREFIX.
+#   native-installer — vendor install.sh into ~/.local/bin (claude, codex,
+#                  agy, cursor-agent). Not the npm-global stub.
 #
 # brew_formula:  if non-empty, ascendo will prefer the npm-installed copy
 #                and remove the Homebrew formula on apply (one-time
@@ -22,9 +24,11 @@ display_name|package_name|method|brew_formula|command
 node|node|native-node|node|node
 npm|npm|npm||npm
 pnpm|pnpm|npm||pnpm
-claude-code|@anthropic-ai/claude-code|npm||claude
-codex-cli|@openai/codex|npm||codex
+claude-code|@anthropic-ai/claude-code|native-installer||claude
+codex-cli|@openai/codex|native-installer||codex
 gemini-cli|@google/gemini-cli|npm|gemini-cli|gemini
 qwen-code|@qwen-code/qwen-code|npm|qwen-code|qwen
 opencode-cli|opencode-ai|npm|opencode|opencode
+agy-cli|agy|native-installer||agy
+cursor-agent|cursor-agent|native-installer||agent
 bun|bun|native-bun|bun|bun

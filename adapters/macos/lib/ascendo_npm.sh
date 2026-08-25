@@ -322,3 +322,85 @@ ascendo_npm_node_latest_version() {
     [ -n "$_current" ] && { printf '%s' "$_current"; return 0; }
     return 0
 }
+
+# -- native-installer helpers (ported from macOS_updates 2026-08-24) --------
+# Standalone vendor install scripts drop binaries in ~/.local/bin. The
+# previous npm-global stubs (especially Claude Code) shadowed the real
+# binary and reported a version the user never ran.
+
+ascendo_npm_local_bin() {
+    printf '%s/.local/bin' "${HOME}"
+}
+
+# Vendor install URL for a native-installer command name.
+# Empty stdout + return 1 when the command is unknown.
+ascendo_npm_native_install_url() {
+    case "$1" in
+        claude) printf '%s\n' "https://claude.ai/install.sh" ;;
+        codex)  printf '%s\n' "https://chatgpt.com/codex/install.sh" ;;
+        agy)    printf '%s\n' "https://antigravity.google/cli/install.sh" ;;
+        agent)  printf '%s\n' "https://cursor.com/install" ;;
+        *) return 1 ;;
+    esac
+}
+
+# Resolve a native CLI: ~/.local/bin first, then PATH. Never the
+# npm-global prefix — that is where the broken stubs used to live.
+ascendo_npm_native_command_path() {
+    local _cmd="$1"
+    local _p
+    _p="$(ascendo_npm_local_bin)/$_cmd"
+    if [ -e "$_p" ] && [ -x "$_p" ]; then
+        printf '%s' "$_p"
+        return 0
+    fi
+    command -v "$_cmd" 2>/dev/null || true
+}
+
+# Installed version of a native-installer CLI (or empty if missing).
+# display_name matches config/npm_global_clis.txt.
+ascendo_npm_native_installed_version() {
+    local _display="$1"
+    local _cmd="$2"
+    local _path version=""
+    _path="$(ascendo_npm_native_command_path "$_cmd")"
+    [ -n "$_path" ] || return 0
+    case "$_display" in
+        claude-code)
+            version="$("$_path" -v </dev/null 2>/dev/null | head -1 | sed 's/ .*//')"
+            ;;
+        codex-cli)
+            version="$("$_path" --version </dev/null 2>/dev/null | head -1 | awk '{print $NF}')"
+            ;;
+        agy-cli|cursor-agent)
+            version="$("$_path" --version </dev/null 2>/dev/null | head -1)"
+            ;;
+        *)
+            version="$("$_path" --version </dev/null 2>/dev/null | head -1 | awk '{print $NF}')"
+            ;;
+    esac
+    printf '%s' "$version" | sed 's/^v//; s/ .*//'
+}
+
+# Colon-separated PATH prefix: ~/.local/bin, managed npm-global, managed
+# node (unless ASCENDO_NVM_OWNS_NODE / MAC_UPDATE_NVM_OWNS_NODE), bun, brew.
+# Mirrors macOS_updates: the managed prefix wins over nvm; native CLIs
+# in ~/.local/bin win over npm stubs.
+ascendo_npm_preferred_path() {
+    local _local _npmg _node _bun _parts=""
+    _local="$(ascendo_npm_local_bin)"
+    _npmg="$(ascendo_npm_global_prefix)/bin"
+    _node="$(ascendo_npm_n_prefix)/bin"
+    _bun="$(ascendo_npm_bun_home)/bin"
+    [ -d "$_local" ] && _parts="$_local"
+    [ -d "$_npmg" ] && _parts="${_parts:+$_parts:}$_npmg"
+    case "${ASCENDO_NVM_OWNS_NODE:-${MAC_UPDATE_NVM_OWNS_NODE:-}}" in
+        1|true|yes) ;;
+        *) [ -d "$_node" ] && _parts="${_parts:+$_parts:}$_node" ;;
+    esac
+    [ -d "$_bun" ] && _parts="${_parts:+$_parts:}$_bun"
+    for _p in /opt/homebrew/bin /usr/local/bin; do
+        [ -d "$_p" ] && _parts="${_parts:+$_parts:}$_p"
+    done
+    printf '%s' "$_parts"
+}

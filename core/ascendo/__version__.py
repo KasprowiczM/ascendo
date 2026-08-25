@@ -8,6 +8,7 @@ Versioning: SemVer 2.0.0 / PEP 440 (Python betas use the `bN` suffix)
 - 1.0.0b1 — first production beta (git tag `v1.0-beta`)
 - 1.0.0 — stable API, semver promise
 - 1.0.1 — in-app self-update (check + one-click upgrade)
+- 1.0.2 — port macOS_updates hardening (brew, native CLIs, inventory)
 """
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"

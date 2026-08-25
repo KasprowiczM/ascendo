@@ -12,7 +12,7 @@ LIB = REPO_ROOT / "adapters" / "macos" / "lib"
 
 
 def _run(snippet: str, fake_path: Path | None = None) -> subprocess.CompletedProcess:
-    env = {**os.environ}
+    env = {**os.environ, "ASCENDO_MAU_MUTATE_PREFS": "0"}
     if fake_path is not None:
         env["PATH"] = f"{fake_path}:{env.get('PATH', '')}"
     full = textwrap.dedent(f"""\
@@ -32,9 +32,9 @@ def test_msupdate_check_parses_pending_count(tmp_path: Path) -> None:
         '#!/bin/sh\n'
         'cat <<EOF\nWaiting for Microsoft AutoUpdate to be ready\n'
         '\n'
-        ' Word                   16.83  pending\n'
-        ' Excel                  16.83  pending\n'
-        ' OneNote                16.83  pending\nEOF\n'
+        ' Word (MSWD2019)        16.83  pending\n'
+        ' Excel (XCEL2019)       16.83  pending\n'
+        ' OneNote (ONMC2019)     16.83  pending\nEOF\n'
         'exit 0\n',
     )
     fake.chmod(0o755)
@@ -100,3 +100,24 @@ def test_docker_apply_calls_docker_desktop_update(tmp_path: Path) -> None:
     assert r.returncode == 0
     args = log.read_text().strip()
     assert "desktop" in args and "update" in args
+
+
+def test_msupdate_spinner_noise_is_not_pending(tmp_path: Path) -> None:
+    """macOS_updates 2026-08-19: 'Update Assistant: Idle' is not a pending ID."""
+    fake = tmp_path / "msupdate"
+    fake.write_text(
+        "#!/bin/sh\n"
+        "cat <<'EOF'\n"
+        "Checking for updates...\n"
+        "Update Assistant: Idle\n"
+        "No updates available\n"
+        "EOF\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    cfg = json.dumps({"slug": "ms365"})
+    snippet = f"msupdate_check 'ms365' {json.dumps(cfg)!r}"
+    r = _run(snippet, fake_path=tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert "pending" not in r.stdout.lower()

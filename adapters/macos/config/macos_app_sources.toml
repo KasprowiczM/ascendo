@@ -1,16 +1,108 @@
 # macOS cross-source deduplication configuration.
 #
 # When the same logical app is installed via multiple package managers
-# (e.g. Claude via both npm and brew), the orchestrator's deduplicator
-# will prefer the source listed first in preferred_order and offer to
-# auto-uninstall the non-preferred version.
+# (e.g. Brave via both brew cask and a web Sparkle feed), the
+# orchestrator's deduplicator will prefer the source listed first in
+# preferred_order and offer to auto-uninstall the non-preferred version.
 #
 # Schema: core/ascendo/models/deduplication.py — AppSourcesRegistry
+#
+# Synced 2026-08-25 from macOS_updates APPLICATIONS.md + internet_app_methods.txt.
+# Homebrew casks take precedence over web handlers for apps that migrated
+# to brew on 2026-08-05.
 
 [[app]]
 id = "claude"
 name = "Claude"
-preferred_order = ["npm", "brew"]
+preferred_order = ["web", "brew"]
 [app.sources]
-npm = "@anthropic-ai/claude-cli"
+web = "com.anthropic.claudefordesktop"
 brew = "claude"
+
+[[app]]
+id = "brave"
+name = "Brave Browser"
+preferred_order = ["brew", "web"]
+[app.sources]
+brew = "brave-browser"
+web = "com.brave.Browser"
+
+[[app]]
+id = "perplexity"
+name = "Perplexity"
+preferred_order = ["brew", "web"]
+[app.sources]
+brew = "perplexity"
+web = "ai.perplexity.macv3"
+
+[[app]]
+id = "lm-studio"
+name = "LM Studio"
+preferred_order = ["brew", "web"]
+[app.sources]
+brew = "lm-studio"
+web = "ai.elementlabs.lmstudio"
+
+[[app]]
+id = "protonvpn"
+name = "ProtonVPN"
+preferred_order = ["brew", "web"]
+[app.sources]
+brew = "protonvpn"
+web = "ch.protonvpn.mac"
+
+[[app]]
+id = "zoom"
+name = "zoom.us"
+preferred_order = ["brew", "web"]
+[app.sources]
+brew = "zoom"
+web = "us.zoom.xos"
+
+[[app]]
+id = "megasync"
+name = "MEGAsync"
+preferred_order = ["brew", "web"]
+[app.sources]
+brew = "megasync"
+web = "mega.mac"
+
+[[app]]
+id = "appcleaner"
+name = "AppCleaner"
+preferred_order = ["brew", "web"]
+[app.sources]
+brew = "appcleaner"
+web = "net.freemacsoft.AppCleaner"
+
+[[app]]
+id = "obsidian"
+name = "Obsidian"
+preferred_order = ["brew", "web"]
+[app.sources]
+brew = "obsidian"
+web = "md.obsidian"
+
+[[app]]
+id = "spotify"
+name = "Spotify"
+preferred_order = ["brew", "web"]
+[app.sources]
+brew = "spotify"
+web = "com.spotify.client"
+
+[[app]]
+id = "inkscape"
+name = "Inkscape"
+preferred_order = ["brew", "web"]
+[app.sources]
+brew = "inkscape"
+web = "org.inkscape.Inkscape"
+
+[[app]]
+id = "capcut"
+name = "CapCut"
+preferred_order = ["brew", "web"]
+[app.sources]
+brew = "capcut"
+web = "com.lemon.lvoverseas"

@@ -68,6 +68,13 @@ while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
     case "$METHOD" in
         native-node) INSTALLED="$(ascendo_npm_node_installed_version)"; LATEST="$(ascendo_npm_node_latest_version)" ;;
         native-bun)  INSTALLED="$(ascendo_npm_bun_installed_version)";  LATEST="$(ascendo_npm_bun_latest_version)" ;;
+        native-installer)
+            INSTALLED="$(ascendo_npm_native_installed_version "$DISPLAY" "$CMD")"
+            case "$PKG" in
+                *@*|*/*) LATEST="$(ascendo_npm_latest_version "$PKG")" ;;
+                *) LATEST="" ;;
+            esac
+            ;;
         npm)         INSTALLED="$(ascendo_npm_installed_version "$PKG")"; LATEST="$(ascendo_npm_latest_version "$PKG")" ;;
         *) continue ;;
     esac

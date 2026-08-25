@@ -62,3 +62,84 @@ def test_cask_app_name_mapping(tmp_path: Path) -> None:
     assert lines[0] == "Visual Studio Code"
     assert lines[1] == "Google Chrome"
     assert lines[2] == ""  # unknown -> empty
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash required")
+def test_cask_app_name_maps_brew_migrated_casks() -> None:
+    """Casks migrated from web handlers in macOS_updates 2026-08-05."""
+    script = f'''
+        . "{LIB}"
+        ascendo_brew_cask_app_name "brave-browser"
+        ascendo_brew_cask_app_name "capcut"
+        ascendo_brew_cask_app_name "lm-studio"
+    '''
+    res = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False)
+    assert res.returncode == 0
+    lines = res.stdout.splitlines()
+    assert lines[0] == "Brave Browser"
+    assert lines[1] == "CapCut"
+    assert lines[2] == "LM Studio"
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash required")
+def test_outdated_json_does_not_merge_stderr() -> None:
+    """Regression lock: brew outdated stderr must stay off stdout.
+
+    macOS_updates 2026-08-19: capturing brew outdated with 2>&1 treated
+    '==> Downloading Homebrew API data' as outstanding packages.
+    """
+    text = LIB.read_text(encoding="utf-8")
+    start = text.index("ascendo_brew_outdated_json() {")
+    end = text.index("ascendo_brew_parse_outdated() {")
+    fn = text[start:end]
+    outdated_lines = [
+        ln for ln in fn.splitlines()
+        if "outdated" in ln and "json" in ln
+    ]
+    assert outdated_lines, "expected a brew outdated --json=v2 invocation"
+    assert all("2>&1" not in ln for ln in outdated_lines)
+    assert '2>"$err_file"' in fn
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash required")
+def test_cask_versions_falls_back_to_caskroom(tmp_path: Path) -> None:
+    """When `brew list --cask --versions` is empty (Cask::CaskLoader
+    regression), fall back to Caskroom/<token>/<version>."""
+    import os
+
+    fake_brew = tmp_path / "brew"
+    prefix = tmp_path / "opt" / "homebrew"
+    room = prefix / "Caskroom" / "capcut" / "9.3.0.4490"
+    room.mkdir(parents=True)
+    fake_brew.write_text(
+        "#!/bin/sh\n"
+        f'if [ "$1" = "--prefix" ]; then echo "{prefix}"; exit 0; fi\n'
+        'if [ "$1" = "list" ] && [ "$2" = "--cask" ] && [ "$3" = "--versions" ]; then exit 0; fi\n'
+        'if [ "$1" = "list" ] && [ "$2" = "--cask" ]; then echo capcut; exit 0; fi\n'
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    fake_brew.chmod(0o755)
+    script = f'. "{LIB}" && ascendo_brew_cask_versions'
+    res = subprocess.run(
+        ["bash", "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PATH": f"{tmp_path}:{os.environ.get('PATH', '')}"},
+    )
+    assert res.returncode == 0, res.stderr
+    assert "capcut" in res.stdout
+    assert "9.3.0.4490" in res.stdout
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash required")
+def test_brew_check_script_uses_cask_versions_helper() -> None:
+    """check.sh must not call `brew list --cask --versions` as a command."""
+    script = ADAPTER_ROOT / "scripts" / "brew" / "check.sh"
+    code = "\n".join(
+        ln for ln in script.read_text(encoding="utf-8").splitlines()
+        if not ln.lstrip().startswith("#")
+    )
+    assert "list --cask --versions" not in code
+    assert "ascendo_brew_cask_versions" in code

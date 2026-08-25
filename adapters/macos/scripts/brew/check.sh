@@ -159,20 +159,19 @@ _emit_outdated() {
 }
 
 # Emit one `up_to_date` item per installed package NOT in the outdated set.
-# `brew list --versions` outputs lines like "abseil 20240722.1" or
-# "node 25.9.0_3" — first whitespace-separated token is the id, the
-# remainder is the version (may contain spaces for some formulae).
+# Formulae: `brew list --formula --versions`. Casks: NEVER call
+# `brew list --cask --versions` directly (Cask::CaskLoader regression
+# 2026-08-19) — go through ascendo_brew_cask_versions, which falls back
+# to Caskroom/<token>/<version>.
 _emit_up_to_date() {
     local _bucket="$1"
-    local _flag="$2"           # --formula or --cask
     local _count=0
     local _id _ver _line
     while IFS= read -r _line; do
         [ -z "$_line" ] && continue
         _id="${_line%% *}"
         _ver="${_line#* }"
-        # Some casks have no version reported by `brew list --versions`; treat
-        # the whole line as id and skip the version.
+        # Some casks have no version reported; treat the whole line as id.
         if [ "$_id" = "$_line" ]; then
             _ver=""
         fi
@@ -184,13 +183,19 @@ _emit_up_to_date() {
             json_add_item "$_id" "$_ver" "$_ver" "up_to_date" "brew" "$_bucket"
             _count=$((_count + 1))
         fi
-    done < <(brew list "$_flag" --versions 2>/dev/null || true)
+    done < <(
+        if [ "$_bucket" = "cask" ]; then
+            ascendo_brew_cask_versions 2>/dev/null || true
+        else
+            ascendo_brew_formula_versions 2>/dev/null || true
+        fi
+    )
     json_add_message "info" "installed ${_bucket}: ${_count} up-to-date"
 }
 
 _emit_outdated "formula"
 _emit_outdated "cask"
-_emit_up_to_date "formula" "--formula"
-_emit_up_to_date "cask"    "--cask"
+_emit_up_to_date "formula"
+_emit_up_to_date "cask"
 
 exit 0

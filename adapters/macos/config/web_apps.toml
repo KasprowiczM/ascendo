@@ -82,13 +82,6 @@ appcast_url = "https://persistent.oaistatic.com/sidekick/public/sparkle_public_a
 notes = "Discovered via binary mining (M5.7.3): ChatGPT.framework references the path fragment 'updates/sparkle/sidekick' which combines with the persistent.oaistatic.com host to give the public appcast at /sidekick/public/sparkle_public_appcast.xml. Probe verified live 2026-05-08; latest sparkle:shortVersionString=1.2026.118 (matches installed CFBundleShortVersionString)."
 
 [[app]]
-slug = "chatgpt-atlas"
-bundle_id = "com.openai.atlas"  # verified on Mac.r12.home (2026-05-06)
-display_name = "ChatGPT Atlas"
-handler = "sparkle"
-appcast_url = "https://persistent.oaistatic.com/atlas/public/sparkle_public_appcast.xml"
-
-[[app]]
 slug = "warp"
 bundle_id = "dev.warp.Warp-Stable"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Warp"
@@ -349,9 +342,9 @@ http_timeout_s = 8
 [[app]]
 slug = "ledger-live"
 bundle_id = "com.ledger.live"
-display_name = "Ledger Live"
+display_name = "Ledger Wallet"
 handler = "release_feed"
-notes = "Electron-builder latest-mac.yml on Ledger's CDN. files[0]=.zip, files[1]=.dmg (verified live 2026-05-24, version 4.4.0). M5.7.6 Phase B2 promoted to Tier-A apply: download_path=files[1].url drives the existing release_feed_apply pipeline which downloads the DMG, spctl Gatekeeper-verifies the .app, atomic-swaps into /Applications. Mirrors the Ascendo 2026-05-22 fix for Ledger's broken in-app updater. The vendor still ships a Squirrel updater inside the bundle, but vendor-direct DMG is the canonical path now."
+notes = "Vendor renamed the bundle to Ledger Wallet.app (2026-08 inventory) but CFBundleIdentifier stays com.ledger.live. Electron-builder latest-mac.yml on Ledger's CDN. files[0]=.zip, files[1]=.dmg. M5.7.6 Phase B2 promoted to Tier-A apply."
 
 [app.release_feed]
 url = "https://download.live.ledger.com/latest-mac.yml"
@@ -607,3 +600,27 @@ display_name = "IPMIView"
 handler = "builtin"
 notes = "Supermicro IPMIView has no auto-updater framework (no Sparkle / Keystone / Squirrel). Vendor distributes via supermicro.com/en/solutions/management-software/ipmi-utilities behind a 'register your product' wall — no public version endpoint discoverable. Builtin handler surfaces an Action-required item in the SPA pointing the operator at the vendor page. enabled=true so the entry appears in Action-required; flip to false locally if you don't use IPMIView."
 update_url = "https://www.supermicro.com/en/solutions/management-software/ipmi-utilities"
+
+# ═════════════════════════════ 2026-08-25 inventory sync from macOS_updates ══
+# Canonical APPLICATIONS.md on this Mac (macOS 26.6.2). Apps that Homebrew
+# now owns as casks (brave-browser, perplexity, lm-studio, protonvpn, zoom,
+# megasync, appcleaner, obsidian, spotify, inkscape, capcut) are classified
+# brew by web_discovery via `brew list --cask` and skipped here. ChatGPT
+# Atlas (com.openai.atlas) was uninstalled 2026-08-19 — ineligible in
+# web_discovery, no [[app]] entry.
+
+[[app]]
+slug = "capcut"
+bundle_id = "com.lemon.lvoverseas"
+display_name = "CapCut"
+handler = "builtin"
+notes = "Installed via Homebrew cask `capcut` as of 2026-08-05. builtin is the web fallback for machines where the cask is absent; brew owns updates when the cask is present. Live bundle id verified 2026-08-25."
+update_url = "https://www.capcut.com/download"
+
+[[app]]
+slug = "dji-assistant"
+bundle_id = "DJI.Assistant"
+display_name = "DJI Assistant 2"
+handler = "builtin"
+notes = "DJI Assistant 2 (Consumer Drones Series) — no public version endpoint. builtin surfaces Action-required. Detected as uncategorized in macOS_updates APPLICATIONS.md 2026-08-25."
+update_url = "https://www.dji.com/downloads"

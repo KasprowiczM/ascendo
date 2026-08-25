@@ -34,6 +34,22 @@ class TestScaffold(unittest.TestCase):
         self.assertIn('tauri = { version = "2"', text)
         self.assertIn("ureq", text)
 
+    def test_shell_version_matches_python_core(self) -> None:
+        """CFBundleShortVersionString must match core/ascendo/__version__.py.
+
+        1.0.1 shipped a 0.2.0 Info.plist because tauri.conf.json drifted.
+        """
+        import re
+
+        core = ROOT.parents[1] / "core" / "ascendo" / "__version__.py"
+        py_ver = re.search(r'__version__\s*=\s*"([^"]+)"', core.read_text(encoding="utf-8"))
+        self.assertIsNotNone(py_ver)
+        version = py_ver.group(1)
+        conf = json.loads((ROOT / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
+        self.assertEqual(conf["version"], version)
+        cargo = (ROOT / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8")
+        self.assertIn(f'version = "{version}"', cargo)
+
     def test_tauri_conf_identifier_and_no_static_windows(self) -> None:
         p = ROOT / "src-tauri" / "tauri.conf.json"
         self.assertTrue(p.exists(), f"missing {p}")
@@ -43,7 +59,7 @@ class TestScaffold(unittest.TestCase):
         # entry with the same label "main" would conflict and crash the app
         # with: "a webview with label `main` already exists".
         self.assertEqual(data["app"]["windows"], [])
-        self.assertEqual(data["identifier"], "dev.ascendo.app")
+        self.assertEqual(data["identifier"], "dev.ascendo.desktop")
         self.assertEqual(data["productName"], "Ascendo")
 
     def test_main_rs_window_dimensions(self) -> None:

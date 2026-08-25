@@ -8,7 +8,7 @@ Cross-platform unified-updates orchestrator. macOS · Windows · Ubuntu/Debian. 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Made for: Windows | Linux | macOS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux%20%7C%20macOS-blue)](docs/PLATFORM_STATUS.md)
-[![Version: v1.0.1](https://img.shields.io/badge/version-v1.0.1-blue)](CHANGELOG.md)
+[![Version: v1.0.2](https://img.shields.io/badge/version-v1.0.2-blue)](CHANGELOG.md)
 [![Tests: 1600+ green](https://img.shields.io/badge/tests-1600%2B%20green-brightgreen)](CHANGELOG.md)
 [![CI: 6/6 green](https://img.shields.io/badge/CI-6%2F6%20green-brightgreen)](.github/workflows/validate.yml)
 
@@ -144,14 +144,9 @@ in the platform quickstarts below.
 
 ## Platforms
 
-> **v1.0.1 (`1.0.1`).** First stable point release after the 1.0 beta,
-> adding in-app self-update (check + one-click upgrade) across all three
-> platforms. All three platform legs landed (Sesjas 86–88)
-> and CI's `Validate Config` workflow is green 6/6 across
-> ubuntu/macos/windows. APIs and CLI flags are stabilizing but may
-> still shift before `1.0.0`. macOS is the most mature; Windows + Linux
-> are functional and at parity for inventory + check + apply (see the
-> matrix below).
+> **v1.0.2 (`1.0.2`).** macOS adapter port of macOS_updates hardening
+> (brew Caskroom fallback, native CLIs, MAU sanitizer, current app
+> inventory) plus desktop-shell version aligned with the Python core.
 
 | Platform | Status | Quickstart |
 |----------|--------|------------|

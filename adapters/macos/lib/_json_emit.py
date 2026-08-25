@@ -15,7 +15,7 @@ Subcommands:
               [--resolved-version STR] [--source-type STR]
               [--source-feed STR] [--source-url STR]
               [--exit-code N] [--duration-ms N]
-  add-message --bufdir DIR --level LEVEL --text STR [--timestamp STR]
+  add-message --bufdir DIR --level LEVEL --text STR [--timestamp STR] [--code STR]
   set-flag    --bufdir DIR --key needs_reboot --value true|false
   count       --bufdir DIR --bucket {success,skipped,failed} [--n N]
   finalize    --bufdir DIR --out PATH --exit-code N --ended-at ISO
@@ -195,6 +195,8 @@ def cmd_add_message(args: argparse.Namespace) -> int:
     bufdir = _bufdir(args.bufdir)
     msg: dict = {"level": args.level, "text": args.text}
     if args.timestamp: msg["timestamp"] = args.timestamp
+    if getattr(args, "code", None):
+        msg["code"] = args.code
     with (bufdir / "msgs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(msg, ensure_ascii=False) + "\n")
     return 0
@@ -348,6 +350,7 @@ def _build_parser() -> argparse.ArgumentParser:
     pm.add_argument("--level", required=True)
     pm.add_argument("--text", required=True)
     pm.add_argument("--timestamp")
+    pm.add_argument("--code")
     pm.set_defaults(func=cmd_add_message)
 
     pf = sub.add_parser("set-flag")

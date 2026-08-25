@@ -101,33 +101,13 @@ mkdir -p "$NPM_GLOBAL_PREFIX/bin" 2>/dev/null || true
 ascendo_npm_scrub_npmrc || true
 export NPM_CONFIG_PREFIX="$NPM_GLOBAL_PREFIX"
 
-# Sesja 53 fix: extend PATH so npm postinstall subshells can find node + bun.
-# When the dashboard runs as a Tauri-launched GUI process, it inherits
-# launchctl PATH (typically /usr/bin:/bin:/usr/sbin:/sbin) — node and bun
-# are NOT in there even though they exist under their canonical install
-# dirs. The npm package opencode-ai (and many others) runs a postinstall
-# script that does:
-#     sh -c "bun ./postinstall.mjs || node ./postinstall.mjs"
-# which fails with "command not found" for both unless PATH includes the
-# bin dirs of both runtimes. We resolve the canonical locations + brew + ~
-# /.local/bin and prepend them. Order: ascendo's npm-global first
-# (existing behaviour), then ascendo's node toolchain, then bun, then
-# brew (where homebrew node lives if user has it), then ~/.local/bin.
-_npm_node_bin="$(ascendo_npm_node_bin 2>/dev/null || true)"
-_npm_node_dir=""
-[ -n "$_npm_node_bin" ] && _npm_node_dir="$(dirname "$_npm_node_bin")"
-_npm_bun_bin="$(ascendo_npm_bun_bin 2>/dev/null || true)"
-_npm_bun_dir=""
-[ -n "$_npm_bun_bin" ] && _npm_bun_dir="$(dirname "$_npm_bun_bin")"
-
-_extended_path="$NPM_GLOBAL_PREFIX/bin"
-[ -n "$_npm_node_dir" ] && _extended_path="$_extended_path:$_npm_node_dir"
-[ -n "$_npm_bun_dir"  ] && _extended_path="$_extended_path:$_npm_bun_dir"
-# Fallbacks for postinstall scripts that hard-code expected locations.
-for _p in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" "$HOME/.bun/bin"; do
-    [ -d "$_p" ] && _extended_path="$_extended_path:$_p"
-done
-export PATH="$_extended_path:$PATH"
+# Sesja 53 + 2026-08-25: extend PATH so native CLIs in ~/.local/bin win
+# over npm-global stubs, the managed node prefix wins over nvm, and npm
+# postinstall subshells can find node + bun. Order matches macOS_updates.
+_pref_path="$(ascendo_npm_preferred_path 2>/dev/null || true)"
+if [ -n "$_pref_path" ]; then
+    export PATH="$_pref_path:$PATH"
+fi
 
 # -- per-method handlers ------------------------------------------------------
 apply_native_node() {
@@ -293,6 +273,50 @@ apply_npm() {
     json_add_item "$_display" "$_new" "$_new" "success" "npm" "npm"
 }
 
+# Vendor install scripts are idempotent: they download the latest binary
+# into ~/.local/bin. Always run on apply (macOS_updates 2026-08-24) —
+# an up_to_date check would skip agy/cursor-agent forever because they
+# have no npm registry candidate.
+apply_native_installer() {
+    local _display="$1"
+    local _cmd="$2"
+    local _url
+    _url="$(ascendo_npm_native_install_url "$_cmd")" || _url=""
+    if [ "$DRY_RUN" = "true" ]; then
+        json_add_item "$_display" "" "" "planned" "npm" "native-installer"
+        return
+    fi
+    if [ -z "$_url" ]; then
+        json_add_item "$_display" "" "" "failed" "npm" "native-installer"
+        json_add_message "error" "no native-installer URL for command '$_cmd' ($_display)"
+        return
+    fi
+    if ! command -v curl >/dev/null 2>&1; then
+        json_add_item "$_display" "" "" "failed" "npm" "native-installer"
+        json_add_message "error" "curl missing; cannot run native installer for $_display"
+        return
+    fi
+    _stream_emit ">>> native-installer $_display ($_url)"
+    local _tmp_log
+    _tmp_log="$(mktemp -t ascendo-native-install.XXXXXX 2>/dev/null || mktemp /tmp/ascendo-native-install.XXXXXX)"
+    {
+        curl -fsSL "$_url" | sh
+    } >"$_tmp_log" 2>&1
+    local _rc=$?
+    if [ "$_rc" -ne 0 ]; then
+        local _tail
+        _tail="$(tail -n 12 "$_tmp_log" 2>/dev/null | tr '\t' ' ' | awk 'NF{print}' | head -c 1500 || true)"
+        json_add_item "$_display" "" "" "failed" "npm" "native-installer"
+        json_add_message "error" "native installer for $_display exited $_rc — ${_tail:-no output}"
+        rm -f "$_tmp_log" 2>/dev/null
+        return
+    fi
+    rm -f "$_tmp_log" 2>/dev/null
+    local _new
+    _new="$(ascendo_npm_native_installed_version "$_display" "$_cmd")"
+    json_add_item "$_display" "$_new" "$_new" "success" "npm" "native-installer"
+}
+
 # Total count for live-stream progress accounting.
 TOTAL_ITEMS="$(ascendo_npm_manifest_lines | awk -F'|' 'NR > 1 && length($1) > 0 { c++ } END { print c+0 }')"
 CURRENT_INDEX=0
@@ -319,6 +343,7 @@ while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
     case "$METHOD" in
         native-node) apply_native_node "$DISPLAY" ;;
         native-bun)  apply_native_bun  "$DISPLAY" ;;
+        native-installer) apply_native_installer "$DISPLAY" "$CMD" ;;
         npm)         apply_npm "$DISPLAY" "$PKG"  ;;
         *) json_add_message "warn" "unknown method '$METHOD' for $DISPLAY; skipping" ;;
     esac

@@ -110,24 +110,40 @@ def _augment_path_for_macos_gui() -> None:
     We augment PATH idempotently — if an entry is already present (e.g.
     user launched the dashboard from Terminal with a full shell PATH),
     we don't double-prepend.
+
+    Order (ported from macOS_updates 2026-08-19/24):
+      1. ``~/.local/bin`` — native CLIs (claude, codex, agy, agent)
+      2. managed npm-global prefix
+      3. managed node prefix, unless ``ASCENDO_NVM_OWNS_NODE=1`` /
+         ``MAC_UPDATE_NVM_OWNS_NODE=1``
+      4. bun, Homebrew, cargo
+    Homebrew still beats the Xcode ``/usr/bin`` Python shim because
+    those system dirs stay later in PATH.
     """
     import sys
     if sys.platform != "darwin":
         return
     home = os.path.expanduser("~")
-    # Order: brew first (so brew Python wins over Xcode shim), then
-    # ascendo toolchain (node + bun), then ~/.local/bin (install.sh shims),
-    # then cargo (Rust dev). Each line is a single dir.
+    nvm_owns = (
+        os.environ.get("ASCENDO_NVM_OWNS_NODE")
+        or os.environ.get("MAC_UPDATE_NVM_OWNS_NODE")
+        or ""
+    ).lower()
     candidates = [
-        "/opt/homebrew/bin",
-        "/opt/homebrew/sbin",
-        "/usr/local/bin",
         f"{home}/.local/bin",
-        f"{home}/.local/share/mac-update/node/bin",
         f"{home}/.local/share/mac-update/npm-global/bin",
-        f"{home}/.bun/bin",
-        f"{home}/.cargo/bin",
     ]
+    if nvm_owns not in ("1", "true", "yes"):
+        candidates.append(f"{home}/.local/share/mac-update/node/bin")
+    candidates.extend(
+        [
+            f"{home}/.bun/bin",
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin",
+            "/usr/local/bin",
+            f"{home}/.cargo/bin",
+        ]
+    )
     existing = os.environ.get("PATH", "").split(":")
     new_entries = [p for p in candidates if os.path.isdir(p) and p not in existing]
     if new_entries:

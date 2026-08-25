@@ -38,7 +38,58 @@ ascendo_brew_version() {
     fi
 }
 
+# Print one "<cask-token> <version>" line per installed cask.
+# Return 0 when the inventory is trustworthy (including the empty case),
+# 1 when Homebrew could not be queried at all.
+# Prefer `brew list --cask --versions`; on the Cask::CaskLoader regression
+# fall back to `brew list --cask` + Caskroom/<token>/<newest-dir>.
+ascendo_brew_cask_versions() {
+    local out names prefix room ver
+
+    command -v brew >/dev/null 2>&1 || return 1
+
+    # stderr discarded: the upstream error is what we are falling back from.
+    out="$(brew list --cask --versions 2>/dev/null)" || true
+    if [ -n "$out" ]; then
+        printf '%s\n' "$out"
+        return 0
+    fi
+
+    names="$(brew list --cask 2>/dev/null)" || true
+    if [ -z "$names" ]; then
+        if brew list --cask >/dev/null 2>&1; then
+            return 0
+        fi
+        return 1
+    fi
+
+    prefix="$(brew --prefix 2>/dev/null)"
+    [ -n "$prefix" ] || prefix="/opt/homebrew"
+
+    printf '%s\n' "$names" | while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        ver=""
+        room="$prefix/Caskroom/$name"
+        if [ -d "$room" ]; then
+            # shellcheck disable=SC2010,SC2012
+            ver="$(ls -1t "$room" 2>/dev/null | grep -v '^\.' | head -1)"
+        fi
+        printf '%s %s\n' "$name" "${ver:-latest}"
+    done
+    return 0
+}
+
+# Same contract as ascendo_brew_cask_versions, for formulae.
+ascendo_brew_formula_versions() {
+    command -v brew >/dev/null 2>&1 || return 1
+    brew list --formula --versions 2>/dev/null
+}
+
 # Run `brew outdated --json=v2 [--greedy]` and print the JSON to stdout.
+# stderr is NEVER merged into stdout: brew writes progress chatter
+# ("==> Downloading Homebrew API data", "✔︎ JSON API ...") to stderr,
+# and capturing it with 2>&1 made post-upgrade verification treat that
+# chatter as outstanding packages (macOS_updates 2026-08-19 regression).
 # If brew is not installed, prints an empty JSON stub and returns 0.
 ascendo_brew_outdated_json() {
     if ! command -v brew >/dev/null 2>&1; then
@@ -49,8 +100,29 @@ ascendo_brew_outdated_json() {
     if [ "${1:-}" = "--greedy" ]; then
         greedy_flag="--greedy"
     fi
-    # brew exits 0 even when there are no outdated packages
-    brew outdated --json=v2 ${greedy_flag} 2>/dev/null || printf '{"formulae":[],"casks":[]}\n'
+    local err_file rc out
+    err_file="$(mktemp "${TMPDIR:-/tmp}/ascendo_brew_outdated.XXXXXX")" || {
+        printf '{"formulae":[],"casks":[]}\n'
+        return 1
+    }
+    # brew exits 0 even when there are no outdated packages. Keep stderr
+    # off stdout so a later 2>&1 regression cannot poison the JSON.
+    # shellcheck disable=SC2086
+    out="$(brew outdated --json=v2 ${greedy_flag} 2>"$err_file")"
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        cat "$err_file" >&2
+        rm -f "$err_file" 2>/dev/null || true
+        printf '{"formulae":[],"casks":[]}\n'
+        return "$rc"
+    fi
+    rm -f "$err_file" 2>/dev/null || true
+    # Defensive: drop any progress lines that leaked onto stdout.
+    if [ -z "$out" ]; then
+        printf '{"formulae":[],"casks":[]}\n'
+        return 0
+    fi
+    printf '%s\n' "$out" | grep -v '^==>' | grep -v '^✔' || printf '{"formulae":[],"casks":[]}\n'
 }
 
 # Parse a saved `brew outdated --json=v2` file (or stdin with "-") and emit
@@ -120,12 +192,22 @@ ascendo_brew_cask_app_name() {
         visual-studio-code)   echo "Visual Studio Code" ;;
         google-chrome)        echo "Google Chrome" ;;
         firefox)              echo "Firefox" ;;
+        firefox-developer-edition) echo "Firefox Developer Edition" ;;
         spotify)              echo "Spotify" ;;
         notion)               echo "Notion" ;;
         zoom)                 echo "zoom.us" ;;
         iterm2)               echo "iTerm" ;;
         docker)               echo "Docker" ;;
         rectangle)            echo "Rectangle" ;;
+        appcleaner)           echo "AppCleaner" ;;
+        brave-browser)        echo "Brave Browser" ;;
+        capcut)               echo "CapCut" ;;
+        inkscape)             echo "Inkscape" ;;
+        lm-studio)            echo "LM Studio" ;;
+        megasync)             echo "MEGAsync" ;;
+        obsidian)             echo "Obsidian" ;;
+        perplexity)           echo "Perplexity" ;;
+        protonvpn)            echo "ProtonVPN" ;;
         *)                    echo "" ;;
     esac
 }

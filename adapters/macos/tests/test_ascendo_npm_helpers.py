@@ -142,3 +142,66 @@ def test_npmrc_path_honors_override(tmp_path: Path) -> None:
     )
     assert rc == 0
     assert str(custom) in out
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash required")
+def test_native_install_urls() -> None:
+    """Vendor URLs for native-installer CLIs (macOS_updates 2026-08-24)."""
+    script = f'''
+        . "{LIB}"
+        ascendo_npm_native_install_url claude
+        ascendo_npm_native_install_url codex
+        ascendo_npm_native_install_url agy
+        ascendo_npm_native_install_url agent
+    '''
+    res = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False)
+    assert res.returncode == 0, res.stderr
+    lines = res.stdout.splitlines()
+    assert lines[0] == "https://claude.ai/install.sh"
+    assert lines[1] == "https://chatgpt.com/codex/install.sh"
+    assert lines[2] == "https://antigravity.google/cli/install.sh"
+    assert lines[3] == "https://cursor.com/install"
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash required")
+def test_native_command_path_prefers_local_bin(tmp_path: Path) -> None:
+    """~/.local/bin/claude wins over a PATH stub (broken npm-global)."""
+    import os
+
+    local_bin = tmp_path / ".local" / "bin"
+    local_bin.mkdir(parents=True)
+    claude = local_bin / "claude"
+    claude.write_text("#!/bin/sh\necho 2.1.245\n")
+    claude.chmod(0o755)
+    stub_dir = tmp_path / "npm-global" / "bin"
+    stub_dir.mkdir(parents=True)
+    stub = stub_dir / "claude"
+    stub.write_text("#!/bin/sh\necho STUB\n")
+    stub.chmod(0o755)
+    script = f'. "{LIB}" && ascendo_npm_native_command_path claude'
+    res = subprocess.run(
+        ["bash", "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "HOME": str(tmp_path), "PATH": f"{stub_dir}:{os.environ.get('PATH', '')}"},
+    )
+    assert res.returncode == 0, res.stderr
+    assert str(claude) == res.stdout.strip()
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash required")
+def test_manifest_uses_native_installer_for_agent_clis() -> None:
+    manifest = ADAPTER_ROOT / "config" / "npm_global_clis.txt"
+    text = manifest.read_text(encoding="utf-8")
+    rows = {}
+    for line in text.splitlines():
+        if not line or line.startswith("#") or line.startswith("display_name"):
+            continue
+        parts = line.split("|")
+        if len(parts) >= 5:
+            rows[parts[0]] = parts[2]
+    assert rows["claude-code"] == "native-installer"
+    assert rows["codex-cli"] == "native-installer"
+    assert rows["agy-cli"] == "native-installer"
+    assert rows["cursor-agent"] == "native-installer"
