@@ -164,6 +164,14 @@ _apply_one() {
         return 0
     fi
 
+    if [ "$_feed" = "cask" ] && [ -n "$_target" ] && ascendo_brew_cask_would_downgrade "$_id" "$_target"; then
+        json_add_item "$_id" "$_current" "$_current" "skipped" "brew" "cask"
+        json_add_message "warn" \
+            "cask ${_id} target ${_target} is older than the installed app; skipped to prevent downgrade" \
+            "CASK_DOWNGRADE_GUARD"
+        return 0
+    fi
+
     # -- dry-run path (no mutation) --------------------------------------------
     if [ "$DRY_RUN" = "true" ]; then
         json_add_item "$_id" "$_current" "$_target" "planned" "brew" "$_feed"

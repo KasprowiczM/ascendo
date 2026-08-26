@@ -12,14 +12,6 @@
 # to brew on 2026-08-05.
 
 [[app]]
-id = "claude"
-name = "Claude"
-preferred_order = ["web", "brew"]
-[app.sources]
-web = "com.anthropic.claudefordesktop"
-brew = "claude"
-
-[[app]]
 id = "brave"
 name = "Brave Browser"
 preferred_order = ["brew", "web"]

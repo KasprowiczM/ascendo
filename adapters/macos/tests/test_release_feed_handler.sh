@@ -243,6 +243,38 @@ test_pick_asset_url_malformed_json_returns_empty_nonzero() {
     FAIL=$((FAIL+1))
 }
 
+test_yml_files_dmg_picks_dmg_not_zip() {
+    local yml url rc
+    yml='version: 4.17.1
+files:
+  - url: ledger-live-desktop-4.17.1-mac.zip
+    sha512: AAA
+  - url: ledger-live-desktop-4.17.1-mac.blockmap
+    sha512: BBB
+  - url: ledger-live-desktop-4.17.1-mac.dmg
+    sha512: CCC
+'
+    url=$(_rf_walk_json "$yml" "files[dmg].url") ; rc=$?
+    assert_eq "test_yml_files_dmg_picks_dmg_not_zip" "ledger-live-desktop-4.17.1-mac.dmg" "$url"
+    [ "$rc" -eq 0 ] || { echo "FAIL test_yml_files_dmg_picks_dmg_not_zip rc=$rc"; FAIL=$((FAIL+1)); }
+}
+
+test_yml_files_dmg_sha512_pairs_with_dmg() {
+    local yml hash rc
+    yml='version: 4.17.1
+files:
+  - url: ledger-live-desktop-4.17.1-mac.zip
+    sha512: AAA
+  - url: ledger-live-desktop-4.17.1-mac.blockmap
+    sha512: BBB
+  - url: ledger-live-desktop-4.17.1-mac.dmg
+    sha512: CCC
+'
+    hash=$(_rf_walk_json "$yml" "files[dmg].sha512") ; rc=$?
+    assert_eq "test_yml_files_dmg_sha512_pairs_with_dmg" "CCC" "$hash"
+    [ "$rc" -eq 0 ] || { echo "FAIL test_yml_files_dmg_sha512_pairs_with_dmg rc=$rc"; FAIL=$((FAIL+1)); }
+}
+
 test_happy_path_emits_version
 test_404_is_skipped
 test_malformed_json_is_skipped
@@ -254,6 +286,8 @@ test_version_regex_no_match_returns_probe_broken
 test_pick_asset_url_matches_first_qualifying_asset
 test_pick_asset_url_no_match_returns_empty_nonzero
 test_pick_asset_url_malformed_json_returns_empty_nonzero
+test_yml_files_dmg_picks_dmg_not_zip
+test_yml_files_dmg_sha512_pairs_with_dmg
 
 echo
 echo "$PASS passed, $FAIL failed"

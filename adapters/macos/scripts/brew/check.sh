@@ -151,6 +151,13 @@ _emit_outdated() {
     while IFS=',' read -r _id _current _target; do
         [ -z "$_id" ] && continue
         if _filter_match "$_id"; then
+            if [ "$_bucket" = "cask" ] && ascendo_brew_cask_would_downgrade "$_id" "$_target"; then
+                json_add_item "$_id" "$_current" "$_current" "up_to_date" "brew" "cask"
+                json_add_message "warn" \
+                    "cask ${_id} target ${_target} is older than the installed app; skipped to prevent downgrade" \
+                    "CASK_DOWNGRADE_GUARD"
+                continue
+            fi
             json_add_item "$_id" "$_current" "$_target" "planned" "brew" "$_bucket"
             _count=$((_count + 1))
         fi

@@ -174,6 +174,24 @@ except Exception:
     except Exception:
         sys.exit(27)
 
+# files[dmg].url / files[dmg].sha512: first files[] item whose url ends in .dmg
+_dmg_m = re.fullmatch(r"files\[dmg\]\.(url|sha512)", path)
+if _dmg_m:
+    _dmg_field = _dmg_m.group(1)
+    files = data.get("files") if isinstance(data, dict) else None
+    if isinstance(files, list):
+        for item in files:
+            if not isinstance(item, dict):
+                continue
+            url = str(item.get("url") or "")
+            if url.lower().split("?", 1)[0].endswith(".dmg"):
+                val = item.get(_dmg_field)
+                if val is None:
+                    sys.exit(28)
+                print(val)
+                sys.exit(0)
+    sys.exit(28)
+
 parts = re.findall(r'[A-Za-z0-9_-]+|\[\d+\]', path)
 cur = data
 for p in parts:

@@ -23,7 +23,7 @@ is the legacy `D:\Dev_Env\Ascendo` repository, refactored to the
 - **Bash 3.2 only** — no `declare -A`, no `mapfile`, no `readarray`
 - **Homebrew prefix detection** — `/opt/homebrew/bin/` (Apple Silicon) vs `/usr/local/bin/` (Intel)
 - **DMG verification chain** — `hdiutil verify` → `spctl --assess` → `pkgutil --check-signature`
-- **AppleScript fallback** — for Mac App Store iPad apps (UniFi, WiFiman, myCANAL)
+- **AppleScript fallback** — for Mac App Store iPad apps (UniFi, WiFiman, Picsart)
 - **Time Machine snapshots are read-only via API** — can list (`tmutil listlocalsnapshots /`) but cannot create
 
 ## Big M5 refactor: update_internet_apps.sh (1460 LOC)

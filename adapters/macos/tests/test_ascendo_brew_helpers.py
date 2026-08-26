@@ -143,3 +143,51 @@ def test_brew_check_script_uses_cask_versions_helper() -> None:
     )
     assert "list --cask --versions" not in code
     assert "ascendo_brew_cask_versions" in code
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash required")
+def test_version_gt_detects_brave_style_cask_lag() -> None:
+    """Installed Brave 151.x is newer than Homebrew cask 1.93.x (not a real upgrade)."""
+    script = f'''
+        . "{LIB}"
+        ascendo_brew_version_gt "151.1.93.138" "1.93.138.0"; echo gt:$?
+        ascendo_brew_version_gt "1.93.138.0" "151.1.93.138"; echo lt:$?
+        ascendo_brew_version_gt "1.0.0" "1.0.0"; echo eq:$?
+    '''
+    res = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False)
+    assert res.returncode == 0, res.stderr
+    assert "gt:0" in res.stdout
+    assert "lt:1" in res.stdout
+    assert "eq:1" in res.stdout
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash required")
+def test_cask_would_downgrade_brave_from_fake_plist(tmp_path: Path) -> None:
+    """Brave.app CFBundleShortVersionString 151.x vs cask target 1.93.x → skip."""
+    app = tmp_path / "Applications" / "Brave Browser.app" / "Contents"
+    app.mkdir(parents=True)
+    (app / "Info.plist").write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0"><dict>\n'
+        "<key>CFBundleShortVersionString</key><string>151.1.93.138</string>\n"
+        "</dict></plist>\n",
+        encoding="utf-8",
+    )
+    script = f'''
+        . "{LIB}"
+        export ASCENDO_BREW_APPLICATIONS_DIR="{tmp_path / "Applications"}"
+        ascendo_brew_cask_would_downgrade brave-browser 1.93.138.0; echo down:$?
+        ascendo_brew_cask_would_downgrade brave-browser 151.2.0; echo up:$?
+    '''
+    res = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False)
+    assert res.returncode == 0, res.stderr
+    assert "down:0" in res.stdout
+    assert "up:1" in res.stdout
+
+
+def test_brew_phase_scripts_call_downgrade_guard() -> None:
+    for name in ("check.sh", "plan.sh", "apply.sh"):
+        text = (ADAPTER_ROOT / "scripts" / "brew" / name).read_text(encoding="utf-8")
+        assert "ascendo_brew_cask_would_downgrade" in text, name

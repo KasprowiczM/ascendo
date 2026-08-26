@@ -1,5 +1,18 @@
 # Last Run Review
 
+## 2026-08-25 — macOS_updates last completed run (ported in Ascendo 1.0.3)
+
+Sister log: `macOS_updates/logs/update_all_20260825_095956.log` (14m 6s, exit 0, warnings). Ascendo had no newer local run.
+
+| Finding | Root cause | Fix |
+|---|---|---|
+| Claude brew+web duplicate | `macos_app_sources.toml` brew=claude | Removed row |
+| Ledger SHA mismatch | files[1] not always DMG | files[dmg].url |
+| Brave cask 1.93 vs app 151 | no downgrade guard | ascendo_brew_cask_would_downgrade |
+| Codex installer 124 | no timeout on curl\|sh | 180s timeout |
+| softwareupdate omits XProtect | Tahoe needs flag | --include-config-data |
+| Teams unchanged | msupdate cannot install TEAMS21 | notes + RC 95 |
+
 ## 2026-05-29 — macOS Ascendo Web Phase fixes
 
 Reviewed run:

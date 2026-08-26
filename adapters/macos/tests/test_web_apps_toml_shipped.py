@@ -5,9 +5,28 @@ from pathlib import Path
 
 import pytest
 
+from ascendo.models.deduplication import AppSourcesRegistry
 from ascendo_macos.web_registry import WebRegistry
 
-SHIPPED = (Path(__file__).resolve().parents[1] / "config" / "web_apps.toml")
+_ADAPTER = Path(__file__).resolve().parents[1]
+SHIPPED = _ADAPTER / "config" / "web_apps.toml"
+SOURCES = _ADAPTER / "config" / "macos_app_sources.toml"
+
+# Canonical brew_cask overlap from macOS_updates APPLICATIONS.md §4c (2026-08-25).
+# blackhole-2ch is brew-only (no web duplicate, no sources row).
+_BREW_PREFERRED_CASKS = {
+    "brave-browser",
+    "perplexity",
+    "lm-studio",
+    "protonvpn",
+    "zoom",
+    "megasync",
+    "appcleaner",
+    "obsidian",
+    "spotify",
+    "inkscape",
+    "capcut",
+}
 
 
 def test_shipped_registry_parses() -> None:
@@ -148,3 +167,99 @@ def test_shipped_registry_has_capcut_and_dji() -> None:
     assert dji is not None
     assert dji.bundle_id == "DJI.Assistant"
     assert dji.handler == "builtin"
+
+
+def test_sources_has_no_claude_desktop_brew_row() -> None:
+    """Claude Desktop is web/silent_launch in macOS_updates, not brew_cask.
+
+    The leftover [[app]] id=claude with brew=claude made the deduplicator
+    treat a web-only app as a brew+web duplicate.
+    """
+    text = SOURCES.read_text(encoding="utf-8")
+    assert 'id = "claude"' not in text
+    assert 'brew = "claude"' not in text
+    registry = AppSourcesRegistry.load(SOURCES)
+    assert all(app.id != "claude" for app in registry.apps)
+
+
+def test_sources_brew_tokens_match_canonical_cask_set() -> None:
+    """preferred_order brew,web rows must be exactly the brew_cask overlap set."""
+    registry = AppSourcesRegistry.load(SOURCES)
+    brew_tokens = set()
+    for app in registry.apps:
+        assert app.preferred_order[0] == "brew", app.id
+        brew_tokens.add(app.sources["brew"])
+    assert brew_tokens == _BREW_PREFERRED_CASKS
+
+
+def test_ledger_download_path_picks_dmg_not_index() -> None:
+    """Ledger latest-mac.yml files[0]=zip, files[1] is often a blockmap.
+
+    files[dmg].url must select the first files[].url ending in .dmg so
+    sha512 is paired with the DMG, not the zip (macOS_updates 2026-08-25).
+    """
+    reg = WebRegistry.load(SHIPPED, None)
+    ledger = reg.find("ledger-live")
+    assert ledger is not None
+    assert ledger.release_feed is not None
+    assert ledger.release_feed.download_path == "files[dmg].url"
+
+
+def test_teams_notes_document_msupdate_cannot_install() -> None:
+    """Microsoft: do not use msupdate --install --apps TEAMS21 (learn.microsoft.com 2025-08-20)."""
+    reg = WebRegistry.load(SHIPPED, None)
+    teams = reg.find("ms-teams")
+    assert teams is not None
+    notes = (teams.notes or "").lower()
+    assert "msupdate" in notes
+    assert "teams21" in notes
+    assert "cannot" in notes or "do not" in notes or "not admin" in notes
+
+
+def test_retired_slugs_stay_gone() -> None:
+    reg = WebRegistry.load(SHIPPED, None)
+    slugs = {a.slug for a in reg.apps}
+    for slug in ("chatgpt-atlas", "opera", "macwhisper", "notion", "notion-calendar"):
+        assert slug not in slugs
+
+
+def test_mas_ipad_apps_are_not_web_registry_rows() -> None:
+    """UniFi / WiFiman / Picsart are mas_ipad in macOS_updates, not web handlers."""
+    reg = WebRegistry.load(SHIPPED, None)
+    slugs = {a.slug for a in reg.apps}
+    names = {a.display_name.lower() for a in reg.apps}
+    assert "unifi" not in slugs
+    assert "wifiman" not in slugs
+    assert "picsart" not in slugs
+    assert not any("unifi" in n for n in names)
+    assert not any("wifiman" in n for n in names)
+    assert not any("picsart" in n for n in names)
+
+
+def test_rf_walk_json_files_dmg_picks_dmg_not_zip() -> None:
+    """Pytest coverage for Ledger files[dmg].url (same fixture as the bash harness)."""
+    import subprocess
+    import shutil
+
+    if shutil.which("bash") is None:
+        pytest.skip("bash required")
+    handler = _ADAPTER / "lib" / "handlers" / "release_feed.sh"
+    yml = (
+        "version: 4.17.1\n"
+        "files:\n"
+        "  - url: ledger-live-desktop-4.17.1-mac.zip\n"
+        "    sha512: AAA\n"
+        "  - url: ledger-live-desktop-4.17.1-mac.blockmap\n"
+        "    sha512: BBB\n"
+        "  - url: ledger-live-desktop-4.17.1-mac.dmg\n"
+        "    sha512: CCC\n"
+    )
+    script = f'. "{handler}" && _rf_walk_json "$1" "files[dmg].url"'
+    res = subprocess.run(
+        ["bash", "-c", script, "inline", yml],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.strip() == "ledger-live-desktop-4.17.1-mac.dmg"

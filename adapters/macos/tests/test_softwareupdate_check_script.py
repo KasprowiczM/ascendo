@@ -150,3 +150,11 @@ def test_required_args_validation(tmp_path):
         capture_output=True, text=True, env=env, check=False,
     )
     assert res.returncode == 2
+
+
+def test_softwareupdate_scripts_include_config_data_flag() -> None:
+    for name in ("check.sh", "plan.sh", "apply.sh", "verify.sh"):
+        text = (ADAPTER_ROOT / "scripts" / "softwareupdate" / name).read_text(
+            encoding="utf-8"
+        )
+        assert "--include-config-data" in text, name

@@ -254,6 +254,74 @@ ascendo_brew_kill_cask_apps() {
     return 0
 }
 
+# Exit 0 if version $1 is strictly greater than version $2.
+# Used to skip Homebrew casks that would downgrade a vendor-ahead app
+# (Brave 151.x vs cask 1.93.x on 2026-08-25).
+ascendo_brew_version_gt() {
+    /usr/bin/python3 - "$1" "$2" <<'PY'
+import re
+import sys
+
+
+def version_key(value):
+    match = re.search(r"\d+(?:\.\d+)*", value or "")
+    if not match:
+        return None
+    numbers = [int(part) for part in match.group(0).split(".")]
+    numbers = (numbers + [0] * 12)[:12]
+    suffix = (value[match.end():] or "").lower().split("+", 1)[0]
+    prerelease = suffix.lstrip("-._")
+    prerelease_rank = 4
+    for marker, rank in (("dev", 0), ("alpha", 1), ("a", 1), ("beta", 2), ("b", 2), ("rc", 3)):
+        if prerelease.startswith(marker):
+            prerelease_rank = rank
+            break
+    suffix_numbers = [int(part) for part in re.findall(r"\d+", suffix)]
+    suffix_numbers = (suffix_numbers + [0] * 4)[:4]
+    return tuple(numbers + [prerelease_rank] + suffix_numbers)
+
+
+left = version_key(sys.argv[1])
+right = version_key(sys.argv[2])
+if left is None or right is None:
+    sys.exit(1)
+sys.exit(0 if left > right else 1)
+PY
+}
+
+# Print the installed .app short version for a cask token, or empty.
+# ASCENDO_BREW_APPLICATIONS_DIR overrides /Applications (tests).
+ascendo_brew_cask_installed_app_version() {
+    local token="$1"
+    local apps_dir="${ASCENDO_BREW_APPLICATIONS_DIR:-/Applications}"
+    local app path plist
+    app="$(ascendo_brew_cask_app_name "$token")"
+    [ -n "$app" ] || return 1
+    path="$apps_dir/${app}.app"
+    plist="$path/Contents/Info.plist"
+    [ -f "$plist" ] || return 1
+    /usr/bin/python3 - "$plist" <<'PY'
+import plistlib, sys
+try:
+    with open(sys.argv[1], "rb") as f:
+        data = plistlib.load(f)
+except Exception:
+    sys.exit(1)
+print(data.get("CFBundleShortVersionString") or data.get("CFBundleVersion") or "")
+PY
+}
+
+# Exit 0 when upgrading this cask to $2 would replace a newer installed app.
+ascendo_brew_cask_would_downgrade() {
+    local token="$1"
+    local target="$2"
+    local installed
+    [ -n "$token" ] && [ -n "$target" ] || return 1
+    installed="$(ascendo_brew_cask_installed_app_version "$token")" || return 1
+    [ -n "$installed" ] || return 1
+    ascendo_brew_version_gt "$installed" "$target"
+}
+
 # Translate a brew exit code into an ascendo phase exit code.
 #   0  -> 0  (success)
 #   *  -> 30 (apply-fail-unknown, per docs/agents/contract.md)

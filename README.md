@@ -8,7 +8,7 @@ Cross-platform unified-updates orchestrator. macOS · Windows · Ubuntu/Debian. 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Made for: Windows | Linux | macOS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux%20%7C%20macOS-blue)](docs/PLATFORM_STATUS.md)
-[![Version: v1.0.2](https://img.shields.io/badge/version-v1.0.2-blue)](CHANGELOG.md)
+[![Version: v1.0.3](https://img.shields.io/badge/version-v1.0.3-blue)](CHANGELOG.md)
 [![Tests: 1600+ green](https://img.shields.io/badge/tests-1600%2B%20green-brightgreen)](CHANGELOG.md)
 [![CI: 6/6 green](https://img.shields.io/badge/CI-6%2F6%20green-brightgreen)](.github/workflows/validate.yml)
 
@@ -144,9 +144,9 @@ in the platform quickstarts below.
 
 ## Platforms
 
-> **v1.0.2 (`1.0.2`).** macOS adapter port of macOS_updates hardening
-> (brew Caskroom fallback, native CLIs, MAU sanitizer, current app
-> inventory) plus desktop-shell version aligned with the Python core.
+> **v1.0.3 (`1.0.3`).** macOS inventory aligned with macOS_updates (no Claude
+> brew dup, Ledger `files[dmg].url`, brew cask downgrade guard, native CLI
+> timeout, `softwareupdate --include-config-data`).
 
 | Platform | Status | Quickstart |
 |----------|--------|------------|

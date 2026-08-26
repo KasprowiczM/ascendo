@@ -205,3 +205,16 @@ def test_manifest_uses_native_installer_for_agent_clis() -> None:
     assert rows["codex-cli"] == "native-installer"
     assert rows["agy-cli"] == "native-installer"
     assert rows["cursor-agent"] == "native-installer"
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash required")
+def test_run_with_timeout_returns_124_when_command_exceeds_limit() -> None:
+    script = f'. "{LIB}" && ascendo_npm_run_with_timeout 1 sleep 8'
+    res = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False)
+    assert res.returncode == 124, res.stderr + res.stdout
+
+
+def test_native_installer_apply_wraps_curl_in_timeout() -> None:
+    text = (ADAPTER_ROOT / "scripts" / "npm" / "apply.sh").read_text(encoding="utf-8")
+    assert "ascendo_npm_run_with_timeout" in text
+    assert "ASCENDO_NPM_NATIVE_INSTALL_TIMEOUT" in text

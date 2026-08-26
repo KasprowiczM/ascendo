@@ -121,9 +121,9 @@ _sudo_softwareupdate() {
     _ascendo_sudo "$SU_BIN" "$@"
 }
 
-# -- discover pending updates via softwareupdate -l ----------------------------
+# -- discover pending updates via softwareupdate -l --include-config-data ------
 SU_RC=0
-SU_OUT="$("$SU_BIN" -l 2>&1)" || SU_RC=$?
+SU_OUT="$("$SU_BIN" -l --include-config-data 2>&1)" || SU_RC=$?
 if [ "$SU_RC" -ne 0 ]; then
     json_add_message "error" "softwareupdate -l failed (exit $SU_RC): $SU_OUT"
     json_add_item "softwareupdate:list-error" "" "" "failed" "softwareupdate"
@@ -214,12 +214,12 @@ _ascendo_sudo_warm
 SU_ARGV=""
 if [ -n "$FILTER_LABEL" ]; then
     # Single-label apply: -i <LABEL> (no -a/-r flag; softwareupdate disambiguates by label)
-    SU_ARGV="-i $FILTER_LABEL -R --verbose"
+    SU_ARGV="-i $FILTER_LABEL -R --verbose --include-config-data"
 elif [ "$ALL" -eq 1 ]; then
-    SU_ARGV="-i -a -R --verbose"
+    SU_ARGV="-i -a -R --verbose --include-config-data"
 else
     # Default: recommended only
-    SU_ARGV="-i -r -R --verbose"
+    SU_ARGV="-i -r -R --verbose --include-config-data"
 fi
 
 # 2. Pre-emit PLANNED items BEFORE sudo (reboot survival; truthful default).

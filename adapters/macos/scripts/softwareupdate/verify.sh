@@ -96,9 +96,9 @@ if [ -z "$APPLY_SUCCESS_IDS" ]; then
     exit 0
 fi
 
-# -- re-run softwareupdate -l to build still-pending set ----------------------
+# -- re-run softwareupdate -l --include-config-data to build still-pending set
 SU_RC=0
-SU_OUT="$("$SU_BIN" -l 2>&1)" || SU_RC=$?
+SU_OUT="$("$SU_BIN" -l --include-config-data 2>&1)" || SU_RC=$?
 if [ "$SU_RC" -ne 0 ]; then
     json_add_message "error" "softwareupdate -l failed during verify (exit $SU_RC): $SU_OUT"
     # Emit all applied items as failed -- cannot confirm installation

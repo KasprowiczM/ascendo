@@ -278,7 +278,7 @@ slug = "ms-teams"
 bundle_id = "com.microsoft.teams2"
 display_name = "Microsoft Teams"
 handler = "msupdate"
-notes = "MAU app id TEAMS21. Teams2 (post-March 2024 unified client) bundle id = com.microsoft.teams2; classic Teams used com.microsoft.teams. Both ship through MAU."
+notes = "MAU app id TEAMS21. Microsoft documents that Teams is not admin-installable via msupdate --install --apps TEAMS21 (learn.microsoft.com, 2025-08-20). Ascendo GUI-gates apply (RC 95). Teams2 (post-March 2024 unified client) bundle id = com.microsoft.teams2."
 [app.msupdate]
 app_id = "TEAMS21"
 
@@ -344,12 +344,12 @@ slug = "ledger-live"
 bundle_id = "com.ledger.live"
 display_name = "Ledger Wallet"
 handler = "release_feed"
-notes = "Vendor renamed the bundle to Ledger Wallet.app (2026-08 inventory) but CFBundleIdentifier stays com.ledger.live. Electron-builder latest-mac.yml on Ledger's CDN. files[0]=.zip, files[1]=.dmg. M5.7.6 Phase B2 promoted to Tier-A apply."
+notes = "Vendor renamed the bundle to Ledger Wallet.app (2026-08 inventory) but CFBundleIdentifier stays com.ledger.live. Electron-builder latest-mac.yml: files[0]=.zip; a later files[] entry is often a blockmap. download_path files[dmg].url picks the first .dmg so sha512 pairs with that item."
 
 [app.release_feed]
 url = "https://download.live.ledger.com/latest-mac.yml"
 version_path = "version"
-download_path = "files[1].url"
+download_path = "files[dmg].url"
 http_timeout_s = 12
 
 # ─── KeePassXC ─────────────────────────────────────────────────────────────

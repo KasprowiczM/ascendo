@@ -300,14 +300,18 @@ apply_native_installer() {
     local _tmp_log
     _tmp_log="$(mktemp -t ascendo-native-install.XXXXXX 2>/dev/null || mktemp /tmp/ascendo-native-install.XXXXXX)"
     {
-        curl -fsSL "$_url" | sh
+        ascendo_npm_run_with_timeout "${ASCENDO_NPM_NATIVE_INSTALL_TIMEOUT:-180}" sh -c "curl -fsSL \"$_url\" | sh"
     } >"$_tmp_log" 2>&1
     local _rc=$?
     if [ "$_rc" -ne 0 ]; then
         local _tail
         _tail="$(tail -n 12 "$_tmp_log" 2>/dev/null | tr '\t' ' ' | awk 'NF{print}' | head -c 1500 || true)"
         json_add_item "$_display" "" "" "failed" "npm" "native-installer"
-        json_add_message "error" "native installer for $_display exited $_rc — ${_tail:-no output}"
+        if [ "$_rc" -eq 124 ]; then
+            json_add_message "error" "native installer for $_display timed out (exit 124) — ${_tail:-no output}"
+        else
+            json_add_message "error" "native installer for $_display exited $_rc — ${_tail:-no output}"
+        fi
         rm -f "$_tmp_log" 2>/dev/null
         return
     fi

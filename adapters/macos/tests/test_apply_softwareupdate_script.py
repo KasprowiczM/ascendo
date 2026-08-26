@@ -153,8 +153,9 @@ def test_real_apply_invokes_sudo_a_softwareupdate_ir(tmp_path):
     assert any(
         "-i" in line and "-r" in line
         and "-R" in line and "--verbose" in line
+        and "--include-config-data" in line
         for line in log_lines
-    ), f"sudo log lacks -i -r -R --verbose: {log_lines}"
+    ), f"sudo log lacks -i -r -R --verbose --include-config-data: {log_lines}"
 
 
 def test_all_flag_invokes_dash_a_not_dash_r(tmp_path):

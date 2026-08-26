@@ -76,9 +76,9 @@ json_init "plan" "softwareupdate" "$RUN_ID" "$TRIGGER" "$PROFILE_NAME" \
 # Install EXIT trap AFTER json_init (bufdir is now valid)
 trap 'json_save_on_exit "$OUTPUT_DIR"' EXIT
 
-# -- run softwareupdate -l -----------------------------------------------------
+# -- run softwareupdate -l --include-config-data (Tahoe omits XProtect without it)
 SU_RC=0
-SU_OUT="$("$SU_BIN" -l 2>&1)" || SU_RC=$?
+SU_OUT="$("$SU_BIN" -l --include-config-data 2>&1)" || SU_RC=$?
 if [ "$SU_RC" -ne 0 ]; then
     json_add_message "error" "softwareupdate -l failed (exit $SU_RC): $SU_OUT"
     json_add_item "softwareupdate:list-error" "" "" "failed" "softwareupdate"
