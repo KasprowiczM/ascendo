@@ -1,5 +1,20 @@
 # Last Run Review
 
+## 2026-08-26 — Ascendo 1.0.3 changelog
+
+Full notes: [`docs/releases/v1.0.3.md`](releases/v1.0.3.md). Shipped on `main`
+as `8abc614`. Tag target: `v1.0.3`. Root `CHANGELOG.md` is still `[Unreleased]`
+→ `[1.0.1]` this session.
+
+- Claude Desktop web-only (removed brew+web `id=claude` row).
+- Ledger Live `files[dmg].url` + YAML walk for DMG vs zip SHA512.
+- Brew cask downgrade guard (`ascendo_brew_cask_would_downgrade`).
+- Native CLI installer timeout 180s, exit 124.
+- `softwareupdate --include-config-data` on check/plan/apply/verify.
+- Teams stays RC 95 GUI; iPad list UniFi / WiFiman / Picsart.
+
+1.0.2 (`d2b2e86`): port macOS_updates brew/npm/MAU hardening; desktop version lockstep.
+
 ## 2026-08-25 — macOS_updates last completed run (ported in Ascendo 1.0.3)
 
 Sister log: `macOS_updates/logs/update_all_20260825_095956.log` (14m 6s, exit 0, warnings). Ascendo had no newer local run.
