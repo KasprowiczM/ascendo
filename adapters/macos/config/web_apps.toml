@@ -22,26 +22,17 @@ schema = "ascendo-web-apps/v2"
 slug = "chrome"
 bundle_id = "com.google.Chrome"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Google Chrome"
-handler = "release_feed"
-notes = "Promoted from keystone (Tier-B trigger-only) to release_feed Tier-A in M5.7.4 Phase B. Google publishes the public Chrome Version History API at versionhistory.googleapis.com — JSON with `versions[0].version` matching CFBundleShortVersionString exactly. Apply remains trigger-only (no download_path) so the existing GoogleUpdater/Keystone daemon still drives the install on next launch. Live probe verified 2026-05-08: versions[0].version=148.0.7778.97 (= installed). Endpoint per https://developer.chrome.com/docs/web-platform/versionhistory/guide."
-
-[app.release_feed]
-url = "https://versionhistory.googleapis.com/v1/chrome/platforms/mac_arm64/channels/stable/versions"
-version_path = "versions[0].version"
-http_timeout_s = 8
+handler = "keystone"
+ksadmin_product_id = "com.google.Chrome"
+notes = "macOS_updates channel: Google Keystone (GoogleSoftwareUpdateAgent --runMode ondemand / ksadmin --update). Not the Chrome Version History API — that feed can be ahead of Keystone rollout and made Ascendo plan a second path after sister already updated via Keystone."
 
 [[app]]
 slug = "gdrive"
 bundle_id = "com.google.drivefs"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Google Drive"
-handler = "omaha"
+handler = "keystone"
 ksadmin_product_id = "com.google.drivefs"
-notes = "Promoted from keystone (Tier-B trigger-only) to omaha (real-candidate probe) in M5.7.5 Phase A. Google's Omaha service at update.googleapis.com/service/update2 accepts POST + XML and returns the latest manifest version directly — version='0.0.0.0' in the request triggers a fresh-install-style response with manifest/@version=124.0.3.0 (live probe 2026-05-08). The M5.7.4 ruling (Stays Tier-B) was correct re: 'no public JSON proxy' but missed that Omaha XML IS publicly probeable for first-party Google products without authentication. Apply still delegates to keystone_apply via ksadmin_product_id (kept for Tier-B trigger semantics); Keystone daemon owns the actual install."
-
-[app.omaha]
-endpoint = "https://update.googleapis.com/service/update2"
-appid = "com.google.drivefs"
-http_timeout_s = 8
+notes = "macOS_updates channel: Google Keystone for Drive File Stream. Omaha probes were a second installer path."
 
 [[app]]
 slug = "brave"
@@ -65,35 +56,22 @@ asset_pattern = "Trezor-Suite-.+-mac-arm64\\.dmg$"
 slug = "claude"
 bundle_id = "com.anthropic.claudefordesktop"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Claude"
-handler = "release_feed"
-notes = "Discovered via app.asar reverse-engineering (M5.7.2): Squirrel.Mac fetches updates from api.anthropic.com/api/desktop/<platform>/<arch>/<installer>/update?device_id=<uuid>. The device_id is for server-side analytics — a fixed zero UUID returns the same currentRelease as a real client. Response is JSON; release_feed handler reads it. Live response 2026-05-08: currentRelease=1.6608.0."
-
-[app.release_feed]
-url = "https://api.anthropic.com/api/desktop/darwin/universal/squirrel/update?device_id=00000000-0000-0000-0000-000000000000"
-version_path = "currentRelease"
-http_timeout_s = 8
+handler = "squirrel"
+notes = "macOS_updates channel: silent_launch (open -gjF). Not a second DMG/release_feed installer."
 
 [[app]]
 slug = "chatgpt"
 bundle_id = "com.openai.chat"  # verified on Mac.r12.home (2026-05-06)
 display_name = "ChatGPT"
-handler = "sparkle"
-appcast_url = "https://persistent.oaistatic.com/sidekick/public/sparkle_public_appcast.xml"
-notes = "Discovered via binary mining (M5.7.3): ChatGPT.framework references the path fragment 'updates/sparkle/sidekick' which combines with the persistent.oaistatic.com host to give the public appcast at /sidekick/public/sparkle_public_appcast.xml. Probe verified live 2026-05-08; latest sparkle:shortVersionString=1.2026.118 (matches installed CFBundleShortVersionString)."
+handler = "squirrel"
+notes = "macOS_updates channel: silent_launch (open -gjF) for ChatGPT Desktop."
 
 [[app]]
 slug = "warp"
 bundle_id = "dev.warp.Warp-Stable"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Warp"
-handler = "release_feed"
-notes = "Promoted from squirrel to release_feed in M5.7.4 once version_regex landed. Vendor publishes releases.warp.dev/channel_versions.json with `stable.version = \"v0.2026.05.06.15.42.stable_02\"`; CFBundleShortVersionString is `0.2026.05.06.15.42.02`. The leading `v` and `.stable_` infix are stripped by version_regex/version_replace. Live probe verified 2026-05-08 returned v0.2026.05.06.15.42.stable_02 -> 0.2026.05.06.15.42.02."
-
-[app.release_feed]
-url = "https://releases.warp.dev/channel_versions.json"
-version_path = "stable.version"
-version_regex = "^v(.+)\\.stable_(.+)$"
-version_replace = "\\1.\\2"
-http_timeout_s = 8
+handler = "squirrel"
+notes = "macOS_updates channel: silent_launch (open -gjF) for Warp."
 
 [[app]]
 slug = "megasync"
@@ -113,15 +91,8 @@ http_timeout_s = 8
 slug = "gemini"
 bundle_id = "com.google.GeminiMacOS"  # verified on Mac.r12.home (2026-05-06; was com.google.Gemini in template)
 display_name = "Gemini"
-handler = "omaha"
-ksadmin_product_id = "com.google.geminimacos"
-notes = "Promoted from keystone (Tier-B trigger-only) to omaha (real-candidate probe) in M5.7.5 Phase A. Google's Omaha service answers for com.google.geminimacos but ONLY when the request carries the channel tag from the Keystone ticket (`m1-prod` per ksadmin --print on Mac.r12.home; without it the response is 'noupdate' even for fresh installs because Gemini's distribution is gated by channel/cohort). Live probe 2026-05-08 with tag=m1-prod returned manifest/@version=1.53.0.262 (matches installed). Apply delegates to keystone_apply via ksadmin_product_id (lowercase per the actual ticket — was com.google.GeminiMacOS in the M5.7.3 template). The M5.7.4 'gemini.google.com/api/version is 404' line was correct; we just used the wrong endpoint."
-
-[app.omaha]
-endpoint = "https://update.googleapis.com/service/update2"
-appid = "com.google.geminimacos"
-tag = "m1-prod"
-http_timeout_s = 8
+handler = "squirrel"
+notes = "macOS_updates channel: silent_launch (open -gjF) for Gemini Desktop. Not Omaha/Keystone — sister never uses the Google agent for Gemini."
 
 [[app]]
 slug = "lm-studio"
@@ -159,22 +130,15 @@ notes = "macv3 bundle (not the retired MAS ai.perplexity.mac, not ai.perplexity.
 slug = "comet"
 bundle_id = "ai.perplexity.comet"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Comet"
-handler = "omaha"
-notes = "Promoted from squirrel (Tier-B trigger-only) to omaha (real-candidate probe) in M5.7.5 Phase A. Perplexity hosts their own Omaha-compatible service at perplexity.ai/rest/browser/update2 — but it speaks Omaha 4.0 (JSON, snake_case, returns updatecheck.nextversion instead of manifest.version), not 3.0. Discovered via strings on the bundled CometUpdater helper at Frameworks/Comet Framework.framework/.../Helpers/CometUpdater.app/Contents/MacOS/CometUpdater (literal 'https://www.perplexity.ai/rest/browser/update2'). Live probe 2026-05-08 returned updatecheck.nextversion=147.0.7727.1858 (matches installed). The M5.7.2 'protocol cannot be probed statically' note was wrong — the URL was discoverable from the binary; the missing piece was Omaha 4.0 protocol support (this milestone). Apply opens the app; CometUpdater (auto-launched via LaunchAgent ai.perplexity.CometUpdater.update) handles the install."
-
-[app.omaha]
-endpoint = "https://www.perplexity.ai/rest/browser/update2"
-appid = "ai.perplexity.comet"
-protocol = "4.0"
-http_timeout_s = 8
+handler = "squirrel"
+notes = "macOS_updates channel: silent_launch (open -gjF) for Comet. Not a second Omaha installer."
 
 [[app]]
 slug = "codex"
 bundle_id = "com.openai.codex"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Codex Desktop"
-handler = "sparkle"
-appcast_url = "https://persistent.oaistatic.com/codex-app-prod/appcast.xml"
-notes = "Discovered via app.asar reverse-engineering (M5.7.2): OpenAI's Codex desktop bundles BOTH Squirrel.framework and Sparkle.framework, but the active updater is Sparkle pointing at this public appcast. Response is RSS XML with sparkle:shortVersionString. Live response 2026-05-08: 26.506.21252."
+handler = "squirrel"
+notes = "macOS_updates channel: silent_launch (open -gjF) for Codex Desktop."
 
 # opencode moved to M5.7.1 vendor-probe section as github_dmg (disabled
 # pending repo verification — sst/opencode vs anomalyco/opencode).
@@ -201,15 +165,8 @@ arch = "universal"
 slug = "rdm"
 bundle_id = "com.devolutions.remotedesktopmanager"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Remote Desktop Manager"
-handler = "release_feed"
-notes = "Promoted from builtin to Tier-A in M5.7.4 via the new format=text release_feed mode. Devolutions publishes a public productinfo.htm at devolutions.net that's plain key=value lines; the RDMMacbin.Version line gives the latest macOS RDM release directly. No JSON walking needed — version_regex matches the key=value line in the raw body. The Sparkle appcast at cdn.devolutions.net remains frozen at 2023.1.12.0; productinfo.htm is the canonical public version source. Live probe verified 2026-05-08: RDMMacbin.Version=2026.1.11.4 (= installed)."
-
-[app.release_feed]
-url = "https://devolutions.net/productinfo.htm"
-format = "text"
-version_regex = "(?s).*RDMMacbin\\.Version=([0-9][0-9.]*).*"
-version_replace = "\\1"
-http_timeout_s = 8
+handler = "sparkle"
+notes = "macOS_updates channel: sparkle_appcast (SUFeedURL from the installed app). Appcast URL is read at apply/check time from Info.plist when unset here."
 
 # ───────────────────────── Productivity / Multimedia ─────────────────────────
 
@@ -286,9 +243,8 @@ app_id = "TEAMS21"
 slug = "docker"
 bundle_id = "com.docker.docker"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Docker Desktop"
-handler = "sparkle"
-appcast_url = "https://desktop.docker.com/mac/main/arm64/appcast.xml"
-notes = "Docker Desktop has a Sparkle appcast at desktop.docker.com that's the canonical update channel. The legacy 'docker' handler called 'docker desktop version' which returns the CLI plugin version (0.3.0), NOT the Docker.app version (4.71.0+). Switched to sparkle for accurate probing."
+handler = "docker"
+notes = "macOS_updates channel: docker desktop update --quiet (docker_cli). Not a second Sparkle DMG path."
 
 # ═════════════════════════════ M5.7.1 Vendor Probes ═════════════════════════
 # Added 2026-05-08 after user-driven coverage push. Each entry has a
@@ -330,11 +286,12 @@ slug = "firefox-dev"
 bundle_id = "org.mozilla.firefoxdeveloperedition"
 display_name = "Firefox Developer Edition"
 handler = "release_feed"
-notes = "Mozilla product-details. Probe-only (no DMG URL in this endpoint); apply opens app, Mozilla's own updater handles install on next launch. Overrides discovery's would-be 'builtin' classification (Firefox uses org.mozilla.updater, not Sparkle/Squirrel/Keystone)."
+notes = "macOS_updates channel: Mozilla product-details + official DMG at download.mozilla.org (same URL as iu_firefox_developer_edition)."
 
 [app.release_feed]
 url = "https://product-details.mozilla.org/1.0/firefox_versions.json"
 version_path = "FIREFOX_DEVEDITION"
+download_url = "https://download.mozilla.org/?product=firefox-devedition-latest&os=osx&lang=pl"
 http_timeout_s = 8
 
 # ─── Notion ────────────────────────────────────────────────────────────────
@@ -378,10 +335,8 @@ notes = "Obsidian publishes a universal-binary DMG (no arm64-specific build) on 
 slug = "opencode"
 bundle_id = "ai.opencode.desktop"
 display_name = "OpenCode"
-handler = "github_dmg"
-github_repo = "anomalyco/opencode"
-asset_pattern = "opencode-desktop-mac-arm64\\.dmg$"
-notes = "Confirmed via app-update.yml inside /Applications/OpenCode.app/Contents/Resources/app-update.yml (M5.7.3): owner=anomalyco repo=opencode provider=github. Latest release tagged v1.14.41 has 'opencode-desktop-mac-arm64.dmg' asset (also -x64.dmg, -arm64.zip, etc). Live probe 2026-05-08: tag_name=v1.14.41 vs installed 1.14.40 → outdated."
+handler = "squirrel"
+notes = "macOS_updates channel: silent_launch (open -gjF) for OpenCode Desktop. Not a second GitHub DMG install."
 
 # ─── Trezor Suite ──────────────────────────────────────────────────────────
 # (Already shipped in M5.6 as github_dmg; no override needed.)
@@ -401,14 +356,9 @@ notes = "Confirmed via app-update.yml inside /Applications/OpenCode.app/Contents
 slug = "cursor"
 bundle_id = "com.todesktop.230313mzl4w4u92"
 display_name = "Cursor"
-handler = "release_feed"
-enabled = true  # tested live 2026-05-08; URL responds 200 even when app not installed locally
-notes = "ToDesktop is the distribution platform; their app-id 230313mzl4w4u92 is Cursor's. URL pattern is ToDesktop's standard Electron-builder latest-mac.yml. Filenames have spaces ('Cursor 0.45.14 - Build ...-arm64-mac.zip'); release_feed_apply will URL-encode when resolving relative URLs. files[1] is typically arm64-mac.zip. Cursor not installed on this Mac at probe-time; entry verifies endpoint shape against the live ToDesktop CDN."
-
-[app.release_feed]
-url = "https://download.todesktop.com/230313mzl4w4u92/latest-mac.yml"
-version_path = "version"
-http_timeout_s = 8
+handler = "squirrel"
+enabled = true
+notes = "macOS_updates channel: silent_launch (open -gjF) for Cursor. Not a second ToDesktop DMG/zip install."
 
 # ═════════════════════════════ M5.7.3 Vendor Probes ═════════════════════════
 # Added 2026-05-08 via continued binary-mining + app.asar inspection.
@@ -419,13 +369,8 @@ http_timeout_s = 8
 slug = "proton-mail"
 bundle_id = "ch.protonmail.desktop"
 display_name = "Proton Mail"
-handler = "release_feed"
-notes = "Discovered via app.asar inspection (M5.7.3): inbox-desktop's update mechanism queries https://proton.me/download/mail/macos/version.json. Response is JSON with a Releases[] array, newest-first (mixed channels EarlyAccess + Stable). Releases[0].Version is the current latest (any channel). Live probe 2026-05-08: Releases[0].Version=1.13.0 (EarlyAccess) matches installed; Stable channel currently at 1.12.1. Caveat: array index 0 may shift between Stable and EarlyAccess depending on which is most recent — entry tracks 'latest available regardless of channel'. Vendor's own Squirrel updater handles the actual install on app launch."
-
-[app.release_feed]
-url = "https://proton.me/download/mail/macos/version.json"
-version_path = "Releases[0].Version"
-http_timeout_s = 8
+handler = "squirrel"
+notes = "macOS_updates channel: silent_launch (open -gjF) for Proton Mail."
 
 # ─── Apps that still need mitmproxy on launch ──────────────────────────────
 # ChatGPT (com.openai.chat) — RESOLVED M5.7.3: Sparkle SUFeedURL is set
@@ -517,15 +462,8 @@ http_timeout_s = 8
 slug = "antigravity"
 bundle_id = "com.google.antigravity"
 display_name = "Antigravity"
-handler = "release_feed"
-notes = "Promoted from squirrel (Tier-B trigger-only) to release_feed Tier-A in M5.7.5 Phase B. Prior round (M5.7.3) tested the JSON endpoint at antigravity-auto-updater-974169037036.us-central1.run.app/api/update/darwin-arm64/stable/<commit>/<host_hash> which returns productVersion=1.107.0 (the stale upstream VSCode version baked into product.json) — that's why prior was deferred. **New finding 2026-05-08**: the SAME service's root path returns plain text `Auto updater is running. Stable Version: 1.23.2. Rolled out to 100%` — the real Antigravity version (= installed CFBundleShortVersionString). Use format=text + regex on the root endpoint, not the deeper JSON path. Apply remains trigger-only — Antigravity's bundled Squirrel updater handles the install on next launch. Live probe verified 2026-05-08: 'Stable Version: 1.23.2' (= installed)."
-
-[app.release_feed]
-url = "https://antigravity-auto-updater-974169037036.us-central1.run.app/"
-format = "text"
-version_regex = "(?s).*(?:Stable|Fixed) Version:\\s*([0-9]+\\.[0-9]+\\.[0-9]+).*"
-version_replace = "\\1"
-http_timeout_s = 8
+handler = "squirrel"
+notes = "macOS_updates channel: silent_launch (open -gjF) for Antigravity."
 
 # ─── Ascendo (this very app) ───────────────────────────────────────────────
 # REMOVED in M5.7.5 follow-up: Ascendo updates via `git pull` against the
@@ -550,15 +488,8 @@ http_timeout_s = 8
 slug = "antigravity-ide"
 bundle_id = "com.google.antigravity-ide"  # verified on Mac.r12.home (2026-05-24)
 display_name = "Antigravity IDE"
-handler = "release_feed"
-notes = "Sibling of the `antigravity` entry — Google ships Antigravity IDE as a separate /Applications bundle (`com.google.antigravity-ide`). It uses a specific updater endpoint. Apply trigger-only (Squirrel updater bundled inside the app handles install on next launch). Live probe verified 2026-05-24."
-
-[app.release_feed]
-url = "https://antigravity-ide-auto-updater-974169037036.us-central1.run.app/"
-format = "text"
-version_regex = "(?s).*(?:Stable|Fixed) Version:\\s*([0-9]+\\.[0-9]+\\.[0-9]+).*"
-version_replace = "\\1"
-http_timeout_s = 8
+handler = "squirrel"
+notes = "macOS_updates channel: silent_launch (open -gjF) for Antigravity IDE."
 
 # ─── AppCleaner (FreeMacSoft) ──────────────────────────────────────────────
 [[app]]
@@ -583,14 +514,8 @@ notes = "Real SUFeedURL extracted from installed Info.plist (M5.7.6). The legacy
 slug = "protondrive"
 bundle_id = "ch.protonmail.drive"  # verified on Mac.r12.home (2026-05-24)
 display_name = "Proton Drive"
-handler = "release_feed"
-notes = "Vendor JSON at proton.me/download/drive/macos/version.json — same shape as Proton Mail's version.json (Releases[] array; Releases[0] is the current Stable release with File.Url pointing at the versioned DMG). Live probe verified 2026-05-24: Releases[0].Version=2.11.5 (matches installed). Tier-A on apply: File.Url is a direct DMG download path that can be passed into release_feed_apply. download_path is set so the handler installs via direct DMG instead of trigger-only."
-
-[app.release_feed]
-url = "https://proton.me/download/drive/macos/version.json"
-version_path = "Releases[0].Version"
-download_path = "Releases[0].File.Url"
-http_timeout_s = 8
+handler = "sparkle"
+notes = "macOS_updates channel: sparkle_appcast (SUFeedURL from the installed Proton Drive.app). Not a second proton.me JSON DMG install."
 
 # ─── IPMIView (Supermicro) — manual updates only ───────────────────────────
 [[app]]

@@ -258,9 +258,8 @@ class WebApp(BaseModel):
     @model_validator(mode="after")
     def _validate_handler_fields(self) -> "WebApp":
         h = self.handler
-        # Required by handler
-        if h == "sparkle" and self.appcast_url is None:
-            raise ValueError("sparkle handler requires appcast_url")
+        # sparkle appcast_url is optional: empty means read SUFeedURL
+        # from the installed bundle (macOS_updates sparkle_appcast).
         if h == "github_dmg":
             if self.github_repo is None:
                 raise ValueError("github_dmg handler requires github_repo")

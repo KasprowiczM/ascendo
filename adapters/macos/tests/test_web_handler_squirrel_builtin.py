@@ -45,6 +45,7 @@ def test_squirrel_apply_invokes_open_a(tmp_path: Path) -> None:
     r = _run(snippet)
     assert r.returncode == 0
     args = log.read_text().strip()
+    assert "-gjF" in args
     assert "-a" in args
     assert "/Applications/Slack.app" in args
 
@@ -74,13 +75,11 @@ def test_builtin_apply_invokes_open_a_and_returns_0(tmp_path: Path) -> None:
     assert "/Applications/Zoom.app" in args
 
 
-# Sesja 73 — safe-mode gating: builtin/squirrel must NOT call ``open -a``
-# when ``ASCENDO_SAFE_MODE=true``. Apply.sh maps exit 95 to a ``skipped``
-# row with a manual-action info message, so the operator gets the
-# silent-update behaviour they explicitly chose with profile=safe.
+# Squirrel matches macOS_updates silent_launch: hidden `open -gjF` even
+# when ASCENDO_SAFE_MODE=true. builtin still returns 95 (manual URL).
 
 
-def test_squirrel_apply_safe_mode_skips_open_and_returns_95(
+def test_squirrel_apply_safe_mode_still_hidden_launch(
     tmp_path: Path,
 ) -> None:
     log = tmp_path / "open-args.log"
@@ -94,18 +93,14 @@ def test_squirrel_apply_safe_mode_skips_open_and_returns_95(
         f"squirrel_apply 'slack' {json.dumps(cfg)!r}"
     )
     r = _run(snippet, env_extra={"ASCENDO_SAFE_MODE": "true"})
-    assert r.returncode == 95, (
-        f"safe-mode squirrel_apply must return 95 (intentional skip), "
+    assert r.returncode == 0, (
+        f"safe-mode squirrel_apply must hidden-launch like macOS_updates, "
         f"got {r.returncode}: stderr={r.stderr!r}"
     )
-    assert not log.exists(), (
-        f"safe-mode squirrel_apply must NOT call `open -a` "
-        f"(log captured: {log.read_text() if log.exists() else '<empty>'})"
-    )
-    assert "Squirrel" in r.stderr or "launch" in r.stderr.lower(), (
-        "stderr should explain why the apply was skipped: "
-        f"{r.stderr!r}"
-    )
+    assert log.exists(), "safe-mode squirrel_apply must call open -gjF"
+    args = log.read_text().strip()
+    assert "-gjF" in args
+    assert "/Applications/Slack.app" in args
 
 
 def test_builtin_apply_safe_mode_skips_open_and_returns_95(

@@ -64,7 +64,6 @@ def test_apply_squirrel_invokes_open(tmp_path: Path) -> None:
         registry, out,
         env_extra={
             "PATH": f"{tmp_path}:{os.environ['PATH']}",
-            "ASCENDO_WEB_ALLOW_GUI": "1",
         },
     )
     assert r.returncode == 0, r.stderr

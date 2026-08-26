@@ -86,14 +86,15 @@ squirrel_apply() {
         display_name=$(/usr/bin/printf '%s' "$cfg" | _squirrel_get display_name)
         app_path="/Applications/${display_name}.app"
     fi
-    # Sesja 73: in ``safe`` profile, do NOT bring the app to the
-    # foreground — the operator picked silent updates. Squirrel only
-    # updates on a fresh launch + quit cycle, so the apply phase
-    # genuinely cannot complete without user action here. apply.sh
-    # maps exit 95 to ``skipped`` + a "launch the app to update" hint.
-    if [ "${ASCENDO_SAFE_MODE:-false}" = "true" ]; then
-        echo "Squirrel auto-update fires on next app launch — launch the app at your convenience to pick up the new version" >&2
-        return 95
+    # Hidden launch matches macOS_updates silent_launch_app (`open -gjF`).
+    # Safe mode still launches hidden — that is the Squirrel update channel.
+    if [ -d "$app_path" ]; then
+        /usr/bin/env open -gjF "$app_path" 2>/dev/null \
+            || /usr/bin/env open -gj "$app_path" 2>/dev/null \
+            || /usr/bin/env open -a "$app_path"
+        return $?
     fi
-    /usr/bin/env open -a "$app_path"
+    /usr/bin/env open -gjF -a "$app_path" 2>/dev/null \
+        || /usr/bin/env open -gj -a "$app_path" 2>/dev/null \
+        || /usr/bin/env open -a "$app_path"
 }

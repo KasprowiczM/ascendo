@@ -38,10 +38,10 @@ def test_registry_loads(registry: WebRegistry) -> None:
 @pytest.mark.parametrize(
     ("slug", "bundle_id", "handler"),
     [
-        ("antigravity-ide", "com.google.antigravity-ide", "release_feed"),
+        ("antigravity-ide", "com.google.antigravity-ide", "squirrel"),
         ("appcleaner", "net.freemacsoft.AppCleaner", "sparkle"),
         ("protonvpn", "ch.protonvpn.mac", "sparkle"),
-        ("protondrive", "ch.protonmail.drive", "release_feed"),
+        ("protondrive", "ch.protonmail.drive", "sparkle"),
         ("ipmiview", "com.supermicro.IPMIView", "builtin"),
     ],
 )

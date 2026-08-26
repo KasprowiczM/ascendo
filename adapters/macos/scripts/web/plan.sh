@@ -41,6 +41,8 @@ REG_PATH="${ASCENDO_WEB_REGISTRY_PATH:-$ADAPTER_CONFIG/web_apps.toml}"
 USER_REG="${ASCENDO_WEB_USER_REGISTRY_PATH:-$HOME/.config/ascendo/web_apps.toml}"
 [ -f "$USER_REG" ] || USER_REG=""
 REG_SHIM="$ADAPTER_LIB/web_registry.py"
+ASCENDO_WEB_BREW_PREFERRED_BIDS=$(python3 "$REG_SHIM" --shipped "$REG_PATH" --list-brew-preferred-bundle-ids 2>/dev/null | paste -sd, -)
+export ASCENDO_WEB_BREW_PREFERRED_BIDS
 
 HOST_NAME="$(scutil --get LocalHostName 2>/dev/null || hostname -s 2>/dev/null || echo unknown)"
 HOST_OS="macos"
@@ -94,6 +96,9 @@ import json, os
 d = json.loads(os.environ["ASCENDO_WEB_LINE"])
 print(d.get("bundle_id", ""))')
     [ -z "$BUNDLE_ID" ] && continue
+    case ",${ASCENDO_WEB_BREW_PREFERRED_BIDS:-}," in
+        (*",$BUNDLE_ID,"*) continue ;;
+    esac
     APP_PATH=$(ASCENDO_WEB_LINE="$DISC_LINE" python3 -c '
 import json, os
 d = json.loads(os.environ["ASCENDO_WEB_LINE"])

@@ -92,8 +92,19 @@ PY_EOF
 # sparkle_check
 sparkle_check() {
     local slug="$1" cfg="$2"
-    local appcast_url
+    local appcast_url app_path
     appcast_url=$(/usr/bin/printf '%s' "$cfg" | _sparkle_get appcast_url)
+    if [ -z "$appcast_url" ]; then
+        app_path=$(/usr/bin/printf '%s' "$cfg" | _sparkle_get app_path)
+        if [ -z "$app_path" ]; then
+            local display_name
+            display_name=$(/usr/bin/printf '%s' "$cfg" | _sparkle_get display_name)
+            [ -n "$display_name" ] && app_path="/Applications/${display_name}.app"
+        fi
+        if [ -n "$app_path" ]; then
+            appcast_url=$(/usr/bin/defaults read "$app_path/Contents/Info" SUFeedURL 2>/dev/null || true)
+        fi
+    fi
     [ -z "$appcast_url" ] && return 0
     /usr/bin/curl -fsSL --max-time 10 "$appcast_url" 2>/dev/null \
         | _web_extract_sparkle_latest_version
@@ -112,6 +123,17 @@ sparkle_apply() {
     fi
 
     appcast_url=$(/usr/bin/printf '%s' "$cfg" | _sparkle_get appcast_url)
+    if [ -z "$appcast_url" ]; then
+        app_path=$(/usr/bin/printf '%s' "$cfg" | _sparkle_get app_path)
+        if [ -z "$app_path" ]; then
+            local display_name
+            display_name=$(/usr/bin/printf '%s' "$cfg" | _sparkle_get display_name)
+            [ -n "$display_name" ] && app_path="/Applications/${display_name}.app"
+        fi
+        if [ -n "$app_path" ]; then
+            appcast_url=$(/usr/bin/defaults read "$app_path/Contents/Info" SUFeedURL 2>/dev/null || true)
+        fi
+    fi
     [ -z "$appcast_url" ] && return 25
 
     local enclosure_url

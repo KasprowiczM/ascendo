@@ -36,20 +36,26 @@ def test_shipped_registry_parses() -> None:
 
 
 def test_shipped_registry_has_core_handlers() -> None:
-    """Core handlers must be represented. M5.7.5 (v0.4.5): the keystone
-    and squirrel handlers are no longer present in the shipped registry
-    because every entry that previously used them has been promoted to
-    Tier-A (real-candidate detection) — chrome/brave to release_feed,
-    gdrive/gemini/comet to omaha, chatgpt/warp/proton-mail/comet to
-    sparkle/release_feed/omaha, etc. They remain valid handler choices
-    in the schema for user-override registries and future regressions
-    (Brave once flipped sparkle->keystone->release_feed); we just
-    don't ship any defaults using them. This assertion tracks the
-    *Tier-A* handlers that MUST stay represented."""
+    """Handlers that must stay represented after macOS_updates channel lock.
+
+    Omaha is not shipped: Chrome/Drive use Keystone; Gemini/Comet use
+    squirrel (silent_launch). Sparkle remains for RDM / Proton Drive /
+    AppCleaner / ProtonVPN (brew skip still owns the last two at apply).
+    """
     reg = WebRegistry.load(SHIPPED, None)
     handlers = {a.handler for a in reg.apps}
-    expected = {"sparkle", "github_dmg", "msupdate", "release_feed", "omaha"}
+    expected = {
+        "sparkle",
+        "github_dmg",
+        "msupdate",
+        "release_feed",
+        "keystone",
+        "squirrel",
+        "docker",
+        "builtin",
+    }
     assert expected.issubset(handlers)
+    assert "omaha" not in handlers
 
 
 def test_shipped_registry_no_duplicate_slugs() -> None:
@@ -59,20 +65,14 @@ def test_shipped_registry_no_duplicate_slugs() -> None:
         f"duplicate slugs: {[s for s in slugs if slugs.count(s) > 1]}"
 
 
-def test_shipped_registry_chrome_uses_release_feed() -> None:
-    """M5.7.4 Phase B: Chrome promoted from keystone (Tier-B trigger-only)
-    to release_feed (Tier-A) once we discovered the public Chrome Version
-    History API at versionhistory.googleapis.com — JSON with
-    `versions[0].version` matching CFBundleShortVersionString exactly.
-    Apply remains trigger-only (no download_path) so the existing
-    GoogleUpdater/Keystone daemon still drives the install."""
+def test_shipped_registry_chrome_uses_keystone() -> None:
+    """macOS_updates channel is Google Keystone, not Version History API."""
     reg = WebRegistry.load(SHIPPED, None)
     chrome = reg.find("chrome")
     assert chrome is not None
-    assert chrome.handler == "release_feed"
-    assert chrome.release_feed is not None
-    assert "versionhistory.googleapis.com" in str(chrome.release_feed.url)
-    assert chrome.release_feed.version_path == "versions[0].version"
+    assert chrome.handler == "keystone"
+    assert chrome.ksadmin_product_id == "com.google.Chrome"
+    assert chrome.release_feed is None
 
 
 def test_shipped_registry_brave_uses_sparkle_arm64_appcast() -> None:
@@ -106,17 +106,13 @@ def test_shipped_registry_brave_uses_sparkle_arm64_appcast() -> None:
     assert brave.release_feed is None
 
 
-def test_shipped_registry_docker_uses_sparkle_handler() -> None:
-    """M5.7.1: Docker Desktop switched from 'docker' handler (which
-    called `docker desktop version` returning the CLI plugin version,
-    NOT the .app version) to 'sparkle' against Docker's official
-    appcast at desktop.docker.com/mac/main/arm64/appcast.xml."""
+def test_shipped_registry_docker_uses_docker_cli_handler() -> None:
+    """macOS_updates channel is `docker desktop update --quiet`, not Sparkle."""
     reg = WebRegistry.load(SHIPPED, None)
     docker = reg.find("docker")
     assert docker is not None
-    assert docker.handler == "sparkle"
-    assert docker.appcast_url is not None
-    assert "desktop.docker.com" in str(docker.appcast_url)
+    assert docker.handler == "docker"
+    assert docker.appcast_url is None
 
 
 def test_shipped_registry_ms365_uses_msupdate_handler() -> None:
@@ -192,6 +188,99 @@ def test_sources_brew_tokens_match_canonical_cask_set() -> None:
     assert brew_tokens == _BREW_PREFERRED_CASKS
 
 
+# macOS_updates internet_app_methods.txt → Ascendo web handler.
+# brew_cask apps are NOT updated by the web category (Homebrew owns them).
+_SISTER_WEB_HANDLERS = {
+    "chrome": "keystone",
+    "gdrive": "keystone",
+    "firefox-dev": "release_feed",
+    "claude": "squirrel",
+    "chatgpt": "squirrel",
+    "codex": "squirrel",
+    "warp": "squirrel",
+    "gemini": "squirrel",
+    "comet": "squirrel",
+    "antigravity": "squirrel",
+    "antigravity-ide": "squirrel",
+    "opencode": "squirrel",
+    "cursor": "squirrel",
+    "proton-mail": "squirrel",
+    "keepassxc": "github_dmg",
+    "codeedit": "github_dmg",
+    "trezor-suite": "github_dmg",
+    "vscode": "release_feed",
+    "ledger-live": "release_feed",
+    "docker": "docker",
+    "rdm": "sparkle",
+    "protondrive": "sparkle",
+    "ms365": "msupdate",
+    "ms-word": "msupdate",
+    "ms-excel": "msupdate",
+    "ms-powerpoint": "msupdate",
+    "ms-outlook": "msupdate",
+    "ms-onenote": "msupdate",
+    "ms-teams": "msupdate",
+    "ipmiview": "builtin",
+    "dji-assistant": "builtin",
+}
+
+_BREW_OWNED_WEB_SLUGS = {
+    "brave",
+    "perplexity",
+    "lm-studio",
+    "protonvpn",
+    "zoom",
+    "megasync",
+    "appcleaner",
+    "obsidian",
+    "spotify",
+    "inkscape",
+    "capcut",
+}
+
+
+def test_sources_brew_preferred_web_bundle_ids_cover_cask_overlap() -> None:
+    """Web check/plan/apply must skip these bundle IDs — brew owns the cask."""
+    registry = AppSourcesRegistry.load(SOURCES)
+    ids = registry.brew_preferred_web_bundle_ids()
+    by_slug = {app.id: app.sources["web"] for app in registry.apps}
+    assert ids == set(by_slug.values())
+    assert "us.zoom.xos" in ids
+    assert "com.brave.Browser" in ids
+
+
+def test_web_handlers_match_macos_updates_channels() -> None:
+    """Same product must not use a second installer (DMG/Sparkle) vs sister."""
+    reg = WebRegistry.load(SHIPPED, None)
+    by_slug = {a.slug: a for a in reg.apps}
+    for slug, handler in _SISTER_WEB_HANDLERS.items():
+        app = by_slug.get(slug)
+        assert app is not None, f"missing slug {slug}"
+        assert app.handler == handler, f"{slug}: {app.handler} != {handler}"
+    for slug in _BREW_OWNED_WEB_SLUGS:
+        app = by_slug.get(slug)
+        assert app is not None, f"missing brew-owned slug {slug}"
+        assert app.bundle_id in AppSourcesRegistry.load(SOURCES).brew_preferred_web_bundle_ids()
+
+
+def test_firefox_dev_downloads_official_mozilla_dmg() -> None:
+    """Sister iu_firefox_developer_edition uses download.mozilla.org, not GitHub."""
+    reg = WebRegistry.load(SHIPPED, None)
+    ff = next(a for a in reg.apps if a.slug == "firefox-dev")
+    assert ff.release_feed is not None
+    assert ff.release_feed.download_url is not None
+    assert "download.mozilla.org" in str(ff.release_feed.download_url)
+    assert "firefox-devedition" in str(ff.release_feed.download_url)
+
+
+def test_chrome_and_gdrive_use_keystone_product_ids() -> None:
+    reg = WebRegistry.load(SHIPPED, None)
+    chrome = next(a for a in reg.apps if a.slug == "chrome")
+    gdrive = next(a for a in reg.apps if a.slug == "gdrive")
+    assert chrome.ksadmin_product_id == "com.google.Chrome"
+    assert gdrive.ksadmin_product_id == "com.google.drivefs"
+
+
 def test_ledger_download_path_picks_dmg_not_index() -> None:
     """Ledger latest-mac.yml files[0]=zip, files[1] is often a blockmap.
 
@@ -263,3 +352,13 @@ def test_rf_walk_json_files_dmg_picks_dmg_not_zip() -> None:
     )
     assert res.returncode == 0, res.stderr
     assert res.stdout.strip() == "ledger-live-desktop-4.17.1-mac.dmg"
+
+
+def test_rdm_and_protondrive_sparkle_read_sufeedurl() -> None:
+    """Sister sparkle_appcast has no static feed URL in the registry."""
+    reg = WebRegistry.load(SHIPPED, None)
+    rdm = reg.find("rdm")
+    drive = reg.find("protondrive")
+    assert rdm is not None and drive is not None
+    assert rdm.handler == "sparkle" and rdm.appcast_url is None
+    assert drive.handler == "sparkle" and drive.appcast_url is None

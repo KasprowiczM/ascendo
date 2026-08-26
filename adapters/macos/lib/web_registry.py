@@ -19,10 +19,12 @@ from ascendo_macos.web_registry import WebRegistry
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="WebRegistry CLI shim")
-    parser.add_argument("--shipped", required=True, type=Path,
+    parser.add_argument("--shipped", type=Path, default=None,
                         help="Shipped web_apps.toml path")
     parser.add_argument("--user-override", type=Path, default=None,
                         help="Optional user override TOML")
+    parser.add_argument("--sources", type=Path, default=None,
+                        help="macos_app_sources.toml (brew-preferred skip list)")
     g = parser.add_mutually_exclusive_group(required=True)
     g.add_argument("--list-slugs", action="store_true",
                    help="Print active slugs newline-delimited")
@@ -34,7 +36,25 @@ def main() -> int:
                    help="Print single-line JSON for one app (by bundle_id)")
     g.add_argument("--validate", action="store_true",
                    help="Validate registry; exit 0 on ok, 2 on error")
+    g.add_argument("--list-brew-preferred-bundle-ids", action="store_true",
+                   help="Print web bundle IDs owned by Homebrew (skip in web phases)")
     args = parser.parse_args()
+
+    if args.list_brew_preferred_bundle_ids:
+        from ascendo.models.deduplication import AppSourcesRegistry
+        src = args.sources
+        if src is None and args.shipped is not None:
+            src = args.shipped.parent / "macos_app_sources.toml"
+        if src is None:
+            print("web_registry: --sources or --shipped required", file=sys.stderr)
+            return 2
+        for bid in sorted(AppSourcesRegistry.load(src).brew_preferred_web_bundle_ids()):
+            print(bid)
+        return 0
+
+    if args.shipped is None:
+        print("web_registry: --shipped is required", file=sys.stderr)
+        return 2
 
     try:
         reg = WebRegistry.load(args.shipped, args.user_override)

@@ -38,19 +38,17 @@ if [ -z "$RUN_ID" ] || [ -z "$TRIGGER" ] || [ -z "$PROFILE_NAME" ] || [ -z "$OUT
     exit 2
 fi
 
-# Web update policy (operator request): NEVER auto-launch an app's GUI
-# during apply — that "pops windows all over the place" with no control.
-# So ASCENDO_SAFE_MODE is forced true for EVERY profile (was: only
-# safe|quick). Effect:
-#   - Silent handlers (keystone / sparkle / github_dmg DMG-path /
-#     msupdate / docker) still update in place, no GUI.
-#   - GUI-only handlers (builtin / squirrel / release_feed + omaha
-#     fallback) return 95 instead of `open -a`; apply collects these
-#     into ONE aggregated "needs manual update" list (see the rc==95
-#     branch + the end-of-run summary) so the user opens them
-#     deliberately from a single SPA list, not N popping windows.
-# Override with ASCENDO_WEB_ALLOW_GUI=1 to restore the old per-app
-# in-process updater dance (power users / debugging only).
+# Web update policy: never pop a visible GUI window.
+# ASCENDO_SAFE_MODE is forced true for every profile unless
+# ASCENDO_WEB_ALLOW_GUI=1. Effect:
+#   - Silent in-place handlers (keystone / sparkle / github_dmg /
+#     msupdate / docker) still update without a window.
+#   - Squirrel matches macOS_updates silent_launch: `open -gjF` even
+#     in safe mode (hidden, no Dock bounce). That IS the update channel
+#     for ChatGPT / Claude / Warp / Cursor / Proton Mail / …
+#   - builtin / omaha / release_feed-without-download still return 95
+#     and land on the aggregated "needs manual update" list.
+# Override with ASCENDO_WEB_ALLOW_GUI=1 to restore foreground `open -a`.
 if [ "${ASCENDO_WEB_ALLOW_GUI:-0}" = "1" ]; then
     export ASCENDO_SAFE_MODE="false"
 else
@@ -61,6 +59,8 @@ REG_PATH="${ASCENDO_WEB_REGISTRY_PATH:-$ADAPTER_CONFIG/web_apps.toml}"
 USER_REG="${ASCENDO_WEB_USER_REGISTRY_PATH:-$HOME/.config/ascendo/web_apps.toml}"
 [ -f "$USER_REG" ] || USER_REG=""
 REG_SHIM="$ADAPTER_LIB/web_registry.py"
+ASCENDO_WEB_BREW_PREFERRED_BIDS=$(python3 "$REG_SHIM" --shipped "$REG_PATH" --list-brew-preferred-bundle-ids 2>/dev/null | paste -sd, -)
+export ASCENDO_WEB_BREW_PREFERRED_BIDS
 
 HOST_NAME="$(scutil --get LocalHostName 2>/dev/null || hostname -s 2>/dev/null || echo unknown)"
 HOST_OS="macos"
@@ -138,6 +138,9 @@ fields = {
 for k, v in fields.items():
     print(f"{k}={shlex.quote(v)}")
 ' 2>/dev/null)"
+    case ",${ASCENDO_WEB_BREW_PREFERRED_BIDS:-}," in
+        (*",$BUNDLE_ID,"*) continue ;;
+    esac
     [ -z "$APP_PATH" ] && APP_PATH="/Applications/${DISPLAY_NAME}.app"
 
     INSTALLED=$(_web_installed_version "$APP_PATH")

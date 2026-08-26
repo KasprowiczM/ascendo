@@ -77,8 +77,9 @@ def test_slug_pattern_rejects_dots(tmp_path: Path) -> None:
 
 def test_sparkle_requires_appcast_url(tmp_path: Path) -> None:
     p = _write_toml(tmp_path, "s.toml", VALID_HEADER + _entry(handler="sparkle"))
-    with pytest.raises(ValidationError, match="appcast_url"):
-        WebRegistry.load(p, None)
+    reg = WebRegistry.load(p, None)
+    assert reg.apps[0].handler == "sparkle"
+    assert reg.apps[0].appcast_url is None
 
 
 def test_sparkle_with_appcast_url_loads(tmp_path: Path) -> None:
