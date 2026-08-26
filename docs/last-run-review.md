@@ -1,5 +1,11 @@
 # Last Run Review
 
+## 2026-08-26 — Ascendo 1.0.4 release
+
+Tag `v1.0.4`. Full notes: [`docs/releases/v1.0.4.md`](releases/v1.0.4.md).
+Channel lockstep: 43/43 sister internet apps share the effective
+installer path. Behavior: `8151dda`. No live apply.
+
 ## 2026-08-26 — Ascendo 1.0.3 changelog
 
 Full notes: [`docs/releases/v1.0.3.md`](releases/v1.0.3.md). Shipped on `main`

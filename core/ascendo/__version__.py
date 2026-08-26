@@ -10,6 +10,7 @@ Versioning: SemVer 2.0.0 / PEP 440 (Python betas use the `bN` suffix)
 - 1.0.1 — in-app self-update (check + one-click upgrade)
 - 1.0.2 — port macOS_updates hardening (brew, native CLIs, inventory)
 - 1.0.3 — inventory alignment + last-run repairs
+- 1.0.4 — lock web apps to macOS_updates channels
 """
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"
