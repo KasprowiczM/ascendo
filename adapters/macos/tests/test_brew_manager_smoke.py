@@ -1,6 +1,7 @@
 """BrewManager smoke tests -- mock-based, runs on any OS."""
 from __future__ import annotations
 
+import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -189,6 +190,18 @@ def test_build_argv_omits_empty_filter(tmp_path: Path) -> None:
 
 # -- run_phase end-to-end with mocked subprocess --------------------------
 
+def _pipe_with(text: str) -> int:
+    """Read end of a real pipe that already holds ``text`` and is at EOF.
+
+    run_streaming reads the child's output via ``select``/``os.read`` on
+    ``proc.stdout.fileno()``, so a mocked Popen must expose a real fd.
+    """
+    r, w = os.pipe()
+    os.write(w, text.encode())
+    os.close(w)
+    return r
+
+
 def _populate_fake_sidecar(output_dir: Path, run_id: UUID, phase: Phase) -> None:
     """Helper: drop the fixture sidecar at the path BrewManager will read."""
     target = output_dir / str(run_id) / f"{phase.value}__brew.json"
@@ -209,7 +222,7 @@ def test_run_phase_returns_parsed_sidecar(mock_popen: MagicMock, tmp_path: Path)
         run_id = UUID(argv[run_idx + 1])
         _populate_fake_sidecar(out_dir, run_id, Phase.CHECK)
         proc = MagicMock()
-        proc.stdout.readline.side_effect = [""]
+        proc.stdout.fileno.return_value = _pipe_with("")
         proc.wait.return_value = 0
         proc.returncode = 0
         proc.kill = MagicMock()
@@ -226,7 +239,7 @@ def test_run_phase_returns_parsed_sidecar(mock_popen: MagicMock, tmp_path: Path)
 def test_run_phase_raises_when_no_sidecar(mock_popen: MagicMock, tmp_path: Path) -> None:
     """Script exits non-zero with no sidecar -> ManagerError."""
     proc = MagicMock()
-    proc.stdout.readline.side_effect = ["error\n", ""]
+    proc.stdout.fileno.return_value = _pipe_with("error\n")
     proc.wait.return_value = 30
     proc.returncode = 30
     mock_popen.return_value = proc

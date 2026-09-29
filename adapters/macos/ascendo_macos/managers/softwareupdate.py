@@ -34,7 +34,7 @@ from ascendo.models.package import SourceType
 from ascendo.models.run import Phase, RunInfo
 from ascendo.orchestrator.stream_log import child_env_with_stream_log
 from ascendo.models.sidecar import Sidecar
-from ascendo_macos.managers._proc import run_streaming, salvage_timeout_sidecar
+from ascendo_macos.managers._proc import handle_phase_timeout, run_streaming
 from ascendo.orchestrator.sidecar_io import (
     SidecarIOError,
     SidecarReadError,
@@ -158,13 +158,10 @@ class SoftwareUpdateManager(IPackageManager):
                     f"softwareupdate {phase.value} script timed out after "
                     f"{self._timeout_sec}s: {script_path}"
                 )
-                salvaged = salvage_timeout_sidecar(
-                    output_dir / str(run.id) / f"{phase.value}__softwareupdate.json",
-                    timeout_msg,
+                return handle_phase_timeout(
+                    output_dir=output_dir, run_id=run.id, phase=phase,
+                    category="softwareupdate", message=timeout_msg, exc=exc,
                 )
-                if salvaged is not None:
-                    return salvaged
-                raise ManagerError(timeout_msg) from exc
             except OSError as exc:
                 raise ManagerError(
                     f"failed to spawn bash for softwareupdate {phase.value}: {exc}"
