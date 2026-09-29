@@ -88,6 +88,9 @@ if ! command -v brew >/dev/null 2>&1; then
     exit 1
 fi
 
+# Xcode licence gate (never auto-accept): brew cannot run until accepted.
+ascendo_brew_xcode_license_gate || exit 10
+
 # -- brew cleanup --------------------------------------------------------------
 if [ "$DRY_RUN" = "true" ]; then
     # Dry-run: parse `brew cleanup --dry-run -s` output and emit planned items.

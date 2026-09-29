@@ -85,9 +85,13 @@ json_init "verify" "brew" "$RUN_ID" "$TRIGGER" "$PROFILE_NAME" \
 
 TMP_CURRENT=""
 _cleanup() {
+    # Capture the script's exit code first: the rm/if below would clobber $?
+    # and the sidecar would record exit_code 0 for a failed/gated phase.
+    local _rc=$?
     if [ -n "$TMP_CURRENT" ] && [ -f "$TMP_CURRENT" ]; then
         rm -f "$TMP_CURRENT"
     fi
+    (exit "$_rc")
     json_save_on_exit "$OUTPUT_DIR"
 }
 trap '_cleanup' EXIT
@@ -113,13 +117,14 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 30
 fi
 
+# Xcode licence gate: with Xcode.app selected and its licence unaccepted
+# every brew command fails. Never auto-accept; skip with the remedy.
+ascendo_brew_xcode_license_gate || exit 10
+
 # -- re-query current outdated list -------------------------------------------
 TMP_CURRENT="$(mktemp "${TMPDIR:-/tmp}/ascendo_brew_verify_XXXXXX")"
 
-if ! ascendo_brew_outdated_json > "$TMP_CURRENT" 2>/dev/null; then
-    json_add_message "error" "brew outdated re-query failed unexpectedly" "BREW_OUTDATED_FAIL"
-    exit 30
-fi
+ascendo_brew_outdated_or_fail "$TMP_CURRENT" || exit 30
 
 # -- verify each item apply marked success ------------------------------------
 # For each id that apply wrote as status=success, check if it still appears

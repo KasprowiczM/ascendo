@@ -82,9 +82,13 @@ json_init "check" "brew" "$RUN_ID" "$TRIGGER" "$PROFILE_NAME" \
 # json_save_on_exit captures $? internally, so we just pass OUTPUT_DIR.
 TMP_OUTDATED=""
 _cleanup() {
+    # Capture the script's exit code first: the rm/if below would clobber $?
+    # and the sidecar would record exit_code 0 for a failed/gated phase.
+    local _rc=$?
     if [ -n "$TMP_OUTDATED" ] && [ -f "$TMP_OUTDATED" ]; then
         rm -f "$TMP_OUTDATED"
     fi
+    (exit "$_rc")
     json_save_on_exit "$OUTPUT_DIR"
 }
 trap '_cleanup' EXIT
@@ -102,13 +106,14 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 30
 fi
 
+# Xcode licence gate: with Xcode.app selected and its licence unaccepted
+# every brew command fails. Never auto-accept; skip with the remedy.
+ascendo_brew_xcode_license_gate || exit 10
+
 # -- enumerate outdated --------------------------------------------------------
 TMP_OUTDATED="$(mktemp "${TMPDIR:-/tmp}/ascendo_brew_outdated_XXXXXX")"
 
-if ! ascendo_brew_outdated_json > "$TMP_OUTDATED" 2>/dev/null; then
-    json_add_message "error" "brew outdated --json=v2 failed unexpectedly" "BREW_OUTDATED_FAIL"
-    exit 30
-fi
+ascendo_brew_outdated_or_fail "$TMP_OUTDATED" || exit 30
 
 # Helper: returns 0 (match) if FILTER is empty OR id is in the CSV FILTER list.
 # Bash 3.2-safe: uses a while-read loop instead of array operations.

@@ -4,7 +4,8 @@
 # =============================================================================
 # For each outdated formula / cask (filtered by --filter if given):
 #   * dry-run path: emit status=planned, no brew calls, no mutations
-#   * real path:    optionally quit running cask app via osascript/pkill,
+#   * real path:    a cask whose app is running is skipped (never quit or
+#                   killed; action-required "quit it and re-run"), otherwise
 #                   run `brew upgrade --formula|--cask <id>`,
 #                   emit status=success or status=failed per item.
 #
@@ -19,6 +20,7 @@
 # Exit codes (per docs/agents/contract.md):
 #   0  success
 #   1  warn (brew not on PATH)
+#   10 precondition failed (Xcode licence not accepted; never auto-accepted)
 #   2  bad usage (missing required args / unknown flag)
 #   30 apply-fail-unknown (one or more items failed, or brew precondition)
 # =============================================================================
@@ -86,9 +88,13 @@ json_init "apply" "brew" "$RUN_ID" "$TRIGGER" "$PROFILE_NAME" \
 # Also clean up the temp file for outdated JSON.
 TMP_OUTDATED=""
 _cleanup() {
+    # Capture the script's exit code first: the rm/if below would clobber $?
+    # and the sidecar would record exit_code 0 for a failed/gated phase.
+    local _rc=$?
     if [ -n "$TMP_OUTDATED" ] && [ -f "$TMP_OUTDATED" ]; then
         rm -f "$TMP_OUTDATED"
     fi
+    (exit "$_rc")
     json_save_on_exit "$OUTPUT_DIR"
 }
 trap '_cleanup' EXIT
@@ -106,13 +112,14 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 30
 fi
 
+# Xcode licence gate: with Xcode.app selected and its licence unaccepted
+# every brew command fails. Never auto-accept; skip with the remedy.
+ascendo_brew_xcode_license_gate || exit 10
+
 # -- enumerate outdated --------------------------------------------------------
 TMP_OUTDATED="$(mktemp "${TMPDIR:-/tmp}/ascendo_brew_outdated_XXXXXX")"
 
-if ! ascendo_brew_outdated_json > "$TMP_OUTDATED" 2>/dev/null; then
-    json_add_message "error" "brew outdated --json=v2 failed unexpectedly" "BREW_OUTDATED_FAIL"
-    exit 30
-fi
+ascendo_brew_outdated_or_fail "$TMP_OUTDATED" || exit 30
 
 # Helper: returns 0 (match) if FILTER is empty OR id is in the CSV FILTER list.
 # Bash 3.2-safe: uses a for loop over IFS-split instead of array operations.
@@ -186,18 +193,22 @@ _apply_one() {
     if [ "$TOTAL_ITEMS" -gt 0 ]; then
         _pct=$(( CURRENT_INDEX * 100 / TOTAL_ITEMS ))
     fi
+    # Never close an app the user has open. `brew upgrade --cask` replaces the
+    # bundle underneath a running app (and some casks' `uninstall quit:` stanza
+    # makes Homebrew itself close it), so a cask whose app is running is
+    # deferred: skipped + action-required, brew is NOT called.
+    if [ "$_feed" = "cask" ] && ascendo_brew_cask_app_running "$_id"; then
+        _stream_progress "$_pct" "skipping $_id (app is running)"
+        _stream_emit ">>> skipping $_id (cask app is running -- quit it and re-run)"
+        json_add_item "$_id" "$_current" "$_current" "skipped" "brew" "cask"
+        json_add_message "info" \
+            "${_id}: skipped -- app in use (quit it and re-run apply to upgrade ${_current} -> ${_target}) | $(ascendo_action_required_token app_in_use "$_current" "$_target")" \
+            "CASK_APP_RUNNING"
+        return 0
+    fi
+
     _stream_progress "$_pct" "upgrading $_id ($_feed) $_current -> $_target"
     _stream_emit ">>> upgrading $_id ($_feed) $_current -> $_target"
-
-    # Gracefully quit running cask apps before upgrade.
-    # Only for casks (formulae are CLI tools, no GUI app to quit).
-    if [ "$_feed" = "cask" ]; then
-        if ! ascendo_brew_kill_cask_apps "$_id" 2>/dev/null; then
-            json_add_message "warn" \
-                "could not cleanly quit app for cask '$_id'; continuing anyway" \
-                "CASK_QUIT_FAIL"
-        fi
-    fi
 
     # Determine the brew feed flag.
     local _brew_flag

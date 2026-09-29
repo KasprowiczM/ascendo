@@ -14,8 +14,18 @@
 #                                          -- emit CSV rows: id,current_version,target_version
 #     ascendo_brew_cask_app_name <cask_token>
 #                                          -- print app bundle name (e.g. "Slack") or empty
-#     ascendo_brew_kill_cask_apps <cask_token>
-#                                          -- graceful osascript quit + force pkill after 5s
+#     ascendo_brew_cask_app_paths <cask_token>
+#                                          -- print installed .app path(s) of a cask (one per line)
+#     ascendo_brew_cask_app_running <cask_token>
+#                                          -- rc 0 when any process runs from the cask's .app
+#                                             (read-only probe; NEVER quits or kills anything)
+#     ascendo_brew_xcode_license_ok        -- rc 1 only when Xcode.app is selected and its
+#                                             licence is not accepted
+#     ascendo_brew_xcode_license_gate      -- emit skipped item + XCODE_LICENSE message, rc 1
+#                                             (callers: `... || exit 10`); needs ascendo_json.sh
+#     ascendo_brew_err_tail <file>         -- last stderr lines, single line, capped
+#     ascendo_brew_outdated_or_fail <out>  -- run ascendo_brew_outdated_json into <out>; on real
+#                                             failure add BREW_OUTDATED_FAIL with the stderr reason
 #     ascendo_brew_exit_code <brew_exit>
 #                                          -- translate brew exit to ascendo phase exit
 #
@@ -90,6 +100,9 @@ ascendo_brew_formula_versions() {
 # ("==> Downloading Homebrew API data", "✔︎ JSON API ...") to stderr,
 # and capturing it with 2>&1 made post-upgrade verification treat that
 # chatter as outstanding packages (macOS_updates 2026-08-19 regression).
+# rc 1 without an "Error:" stderr line is treated as success (brew's
+# "something is outdated" exit); a real error returns non-zero with the
+# stderr text forwarded to fd 2.
 # If brew is not installed, prints an empty JSON stub and returns 0.
 ascendo_brew_outdated_json() {
     if ! command -v brew >/dev/null 2>&1; then
@@ -110,6 +123,13 @@ ascendo_brew_outdated_json() {
     # shellcheck disable=SC2086
     out="$(brew outdated --json=v2 ${greedy_flag} 2>"$err_file")"
     rc=$?
+    # rc 1 WITHOUT an "Error:" line on stderr is success: `brew outdated`
+    # exits 1 when it found outdated items (notably for named queries).
+    # Only a real "Error:" line (or any other rc) is a failure, and then the
+    # stderr is passed on so the caller can report the actual reason.
+    if [ "$rc" -eq 1 ] && ! grep -Eq '^[[:space:]]*Error:' "$err_file" 2>/dev/null; then
+        rc=0
+    fi
     if [ "$rc" -ne 0 ]; then
         cat "$err_file" >&2
         rm -f "$err_file" 2>/dev/null || true
@@ -212,46 +232,104 @@ ascendo_brew_cask_app_name() {
     esac
 }
 
-# Gracefully quit a cask's app via osascript, then force-kill via pkill if
-# the app is still running after 5 seconds.
-# Returns 0 on success (app quit or was not running), 1 if force-kill failed.
-ascendo_brew_kill_cask_apps() {
-    local cask="$1"
+# Print the installed .app bundle path(s) of a cask, one per line.
+# Currently derived from the small token->bundle-name table above (the
+# cask-facts module replaces this with the cask's real artifact targets).
+# ASCENDO_BREW_APPLICATIONS_DIR overrides /Applications (tests).
+# Prints nothing when the token is unknown or the bundle is not on disk.
+ascendo_brew_cask_app_paths() {
+    local token="$1"
+    local apps_dir="${ASCENDO_BREW_APPLICATIONS_DIR:-/Applications}"
     local app
-    app="$(ascendo_brew_cask_app_name "$cask")"
-
-    # No app mapping -> nothing to kill
-    if [ -z "$app" ]; then
-        return 0
-    fi
-
-    # Not running -> nothing to do
-    if ! pgrep -x "$app" >/dev/null 2>&1; then
-        return 0
-    fi
-
-    # Graceful quit via osascript
-    osascript -e "tell application \"$app\" to quit" >/dev/null 2>&1 || true
-
-    # Wait up to 5 seconds for graceful exit
-    local i=0
-    while [ $i -lt 5 ]; do
-        if ! pgrep -x "$app" >/dev/null 2>&1; then
-            return 0
-        fi
-        sleep 1
-        i=$((i + 1))
-    done
-
-    # Force kill via pkill
-    pkill -f "/Applications/${app}.app/" >/dev/null 2>&1 || true
-    sleep 1
-
-    if pgrep -x "$app" >/dev/null 2>&1; then
-        echo "ascendo_brew_kill_cask_apps: failed to kill '$app'" >&2
-        return 1
+    app="$(ascendo_brew_cask_app_name "$token")"
+    [ -n "$app" ] || return 0
+    if [ -d "$apps_dir/${app}.app" ]; then
+        printf '%s\n' "$apps_dir/${app}.app"
     fi
     return 0
+}
+
+# Exit 0 when a process is running from any .app bundle of the cask
+# (main binary or a helper under <bundle>/Contents/). Read-only: this
+# never quits, signals or kills anything -- an app the user has open is
+# left alone (the caller defers the upgrade instead).
+ascendo_brew_cask_app_running() {
+    local token="$1"
+    local _path _esc
+    while IFS= read -r _path; do
+        [ -n "$_path" ] || continue
+        # Regex-escape the path for pgrep -f (extended regex).
+        _esc="$(printf '%s' "$_path" | sed 's/[][\.*^$+?(){}|\/]/\\&/g')"
+        if pgrep -f "^${_esc}/Contents/" >/dev/null 2>&1; then
+            return 0
+        fi
+    done <<EOF_PATHS
+$(ascendo_brew_cask_app_paths "$token")
+EOF_PATHS
+    return 1
+}
+
+# 0 = fine (CLT selected, no Xcode.app, or licence accepted);
+# 1 = Xcode.app selected and its licence has not been accepted -- every
+# brew command then fails. NEVER accepts the licence (a consent action).
+ascendo_brew_xcode_license_ok() {
+    local dev_path
+    command -v xcode-select >/dev/null 2>&1 || return 0
+    dev_path="$(xcode-select -p 2>/dev/null)"
+    case "$dev_path" in
+        *.app/Contents/Developer*)
+            if command -v xcodebuild >/dev/null 2>&1; then
+                xcodebuild -license check >/dev/null 2>&1 </dev/null || return 1
+            fi
+            ;;
+    esac
+    return 0
+}
+
+# Phase-script gate: call right after the brew/jq preconditions and before
+# any brew invocation:  ascendo_brew_xcode_license_gate || exit 10
+# When the licence is not accepted it records one `skipped` item plus a
+# message carrying the XCODE_LICENSE code and the action-required token,
+# and returns 1. Requires ascendo_json.sh to be sourced.
+ascendo_brew_xcode_license_gate() {
+    if ascendo_brew_xcode_license_ok; then
+        return 0
+    fi
+    json_add_item "xcode-license" "" "" "skipped" "brew" ""
+    json_add_message "warn" \
+        "xcode-license: Xcode licence has not been accepted - Homebrew cannot run. Run: sudo xcodebuild -license accept | $(ascendo_action_required_token xcode_license)" \
+        "XCODE_LICENSE"
+    return 1
+}
+
+# Last few lines of a stderr capture file as ONE line, capped, for messages.
+ascendo_brew_err_tail() {
+    local f="$1"
+    [ -s "$f" ] || { printf '(no error output)'; return 0; }
+    tail -n 5 "$f" | tr '\n' ' ' | tr -s '[:space:]' ' ' | cut -c1-500
+}
+
+# Run ascendo_brew_outdated_json into <outfile>; on failure record a
+# BREW_OUTDATED_FAIL error message that carries brew's real stderr reason
+# (not a bare "failed unexpectedly") and return non-zero.
+# Extra args are passed through to ascendo_brew_outdated_json.
+ascendo_brew_outdated_or_fail() {
+    local out="$1"
+    shift
+    local err rc=0
+    err="$(mktemp "${TMPDIR:-/tmp}/ascendo_brew_outdated_err.XXXXXX")" || err=""
+    if [ -n "$err" ]; then
+        ascendo_brew_outdated_json "$@" >"$out" 2>"$err" || rc=$?
+    else
+        ascendo_brew_outdated_json "$@" >"$out" 2>/dev/null || rc=$?
+    fi
+    if [ "$rc" -ne 0 ]; then
+        json_add_message "error" \
+            "brew outdated --json=v2 failed (exit ${rc}): $( [ -n "$err" ] && ascendo_brew_err_tail "$err" || printf 'unknown')" \
+            "BREW_OUTDATED_FAIL"
+    fi
+    [ -z "$err" ] || rm -f "$err" 2>/dev/null || true
+    return "$rc"
 }
 
 # Exit 0 if version $1 is strictly greater than version $2.

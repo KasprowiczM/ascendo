@@ -16,6 +16,7 @@ from ascendo.orchestrator.stream_log import child_env_with_stream_log
 from ascendo.models.run import Phase, RunInfo
 from ascendo.models.sidecar import Sidecar
 from ascendo_macos.managers._filter import clean_filter, phase_of
+from ascendo_macos.managers.elevation import MacElevation
 from ascendo_macos.managers._proc import handle_phase_timeout, run_streaming
 from ascendo.orchestrator.sidecar_io import (
     SidecarIOError,
@@ -32,6 +33,10 @@ class BrewManager(IPackageManager):
     Args:
         scripts_dir: Path to ``adapters/macos/scripts/``.
         lib_dir:     Path to ``adapters/macos/lib/`` (informational only).
+        elevation:   Optional MacElevation. When a sudo password is cached,
+                     APPLY runs get SUDO_ASKPASS so casks whose installer
+                     needs sudo can authenticate from the TTY-less dashboard
+                     (same handshake as MasManager / WebManager).
         bash_path:   Optional override for bash binary.
         timeout_sec: Per-phase timeout. Default 1800 (30 min).
     """
@@ -54,13 +59,17 @@ class BrewManager(IPackageManager):
         *,
         scripts_dir: Path,
         lib_dir: Path,
+        elevation: MacElevation | None = None,
         bash_path: str | None = None,
         timeout_sec: int = DEFAULT_TIMEOUT_SEC,
     ) -> None:
         self._scripts_dir = Path(scripts_dir)
         self._lib_dir = Path(lib_dir)
+        self._elevation: MacElevation | None = elevation
         self._bash_override = bash_path
         self._timeout_sec = timeout_sec
+        # Test seam: env passed to the child on the most recent spawn.
+        self._last_env_for_test: dict[str, str] = {}
 
     # -- Identity --------------------------------------------------------
 
@@ -117,11 +126,16 @@ class BrewManager(IPackageManager):
             )
             log_path.parent.mkdir(parents=True, exist_ok=True)
 
+            env = self._build_env(phase)
+            self._last_env_for_test = env
+
             _log.debug("BrewManager.run_phase phase=%s run_id=%s argv=%r",
                        phase.value, run.id, argv)
 
             try:
-                completed = self._run_streaming(argv, log_path, self._timeout_sec)
+                completed = self._run_streaming(
+                    argv, log_path, self._timeout_sec, env=env
+                )
             except subprocess.TimeoutExpired as exc:
                 timeout_msg = (
                     f"brew {phase.value} script timed out after "
@@ -186,14 +200,36 @@ class BrewManager(IPackageManager):
                 argv.extend(["--filter", ",".join(cleaned)])
         return argv
 
+    def _build_env(self, phase: Phase) -> dict[str, str]:
+        """Env for the child process.
+
+        Starts from ``os.environ`` + this thread's stream-log path. For
+        Phase.APPLY, when a sudo password is cached, SUDO_ASKPASS points at
+        the askpass helper so a cask whose installer runs ``sudo`` can
+        authenticate non-interactively (brew refuses to run as root itself,
+        so the child stays the user; only the cask's own sudo call uses it).
+        """
+        env = child_env_with_stream_log()
+        if (
+            phase is Phase.APPLY
+            and self._elevation is not None
+            and self._elevation.has_password_registered()
+        ):
+            helper = self._elevation.askpass_path()
+            if helper is not None:
+                env["SUDO_ASKPASS"] = str(helper)
+        return env
+
     def _run_streaming(
         self,
         argv: list[str],
         log_path: Path,
         timeout: float,
+        *,
+        env: dict[str, str],
     ) -> subprocess.CompletedProcess[str]:
         # Wall-clock deadline + process-group kill live in the shared helper.
-        return run_streaming(argv, log_path, timeout, env=child_env_with_stream_log())
+        return run_streaming(argv, log_path, timeout, env=env)
 
     def _missing_sidecar_error(
         self,

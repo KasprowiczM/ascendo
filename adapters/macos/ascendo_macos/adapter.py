@@ -142,7 +142,7 @@ class MacOSAdapter(IAdapter):
         # — putting it last lets the orchestrator complete brew + mas +
         # npm + pip + web first.
         return [
-            BrewManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
+            BrewManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, elevation=self.elevation()),
             MasManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR, elevation=self.elevation()),
             NpmManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
             PipManager(scripts_dir=self.SCRIPTS_DIR, lib_dir=self.LIB_DIR),
