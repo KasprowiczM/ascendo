@@ -594,7 +594,7 @@ async def start_run_async(
     phases: Sequence[Phase] | None = None,
     categories: Iterable[SourceType] | None = None,
     stop_on_failure: bool = True,
-    item_filter: Iterable[str] | Mapping[str, Iterable[str]] | None = None,
+    item_filter: Iterable[str] | Mapping[str, Any] | None = None,
     inventory_db: Any = None,
 ) -> RunState:
     """Register a run + spawn a worker thread to execute it.

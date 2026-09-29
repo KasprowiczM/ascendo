@@ -23,7 +23,7 @@ from ascendo.models.result import Summary
 from ascendo.models.run import Phase, PhaseStatus, RunInfo, Trigger
 from ascendo.models.sidecar import Sidecar, SidecarSchema, ToolInfo
 from ascendo.orchestrator import run_phases
-from ascendo.orchestrator.runner import RUN_META_FILENAME
+from ascendo.orchestrator.runner import NEEDS_CHECK, RUN_META_FILENAME
 from ascendo.orchestrator.sidecar_io import list_run_sidecars, read_sidecar
 
 from .test_runner import FakeAdapter, FakeManager  # noqa: F401  (shared fakes)
@@ -106,8 +106,16 @@ def test_exclusion_is_self_perpetuating_across_runs(tmp_path, monkeypatch):
     assert second == first
 
 
-def test_no_check_data_means_no_entry(tmp_path, monkeypatch):
+def test_no_check_data_with_an_exclusion_is_needs_check_not_unfiltered(tmp_path, monkeypatch):
+    """Fail-safe: exclusion configured but nothing to build the inclusion list
+    from -> the category is marked NEEDS_CHECK (never silently unfiltered)."""
     out = _resolve(tmp_path, monkeypatch, {"brew:jq"}, ["brew"])
+    assert out == {"brew": NEEDS_CHECK}
+
+
+def test_no_check_data_without_exclusion_keys_is_unfiltered(tmp_path, monkeypatch):
+    _check_sidecar(tmp_path, "npm", [("node", "node")])
+    out = _resolve(tmp_path, monkeypatch, {"brew:jq"}, ["npm", "mas"])
     assert out is None
 
 
@@ -225,3 +233,44 @@ def test_run_meta_is_not_mistaken_for_a_sidecar(tmp_path, host, run):
     run_dir = tmp_path / str(run.id)
     assert (run_dir / RUN_META_FILENAME).is_file()
     assert [p.name for p in list_run_sidecars(run_dir)] == ["check__brew.json"]
+
+
+def test_needs_check_skips_mutating_phases_and_runs_the_rest(tmp_path, host, run):
+    mas = FakeManager(SourceType.MAS)
+    brew = FakeManager(SourceType.BREW)
+    report = run_phases(
+        FakeAdapter([mas, brew]), run, host,
+        phases=[Phase.CHECK, Phase.PLAN, Phase.APPLY, Phase.VERIFY, Phase.CLEANUP],
+        base_dir=tmp_path, item_filter={"mas": NEEDS_CHECK},
+    )
+    # apply/cleanup never reach the mas manager; check/plan/verify run unfiltered
+    assert mas.calls == [(Phase.CHECK, None), (Phase.PLAN, None), (Phase.VERIFY, None)]
+    assert [p for p, _ in brew.calls] == [
+        Phase.CHECK, Phase.PLAN, Phase.APPLY, Phase.VERIFY, Phase.CLEANUP]
+    skipped = [s for s in report.sidecars
+               if s.category is SourceType.MAS and s.phase in (Phase.APPLY, Phase.CLEANUP)]
+    assert len(skipped) == 2
+    for sc in skipped:
+        assert sc.status is PhaseStatus.SKIPPED and sc.items == []
+        msg = next(m for m in sc.messages if m.code == "EXCLUSIONS_NEED_CHECK")
+        assert "run check first" in msg.text
+        persisted = read_sidecar(tmp_path / str(run.id) / f"{sc.phase.value}__mas.json")
+        assert persisted.status is PhaseStatus.SKIPPED
+    meta = json.loads((tmp_path / str(run.id) / RUN_META_FILENAME).read_text())
+    assert any(c == "mas" and "need a check first" in r for c, r in meta["skipped_managers"])
+    md = (tmp_path / str(run.id) / "REPORT.md").read_text()
+    assert "Skipped: Mac App Store (exclusions need a check first" in md
+
+
+def test_excluded_app_is_not_upgraded_when_there_is_no_check_data(tmp_path, monkeypatch, host, run):
+    """End to end: real resolver + runner, empty runs dir (no check sidecar),
+    exclusion configured -> the apply phase of that category never runs."""
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    monkeypatch.setattr(apps_mod, "excluded_keys", lambda: {"mas:Copilot"})
+    flt = _resolve_item_filter(None, ["mas", "brew"], (Phase.APPLY,), runs_dir)
+    mas, brew = FakeManager(SourceType.MAS), FakeManager(SourceType.BREW)
+    run_phases(FakeAdapter([mas, brew]), run, host, phases=[Phase.APPLY],
+               base_dir=tmp_path / "out", item_filter=flt)
+    assert mas.calls == []                                   # excluded app safe
+    assert brew.calls == [(Phase.APPLY, None)]               # unrelated category unaffected

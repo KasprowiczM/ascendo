@@ -172,7 +172,10 @@ def run_phases(
             category means "everything is excluded": the runner skips that
             manager's ``apply``/``cleanup`` with a synthesized ``skipped``
             sidecar (message code ``ALL_EXCLUDED``) instead of running it
-            unfiltered.
+            unfiltered. The :data:`NEEDS_CHECK` marker (exclusions exist
+            but there is no check data to build the list from) skips the
+            mutating phases the same way (code ``EXCLUSIONS_NEED_CHECK``)
+            while the non-mutating phases run.
 
     Returns:
         A :class:`RunReport` with every produced sidecar.
@@ -270,6 +273,27 @@ def _run_phases_inner(
                 cancelled = True
                 break
             mgr_filter = _filter_for(item_filter, mgr)
+            if isinstance(mgr_filter, _NeedsCheck):
+                if phase in _MUTATING_PHASES:
+                    # Exclusions exist but we cannot build the inclusion list
+                    # yet: fail SAFE (skip), never run unfiltered.
+                    sidecar = _skip_sidecar(
+                        mgr, phase, run, host, base_dir=base_dir,
+                        code="EXCLUSIONS_NEED_CHECK",
+                        text=(
+                            f"EXCLUSIONS_NEED_CHECK: {mgr.category.value} has excluded "
+                            f"items but no check data yet - {phase.value} skipped; run "
+                            "check first so excluded items can be honoured"
+                        ),
+                    )
+                    excluded_skips.append((
+                        mgr.category.value,
+                        "exclusions need a check first (run check so excluded items can be honoured)",
+                    ))
+                    phase_results.append(sidecar)
+                    sidecars.append(sidecar)
+                    continue
+                mgr_filter = None   # non-mutating phases run as before
             if (
                 mgr_filter is not None
                 and not mgr_filter
@@ -278,7 +302,14 @@ def _run_phases_inner(
                 # Every item of this category is excluded: nothing to do.
                 # Never fall through to "no filter" (that would update the
                 # excluded apps).
-                sidecar = _skip_all_excluded(mgr, phase, run, host, base_dir=base_dir)
+                sidecar = _skip_sidecar(
+                    mgr, phase, run, host, base_dir=base_dir,
+                    code="ALL_EXCLUDED",
+                    text=(
+                        f"ALL_EXCLUDED: every {mgr.category.value} item is excluded "
+                        f"from updates - {phase.value} skipped"
+                    ),
+                )
                 excluded_skips.append((mgr.category.value, "all items excluded"))
             else:
                 sidecar = _safe_run_phase(
@@ -351,14 +382,32 @@ _MUTATING_PHASES: frozenset[Phase] = frozenset({Phase.APPLY, Phase.CLEANUP})
 RUN_META_FILENAME = "run_meta.json"
 
 
+class _NeedsCheck:
+    """Marker: a category has exclusions but no check data to honour them.
+
+    Used as a mapping value in ``run_phases(item_filter=...)``. The runner
+    skips that manager's mutating phases (fail-safe: never upgrade an app
+    the user excluded just because we could not build an inclusion list)
+    and runs the non-mutating phases unfiltered, so a check can produce the
+    data the next run needs.
+    """
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return "NEEDS_CHECK"
+
+
+NEEDS_CHECK = _NeedsCheck()
+
+
 def _filter_for(
-    item_filter: Iterable[str] | Mapping[str, Iterable[str]] | None,
+    item_filter: Iterable[str] | Mapping[str, Iterable[str] | _NeedsCheck] | None,
     mgr: IPackageManager,
-) -> list[str] | None:
+) -> list[str] | _NeedsCheck | None:
     """Resolve the filter list ONE manager should receive.
 
     * ``None`` -> ``None`` (no filter).
-    * mapping -> ``mapping[mgr.category.value]`` (missing key -> ``None``).
+    * mapping -> ``mapping[mgr.category.value]`` (missing key -> ``None``;
+      :data:`NEEDS_CHECK` is passed through).
     * flat iterable -> that list for every manager (legacy behaviour).
     ``[]`` is preserved (it means "everything excluded", see
     :func:`run_phases`); it is never coerced to ``None``.
@@ -367,7 +416,11 @@ def _filter_for(
         return None
     if isinstance(item_filter, Mapping):
         entry = item_filter.get(mgr.category.value)
-        return None if entry is None else [str(x) for x in entry]
+        if entry is None:
+            return None
+        if isinstance(entry, _NeedsCheck):
+            return entry
+        return [str(x) for x in entry]
     return [str(x) for x in item_filter]
 
 
@@ -410,26 +463,21 @@ def _write_run_meta(
         _log.exception("could not write %s", run_dir / RUN_META_FILENAME)
 
 
-def _skip_all_excluded(
+def _skip_sidecar(
     mgr: IPackageManager,
     phase: Phase,
     run: RunInfo,
     host: HostInfo,
     *,
     base_dir: Path,
+    code: str,
+    text: str,
 ) -> Sidecar:
-    """Persist a ``skipped`` sidecar for a category whose items are all excluded."""
+    """Persist an item-less ``skipped`` sidecar carrying one coded message."""
     sidecar = _synthesize_sidecar(
         mgr, phase, run, host,
         status=PhaseStatus.SKIPPED,
-        message=Message(
-            level=MessageLevel.INFO,
-            text=(
-                f"ALL_EXCLUDED: every {mgr.category.value} item is excluded from "
-                f"updates - {phase.value} skipped"
-            ),
-            code="ALL_EXCLUDED",
-        ),
+        message=Message(level=MessageLevel.INFO, text=text, code=code),
         exit_code=0,
     )
     write_sidecar(sidecar, base_dir=base_dir)
@@ -572,6 +620,7 @@ def _synthesize_sidecar(
 
 __all__ = [
     "DEFAULT_PHASE_ORDER",
+    "NEEDS_CHECK",
     "RUN_META_FILENAME",
     "RunReport",
     "run_phases",

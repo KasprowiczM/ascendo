@@ -126,18 +126,20 @@ def test_enumerate_categories_picks_up_recent_sidecars(tmp_path: Path) -> None:
     assert sorted(cats) == ["brew", "mas", "npm"]
 
 
-def test_apply_with_empty_runs_dir_returns_none(tmp_path: Path, monkeypatch) -> None:
-    """No check sidecars yet → can't build a filter; fall through to None
-    so apply runs against everything (which is what the user wants on
-    a fresh install)."""
+def test_apply_with_empty_runs_dir_is_fail_safe_needs_check(tmp_path: Path, monkeypatch) -> None:
+    """No check sidecars yet but an exclusion is configured -> we cannot build
+    the inclusion list, so the category is marked NEEDS_CHECK (the runner then
+    skips its apply) instead of running unfiltered and upgrading the excluded
+    app. A category without exclusions is untouched."""
+    from ascendo.orchestrator.runner import NEEDS_CHECK
     from ascendo.dashboard.routes import apps as apps_mod
     monkeypatch.setattr(
         apps_mod, "excluded_keys", lambda: {"brew:abseil"},
     )
     out = _resolve_item_filter(
         explicit_filter=None,
-        categories=["brew"],
+        categories=["brew", "npm"],
         phases=(Phase.APPLY,),
         runs_dir=tmp_path,
     )
-    assert out is None
+    assert out == {"brew": NEEDS_CHECK}

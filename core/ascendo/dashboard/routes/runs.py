@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Request
@@ -16,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from ...interfaces.package_manager import ManagerError
 from ...models.run import Phase, RunInfo, Trigger
 from ...orchestrator import DEFAULT_PHASE_ORDER, RunReport, run_phases
+from ...orchestrator.runner import NEEDS_CHECK
 
 # Profile -> default phase set. Profiles are the user-facing knob; phases
 # are the orchestrator-facing primitive. The dashboard only exposes
@@ -140,7 +142,7 @@ def _resolve_item_filter(
     categories: list[str] | None,
     phases: tuple[Phase, ...],
     runs_dir: Path,
-) -> list[str] | dict[str, list[str]] | None:
+) -> list[str] | dict[str, Any] | None:
     """Auto-derive per-category inclusion lists from the /apps exclusions.
 
     If the SPA fires apply with no explicit ``item_filter`` and the user
@@ -154,12 +156,15 @@ def _resolve_item_filter(
     excluded) makes the runner skip that category's apply instead of
     running it unfiltered.
 
+    A category that has an exclusion but no check data yet maps to
+    :data:`~ascendo.orchestrator.runner.NEEDS_CHECK`: the runner skips its
+    apply/cleanup (fail-safe) until a check has produced the item list.
+
     Returns ``None`` when:
       - explicit_filter was provided (caller wins; returned as a flat list)
       - no apply/cleanup phase is in scope (filter only matters for
         mutating phases; check/plan/verify list everything regardless)
       - no exclusions exist (filter would be a no-op against all items)
-      - we can't read a recent check sidecar (no inclusion data yet)
     """
     if explicit_filter:
         return list(explicit_filter)
@@ -188,10 +193,12 @@ def _resolve_item_filter(
         if cat not in excluded_cats:
             continue
         # Latest check sidecar = the universe of installed items. With no
-        # data at all we cannot build an inclusion list, so the category
-        # runs unfiltered (nothing to derive it from yet).
+        # data at all we cannot build an inclusion list -- fail SAFE: the
+        # runner skips this category's apply/cleanup (EXCLUSIONS_NEED_CHECK)
+        # rather than upgrading an app the user excluded.
         sidecar_items = _latest_check_items(runs_dir, cat)
         if not sidecar_items:
+            per_category[cat] = NEEDS_CHECK
             continue
         inclusion: list[str] = []
         for item in sidecar_items:
