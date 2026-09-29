@@ -12,6 +12,11 @@ Env knobs read by the fake softwareupdate (all optional):
                                 successful install (install "did not take")
     FAKE_SU_LIST_FAIL_AFTER_INSTALL=1   ``-l`` exits 1 once any install ran
     FAKE_SU_LIST_FAIL=1         ``-l`` always exits 1
+    state/garbage_after_install (file)  ``-l`` prints unparseable text once any
+                                install ran
+    FAKE_SU_SNAPSHOT_DIR        dir to search for */apply__softwareupdate.json;
+                                the first ``-i`` copies it to state/snapshot.json
+                                (proves what was on disk BEFORE the first install)
 """
 from __future__ import annotations
 
@@ -48,6 +53,8 @@ if args[:1] in (["-l"], ["--list"]):
     installs = [l for l in lines("installs.log") if l]
     if installs and os.environ.get("FAKE_SU_LIST_FAIL_AFTER_INSTALL") == "1":
         sys.stderr.write("broken after install\n"); sys.exit(1)
+    if installs and os.path.exists(os.path.join(state, "garbage_after_install")):
+        print("Software Update Tool\n\nunexpected output"); sys.exit(0)
     installed = set(l for l in lines("installed.txt") if l)
     text = open(os.path.join(state, "listing.txt")).read()
     out, keep = [], True
@@ -59,6 +66,11 @@ if args[:1] in (["-l"], ["--list"]):
             keep = label not in installed
         if keep:
             out.append(line)
+    had_blocks = any(l.startswith("* ") for l in text.split("\n"))
+    if had_blocks and not any(l.startswith("* ") for l in out):
+        # like the real tool once nothing is left
+        sys.stdout.write("Software Update Tool\n\nFinding available software\nNo new software available.\n")
+        sys.exit(0)
     sys.stdout.write("\n".join(out))
     sys.exit(0)
 if args[:1] == ["-i"]:
@@ -67,6 +79,14 @@ if args[:1] == ["-i"]:
         if a.startswith("-"):
             break
         labels.append(a)
+    snap_dir = os.environ.get("FAKE_SU_SNAPSHOT_DIR")
+    if snap_dir and not os.path.exists(os.path.join(state, "snapshot.json")):
+        import glob, shutil
+        found = glob.glob(os.path.join(snap_dir, "*", "apply__softwareupdate.json"))
+        if found:
+            shutil.copy(found[0], os.path.join(state, "snapshot.json"))
+        else:
+            open(os.path.join(state, "snapshot.json"), "w").write("MISSING")
     append("installs.log", "|".join(args))
     if any(l in envlist("FAKE_SU_FAIL_LABELS") for l in labels):
         sys.stderr.write("install failed\n"); sys.exit(1)

@@ -322,3 +322,30 @@ def _minimal_sidecar(phase: Phase, run_id):
                     "skipped": 0, "planned": 0, "partial": 0},
         "items": [], "messages": [],
     }
+
+
+# ── phase timeout (large OS installs must not be SIGTERMed mid-way) ─────────
+
+def test_default_phase_timeout_is_four_hours(monkeypatch):
+    monkeypatch.delenv("ASCENDO_SOFTWAREUPDATE_TIMEOUT", raising=False)
+    assert SoftwareUpdateManager.DEFAULT_TIMEOUT_SEC == 4 * 3600
+    assert _make_manager()._timeout_sec == 14400
+
+
+def test_phase_timeout_env_override(monkeypatch):
+    monkeypatch.setenv("ASCENDO_SOFTWAREUPDATE_TIMEOUT", "7200")
+    assert _make_manager()._timeout_sec == 7200
+
+
+@pytest.mark.parametrize("bad", ["", "abc", "0", "-5"])
+def test_phase_timeout_invalid_env_falls_back_to_default(monkeypatch, bad):
+    monkeypatch.setenv("ASCENDO_SOFTWAREUPDATE_TIMEOUT", bad)
+    assert _make_manager()._timeout_sec == 14400
+
+
+def test_explicit_timeout_argument_beats_env(monkeypatch):
+    monkeypatch.setenv("ASCENDO_SOFTWAREUPDATE_TIMEOUT", "7200")
+    m = SoftwareUpdateManager(scripts_dir=ADAPTER_ROOT / "scripts",
+                              lib_dir=ADAPTER_ROOT / "lib",
+                              elevation=_FakeElevation(), timeout_sec=99)
+    assert m._timeout_sec == 99

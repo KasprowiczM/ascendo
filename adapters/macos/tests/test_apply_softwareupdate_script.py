@@ -12,6 +12,7 @@ deferred under the safe profile.
 """
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -155,7 +156,12 @@ def test_restart_required_exits_75(tmp_path):
     res, sc = _run(ctx, tmp_path)
     assert res.returncode == 75, res.stderr
     assert sc.needs_reboot is True
-    assert set(_status(sc).values()) == {"success"}
+    # Non-restart label: remeasured => success. Restart label: staged only =>
+    # triggered (never success without a post-action measurement).
+    assert _status(sc) == {"Safari17.5-17.5": "success",
+                           "macOS Sonoma 14.7.1-23H311": "triggered"}
+    assert any("macOS Sonoma 14.7.1-23H311: staged with -R, completes after reboot" in m.text
+               for m in sc.messages)
 
 
 def test_restart_labels_batched_in_one_call_last(tmp_path):
@@ -169,6 +175,8 @@ def test_restart_labels_batched_in_one_call_last(tmp_path):
         f"-i|{TAHOE}|Firmware Update-1.0|-R|--verbose|--include-config-data",
     ]
     assert sc.needs_reboot is True
+    assert _status(sc) == {"Safari17.5-17.5": "success", TAHOE: "triggered",
+                           "Firmware Update-1.0": "triggered"}
 
 
 def test_safe_profile_defers_restart_labels_even_when_pinned(tmp_path):
@@ -232,6 +240,7 @@ def test_major_installed_only_with_allow_flag_and_keeps_R(tmp_path):
     res, sc = _run(ctx, tmp_path, "--filter", MAJOR_LABEL)
     assert res.returncode == 75, res.stderr
     assert ctx["installs"]() == [f"-i|{MAJOR_LABEL}|-R|--verbose|--include-config-data"]
+    assert _status(sc) == {MAJOR_LABEL: "triggered"}
 
 
 # -- selection / labels with spaces ------------------------------------------------
@@ -325,3 +334,56 @@ def test_restart_batch_failure_is_failed_no_reboot(tmp_path):
     assert st[TAHOE] == "failed" and st["Firmware Update-1.0"] == "failed"
     assert st["Safari17.5-17.5"] == "success"
     assert sc.needs_reboot in (False, None)
+
+
+# -- fail-safe paths ---------------------------------------------------------------
+
+
+def test_unknown_installed_os_blocks_os_updates_with_distinct_warning(tmp_path):
+    ctx = su_env(tmp_path, "mixed-with-major.txt", cur_os="")
+    res, sc = _run(ctx, tmp_path)
+    assert res.returncode == 0, res.stderr
+    assert ctx["installs"]() == [f"-i|{SAFARI}|-R|--verbose|--include-config-data"]
+    st = _status(sc)
+    assert st[TAHOE] == "skipped" and st[MAJOR_LABEL] == "skipped" and st[SAFARI] == "success"
+    text = " ".join(m.text for m in sc.messages)
+    assert "installed macOS version unknown; OS updates blocked" in text
+    assert "major macOS upgrade" not in text and "cur=?" not in text
+
+
+def test_unknown_installed_os_blocks_even_with_allow_major_flag(tmp_path):
+    ctx = su_env(tmp_path, "mixed-with-major.txt", cur_os="", ASCENDO_ALLOW_MAJOR_UPGRADE="1")
+    res, sc = _run(ctx, tmp_path, "--filter", MAJOR_LABEL, "--filter", TAHOE)
+    assert ctx["installs"]() == []
+    assert set(_status(sc).values()) == {"skipped"}
+
+
+def test_planned_work_is_on_disk_before_the_first_install(tmp_path):
+    out = tmp_path / "out"
+    ctx = su_env(tmp_path, "incremental-updates.txt", FAKE_SU_SNAPSHOT_DIR=str(out))
+    res, sc = _run(ctx, tmp_path)
+    assert res.returncode == 0, res.stderr
+    snap = ctx["state"] / "snapshot.json"
+    assert snap.exists() and snap.read_text() != "MISSING", "no sidecar on disk at first install"
+    data = json.loads(snap.read_text())
+    assert {i["id"]: i["status"] for i in data["items"]} == {
+        "Safari17.4-17.4": "planned", "XProtectPlistConfigData_10_15-2174": "planned"}
+
+
+def test_unparseable_nonempty_listing_is_unknown_not_no_updates(tmp_path):
+    ctx = su_env(tmp_path, listing_text="Software Update Tool\n\nAktualizacje: brak danych\n")
+    res, sc = _run(ctx, tmp_path)
+    assert res.returncode == 0, res.stderr
+    assert ctx["installs"]() == [] and _sudo_lines(ctx) == []
+    assert _status(sc) == {"softwareupdate:list-unknown": "skipped"}
+    assert any("could not be parsed" in m.text and "unknown" in m.text for m in sc.messages)
+
+
+def test_remeasure_unparseable_listing_is_unknown_never_success(tmp_path):
+    ctx = su_env(tmp_path, "incremental-updates.txt")
+    # After the first install the fake serves garbage instead of a listing.
+    (ctx["state"] / "garbage_after_install").write_text("1")
+    res, sc = _run(ctx, tmp_path)
+    assert res.returncode == 0, res.stderr
+    assert set(_status(sc).values()) == {"skipped"}
+    assert any("unknown" in m.text for m in sc.messages)

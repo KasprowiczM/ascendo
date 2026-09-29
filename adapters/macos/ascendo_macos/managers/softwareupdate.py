@@ -59,9 +59,12 @@ class SoftwareUpdateManager(IPackageManager):
                      password is cached and to retrieve the SUDO_ASKPASS
                      helper path for the apply phase.
         bash_path:   Optional override for bash binary.
-        timeout_sec: Per-phase timeout. Default 1800 (30 min) — matches mas.
-                     Real-world `softwareupdate -i ... -R` can run 5-20 min
-                     for major OS updates. Apply may reboot mid-run.
+        timeout_sec: Per-phase timeout. Default 14400 (4 h): a large macOS
+                     install can run for well over an hour and must not be
+                     SIGTERMed mid-way. Override with the
+                     ``ASCENDO_SOFTWAREUPDATE_TIMEOUT`` env var (seconds);
+                     an explicit ``timeout_sec`` argument wins over both.
+                     Apply may reboot mid-run.
     """
 
     SCRIPT_BY_PHASE: ClassVar[dict[Phase, str]] = {
@@ -74,7 +77,25 @@ class SoftwareUpdateManager(IPackageManager):
     # Only apply acts on --filter (a comma-separated list of update LABELS;
     # check/plan/verify/cleanup enumerate everything).
     FILTER_PHASES: ClassVar[frozenset[Phase]] = frozenset({Phase.APPLY})
-    DEFAULT_TIMEOUT_SEC: ClassVar[int] = 1800
+    DEFAULT_TIMEOUT_SEC: ClassVar[int] = 14400
+    TIMEOUT_ENV: ClassVar[str] = "ASCENDO_SOFTWAREUPDATE_TIMEOUT"
+
+    @classmethod
+    def _resolve_timeout(cls, explicit: int | None) -> int:
+        """explicit arg > env override (positive integer seconds) > default."""
+        if explicit is not None:
+            return explicit
+        raw = os.environ.get(cls.TIMEOUT_ENV, "").strip()
+        if raw:
+            try:
+                value = int(raw)
+            except ValueError:
+                value = 0
+            if value > 0:
+                return value
+            _log.warning("ignoring invalid %s=%r (need a positive integer of seconds)",
+                         cls.TIMEOUT_ENV, raw)
+        return cls.DEFAULT_TIMEOUT_SEC
 
     def __init__(
         self,
@@ -83,13 +104,13 @@ class SoftwareUpdateManager(IPackageManager):
         lib_dir: Path,
         elevation: MacElevation,
         bash_path: str | None = None,
-        timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+        timeout_sec: int | None = None,
     ) -> None:
         self._scripts_dir = Path(scripts_dir)
         self._lib_dir = Path(lib_dir)
         self._elevation: MacElevation = elevation
         self._bash_override = bash_path
-        self._timeout_sec = timeout_sec
+        self._timeout_sec = self._resolve_timeout(timeout_sec)
         # Test seam: populated before each _run_streaming call so tests can
         # inspect the env that would be passed to the child process.
         self._last_env_for_test: dict[str, str] = {}

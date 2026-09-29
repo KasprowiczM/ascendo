@@ -105,6 +105,14 @@ SU_RECORDS="$(ascendo_su_records "$SU_OUT" "$CUR_OS")" || {
     exit 30
 }
 
+# A non-empty listing with no parseable record (and no "No new software
+# available") is UNKNOWN state, not "nothing to update".
+if ascendo_su_listing_unparseable "$SU_OUT" "$SU_RECORDS"; then
+    json_add_message "warn" "softwareupdate -l returned a listing that could not be parsed; pending update state unknown"
+    json_add_item "softwareupdate:list-unknown" "" "" "skipped" "softwareupdate"
+    exit 0
+fi
+
 NEEDS_REBOOT=0
 ascendo_su_emit_pending "$SU_RECORDS" "$CUR_OS"
 

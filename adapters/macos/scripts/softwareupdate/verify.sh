@@ -3,10 +3,11 @@
 # adapters/macos/scripts/softwareupdate/verify.sh -- read-only OS-update verify phase
 # =============================================================================
 # Reads sibling apply__softwareupdate.json, re-runs softwareupdate -l, and for
-# each apply-success item checks whether the same Label still appears in the
-# output. If it does, the update is still pending -> verify failed (except a
-# restart update while the apply run flagged needs_reboot: `triggered`, it is
-# applied on restart). If not, the update is confirmed installed -> success.
+# each apply success/triggered item checks whether the same Label still appears
+# in the output. If it does, the update is still pending -> verify failed
+# (except a restart update while the apply run flagged needs_reboot:
+# `triggered`, it completes after the reboot). If not, the update is confirmed
+# installed -> success.
 # If `softwareupdate -l` itself fails/times out the state is unknown ->
 # `skipped` with a reason (never success).
 #
@@ -96,11 +97,12 @@ if [ ! -f "$APPLY_SIDECAR" ]; then
     exit 0
 fi
 
-# -- extract apply success items (ids where status == "success") ---------------
-APPLY_SUCCESS_IDS="$(jq -r '.items[]? | select(.status=="success") | .id' "$APPLY_SIDECAR" 2>/dev/null)"
+# -- extract apply items to verify: status success OR triggered ---------------
+# (`triggered` = restart label staged with -R; it completes after the reboot.)
+APPLY_SUCCESS_IDS="$(jq -r '.items[]? | select(.status=="success" or .status=="triggered") | .id' "$APPLY_SIDECAR" 2>/dev/null)"
 
 if [ -z "$APPLY_SUCCESS_IDS" ]; then
-    json_add_message "info" "No successful apply items found in apply__softwareupdate.json; nothing to verify."
+    json_add_message "info" "No successful or triggered apply items found in apply__softwareupdate.json; nothing to verify."
     exit 0
 fi
 
@@ -121,7 +123,10 @@ if [ "$SU_RC" -ne 0 ]; then
 else
     CUR_OS="$(ascendo_su_current_os)"
     if SU_RECORDS="$(ascendo_su_records "$SU_OUT" "$CUR_OS")"; then
-        if [ -n "$SU_RECORDS" ]; then
+        if ascendo_su_listing_unparseable "$SU_OUT" "$SU_RECORDS"; then
+            _pending_ok=0
+            json_add_message "warn" "softwareupdate -l returned a listing that could not be parsed during verify; post-apply state unknown"
+        elif [ -n "$SU_RECORDS" ]; then
             while IFS="$ASCENDO_SU_US" read -r _pk _plabel _ptitle _pver _prestart _prec; do
                 [ -n "$_plabel" ] || continue
                 STILL_PENDING="${STILL_PENDING}${STILL_PENDING:+
@@ -155,11 +160,15 @@ while IFS= read -r _id; do
     RESOLVED="$(jq -r --arg id "$_id" \
         '.items[]? | select(.id==$id) | (.resolved_version // .target_version // "")' \
         "$APPLY_SIDECAR" 2>/dev/null | head -1)"
+    APPLY_STATUS="$(jq -r --arg id "$_id" \
+        '[.items[]? | select(.id==$id) | .status][0] // ""' "$APPLY_SIDECAR" 2>/dev/null)"
     if [ "$_pending_ok" -eq 0 ]; then
         json_add_item "$_id" "" "$RESOLVED" "skipped" "softwareupdate"
     elif _list_has "$STILL_PENDING" "$_id"; then
-        if [ "$APPLY_NEEDS_REBOOT" = "true" ] && _list_has "$STILL_RESTART" "$_id"; then
-            # A restart update stays listed until the reboot: not a failure.
+        if [ "$APPLY_NEEDS_REBOOT" = "true" ] \
+           && { [ "$APPLY_STATUS" = "triggered" ] || _list_has "$STILL_RESTART" "$_id"; }; then
+            # A staged restart update stays listed until the reboot: not a
+            # failure, and not yet a success either.
             json_add_item "$_id" "" "$RESOLVED" "triggered" "softwareupdate"
             json_add_message "info" "${_id}: still listed -- it is applied on restart (reboot required)"
         else

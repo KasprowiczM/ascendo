@@ -17,10 +17,11 @@ KIND is ``SAME`` (an update for the installed macOS major release), ``OTHER``
 (an upgrade to a newer macOS major release; Ascendo never installs these
 automatically).
 
-Fail-safe deviation from the original: when the installed macOS version cannot
-be parsed, every OS-type update is reported ``MAJOR`` (blocked) instead of
-``same_major``, so a failed ``sw_vers`` can never turn a major upgrade into an
-"ordinary" update.
+Fail-safe deviations from the original: when the installed macOS version cannot
+be parsed, or an OS-type update's own major cannot be determined, that update is
+reported ``MAJOR`` (blocked) instead of ``same_major``, so neither a failed
+``sw_vers`` nor an odd listing can turn a major upgrade into an "ordinary"
+update.
 
 The caller must run ``softwareupdate`` with ``LANG=C LC_ALL=C``: the regexes
 below match the English field names.
@@ -163,7 +164,9 @@ def classify_updates(
                     item_major = int(m.group(1))
                     break
 
-        if item_major is not None and item_major > cur_major:
+        if item_major is None or item_major > cur_major:
+            # Fail safe: an OS update whose own major cannot be determined is
+            # treated like an unknown installed version -- never routine.
             classified["major"].append(it)
         else:
             classified["same_major"].append(it)

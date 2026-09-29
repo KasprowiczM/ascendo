@@ -28,7 +28,8 @@
 #   * updates are classified by su_classify.py against `sw_vers`:
 #       SAME/OTHER -> eligible; MAJOR (newer macOS release) -> NEVER installed,
 #       item `skipped` + ASCENDO-ACTION-REQUIRED reason=major_upgrade, unless
-#       ASCENDO_ALLOW_MAJOR_UPGRADE=1.
+#       ASCENDO_ALLOW_MAJOR_UPGRADE=1. If `sw_vers` fails every OS update is
+#       blocked ("installed macOS version unknown"), even with the allow flag.
 #   * non-restart labels: one `sudo softwareupdate -i "<label>" -R --verbose
 #     --include-config-data` call PER label, first; then a post-install
 #     `-l` remeasure decides success (still listed -> failed; `-l` failed ->
@@ -46,7 +47,9 @@
 #   and JSON_FINALIZED=1 (EXIT trap becomes a no-op), so it survives a restart
 #   that kills this process. If the process survives (softwareupdate -R
 #   normally restarts AFTER it exits) the true outcome is written over it:
-#   rc 0 -> `success` (staged; applied on restart), else `failed`.
+#   rc 0 -> `triggered` ("staged with -R, completes after reboot" -- restart
+#   updates stay listed until the reboot, so success cannot be measured here;
+#   verify.sh promotes it to `success` once the label is gone), else `failed`.
 #
 # Exit codes (per docs/agents/contract.md):
 #   0  success (or nothing eligible: everything skipped)
@@ -178,6 +181,14 @@ SU_RECORDS="$(ascendo_su_records "$SU_OUT" "$CUR_OS")" || {
     exit 30
 }
 
+# A non-empty listing that yields no record (and does not say "No new software
+# available") is UNKNOWN state: report it, install nothing.
+if ascendo_su_listing_unparseable "$SU_OUT" "$SU_RECORDS"; then
+    json_add_message "warn" "softwareupdate -l returned a listing that could not be parsed; pending update state unknown -- nothing installed"
+    json_add_item "softwareupdate:list-unknown" "" "" "skipped" "softwareupdate"
+    exit 0
+fi
+
 # Empty case: nothing to upgrade. Exit cleanly with zero items.
 if [ -z "$SU_RECORDS" ]; then
     json_add_message "info" "softwareupdate -l reports no pending updates"
@@ -236,9 +247,9 @@ while IFS="$US" read -r _kind _label _title _ver _restart _recommended; do
 
     if [ "$_kind" = "MAJOR" ]; then
         _is_restart=1     # a macOS upgrade always restarts
-        if ! ascendo_su_major_allowed; then
+        if ascendo_su_blocked "$_kind" "$CUR_OS"; then
             _res_add "$_label" "$CUR_OS" "$_ver" "skipped"
-            _msg_add "warn" "${_label}: skipped -- major macOS upgrade is never installed automatically | $(ascendo_action_required_token major_upgrade "$CUR_OS" "$_ver")"
+            _msg_add "warn" "$(ascendo_su_blocked_message "$_label" "$CUR_OS" "$_ver")"
             continue
         fi
     fi
@@ -334,7 +345,11 @@ _count_lines() { [ -n "$1" ] && printf '%s\n' "$1" | wc -l | tr -d ' ' || echo 0
 _total_labels=$(( $(_count_lines "$NR_TODO") + $(_count_lines "$RS_TODO") ))
 _stream_progress 5 "softwareupdate apply: $_total_labels update(s)"
 
-_su_flush     # everything eligible on disk as `planned` before the first install
+# Everything eligible on disk as `planned` BEFORE the first install (a crash /
+# kill mid-install then leaves a truthful sidecar). The next _su_flush re-arms
+# the EXIT trap through json_init.
+_su_flush
+json_save "$OUTPUT_DIR"
 
 # 1. Non-restart labels: ONE install call per label, each with -R. stdin is
 #    detached so an install can never swallow the label list being iterated.
@@ -370,6 +385,10 @@ if [ -n "$NR_AWAIT" ]; then
     _still=""
     if [ "$_known" -eq 1 ]; then
         _post_recs="$(ascendo_su_records "$SU_OUT" "$CUR_OS")" || _known=0
+        if [ "$_known" -eq 1 ] && ascendo_su_listing_unparseable "$SU_OUT" "$_post_recs"; then
+            _known=0      # garbage listing is not proof the label is gone
+            SU_RC="unparseable"
+        fi
     fi
     if [ "$_known" -eq 1 ] && [ -n "$_post_recs" ]; then
         while IFS="$US" read -r _pk _plabel _rest; do
@@ -412,12 +431,14 @@ if [ -n "$RS_TODO" ]; then
 
     # The process survived softwareupdate -R (it normally restarts AFTER we
     # exit): record the true outcome. Restart updates stay listed until the
-    # reboot, so no remeasure is possible here -- rc 0 means "staged".
+    # reboot, so no post-action measurement is possible here: rc 0 means only
+    # "staged", reported as `triggered` (never `success`). verify.sh upgrades it
+    # to `success` once the label is gone from `softwareupdate -l`.
     while IFS="$US" read -r _label _ver; do
         [ -n "$_label" ] || continue
         if [ "$_RC" -eq 0 ]; then
-            _res_add "$_label" "$_ver" "$_ver" "success"
-            _msg_add "info" "${_label}: staged with -R; it is applied on restart"
+            _res_add "$_label" "$_ver" "$_ver" "triggered"
+            _msg_add "info" "${_label}: staged with -R, completes after reboot"
         else
             _res_add "$_label" "$_ver" "$_ver" "failed"
             _msg_add "error" "${_label}: softwareupdate -i failed (rc=${_RC})"

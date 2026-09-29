@@ -67,6 +67,16 @@ def test_os_major_falls_back_to_title_when_version_missing():
     assert su_classify.classify_updates(items, "15.0")["same_major"][0]["label"] == "macOS Sequoia 15.1-24B83"
 
 
+def test_os_item_with_undeterminable_major_fails_safe_to_major():
+    text = ("* Label: macOS Mystery-1\n"
+            "\tTitle: macOS Mystery, Size: 1K, Recommended: YES, Action: restart,\n")
+    items = su_classify.parse_softwareupdate_list(text)
+    assert items[0]["version"] == ""
+    cl = su_classify.classify_updates(items, "26.6.2")
+    assert [x["label"] for x in cl["major"]] == ["macOS Mystery-1"]
+    assert cl["same_major"] == []
+
+
 def test_cli_records_keep_empty_fields_and_order():
     text = ("* Label: Weird Thing-1\n\tTitle: Weird, Size: 1K, Recommended: NO,\n" +
             MIXED.split("software:\n", 1)[1])
@@ -151,20 +161,22 @@ def test_check_major_planned_when_allowed(tmp_path):
     assert {i.id: i.status.value for i in sc.items}["macOS 27-26A428"] == "planned"
 
 
-def _apply_sidecar(out: Path, rid: str, ids: list, *, needs_reboot: bool = False) -> None:
+def _apply_sidecar(out: Path, rid: str, ids: list, *, needs_reboot: bool = False,
+                   status: str = "success") -> None:
     d = out / rid
     d.mkdir(parents=True, exist_ok=True)
     (d / "apply__softwareupdate.json").write_text(json.dumps({
         "schema": "ascendo/v1", "phase": "apply", "category": "softwareupdate",
         "needs_reboot": needs_reboot,
-        "items": [{"id": i, "status": "success", "resolved_version": "1.0"} for i in ids],
+        "items": [{"id": i, "status": status, "resolved_version": "1.0"} for i in ids],
     }))
 
 
-def _verify(ctx: dict, tmp_path: Path, ids: list, *, needs_reboot: bool = False):
+def _verify(ctx: dict, tmp_path: Path, ids: list, *, needs_reboot: bool = False,
+            status: str = "success"):
     out = tmp_path / "out"
     rid = str(uuid.uuid4())
-    _apply_sidecar(out, rid, ids, needs_reboot=needs_reboot)
+    _apply_sidecar(out, rid, ids, needs_reboot=needs_reboot, status=status)
     res = subprocess.run(
         ["bash", str(SCRIPTS / "verify.sh"), "--run-id", rid, "--trigger", "cli",
          "--profile", "default", "--output-dir", str(out)],
@@ -196,3 +208,56 @@ def test_verify_list_failure_is_unknown_skipped_never_success(tmp_path):
     sc = _verify(ctx, tmp_path, ["Safari17.4-17.4"])
     assert {i.id: i.status.value for i in sc.items} == {"Safari17.4-17.4": "skipped"}
     assert any("unknown" in m.text for m in sc.messages)
+
+
+def test_verify_evaluates_triggered_apply_items_still_listed_stays_triggered(tmp_path):
+    ctx = su_env(tmp_path, "mixed-with-major.txt")
+    sc = _verify(ctx, tmp_path, ["macOS Tahoe 26.7-25G229"], needs_reboot=True,
+                 status="triggered")
+    assert {i.id: i.status.value for i in sc.items} == {"macOS Tahoe 26.7-25G229": "triggered"}
+
+
+def test_verify_triggered_apply_item_gone_after_reboot_is_success(tmp_path):
+    ctx = su_env(tmp_path, "no-updates.txt")
+    sc = _verify(ctx, tmp_path, ["macOS Tahoe 26.7-25G229"], needs_reboot=True,
+                 status="triggered")
+    assert {i.id: i.status.value for i in sc.items} == {"macOS Tahoe 26.7-25G229": "success"}
+
+
+def test_verify_triggered_item_list_failure_is_unknown(tmp_path):
+    ctx = su_env(tmp_path, "no-updates.txt", FAKE_SU_LIST_FAIL="1")
+    sc = _verify(ctx, tmp_path, ["macOS Tahoe 26.7-25G229"], needs_reboot=True,
+                 status="triggered")
+    assert {i.id: i.status.value for i in sc.items} == {"macOS Tahoe 26.7-25G229": "skipped"}
+
+
+_GARBAGE = "Software Update Tool\n\nunexpected output that is not a listing\n"
+
+
+@pytest.mark.parametrize("script", ["check.sh", "plan.sh"])
+def test_check_plan_unparseable_listing_is_unknown_not_empty(tmp_path, script):
+    ctx = su_env(tmp_path, listing_text=_GARBAGE)
+    res, _, _, sc = _run(script, ctx, tmp_path)
+    assert res.returncode == 0, res.stderr
+    assert {i.id: i.status.value for i in sc.items} == {"softwareupdate:list-unknown": "skipped"}
+    assert any("could not be parsed" in m.text for m in sc.messages)
+
+
+def test_verify_unparseable_listing_is_unknown_skipped(tmp_path):
+    ctx = su_env(tmp_path, listing_text=_GARBAGE)
+    sc = _verify(ctx, tmp_path, ["Safari17.4-17.4"])
+    assert {i.id: i.status.value for i in sc.items} == {"Safari17.4-17.4": "skipped"}
+
+
+def test_check_no_new_software_still_means_no_updates(tmp_path):
+    ctx = su_env(tmp_path, "no-updates.txt")
+    res, _, _, sc = _run("check.sh", ctx, tmp_path)
+    assert sc.items == [] and sc.status.value == "success"
+
+
+def test_check_unknown_os_uses_distinct_warning(tmp_path):
+    ctx = su_env(tmp_path, "mixed-with-major.txt", cur_os="")
+    res, _, _, sc = _run("check.sh", ctx, tmp_path)
+    text = " ".join(m.text for m in sc.messages)
+    assert "installed macOS version unknown; OS updates blocked" in text
+    assert "major macOS upgrade" not in text

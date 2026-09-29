@@ -8,7 +8,7 @@ is the legacy `D:\Dev_Env\Ascendo` repository, refactored to the
 
 ## Supported categories (planned)
 
-- `system` — macOS system updates via `softwareupdate -i "<label>" -R` per label (CRITICAL `-R` flag; never `-ia`; a major macOS upgrade is never installed unless `ASCENDO_ALLOW_MAJOR_UPGRADE=1`; restart labels are batched last and deferred under the `safe` profile)
+- `system` — macOS system updates via `softwareupdate -i "<label>" -R` per label (CRITICAL `-R` flag; never `-ia`; a major macOS upgrade is never installed unless `ASCENDO_ALLOW_MAJOR_UPGRADE=1`; restart labels are batched last, reported `triggered` until verify confirms them after the reboot, and deferred under the `safe` profile)
 - `appstore` — Mac App Store via `mas upgrade` (sudo required, CVE-2025-43411)
 - `internet_apps` — DMG / Keystone / Sparkle / direct URL apps (refactored from monolithic update_internet_apps.sh)
 - `brew` — Homebrew (formulas + casks)
