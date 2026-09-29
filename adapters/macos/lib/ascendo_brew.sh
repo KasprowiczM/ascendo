@@ -17,12 +17,15 @@
 #     ascendo_brew_parse_outdated <json_file_or_dash> <formula|cask>
 #                                          -- emit CSV rows: id,current_version,target_version
 #     ascendo_brew_load_cask_facts <token...>
-#                                          -- one batched `brew info --json=v2 --cask` -> facts
+#                                          -- one batched `brew info --json=v2 --cask` (bounded by
+#                                             ASCENDO_BREW_INFO_TIMEOUT, default 120 s) -> facts
 #                                             (targets, quit ids, sudo flag, recorded version)
 #                                             + orphan set, via brew_casks.py
 #     ascendo_brew_prepare_cask_facts <outdated_json> [all]
 #                                          -- load facts for the outdated casks (and, with
 #                                             `all`, every installed cask)
+#     ascendo_brew_warn_missing_cask_facts <outdated_json>
+#                                          -- CASK_FACTS_UNAVAILABLE warn per outdated cask without facts
 #     ascendo_brew_cask_app_name <cask_token>
 #                                          -- LAST-RESORT table: bundle name (e.g. "Slack") or empty
 #     ascendo_brew_cask_app_paths <cask_token>
@@ -82,7 +85,7 @@ _ASCENDO_BREW_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Seconds each `brew info` (facts) call may take before it is killed, so N
 # sequential per-token fallbacks cannot hang a phase. ASCENDO_BREW_INFO_TIMEOUT overrides.
 _ascendo_brew_info() {
-    ascendo_run_with_timeout "${ASCENDO_BREW_INFO_TIMEOUT:-60}" brew info --json=v2 --cask "$@" 2>/dev/null
+    ascendo_run_with_timeout "${ASCENDO_BREW_INFO_TIMEOUT:-120}" brew info --json=v2 --cask "$@" 2>/dev/null
 }
 
 # Run the pure cask-facts module (system python 3.9 is enough).
@@ -426,6 +429,29 @@ EOF_TOK
         ASCENDO_BREW_ORPHANS=""
         ASCENDO_BREW_FACTS_LOADED=1
     fi
+    ascendo_brew_warn_missing_cask_facts "$file"
+    return 0
+}
+
+# Make a facts-load failure visible: one CASK_FACTS_UNAVAILABLE warn per
+# OUTDATED cask that got no facts (brew info / brew_casks.py failed or timed
+# out). Without facts the running-app probe falls back to the built-in table
+# (apply skips the cask when even that is empty), the downgrade/orphan guard
+# cannot use the cask's targets, and the cask is assumed NOT to need admin.
+# No-op when ascendo_json.sh is not loaded.
+ascendo_brew_warn_missing_cask_facts() {
+    local file="$1" t
+    command -v json_add_message >/dev/null 2>&1 || return 0
+    while IFS= read -r t; do
+        [ -n "$t" ] || continue
+        if [ -z "$(ascendo_brew_cask_facts_line "$t")" ]; then
+            json_add_message "warn" \
+                "${t}: cask facts unavailable (brew info failed or timed out) -- running-app check falls back to the built-in table, downgrade/orphan guard uses no app targets, and admin rights are assumed not needed" \
+                "CASK_FACTS_UNAVAILABLE"
+        fi
+    done <<EOF_OUT
+$(ascendo_brew_parse_outdated "$file" cask 2>/dev/null | cut -d, -f1 | awk 'NF && !seen[$0]++')
+EOF_OUT
     return 0
 }
 

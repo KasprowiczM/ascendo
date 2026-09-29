@@ -335,12 +335,15 @@ def test_plan_and_apply_use_the_greedy_query_too(tmp_path):
     assert sb.upgrades() == ["upgrade --cask brave-browser"]
 
 
-def _verify(sb: Sandbox, applied_ids):
+def _verify(sb: Sandbox, applied_ids, targets=None):
+    """applied_ids: ids apply marked success; targets: optional {id: target_version}."""
+    targets = targets or {}
     out = sb.tmp / "out"
     rid = str(uuid.uuid4())
     (out / rid).mkdir(parents=True)
     (out / rid / "apply__brew.json").write_text(json.dumps(
-        {"items": [{"id": i, "status": "success"} for i in applied_ids]}))
+        {"items": [{"id": i, "status": "success", "target_version": targets.get(i)}
+                   for i in applied_ids]}))
     res = subprocess.run(
         ["bash", str(SCRIPTS / "verify.sh"), "--run-id", rid, "--trigger", "cli",
          "--profile", "default", "--output-dir", str(out)],
@@ -348,33 +351,56 @@ def _verify(sb: Sandbox, applied_ids):
     return res, json.loads((out / rid / "verify__brew.json").read_text())
 
 
-def test_verify_greedy_residue_is_skipped_not_success_others_still_fail(tmp_path):
-    """GC5: brew still lists the cask -> the measurement did NOT reach the target."""
+def test_verify_greedy_residue_unverified_is_skipped_others_still_fail(tmp_path):
+    """GC5: brew still lists the cask and the applied version is NOT installed -> unverified."""
     sb = Sandbox(tmp_path,
                  outdated=[outdated_entry("slack", "3", "4")],
                  greedy_outdated=[outdated_entry("brave-browser", "1.0", "2.0")],
                  installed=[("brave-browser", "1.0")])
     sb.greedy_file("brave-browser")
-    res, sc = _verify(sb, ["brave-browser", "slack", "gone-cask"])
+    res, sc = _verify(sb, ["brave-browser", "slack", "gone-cask"], {"brave-browser": "2.0"})
     items = by_id(sc)
     brave = items["brave-browser"]
     assert brave["status"] == "skipped"                       # never `success` / up_to_date
     assert (brave["current_version"], brave["target_version"]) == ("1.0", "2.0")  # measurement kept
     msg = message(sc, "CASK_GREEDY_RESIDUE")
-    assert msg["level"] == "warn" and "updates itself" in msg["text"]
+    assert msg["level"] == "warn" and "unverified" in msg["text"]
+    assert "applied version 2.0 is not installed" in msg["text"]
     assert items["slack"]["status"] == "failed"      # a normal cask still outdated = real failure
     assert items["gone-cask"]["status"] == "success"  # no longer outdated
     assert res.returncode == 1                        # only because of slack
 
 
-def test_verify_greedy_residue_alone_does_not_fail_the_phase(tmp_path):
+def test_verify_greedy_residue_without_applied_target_is_unverified(tmp_path):
     sb = Sandbox(tmp_path, greedy_outdated=[outdated_entry("brave-browser", "1.0", "2.0")],
                  installed=[("brave-browser", "1.0")])
     sb.greedy_file("brave-browser")
-    res, sc = _verify(sb, ["brave-browser"])
+    res, sc = _verify(sb, ["brave-browser"])          # apply item carries no target_version
     assert res.returncode == 0
     assert by_id(sc)["brave-browser"]["status"] == "skipped"
     assert sc["status"] != "failed"
+
+
+def test_verify_greedy_residue_is_success_when_applied_version_is_measured_installed(tmp_path):
+    """brew still lists it (auto_updates/:latest), but installed_versions contains what apply installed."""
+    still_listed = {"name": ["brave-browser"], "installed_versions": ["2.0"], "current_version": "2.1"}
+    sb = Sandbox(tmp_path, greedy_outdated=[still_listed], installed=[("brave-browser", "2.0")])
+    sb.greedy_file("brave-browser")
+    res, sc = _verify(sb, ["brave-browser"], {"brave-browser": "2.0"})
+    assert res.returncode == 0, res.stderr
+    brave = by_id(sc)["brave-browser"]
+    assert brave["status"] == "success"
+    assert brave["current_version"] == "2.0"
+    msg = message(sc, "CASK_GREEDY_RESIDUE")
+    assert msg["level"] == "info" and "2.0 is installed (measured)" in msg["text"]
+
+    # string-shaped installed_versions works too
+    string_shape = Sandbox(tmp_path / "s", greedy_outdated=[
+        {"name": "brave-browser", "installed_versions": "2.0", "current_version": "2.1"}],
+        installed=[("brave-browser", "2.0")])
+    string_shape.greedy_file("brave-browser")
+    _, sc2 = _verify(string_shape, ["brave-browser"], {"brave-browser": "2.0"})
+    assert by_id(sc2)["brave-browser"]["status"] == "success"
 
 
 # ── orphan casks ─────────────────────────────────────────────────────────────
@@ -633,7 +659,39 @@ def test_hanging_brew_info_is_bounded_by_the_timeout(tmp_path):
     assert elapsed < 20, f"phase took {elapsed:.1f}s: brew info must be killed at the deadline"
     assert by_id(sc)["zzz-fancy"]["status"] == "skipped"
     assert message(sc, "APP_FACTS_UNAVAILABLE")
+    assert message(sc, "CASK_FACTS_UNAVAILABLE")["text"].startswith("zzz-fancy: ")
     assert sb.upgrades() == []
+
+
+# ── facts-load failure is visible ────────────────────────────────────────────
+
+@pytest.mark.parametrize("phase", ["check", "plan", "apply"])
+def test_missing_cask_facts_emit_cask_facts_unavailable(tmp_path, phase):
+    """slack has no facts (brew info rejects it) but a table entry: the fallback is announced."""
+    sb = Sandbox(tmp_path, outdated=[outdated_entry("slack", "3", "4"), outdated_entry("zzz-fancy")],
+                 info=[FANCY], apps=["Slack.app", "Fancy Thing.app"],
+                 installed=[("slack", "3"), ("zzz-fancy", "1.0")])
+    res, sc = sb.run_phase(phase)
+    assert res.returncode == 0, res.stderr
+    msgs = [m for m in sc["messages"] if m.get("code") == "CASK_FACTS_UNAVAILABLE"]
+    assert [m["text"].split(":")[0] for m in msgs] == ["slack"]   # only the cask without facts
+    assert msgs[0]["level"] == "warn"
+    assert "built-in table" in msgs[0]["text"] and "admin rights are assumed not needed" in msgs[0]["text"]
+
+
+def test_no_cask_facts_warning_when_all_facts_load(tmp_path):
+    sb = Sandbox(tmp_path, outdated=[outdated_entry("zzz-fancy")], info=[FANCY], apps=["Fancy Thing.app"])
+    _, sc = sb.run_phase("apply")
+    assert not any(m.get("code") == "CASK_FACTS_UNAVAILABLE" for m in sc["messages"])
+
+
+def test_brew_info_timeout_defaults_to_120s_and_is_overridable():
+    text = LIB.read_text()
+    assert 'ascendo_run_with_timeout "${ASCENDO_BREW_INFO_TIMEOUT:-120}" brew info' in text
+    body = text[text.index("ascendo_brew_load_cask_facts() {"):]
+    body = body[:body.index("\n}\n")]
+    assert "brew info" not in body.replace("`brew info`", "")  # every call goes through the bounded wrapper
+    assert body.count("_ascendo_brew_info") == 2               # batched + per-token fallback
 
 
 # ── source hygiene ───────────────────────────────────────────────────────────
