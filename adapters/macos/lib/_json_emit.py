@@ -264,6 +264,11 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         status = "failed"
     elif total > 0 and skipped == total:
         status = "skipped"
+    elif args.exit_code == 10 and total == 0:
+        # Contract exit 10 = precondition failed (docs/agents/contract.md):
+        # the phase attempted nothing, e.g. the Xcode licence gate. Report
+        # `skipped`, not a misleading zero-item `success`.
+        status = "skipped"
     else:
         status = "success"
 

@@ -200,7 +200,9 @@ _apply_one() {
     if [ "$_feed" = "cask" ] && ascendo_brew_cask_app_running "$_id"; then
         _stream_progress "$_pct" "skipping $_id (app is running)"
         _stream_emit ">>> skipping $_id (cask app is running -- quit it and re-run)"
-        json_add_item "$_id" "$_current" "$_current" "skipped" "brew" "cask"
+        # Keep the candidate ($_target): apply outranks check in the inventory
+        # flush, so dropping it would hide the still-outdated cask.
+        json_add_item "$_id" "$_current" "$_target" "skipped" "brew" "cask"
         json_add_message "info" \
             "${_id}: skipped -- app in use (quit it and re-run apply to upgrade ${_current} -> ${_target}) | $(ascendo_action_required_token app_in_use "$_current" "$_target")" \
             "CASK_APP_RUNNING"

@@ -124,6 +124,10 @@ def test_running_cask_is_skipped_never_killed_and_brew_not_called(tmp_path):
 
     by_id = {i["id"]: i for i in sc["items"]}
     assert by_id["brave-browser"]["status"] == "skipped"
+    # The candidate must survive the deferral: apply outranks check in the
+    # inventory flush, so a dropped target would hide the outdated cask.
+    assert by_id["brave-browser"]["current_version"] == "1.0"
+    assert by_id["brave-browser"]["target_version"] == "2.0"
     assert by_id["slack"]["status"] == "success"
 
     # Nothing was quit or killed; brew never touched the running cask.
@@ -207,7 +211,10 @@ def test_unaccepted_licence_gates_every_phase_before_any_brew_call(tmp_path, pha
     assert env.brew_work_calls() == [], "brew must never run while the licence is unaccepted"
     assert sc["summary"]["exit_code"] == 10
     assert sc["status"] == "skipped"
-    assert [i["id"] for i in sc["items"]] == ["xcode-license"]
+    # No synthetic item: it would surface as a fake brew package in the
+    # inventory. The exit-10 / zero-item sidecar resolves to `skipped`.
+    assert sc["items"] == []
+    assert sc["summary"]["total"] == 0
     msg = next(m for m in sc["messages"] if m.get("code") == "XCODE_LICENSE")
     assert "sudo xcodebuild -license accept" in msg["text"]
     assert "reason=xcode_license" in msg["text"]
@@ -354,3 +361,39 @@ def test_run_phase_passes_askpass_env_to_child(monkeypatch, tmp_path):
         with pytest.raises(Exception):
             m.run_phase(Phase.APPLY, run, host)
     assert seen["env"]["SUDO_ASKPASS"] == "/tmp/askpass-helper.sh"
+
+
+# ── exit-10 (precondition failed) status rule in _json_emit ───────────────────
+
+def _finalize(tmp_path: Path, *, exit_code: int, add_item: bool = False) -> dict:
+    helper = ADAPTER_ROOT / "lib" / "_json_emit.py"
+    buf, out = tmp_path / "buf", tmp_path / "out.json"
+
+    def run(*args: str) -> None:
+        subprocess.run([sys.executable, str(helper), *args], check=True, capture_output=True, text=True)
+
+    run("init", "--bufdir", str(buf), "--phase", "check", "--category", "brew",
+        "--run-id", "00000000-0000-0000-0000-000000000001", "--trigger", "cli",
+        "--profile-name", "default", "--tool-name", "brew", "--tool-version", "1",
+        "--started-at", "2026-05-03T12:00:00Z", "--host-name", "h", "--host-os", "macos",
+        "--host-os-version", "14", "--host-arch", "arm64", "--host-user", "u",
+        "--host-is-elevated", "false")
+    if add_item:
+        run("add-item", "--bufdir", str(buf), "--id", "x", "--status", "up_to_date",
+            "--source-type", "brew")
+    run("finalize", "--bufdir", str(buf), "--out", str(out), "--exit-code", str(exit_code),
+        "--ended-at", "2026-05-03T12:00:01Z")
+    return json.loads(out.read_text())
+
+
+def test_exit_10_with_no_items_is_skipped_not_success(tmp_path):
+    sc = _finalize(tmp_path, exit_code=10)
+    assert sc["status"] == "skipped" and sc["summary"]["exit_code"] == 10
+    sys.path.insert(0, str(ADAPTER_ROOT.parent.parent / "core"))
+    from ascendo.models.sidecar import parse_sidecar
+    parse_sidecar(json.dumps(sc))  # zero-item skipped sidecar stays schema-valid
+
+
+def test_exit_0_with_no_items_and_exit_10_with_items_are_unchanged(tmp_path):
+    assert _finalize(tmp_path / "a", exit_code=0)["status"] == "success"
+    assert _finalize(tmp_path / "b", exit_code=10, add_item=True)["status"] == "success"

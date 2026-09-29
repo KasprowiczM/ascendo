@@ -16,8 +16,8 @@ from ascendo.orchestrator.stream_log import child_env_with_stream_log
 from ascendo.models.run import Phase, RunInfo
 from ascendo.models.sidecar import Sidecar
 from ascendo_macos.managers._filter import clean_filter, phase_of
-from ascendo_macos.managers.elevation import MacElevation
 from ascendo_macos.managers._proc import handle_phase_timeout, run_streaming
+from ascendo_macos.managers.elevation import MacElevation
 from ascendo.orchestrator.sidecar_io import (
     SidecarIOError,
     SidecarReadError,

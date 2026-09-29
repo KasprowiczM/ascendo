@@ -21,7 +21,7 @@
 #                                             (read-only probe; NEVER quits or kills anything)
 #     ascendo_brew_xcode_license_ok        -- rc 1 only when Xcode.app is selected and its
 #                                             licence is not accepted
-#     ascendo_brew_xcode_license_gate      -- emit skipped item + XCODE_LICENSE message, rc 1
+#     ascendo_brew_xcode_license_gate      -- emit XCODE_LICENSE message (no item), rc 1
 #                                             (callers: `... || exit 10`); needs ascendo_json.sh
 #     ascendo_brew_err_tail <file>         -- last stderr lines, single line, capped
 #     ascendo_brew_outdated_or_fail <out>  -- run ascendo_brew_outdated_json into <out>; on real
@@ -258,7 +258,10 @@ ascendo_brew_cask_app_running() {
     local _path _esc
     while IFS= read -r _path; do
         [ -n "$_path" ] || continue
-        # Regex-escape the path for pgrep -f (extended regex).
+        # Regex-escape the path for pgrep -f (extended regex). Inside a
+        # POSIX bracket expression (BSD sed on macOS and GNU sed alike) a
+        # backslash is a LITERAL member, not an escape: `]` must come first
+        # and `\` / `/` are listed as plain members -- do not "fix" this.
         _esc="$(printf '%s' "$_path" | sed 's/[][\.*^$+?(){}|\/]/\\&/g')"
         if pgrep -f "^${_esc}/Contents/" >/dev/null 2>&1; then
             return 0
@@ -288,14 +291,15 @@ ascendo_brew_xcode_license_ok() {
 
 # Phase-script gate: call right after the brew/jq preconditions and before
 # any brew invocation:  ascendo_brew_xcode_license_gate || exit 10
-# When the licence is not accepted it records one `skipped` item plus a
-# message carrying the XCODE_LICENSE code and the action-required token,
-# and returns 1. Requires ascendo_json.sh to be sourced.
+# When the licence is not accepted it records ONE warn message carrying the
+# XCODE_LICENSE code and the action-required token, and returns 1. It adds
+# no item (a synthetic item would show up as a fake brew package in the
+# inventory); the exit-10 / zero-item sidecar resolves to status `skipped`
+# in _json_emit.py. Requires ascendo_json.sh to be sourced.
 ascendo_brew_xcode_license_gate() {
     if ascendo_brew_xcode_license_ok; then
         return 0
     fi
-    json_add_item "xcode-license" "" "" "skipped" "brew" ""
     json_add_message "warn" \
         "xcode-license: Xcode licence has not been accepted - Homebrew cannot run. Run: sudo xcodebuild -license accept | $(ascendo_action_required_token xcode_license)" \
         "XCODE_LICENSE"
