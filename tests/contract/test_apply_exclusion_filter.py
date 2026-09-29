@@ -2,8 +2,9 @@
 
 When the SPA fires apply with no explicit ``item_filter`` and the user
 has opted out of specific packages via ``POST /apps/exclude``, the
-dashboard auto-builds an inclusion list = installed-minus-excluded by
-reading the latest check sidecar per category. This file tests
+dashboard auto-builds a per-category inclusion mapping
+``{category: installed-minus-excluded}`` by reading the latest check
+sidecar per category. This file tests
 :func:`ascendo.dashboard.routes.runs._resolve_item_filter` end-to-end
 without spinning up FastAPI.
 """
@@ -95,8 +96,8 @@ def test_apply_with_exclusion_builds_inclusion_list(
         phases=(Phase.APPLY,),
         runs_dir=tmp_path,
     )
-    assert out is not None
-    assert set(out) == {"uv", "zstd", "node", "npm"}
+    # Per-category mapping: each manager receives ONLY its own identifiers.
+    assert out == {"brew": ["uv", "zstd"], "npm": ["node", "npm"]}
 
 
 def test_apply_with_no_categories_falls_back_to_known_set(
@@ -114,7 +115,7 @@ def test_apply_with_no_categories_falls_back_to_known_set(
         phases=(Phase.APPLY,),
         runs_dir=tmp_path,
     )
-    assert out == ["uv"]
+    assert out == {"brew": ["uv"]}
 
 
 def test_enumerate_categories_picks_up_recent_sidecars(tmp_path: Path) -> None:

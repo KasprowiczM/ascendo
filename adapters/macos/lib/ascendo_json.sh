@@ -125,6 +125,39 @@ json_add_message() {
     _json_emit "${args[@]}"
 }
 
+# ascendo_action_required_token <reason> [current] [candidate]
+#   Prints the machine-readable ACTION-REQUIRED token (one line, no newline
+#   issues) that core/ascendo/orchestrator/report.py parses -- for ANY
+#   category -- into the "Action required" section of REPORT.md and the
+#   /runs/{id}/action-required endpoint.
+#
+#   Contract (keep in sync with report.ACTION_RE):
+#     token   = ASCENDO-ACTION-REQUIRED reason=<r> cur=<c> cand=<d>
+#     message = "<item id>: <human text> | <token>"      (json_add_message)
+#   * <r> is a short machine code without spaces: major_upgrade,
+#     ipad_pending, xcode_license, cask_orphan, cask_needs_admin,
+#     needs_restart, app_in_use, self_update, no_silent_path, probe_broken.
+#   * <c>/<d> are versions without spaces; "?" (default) means unknown.
+#   * The item id is everything before the first ": " of the message; the
+#     id must therefore not contain ": ".
+#
+#   Usage:
+#     json_add_message "info" \
+#         "${_id}: skipped -- app in use | $(ascendo_action_required_token app_in_use "$cur" "$cand")"
+ascendo_action_required_token() {
+    local _reason="${1:-unknown}"
+    local _cur="${2:-?}"
+    local _cand="${3:-?}"
+    # Versions never contain whitespace; collapse any that do so the
+    # \S+ parser on the other side stays deterministic.
+    _reason="$(printf '%s' "$_reason" | tr -s '[:space:]' '_')"
+    _cur="$(printf '%s' "$_cur" | tr -s '[:space:]' '_')"
+    _cand="$(printf '%s' "$_cand" | tr -s '[:space:]' '_')"
+    [ -n "$_cur" ] || _cur="?"
+    [ -n "$_cand" ] || _cand="?"
+    printf 'ASCENDO-ACTION-REQUIRED reason=%s cur=%s cand=%s' "$_reason" "$_cur" "$_cand"
+}
+
 # json_set_needs_reboot <true|false>
 json_set_needs_reboot() {
     _json_emit set-flag --bufdir "$JSON_BUFDIR" --key needs_reboot --value "$1"

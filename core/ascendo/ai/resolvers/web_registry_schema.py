@@ -94,7 +94,9 @@ def _collect_uncovered(runs_dir) -> list:
         if not run_dirs:
             return []
         latest = max(run_dirs, key=lambda d: d.stat().st_mtime)
-        return collect_action_required(latest)
+        # Action-required is category-agnostic now (macOS updates, iPad apps,
+        # casks ...); only web apps are candidates for web-registry overrides.
+        return [a for a in collect_action_required(latest) if a.category == "web"]
     except Exception:  # noqa: BLE001
         return []
 

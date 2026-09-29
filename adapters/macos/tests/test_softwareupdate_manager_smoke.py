@@ -257,10 +257,31 @@ def test_run_phase_raises_manager_error_when_no_sidecar(run_info, mac_host):
             m.run_phase(Phase.CHECK, run_info, mac_host)
 
 
-# ── --filter MVP single-label behavior ────────────────────────
+# ── --filter behavior (apply only; all labels forwarded) ──────
 
 def test_filter_passes_single_label_to_argv(run_info, mac_host):
-    """item_filter=['Safari17.4-17.4'] → --filter Safari17.4-17.4 in argv."""
+    """APPLY: item_filter=['Safari17.4-17.4'] → --filter Safari17.4-17.4 in argv."""
+    captured = {}
+
+    def fake_run_streaming(self, argv, log_path, timeout, *, env):
+        captured["argv"] = argv
+        run_id = run_info.id
+        out_dir = Path(argv[argv.index("--output-dir") + 1])
+        sidecar_path = out_dir / str(run_id) / "apply__softwareupdate.json"
+        sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+        sidecar_path.write_text(json.dumps(_minimal_sidecar(Phase.APPLY, run_id)))
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    with patch.object(SoftwareUpdateManager, "_run_streaming", fake_run_streaming):
+        m = _make_manager()
+        m.run_phase(Phase.APPLY, run_info, mac_host, item_filter=["Safari17.4-17.4"])
+    assert "--filter" in captured["argv"]
+    idx = captured["argv"].index("--filter")
+    assert captured["argv"][idx + 1] == "Safari17.4-17.4"
+
+
+def test_filter_not_sent_to_check_phase(run_info, mac_host):
+    """check.sh does not act on --filter, so the manager must not send it."""
     captured = {}
 
     def fake_run_streaming(self, argv, log_path, timeout, *, env):
@@ -275,9 +296,7 @@ def test_filter_passes_single_label_to_argv(run_info, mac_host):
     with patch.object(SoftwareUpdateManager, "_run_streaming", fake_run_streaming):
         m = _make_manager()
         m.run_phase(Phase.CHECK, run_info, mac_host, item_filter=["Safari17.4-17.4"])
-    assert "--filter" in captured["argv"]
-    idx = captured["argv"].index("--filter")
-    assert captured["argv"][idx + 1] == "Safari17.4-17.4"
+    assert "--filter" not in captured["argv"]
 
 
 # ── helpers ───────────────────────────────────────────────────

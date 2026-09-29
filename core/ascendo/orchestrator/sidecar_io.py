@@ -71,6 +71,7 @@ __all__ = [
     "SidecarLockError",
     "SidecarReadError",
     "SidecarWriteError",
+    "NON_SIDECAR_JSON",
     "detect_stale_locks",
     "list_run_sidecars",
     "read_run",
@@ -510,6 +511,11 @@ def read_sidecar(path: Path) -> Sidecar:
         raise SidecarReadError(f"could not parse {path}: {exc!r}") from exc
 
 
+# Run-directory JSON files that are NOT phase sidecars (never parse these
+# with :func:`read_sidecar`).
+NON_SIDECAR_JSON: frozenset[str] = frozenset({"run_meta.json"})
+
+
 def list_run_sidecars(run_dir: Path) -> list[Path]:
     """List sidecar JSON files in a run directory, sorted.
 
@@ -518,6 +524,8 @@ def list_run_sidecars(run_dir: Path) -> list[Path]:
         create with ``.<name>.tmp`` prefix during atomic write.
       - ``.lock`` sibling files (sidecar.json.lock).
       - ``.partial`` files (reserved for future explicit partials).
+      - Run-level metadata JSON (``run_meta.json``) that lives next to the
+        sidecars but is not one.
       - Directories.
 
     Args:
@@ -539,6 +547,8 @@ def list_run_sidecars(run_dir: Path) -> list[Path]:
         if name.endswith(".lock") or name.endswith(".partial"):
             continue
         if not name.endswith(".json"):
+            continue
+        if name in NON_SIDECAR_JSON:
             continue
         out.append(entry)
     out.sort(key=lambda p: p.name)

@@ -34,6 +34,11 @@ from ascendo.models.package import SourceType
 from ascendo.models.run import Phase, RunInfo
 from ascendo.orchestrator.stream_log import child_env_with_stream_log
 from ascendo.models.sidecar import Sidecar
+from ascendo_macos.managers._filter import (
+    clean_filter,
+    phase_of,
+    softwareupdate_filter_tokens,
+)
 from ascendo_macos.managers._proc import handle_phase_timeout, run_streaming
 from ascendo.orchestrator.sidecar_io import (
     SidecarIOError,
@@ -66,6 +71,9 @@ class SoftwareUpdateManager(IPackageManager):
         Phase.VERIFY: "softwareupdate/verify.sh",
         Phase.CLEANUP: "softwareupdate/cleanup.sh",
     }
+    # Only apply acts on --filter (a comma-separated list of update LABELS;
+    # check/plan/verify/cleanup enumerate everything).
+    FILTER_PHASES: ClassVar[frozenset[Phase]] = frozenset({Phase.APPLY})
     DEFAULT_TIMEOUT_SEC: ClassVar[int] = 1800
 
     def __init__(
@@ -138,6 +146,7 @@ class SoftwareUpdateManager(IPackageManager):
                 run=run,
                 output_dir=output_dir,
                 item_filter=item_filter,
+                phase=phase,
             )
             log_path = (
                 output_dir / str(run.id) / f"{phase.value}__softwareupdate.log"
@@ -199,6 +208,7 @@ class SoftwareUpdateManager(IPackageManager):
         run: RunInfo,
         output_dir: Path,
         item_filter: Iterable[str] | None,
+        phase: Phase | None = None,
     ) -> list[str]:
         argv: list[str] = [
             bash,
@@ -210,19 +220,16 @@ class SoftwareUpdateManager(IPackageManager):
         ]
         if run.dry_run:
             argv.append("--dry-run")
-        if item_filter is not None:
-            cleaned = [s.strip() for s in item_filter if s and isinstance(s, str) and s.strip()]
+        if phase_of(phase, script_path) in self.FILTER_PHASES:
+            cleaned = clean_filter(item_filter)
             if cleaned:
-                # softwareupdate apply.sh takes ONE label per --filter (single-label
-                # MVP per spec §4). If multiple are passed, take the first; log a
-                # warning. Future enhancement: emit multiple --filter args or
-                # iterate per-id.
-                if len(cleaned) > 1:
-                    _log.warning(
-                        "SoftwareUpdateManager: --filter MVP supports one label only; "
-                        "using %r and ignoring %d additional", cleaned[0], len(cleaned) - 1,
-                    )
-                argv.extend(["--filter", cleaned[0]])
+                # ALL label entries are forwarded (the script installs every
+                # pending label that matches any of them). App names from
+                # other categories are never labels: only label-shaped
+                # tokens are sent; if none is label-shaped the raw tokens
+                # are sent so the script selects nothing rather than
+                # degrading to "install everything".
+                argv.extend(["--filter", ",".join(softwareupdate_filter_tokens(cleaned))])
         return argv
 
     def _build_env(self, phase: Phase) -> dict[str, str]:

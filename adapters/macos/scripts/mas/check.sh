@@ -87,15 +87,11 @@ if ! mas_signed_in; then
     exit 0
 fi
 
-# -- helper: returns 0 if FILTER_CSV is empty OR id is in the CSV list --------
+# -- helper: returns 0 if FILTER_CSV is empty OR id/name is in the CSV list ---
 # Bash 3.2-safe: case glob with leading/trailing comma sentinels avoids
 # false positives from substring matches (e.g. "10" inside "1011").
 in_filter() {
-    [ -z "$FILTER_CSV" ] && return 0
-    case ",$FILTER_CSV," in
-        (*",$1,"*) return 0 ;;
-        (*) return 1 ;;
-    esac
+    mas_filter_match "$FILTER_CSV" "$1" "${2:-}"
 }
 
 # -- planned (outdated apps) ---------------------------------------------------
@@ -108,7 +104,7 @@ OUTDATED_IDS=" $(printf '%s' "$OUTDATED_JSON" | jq -r '.[].id' 2>/dev/null | tr 
 printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, .name, .current_version, .target_version] | @tsv' 2>/dev/null | \
 while IFS="$(printf '\t')" read -r _id _name _cur _tgt; do
     [ -n "$_id" ] || continue
-    if in_filter "$_id"; then
+    if in_filter "$_id" "$_name"; then
         # Use display name as id when present so the dashboard's
         # check-overlay can match against system_profiler-derived
         # inventory items keyed by display name (e.g. "OneDrive").

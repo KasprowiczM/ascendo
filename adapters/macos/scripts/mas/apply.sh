@@ -98,15 +98,11 @@ if ! mas_signed_in; then
     exit 0
 fi
 
-# -- helper: returns 0 if FILTER_CSV is empty OR id is in the CSV list --------
+# -- helper: returns 0 if FILTER_CSV is empty OR id/name is in the CSV list ---
 # Bash 3.2-safe: case glob with leading/trailing comma sentinels avoids false
 # positives from substring matches (e.g. "10" inside "1011").
 in_filter() {
-    [ -z "$FILTER_CSV" ] && return 0
-    case ",$FILTER_CSV," in
-        (*",$1,"*) return 0 ;;
-        (*) return 1 ;;
-    esac
+    mas_filter_match "$FILTER_CSV" "$1" "${2:-}"
 }
 
 # -- enumerate outdated apps ---------------------------------------------------
@@ -114,10 +110,10 @@ OUTDATED_JSON="$(mas_outdated_json)"
 
 # -- dry-run path: planned items only, never invoke sudo ----------------------
 if [ "$DRY_RUN" -eq 1 ]; then
-    printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, .current_version, .target_version] | @tsv' 2>/dev/null | \
-    while IFS="$(printf '\t')" read -r _id _cur _tgt; do
+    printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, (if (.name // "") == "" then .id else .name end), .current_version, .target_version] | @tsv' 2>/dev/null | \
+    while IFS="$(printf '\t')" read -r _id _name _cur _tgt; do
         [ -n "$_id" ] || continue
-        in_filter "$_id" || continue
+        in_filter "$_id" "$_name" || continue
         json_add_item "$_id" "$_cur" "$_tgt" "planned" "mas"
     done
     json_add_message "info" "dry-run: no real upgrades performed"
@@ -135,18 +131,18 @@ _ascendo_sudo_warm
 # Collect target ids + version pairs as space-separated strings (Bash 3.2-safe;
 # no declare -A). IDs are numeric-only so spaces are safe delimiters.
 # Use command substitution to avoid subshell variable scoping (Bash 3.2).
-TARGET_IDS="$(printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, .current_version, .target_version] | @tsv' 2>/dev/null | \
-    while IFS="$(printf '\t')" read -r _id _cur _tgt; do
+TARGET_IDS="$(printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, (if (.name // "") == "" then .id else .name end), .current_version, .target_version] | @tsv' 2>/dev/null | \
+    while IFS="$(printf '\t')" read -r _id _name _cur _tgt; do
         [ -n "$_id" ] || continue
-        in_filter "$_id" || continue
+        in_filter "$_id" "$_name" || continue
         printf '%s ' "$_id"
     done)"
 TARGET_IDS="${TARGET_IDS%% }"   # strip trailing space
 
-TARGET_PAIRS="$(printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, .current_version, .target_version] | @tsv' 2>/dev/null | \
-    while IFS="$(printf '\t')" read -r _id _cur _tgt; do
+TARGET_PAIRS="$(printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, (if (.name // "") == "" then .id else .name end), .current_version, .target_version] | @tsv' 2>/dev/null | \
+    while IFS="$(printf '\t')" read -r _id _name _cur _tgt; do
         [ -n "$_id" ] || continue
-        in_filter "$_id" || continue
+        in_filter "$_id" "$_name" || continue
         printf '%s|%s|%s ' "$_id" "$_cur" "$_tgt"
     done)"
 TARGET_PAIRS="${TARGET_PAIRS%% }"

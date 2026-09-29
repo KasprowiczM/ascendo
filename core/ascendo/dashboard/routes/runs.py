@@ -108,22 +108,54 @@ def _phases_for_request(
     return DEFAULT_PHASE_ORDER
 
 
+def _filter_identifier(category: str, item: dict) -> str | None:
+    """The identifier ``category``'s phase scripts match ``--filter`` on.
+
+    * mas: the display name (check/plan emit it as the item id; the mas
+      scripts accept a numeric id OR the name).
+    * softwareupdate: the update label (check emits the label as id/name).
+    * web: the registry slug (``web:<slug>`` in the sidecar -> ``<slug>``).
+    * everything else (brew/npm/pip/...): the item name.
+    """
+    name = item.get("name") or item.get("id")
+    if not name:
+        return None
+    name = str(name)
+    if category == "web" and name.startswith("web:"):
+        return name[len("web:"):]
+    return name
+
+
+def _is_excluded(category: str, item: dict, ident: str, excluded: set[str]) -> bool:
+    """Exclusion keys are ``"<category>:<name>"`` (SPA inventory names)."""
+    candidates = {f"{category}:{ident}"}
+    for raw in (item.get("name"), item.get("id")):
+        if raw:
+            candidates.add(f"{category}:{raw}")
+    return not candidates.isdisjoint(excluded)
+
+
 def _resolve_item_filter(
     explicit_filter: list[str] | None,
     categories: list[str] | None,
     phases: tuple[Phase, ...],
     runs_dir: Path,
-) -> list[str] | None:
-    """Auto-derive an inclusion list when the caller didn't pass one.
+) -> list[str] | dict[str, list[str]] | None:
+    """Auto-derive per-category inclusion lists from the /apps exclusions.
 
     If the SPA fires apply with no explicit ``item_filter`` and the user
     has excluded packages via ``/apps/exclude``, we materialise a
-    server-side filter = ``installed minus excluded``. This way clicking
-    "apply" on the Categories tab respects the per-package opt-out
-    without changes to the bash apply scripts.
+    server-side filter = ``installed minus excluded`` **per category**
+    (``{category: [identifiers]}``). Each category only receives the
+    identifiers its own scripts match on (see :func:`_filter_identifier`),
+    and only categories that actually have an excluded item get an entry
+    -- everything else runs unfiltered. The runner forwards each manager
+    only its own list; an **empty list** (every item of the category is
+    excluded) makes the runner skip that category's apply instead of
+    running it unfiltered.
 
     Returns ``None`` when:
-      - explicit_filter was provided (caller wins)
+      - explicit_filter was provided (caller wins; returned as a flat list)
       - no apply/cleanup phase is in scope (filter only matters for
         mutating phases; check/plan/verify list everything regardless)
       - no exclusions exist (filter would be a no-op against all items)
@@ -145,19 +177,23 @@ def _resolve_item_filter(
     if not excluded:
         return None
     # Read latest check sidecar per category to get the universe of items.
-    inclusion: list[str] = []
+    per_category: dict[str, list[str]] = {}
     cats = categories or _enumerate_known_categories(runs_dir)
     for cat in cats:
         sidecar_items = _latest_check_items(runs_dir, cat)
+        inclusion: list[str] = []
+        any_excluded = False
         for item in sidecar_items:
-            name = item.get("name") or item.get("id")
-            if not name:
+            ident = _filter_identifier(cat, item)
+            if ident is None:
                 continue
-            key = f"{cat}:{name}"
-            if key in excluded:
+            if _is_excluded(cat, item, ident, excluded):
+                any_excluded = True
                 continue
-            inclusion.append(str(name))
-    return inclusion or None
+            inclusion.append(ident)
+        if any_excluded:
+            per_category[cat] = inclusion
+    return per_category or None
 
 
 def _enumerate_known_categories(runs_dir: Path) -> list[str]:

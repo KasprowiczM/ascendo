@@ -39,6 +39,9 @@ while [ $# -gt 0 ]; do
         --profile)    PROFILE_NAME="$2"; shift 2 ;;
         --output-dir) OUTPUT_DIR="$2";   shift 2 ;;
         --dry-run)    DRY_RUN=1;         shift ;;
+        # Defense in depth: the orchestrator only sends --filter to phases that
+        # act on it; a stray one must never break a read-only/cleanup phase.
+        --filter)     shift; [ $# -gt 0 ] && shift ;;
         *) printf 'verify.sh: unknown arg: %s\n' "$1" >&2; exit 2 ;;
     esac
 done

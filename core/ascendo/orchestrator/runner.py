@@ -34,8 +34,9 @@ ADR-0005 (six-layer architecture).
 """
 from __future__ import annotations
 
+import json
 import logging
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
@@ -146,7 +147,7 @@ def run_phases(
     categories: Iterable[SourceType] | None = None,
     base_dir: Path,
     stop_on_failure: bool = True,
-    item_filter: Iterable[str] | None = None,
+    item_filter: Iterable[str] | Mapping[str, Iterable[str]] | None = None,
     should_cancel: Callable[[], bool] | None = None,
     on_phase: Callable[[str, int, int], None] | None = None,
 ) -> RunReport:
@@ -163,8 +164,15 @@ def run_phases(
         base_dir: Root directory under which ``<run-id>/`` will be created.
         stop_on_failure: If True (default), the run short-circuits when a phase
             ends with all-failed status. ``RunReport.aborted_after_phase`` is set.
-        item_filter: Optional iterable of package IDs forwarded to every
-            manager's ``run_phase`` call.
+        item_filter: Optional package identifiers. Either a flat iterable
+            (forwarded to every manager's ``run_phase``) or a mapping
+            ``{category: [identifiers]}`` (each manager only receives the
+            identifiers its own category matches on; a missing key means
+            "no filter" for that manager). An **empty list** for a
+            category means "everything is excluded": the runner skips that
+            manager's ``apply``/``cleanup`` with a synthesized ``skipped``
+            sidecar (message code ``ALL_EXCLUDED``) instead of running it
+            unfiltered.
 
     Returns:
         A :class:`RunReport` with every produced sidecar.
@@ -211,6 +219,7 @@ def _run_phases_inner(
 
     sidecars: list[Sidecar] = []
     skipped: list[tuple[str, str]] = []
+    excluded_skips: list[tuple[str, str]] = []
     aborted: Phase | None = None
 
     # Identify managers we filtered out for `is_available() == False`.
@@ -260,14 +269,26 @@ def _run_phases_inner(
                 aborted = phase
                 cancelled = True
                 break
-            sidecar = _safe_run_phase(
-                mgr,
-                phase,
-                run,
-                host,
-                base_dir=base_dir,
-                item_filter=item_filter,
-            )
+            mgr_filter = _filter_for(item_filter, mgr)
+            if (
+                mgr_filter is not None
+                and not mgr_filter
+                and phase in _MUTATING_PHASES
+            ):
+                # Every item of this category is excluded: nothing to do.
+                # Never fall through to "no filter" (that would update the
+                # excluded apps).
+                sidecar = _skip_all_excluded(mgr, phase, run, host, base_dir=base_dir)
+                excluded_skips.append((mgr.category.value, "all items excluded"))
+            else:
+                sidecar = _safe_run_phase(
+                    mgr,
+                    phase,
+                    run,
+                    host,
+                    base_dir=base_dir,
+                    item_filter=mgr_filter,
+                )
             phase_results.append(sidecar)
             sidecars.append(sidecar)
 
@@ -299,6 +320,15 @@ def _run_phases_inner(
         aborted_after_phase=aborted,
     )
 
+    # Durable run-level metadata for REPORT.md ("Run stopped after phase X",
+    # "Skipped: <category> (<reason>)"). Best-effort, never fatal.
+    _write_run_meta(
+        base_dir / str(run.id),
+        report=report,
+        cancelled=cancelled,
+        extra_skipped=_dedupe_pairs(excluded_skips),
+    )
+
     # Best-effort: write a human-readable REPORT.md when an apply phase
     # ran. Non-fatal — generator swallows its own errors.
     if Phase.APPLY in set(ordered):
@@ -314,6 +344,96 @@ def _run_phases_inner(
 
 
 # ── Internals ───────────────────────────────────────────────────────────────
+
+# Phases that mutate the system (an all-excluded category must not run them).
+_MUTATING_PHASES: frozenset[Phase] = frozenset({Phase.APPLY, Phase.CLEANUP})
+
+RUN_META_FILENAME = "run_meta.json"
+
+
+def _filter_for(
+    item_filter: Iterable[str] | Mapping[str, Iterable[str]] | None,
+    mgr: IPackageManager,
+) -> list[str] | None:
+    """Resolve the filter list ONE manager should receive.
+
+    * ``None`` -> ``None`` (no filter).
+    * mapping -> ``mapping[mgr.category.value]`` (missing key -> ``None``).
+    * flat iterable -> that list for every manager (legacy behaviour).
+    ``[]`` is preserved (it means "everything excluded", see
+    :func:`run_phases`); it is never coerced to ``None``.
+    """
+    if item_filter is None:
+        return None
+    if isinstance(item_filter, Mapping):
+        entry = item_filter.get(mgr.category.value)
+        return None if entry is None else [str(x) for x in entry]
+    return [str(x) for x in item_filter]
+
+
+def _dedupe_pairs(pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    seen: set[tuple[str, str]] = set()
+    out: list[tuple[str, str]] = []
+    for p in pairs:
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
+
+def _write_run_meta(
+    run_dir: Path,
+    *,
+    report: RunReport,
+    cancelled: bool,
+    extra_skipped: list[tuple[str, str]],
+) -> None:
+    """Write ``<run_dir>/run_meta.json`` (best effort; never raises)."""
+    try:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "aborted_after_phase": (
+                report.aborted_after_phase.value
+                if report.aborted_after_phase is not None else None
+            ),
+            "cancelled": bool(cancelled),
+            "skipped_managers": [
+                [cat, reason]
+                for cat, reason in list(report.skipped_managers) + list(extra_skipped)
+            ],
+            "status": report.overall_status.value,
+        }
+        (run_dir / RUN_META_FILENAME).write_text(
+            json.dumps(payload, indent=2) + "\n", encoding="utf-8",
+        )
+    except OSError:
+        _log.exception("could not write %s", run_dir / RUN_META_FILENAME)
+
+
+def _skip_all_excluded(
+    mgr: IPackageManager,
+    phase: Phase,
+    run: RunInfo,
+    host: HostInfo,
+    *,
+    base_dir: Path,
+) -> Sidecar:
+    """Persist a ``skipped`` sidecar for a category whose items are all excluded."""
+    sidecar = _synthesize_sidecar(
+        mgr, phase, run, host,
+        status=PhaseStatus.SKIPPED,
+        message=Message(
+            level=MessageLevel.INFO,
+            text=(
+                f"ALL_EXCLUDED: every {mgr.category.value} item is excluded from "
+                f"updates - {phase.value} skipped"
+            ),
+            code="ALL_EXCLUDED",
+        ),
+        exit_code=0,
+    )
+    write_sidecar(sidecar, base_dir=base_dir)
+    return sidecar
 
 
 def _select_managers(
@@ -402,6 +522,28 @@ def _synthesize_failure_sidecar(
     exc: ManagerError,
 ) -> Sidecar:
     """Build a minimal valid sidecar describing a manager-level crash."""
+    return _synthesize_sidecar(
+        mgr, phase, run, host,
+        status=PhaseStatus.FAILED,
+        message=Message(
+            level=MessageLevel.ERROR,
+            text=f"{type(exc).__name__}: {exc}",
+        ),
+        exit_code=1,
+    )
+
+
+def _synthesize_sidecar(
+    mgr: IPackageManager,
+    phase: Phase,
+    run: RunInfo,
+    host: HostInfo,
+    *,
+    status: PhaseStatus,
+    message: Message,
+    exit_code: int,
+) -> Sidecar:
+    """Build a minimal valid item-less sidecar carrying one message."""
     now = datetime.now(timezone.utc)
     return Sidecar.model_validate(
         {
@@ -416,25 +558,21 @@ def _synthesize_failure_sidecar(
             "category": mgr.category.value,
             "started_at": now.isoformat(),
             "finished_at": now.isoformat(),
-            "status": PhaseStatus.FAILED.value,
+            "status": status.value,
             "items": [],
             "summary": Summary(
                 total=0,
                 failed=0,
-                exit_code=1,
+                exit_code=exit_code,
             ).model_dump(),
-            "messages": [
-                Message(
-                    level=MessageLevel.ERROR,
-                    text=f"{type(exc).__name__}: {exc}",
-                ).model_dump(),
-            ],
+            "messages": [message.model_dump()],
         }
     )
 
 
 __all__ = [
     "DEFAULT_PHASE_ORDER",
+    "RUN_META_FILENAME",
     "RunReport",
     "run_phases",
 ]

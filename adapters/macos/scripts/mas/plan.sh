@@ -83,22 +83,18 @@ if ! mas_signed_in; then
     exit 0
 fi
 
-# -- helper: returns 0 if FILTER_CSV is empty OR id is in the CSV list --------
+# -- helper: returns 0 if FILTER_CSV is empty OR id/name is in the CSV list ---
 in_filter() {
-    [ -z "$FILTER_CSV" ] && return 0
-    case ",$FILTER_CSV," in
-        (*",$1,"*) return 0 ;;
-        (*) return 1 ;;
-    esac
+    mas_filter_match "$FILTER_CSV" "$1" "${2:-}"
 }
 
 # -- planned (outdated apps only; no up_to_date sweep) ------------------------
 OUTDATED_JSON="$(mas_outdated_json)"
 
-printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, .current_version, .target_version] | @tsv' 2>/dev/null | \
-while IFS="$(printf '\t')" read -r _id _cur _tgt; do
+printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, (if (.name // "") == "" then .id else .name end), .current_version, .target_version] | @tsv' 2>/dev/null | \
+while IFS="$(printf '\t')" read -r _id _name _cur _tgt; do
     [ -n "$_id" ] || continue
-    if in_filter "$_id"; then
+    if in_filter "$_id" "$_name"; then
         json_add_item "$_id" "$_cur" "$_tgt" "planned" "mas"
     fi
 done

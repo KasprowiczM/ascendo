@@ -7,6 +7,7 @@
 #   mas_outdated_json             emits JSON array of outdated apps to stdout
 #   mas_version_at_least <major>  reads version from stdin or `mas version`
 #   mas_classify_exit <code>      maps mas exit code -> ascendo status string
+#   mas_filter_match <csv> <id> [name]   0 if csv empty or id/name listed
 #
 # Stdin variants (test seams; do not use in production scripts):
 #   mas_list_json_from_stdin
@@ -103,6 +104,27 @@ mas_outdated_json_from_stdin() {
 
 mas_outdated_json() {
     "$MAS_BIN" outdated 2>/dev/null | mas_outdated_json_from_stdin
+}
+
+# mas_filter_match <csv> <id> [name]
+# Returns 0 when <csv> is empty OR the numeric id OR the display name is a
+# member of the comma-separated list. The dashboard's exclusion-derived
+# filter carries display names (check/plan emit the name as the item id)
+# while explicit callers pass numeric ids -- both must select the app.
+# Bash 3.2-safe: comma sentinels + quoted (literal) case patterns, so
+# "10" never matches inside "1011" and names with glob characters are safe.
+mas_filter_match() {
+    local _csv="$1" _id="$2" _name="${3:-}"
+    [ -z "$_csv" ] && return 0
+    case ",$_csv," in
+        (*",$_id,"*) return 0 ;;
+    esac
+    if [ -n "$_name" ]; then
+        case ",$_csv," in
+            (*",$_name,"*) return 0 ;;
+        esac
+    fi
+    return 1
 }
 
 # mas_version_at_least <required-major>

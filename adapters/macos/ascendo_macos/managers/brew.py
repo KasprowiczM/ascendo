@@ -15,6 +15,7 @@ from ascendo.models.package import SourceType
 from ascendo.orchestrator.stream_log import child_env_with_stream_log
 from ascendo.models.run import Phase, RunInfo
 from ascendo.models.sidecar import Sidecar
+from ascendo_macos.managers._filter import clean_filter, phase_of
 from ascendo_macos.managers._proc import handle_phase_timeout, run_streaming
 from ascendo.orchestrator.sidecar_io import (
     SidecarIOError,
@@ -42,6 +43,10 @@ class BrewManager(IPackageManager):
         Phase.VERIFY: "brew/verify.sh",
         Phase.CLEANUP: "brew/cleanup.sh",
     }
+    # Phases whose scripts act on --filter (verify/cleanup never receive it).
+    FILTER_PHASES: ClassVar[frozenset[Phase]] = frozenset(
+        {Phase.CHECK, Phase.PLAN, Phase.APPLY}
+    )
     DEFAULT_TIMEOUT_SEC: ClassVar[int] = 1800
 
     def __init__(
@@ -105,6 +110,7 @@ class BrewManager(IPackageManager):
                 run=run,
                 output_dir=output_dir,
                 item_filter=item_filter,
+                phase=phase,
             )
             log_path = (
                 output_dir / str(run.id) / f"{phase.value}__brew.log"
@@ -162,6 +168,7 @@ class BrewManager(IPackageManager):
         run: RunInfo,
         output_dir: Path,
         item_filter: Iterable[str] | None,
+        phase: Phase | None = None,
     ) -> list[str]:
         argv: list[str] = [
             bash,
@@ -173,8 +180,8 @@ class BrewManager(IPackageManager):
         ]
         if run.dry_run:
             argv.append("--dry-run")
-        if item_filter is not None:
-            cleaned = [s.strip() for s in item_filter if s and isinstance(s, str) and s.strip()]
+        if phase_of(phase, script_path) in self.FILTER_PHASES:
+            cleaned = clean_filter(item_filter)
             if cleaned:
                 argv.extend(["--filter", ",".join(cleaned)])
         return argv

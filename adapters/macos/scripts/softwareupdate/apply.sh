@@ -18,9 +18,9 @@
 #   --run-id ID --trigger TRIG --profile NAME --output-dir DIR
 #   [--dry-run]            emits planned items; NEVER invokes sudo
 #   [--all]                use -ia (all available) instead of -ir (recommended only)
-#   [--filter LABEL]       single-label apply: `sudo -A softwareupdate -i <LABEL> -R --verbose`
-#                          (NOT comma-separated like mas's --filter; softwareupdate
-#                           takes one label per -i arg, MVP supports one label only)
+#   [--filter L1,L2,...]   label apply: `sudo -A softwareupdate -i <L1> <L2> -R --verbose`
+#                          (comma-separated; every pending label matching ANY entry is
+#                           installed; entries that are not pending labels are ignored)
 #
 # Reboot-survival + post-apply reconciliation:
 #   Apply may reboot the Mac mid-run when any update has Action: restart.
@@ -63,7 +63,7 @@ PROFILE_NAME=""
 OUTPUT_DIR=""
 DRY_RUN=0
 ALL=0
-FILTER_LABEL=""
+FILTER_CSV=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -73,7 +73,7 @@ while [ $# -gt 0 ]; do
         --output-dir) OUTPUT_DIR="$2";   shift 2 ;;
         --dry-run)    DRY_RUN=1;         shift ;;
         --all)        ALL=1;             shift ;;
-        --filter)     FILTER_LABEL="$2"; shift 2 ;;
+        --filter)     FILTER_CSV="$2";   shift 2 ;;
         *) printf 'apply.sh: unknown arg: %s\n' "$1" >&2; exit 2 ;;
     esac
 done
@@ -136,11 +136,15 @@ if printf '%s\n' "$SU_OUT" | grep -q "No new software available\."; then
     exit 0
 fi
 
-# -- helper: filter check (--filter LABEL matches a single label exactly) -----
+# -- helper: filter check (--filter is a comma-separated list of labels; each
+# pending label is matched EXACTLY against every entry, not just the first;
+# entries that are not pending labels are ignored) ---------------------------
 in_filter() {
-    [ -z "$FILTER_LABEL" ] && return 0
-    [ "$1" = "$FILTER_LABEL" ] && return 0
-    return 1
+    [ -z "$FILTER_CSV" ] && return 0
+    case ",$FILTER_CSV," in
+        (*",$1,"*) return 0 ;;
+        (*) return 1 ;;
+    esac
 }
 
 # -- parse pending updates into space-separated TARGET_LABELS + TARGET_PAIRS --
@@ -181,8 +185,8 @@ TARGET_LABELS="${TARGET_LABELS# }"
 TARGET_PAIRS="${TARGET_PAIRS# }"
 
 if [ -z "$TARGET_LABELS" ]; then
-    if [ -n "$FILTER_LABEL" ]; then
-        json_add_message "warn" "filter LABEL '$FILTER_LABEL' did not match any pending update"
+    if [ -n "$FILTER_CSV" ]; then
+        json_add_message "info" "nothing selected: none of the filter entries ($FILTER_CSV) is a pending softwareupdate label"
     else
         json_add_message "info" "no pending updates after filter"
     fi
@@ -212,9 +216,10 @@ _ascendo_sudo_warm
 
 # 1. Build sudo argv based on flags
 SU_ARGV=""
-if [ -n "$FILTER_LABEL" ]; then
-    # Single-label apply: -i <LABEL> (no -a/-r flag; softwareupdate disambiguates by label)
-    SU_ARGV="-i $FILTER_LABEL -R --verbose --include-config-data"
+if [ -n "$FILTER_CSV" ]; then
+    # Label apply: -i <LABEL> [<LABEL> ...] (no -a/-r flag; softwareupdate
+    # disambiguates by label). Only labels that are actually pending are passed.
+    SU_ARGV="-i $TARGET_LABELS -R --verbose --include-config-data"
 elif [ "$ALL" -eq 1 ]; then
     SU_ARGV="-i -a -R --verbose --include-config-data"
 else
@@ -255,7 +260,7 @@ fi
 _stream_emit ">>> sudo softwareupdate $SU_ARGV"
 
 # Word-splitting on $SU_ARGV is intentional + safe — values are controlled
-# (literal flags + filter label which we sanitize to a single word).
+# (literal flags + pending labels).
 # shellcheck disable=SC2086
 _sudo_softwareupdate $SU_ARGV 2>&1 | tee -a "$_log_path" | _stream_tee >/dev/null
 _RC="${PIPESTATUS[0]}"
