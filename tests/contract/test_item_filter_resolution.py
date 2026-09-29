@@ -81,6 +81,31 @@ def test_softwareupdate_filter_carries_labels(tmp_path, monkeypatch):
     assert out == {"softwareupdate": [lbl]}      # every remaining label, not just one
 
 
+def test_exclusion_survives_a_check_sidecar_that_already_dropped_the_item(tmp_path, monkeypatch):
+    """Run 1 filtered `abseil` out, so run 2's latest check sidecar no longer
+    lists it. The exclusion is still configured -> apply must STILL receive a
+    filter (that omits it), never fall back to unfiltered."""
+    _check_sidecar(tmp_path, "brew", [("uv", "uv"), ("jq", "jq")])   # no abseil
+    _check_sidecar(tmp_path, "npm", [("node", "node")])
+    out = _resolve(tmp_path, monkeypatch, {"brew:abseil"}, ["brew", "npm"])
+    assert out == {"brew": ["uv", "jq"]}
+    assert "abseil" not in out["brew"]
+    assert "npm" not in out          # no exclusion key for npm -> unfiltered
+
+
+def test_exclusion_is_self_perpetuating_across_runs(tmp_path, monkeypatch):
+    """Two consecutive resolutions, the second reading the sidecar the
+    first (filtered) run would have produced."""
+    _check_sidecar(tmp_path, "mas", [("Keka", "Keka"), ("Copilot", "Copilot")])
+    first = _resolve(tmp_path, monkeypatch, {"mas:Copilot"}, ["mas"])
+    assert first == {"mas": ["Keka"]}
+    # the filtered check of run 1 only lists what passed the filter
+    (tmp_path / "run-1" / "check__mas.json").unlink()
+    _check_sidecar(tmp_path, "mas", [(n, n) for n in first["mas"]])
+    second = _resolve(tmp_path, monkeypatch, {"mas:Copilot"}, ["mas"])
+    assert second == first
+
+
 def test_no_check_data_means_no_entry(tmp_path, monkeypatch):
     out = _resolve(tmp_path, monkeypatch, {"brew:jq"}, ["brew"])
     assert out is None

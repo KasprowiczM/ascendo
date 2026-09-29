@@ -387,3 +387,12 @@ def test_action_required_token_helper_matches_report_regex():
     assert m and m.groups() == ("major_upgrade", "15.1", "?")
     m2 = ACTION_RE.search(second)          # whitespace collapsed -> one token
     assert m2 and m2.groups() == ("needs_restart", "1_2", "3")
+
+
+def test_su_label_shape_drops_hyphenated_app_names_but_keeps_labels(tmp_path):
+    argv = _argv(_su_mgr(), Phase.APPLY,
+                 ["Some-App", "Amphetamine", "Safari17.4-17.4",
+                  "XProtectPlistConfigData_10_15-2174"], tmp_path)
+    assert argv[argv.index("--filter") + 1] == (
+        "Safari17.4-17.4,XProtectPlistConfigData_10_15-2174"
+    )

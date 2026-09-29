@@ -225,7 +225,7 @@ class SoftwareUpdateManager(IPackageManager):
             if cleaned:
                 # ALL label entries are forwarded (the script installs every
                 # pending label that matches any of them). App names from
-                # other categories are never labels: only label-shaped
+                # other categories are not labels: only label-shaped
                 # tokens are sent; if none is label-shaped the raw tokens
                 # are sent so the script selects nothing rather than
                 # degrading to "install everything".

@@ -5,7 +5,8 @@ on (see ``ascendo.orchestrator.runner._filter_for``). A manager must forward
 ``--filter`` only to phase scripts that actually act on it:
 
 * brew / mas: check, plan, apply
-* softwareupdate: apply only (labels; app names are never labels)
+* softwareupdate: apply only (update labels; app names of other categories
+  are dropped by a shape heuristic and, in any case, never match a label)
 
 Scripts additionally tolerate (ignore) a stray ``--filter`` as defence in
 depth, but the manager must not rely on that.
@@ -21,8 +22,12 @@ from ascendo.models.run import Phase
 _PHASE_BY_STEM = {p.value: p for p in Phase}
 
 # softwareupdate labels look like ``Safari17.4-17.4`` or
-# ``macOS Sequoia 15.1-24B83`` (letters/digits/space/._- then ``-<version>``).
-SU_LABEL_RE = re.compile(r"^[A-Za-z0-9 ._-]+-[0-9A-Za-z.]+$")
+# ``macOS Sequoia 15.1-24B83`` (letters/digits/space/._- then ``-<version>``
+# where the version suffix contains a digit). This is only a SHAPE heuristic
+# (an app name such as ``Foo-2`` would match too); the authority is the
+# script, which exact-matches each token against the pending labels, so a
+# token that is not a pending label never installs anything.
+SU_LABEL_RE = re.compile(r"^[A-Za-z0-9 ._-]+-[0-9A-Za-z.]*[0-9][0-9A-Za-z.]*$")
 
 
 def clean_filter(item_filter: Iterable[str] | None) -> list[str]:
@@ -40,8 +45,9 @@ def phase_of(phase: Phase | None, script_path: Path) -> Phase | None:
 
 
 def softwareupdate_filter_tokens(cleaned: list[str]) -> list[str]:
-    """Label-shaped tokens only; when none is label-shaped keep the raw
-    tokens so the script selects nothing (exact-match against pending
-    labels) instead of silently degrading to "install everything"."""
+    """Label-shaped tokens only (most app names are dropped here); when none
+    is label-shaped keep the raw tokens so the script selects nothing
+    (exact-match against pending labels) instead of silently degrading to
+    "install everything"."""
     labels = [t for t in cleaned if SU_LABEL_RE.match(t)]
     return labels or cleaned

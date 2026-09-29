@@ -367,8 +367,8 @@ def collect_action_required(run_dir: Path) -> list[ActionItem]:
     Reads the run's apply sidecars and returns every item (web app,
     macOS update, iPad app, cask ...) the user must act on — see the
     ``ASCENDO-ACTION-REQUIRED`` token contract at :data:`ACTION_RE`; web
-    apps that were not silently updated are always included. Never raises — returns ``[]`` on any error or
-    when there is no apply phase.
+    apps that were not silently updated are always included. Never raises —
+    returns ``[]`` on any error or when there is no apply phase.
     """
     try:
         if not run_dir.is_dir():
@@ -648,7 +648,7 @@ def _generate_apply_report_unsafe(
             if cur or tgt:
                 ver = f" (`{cur or '?'}` → `{tgt or '?'}`)"
             lines.append(
-                f"- **{_label_for_item(cat, item)}**{ver} — "
+                f"- **{_display_name(item)}**{ver} — "
                 f"{_category_label(cat)}: verify did not confirm the update"
             )
         lines.append("")
@@ -1139,10 +1139,6 @@ def _run_notes(run_meta: dict) -> list[str]:
             continue
         out.append(f"Skipped: {_category_label(str(cat))} ({reason})")
     return out
-
-
-def _label_for_item(category: str, item: Item) -> str:
-    return _display_name(item)
 
 
 def _ordered_categories(buckets: dict[str, _CategoryBuckets]) -> list[str]:

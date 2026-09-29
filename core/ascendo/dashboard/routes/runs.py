@@ -148,8 +148,8 @@ def _resolve_item_filter(
     server-side filter = ``installed minus excluded`` **per category**
     (``{category: [identifiers]}``). Each category only receives the
     identifiers its own scripts match on (see :func:`_filter_identifier`),
-    and only categories that actually have an excluded item get an entry
-    -- everything else runs unfiltered. The runner forwards each manager
+    and only categories that have an exclusion key get an entry --
+    everything else runs unfiltered. The runner forwards each manager
     only its own list; an **empty list** (every item of the category is
     excluded) makes the runner skip that category's apply instead of
     running it unfiltered.
@@ -176,23 +176,30 @@ def _resolve_item_filter(
     excluded = apps_mod.excluded_keys()
     if not excluded:
         return None
-    # Read latest check sidecar per category to get the universe of items.
+    # A category gets a filter whenever an exclusion key belongs to it --
+    # NOT whenever the latest check sidecar still lists an excluded item:
+    # filtered check phases drop excluded items from their own sidecar, so
+    # the exclusion must not depend on what the last check happened to
+    # contain (otherwise run 2 would upgrade the app run 1 filtered out).
+    excluded_cats = {key.split(":", 1)[0] for key in excluded}
     per_category: dict[str, list[str]] = {}
     cats = categories or _enumerate_known_categories(runs_dir)
     for cat in cats:
+        if cat not in excluded_cats:
+            continue
+        # Latest check sidecar = the universe of installed items. With no
+        # data at all we cannot build an inclusion list, so the category
+        # runs unfiltered (nothing to derive it from yet).
         sidecar_items = _latest_check_items(runs_dir, cat)
+        if not sidecar_items:
+            continue
         inclusion: list[str] = []
-        any_excluded = False
         for item in sidecar_items:
             ident = _filter_identifier(cat, item)
-            if ident is None:
-                continue
-            if _is_excluded(cat, item, ident, excluded):
-                any_excluded = True
+            if ident is None or _is_excluded(cat, item, ident, excluded):
                 continue
             inclusion.append(ident)
-        if any_excluded:
-            per_category[cat] = inclusion
+        per_category[cat] = inclusion
     return per_category or None
 
 
