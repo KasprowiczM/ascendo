@@ -115,7 +115,13 @@ ascendo_brew_xcode_license_gate || exit 10
 # -- enumerate outdated --------------------------------------------------------
 TMP_OUTDATED="$(mktemp "${TMPDIR:-/tmp}/ascendo_brew_outdated_XXXXXX")"
 
-ascendo_brew_outdated_or_fail "$TMP_OUTDATED" || exit 30
+# Greedy: brew-managed auto-updating casks that plain `brew outdated` never lists.
+GREEDY_TOKENS="$(ascendo_brew_greedy_tokens)"
+# shellcheck disable=SC2086
+ascendo_brew_outdated_or_fail "$TMP_OUTDATED" $GREEDY_TOKENS || exit 30
+
+# Cask facts (real .app targets, sudo flag, orphan set) for the outdated casks.
+ascendo_brew_prepare_cask_facts "$TMP_OUTDATED"
 
 # Helper: returns 0 (match) if FILTER is empty OR id is in the CSV FILTER list.
 # Bash 3.2-safe: uses a while-read loop instead of array operations.
@@ -147,12 +153,21 @@ _emit_outdated() {
     while IFS=',' read -r _id _current _target; do
         [ -z "$_id" ] && continue
         if _filter_match "$_id"; then
-            if [ "$_bucket" = "cask" ] && ascendo_brew_cask_would_downgrade "$_id" "$_target"; then
-                json_add_item "$_id" "$_current" "$_current" "up_to_date" "brew" "cask"
-                json_add_message "warn" \
-                    "cask ${_id} target ${_target} is older than the installed app; skipped to prevent downgrade" \
-                    "CASK_DOWNGRADE_GUARD"
-                continue
+            if [ "$_bucket" = "cask" ]; then
+                _disp="$(ascendo_brew_cask_disposition "$_id" "$_target")"
+                if ascendo_brew_emit_cask_guard_skip "${_disp%%|*}" "$_id" "$_current" "$_target" "${_disp#*|}"; then
+                    continue
+                fi
+                if [ "${_disp%%|*}" = "scheme_unknown" ]; then
+                    json_add_message "info" \
+                        "${_id}: ${_disp#*|} -- deferring to Homebrew's own record" \
+                        "CASK_VERSION_SCHEME"
+                fi
+                if ascendo_brew_cask_needs_admin "$_id" && ! ascendo_brew_admin_available; then
+                    json_add_message "info" \
+                        "${_id}: needs administrator rights -- apply defers it unless Ascendo holds the admin password (or run: brew upgrade --cask ${_id})" \
+                        "CASK_NEEDS_ADMIN"
+                fi
             fi
             json_add_item "$_id" "$_current" "$_target" "planned" "brew" "$_bucket"
             _count=$((_count + 1))

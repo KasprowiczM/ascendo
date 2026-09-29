@@ -1,0 +1,22 @@
+# Homebrew casks queried with `brew outdated --cask --greedy-auto-updates`.
+#
+# Plain `brew outdated` never lists casks that update themselves
+# (`auto_updates true`) or are `version :latest`, so brew-managed apps such as
+# Brave, Zoom or Obsidian would never be reported outdated by anyone (the web
+# category hands them over to brew, see lib/web_discovery.sh). Only tokens
+# listed here AND actually installed are queried; the result is merged with
+# `brew outdated` and de-duplicated by token.
+#
+# One cask token per line; '#' starts a comment. Override the path with
+# ASCENDO_BREW_GREEDY_FILE.
+brave-browser
+perplexity
+lm-studio
+obsidian
+protonvpn
+zoom
+megasync
+appcleaner
+spotify
+capcut
+inkscape

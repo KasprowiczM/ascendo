@@ -4,10 +4,14 @@
 # =============================================================================
 # For each outdated formula / cask (filtered by --filter if given):
 #   * dry-run path: emit status=planned, no brew calls, no mutations
-#   * real path:    a cask whose app is running is skipped (never quit or
-#                   killed; action-required "quit it and re-run"), otherwise
-#                   run `brew upgrade --formula|--cask <id>`,
+#   * real path:    a cask is skipped (brew not called) when its downgrade /
+#                   orphan guard fires, when its app is running (never quit or
+#                   killed; action-required "quit it and re-run"), or when it
+#                   needs administrator rights and no SUDO_ASKPASS is wired;
+#                   otherwise run `brew upgrade --formula|--cask <id>`,
 #                   emit status=success or status=failed per item.
+# The outdated set is `brew outdated` united with the greedy auto-updating
+# casks of config/brew_greedy_casks.txt (deduplicated by token).
 #
 # Item-level failures are recorded and processing continues (no bail-out
 # mid-loop). After the full loop, exits 30 if any item failed, else 0.
@@ -119,7 +123,14 @@ ascendo_brew_xcode_license_gate || exit 10
 # -- enumerate outdated --------------------------------------------------------
 TMP_OUTDATED="$(mktemp "${TMPDIR:-/tmp}/ascendo_brew_outdated_XXXXXX")"
 
-ascendo_brew_outdated_or_fail "$TMP_OUTDATED" || exit 30
+# Greedy: brew-managed auto-updating casks that plain `brew outdated` never lists.
+GREEDY_TOKENS="$(ascendo_brew_greedy_tokens)"
+# shellcheck disable=SC2086
+ascendo_brew_outdated_or_fail "$TMP_OUTDATED" $GREEDY_TOKENS || exit 30
+
+# Cask facts for the outdated casks: real .app targets (running-app + orphan +
+# downgrade checks), quit bundle ids, sudo flag. One batched `brew info`.
+ascendo_brew_prepare_cask_facts "$TMP_OUTDATED"
 
 # Helper: returns 0 (match) if FILTER is empty OR id is in the CSV FILTER list.
 # Bash 3.2-safe: uses a for loop over IFS-split instead of array operations.
@@ -171,12 +182,19 @@ _apply_one() {
         return 0
     fi
 
-    if [ "$_feed" = "cask" ] && [ -n "$_target" ] && ascendo_brew_cask_would_downgrade "$_id" "$_target"; then
-        json_add_item "$_id" "$_current" "$_current" "skipped" "brew" "cask"
-        json_add_message "warn" \
-            "cask ${_id} target ${_target} is older than the installed app; skipped to prevent downgrade" \
-            "CASK_DOWNGRADE_GUARD"
-        return 0
+    if [ "$_feed" = "cask" ] && [ -n "$_target" ]; then
+        local _disp
+        _disp="$(ascendo_brew_cask_disposition "$_id" "$_target")"
+        # downgrade / orphan: never upgraded (an orphan would reinstall an app
+        # the user deleted; a downgrade would replace a newer app).
+        if ascendo_brew_emit_cask_guard_skip "${_disp%%|*}" "$_id" "$_current" "$_target" "${_disp#*|}"; then
+            return 0
+        fi
+        if [ "${_disp%%|*}" = "scheme_unknown" ]; then
+            json_add_message "info" \
+                "${_id}: ${_disp#*|} -- deferring to Homebrew's own record" \
+                "CASK_VERSION_SCHEME"
+        fi
     fi
 
     # -- dry-run path (no mutation) --------------------------------------------
@@ -206,6 +224,20 @@ _apply_one() {
         json_add_message "info" \
             "${_id}: skipped -- app in use (quit it and re-run apply to upgrade ${_current} -> ${_target}) | $(ascendo_action_required_token app_in_use "$_current" "$_target")" \
             "CASK_APP_RUNNING"
+        return 0
+    fi
+
+    # A pkg/installer cask needs administrator rights. Dashboard runs are
+    # TTY-less, so without an askpass helper (SUDO_ASKPASS) brew's sudo would
+    # fail or hang: defer it instead. Keep the candidate so inventory still
+    # shows the cask as outdated.
+    if [ "$_feed" = "cask" ] && ascendo_brew_cask_needs_admin "$_id" && ! ascendo_brew_admin_available; then
+        _stream_progress "$_pct" "skipping $_id (needs administrator rights)"
+        _stream_emit ">>> skipping $_id (cask needs administrator rights -- authorise in Ascendo or run: brew upgrade --cask $_id)"
+        json_add_item "$_id" "$_current" "$_target" "skipped" "brew" "cask"
+        json_add_message "warn" \
+            "${_id}: skipped -- needs administrator rights; authorise in Ascendo or run: brew upgrade --cask ${_id} | $(ascendo_action_required_token cask_needs_admin "$_current" "$_target")" \
+            "CASK_NEEDS_ADMIN"
         return 0
     fi
 

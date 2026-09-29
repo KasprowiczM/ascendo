@@ -124,7 +124,11 @@ ascendo_brew_xcode_license_gate || exit 10
 # -- re-query current outdated list -------------------------------------------
 TMP_CURRENT="$(mktemp "${TMPDIR:-/tmp}/ascendo_brew_verify_XXXXXX")"
 
-ascendo_brew_outdated_or_fail "$TMP_CURRENT" || exit 30
+# Query the greedy auto-updating casks too, exactly like apply did; otherwise
+# a greedy cask would silently look "no longer outdated".
+GREEDY_TOKENS="$(ascendo_brew_greedy_tokens)"
+# shellcheck disable=SC2086
+ascendo_brew_outdated_or_fail "$TMP_CURRENT" $GREEDY_TOKENS || exit 30
 
 # -- verify each item apply marked success ------------------------------------
 # For each id that apply wrote as status=success, check if it still appears
@@ -149,7 +153,19 @@ while IFS= read -r _id; do
         _still_outdated=1
     fi
 
-    if [ "$_still_outdated" -eq 1 ]; then
+    _is_greedy=0
+    case " $GREEDY_TOKENS " in
+        (*" $_id "*) _is_greedy=1 ;;
+    esac
+
+    if [ "$_still_outdated" -eq 1 ] && [ "$_is_greedy" -eq 1 ]; then
+        # Greedy casks (auto_updates / :latest) stay listed by brew even after a
+        # successful upgrade: informational, not a failure.
+        json_add_item "$_id" "" "" "success" "brew" ""
+        json_add_message "warn" \
+            "verify: '$_id' is an auto-updating cask that brew still lists as outdated after apply (informational)" \
+            "CASK_GREEDY_RESIDUE"
+    elif [ "$_still_outdated" -eq 1 ]; then
         json_add_item "$_id" "" "" "failed" "brew" ""
         json_add_message "error" \
             "verify: '$_id' is still outdated after apply" \

@@ -8,17 +8,40 @@
 # Public API:
 #     ascendo_brew_prefix                  -- print "$(brew --prefix)" or empty
 #     ascendo_brew_version                 -- print first line of `brew --version`
-#     ascendo_brew_outdated_json [--greedy]
-#                                          -- print `brew outdated --json=v2 [--greedy]`
+#     ascendo_brew_outdated_json [--greedy] [greedy_token ...]
+#                                          -- print `brew outdated --json=v2`; with tokens also
+#                                             `--cask --greedy-auto-updates <tokens>`, merged
+#                                             and de-duplicated by token
+#     ascendo_brew_greedy_tokens           -- brew-managed auto-updating casks to query greedily
+#                                             (config/brew_greedy_casks.txt ∩ installed casks)
 #     ascendo_brew_parse_outdated <json_file_or_dash> <formula|cask>
 #                                          -- emit CSV rows: id,current_version,target_version
+#     ascendo_brew_load_cask_facts <token...>
+#                                          -- one batched `brew info --json=v2 --cask` -> facts
+#                                             (targets, quit ids, sudo flag, recorded version)
+#                                             + orphan set, via brew_casks.py
+#     ascendo_brew_prepare_cask_facts <outdated_json> [all]
+#                                          -- load facts for the outdated casks (and, with
+#                                             `all`, every installed cask)
 #     ascendo_brew_cask_app_name <cask_token>
-#                                          -- print app bundle name (e.g. "Slack") or empty
+#                                          -- LAST-RESORT table: bundle name (e.g. "Slack") or empty
 #     ascendo_brew_cask_app_paths <cask_token>
-#                                          -- print installed .app path(s) of a cask (one per line)
+#                                          -- installed .app path(s) of a cask, one per line, from
+#                                             the cask's real artifact targets (string or {target:},
+#                                             pkg-cask uninstall.delete hints); table only when
+#                                             no facts are available
 #     ascendo_brew_cask_app_running <cask_token>
-#                                          -- rc 0 when any process runs from the cask's .app
-#                                             (read-only probe; NEVER quits or kills anything)
+#                                          -- rc 0 when any process runs from one of those bundles
+#                                             or a `quit:` bundle id is running (read-only probe;
+#                                             NEVER quits or kills anything)
+#     ascendo_brew_cask_disposition <token> <candidate>
+#                                          -- print "<proceed|downgrade|orphan|scheme_unknown>|<detail>"
+#                                             (recorded-version + bundle-relation downgrade guard)
+#     ascendo_brew_cask_is_orphan <token>  -- rc 0: app artifact(s) declared but none on disk
+#     ascendo_brew_cask_needs_admin <token>-- rc 0: pkg/installer/launchctl/kext cask (needs sudo)
+#     ascendo_brew_admin_available         -- rc 0 when SUDO_ASKPASS is an executable file
+#     ascendo_brew_emit_cask_guard_skip <disposition> <id> <cur> <cand> <detail>
+#                                          -- record a downgrade/orphan skip; rc 0 = handled
 #     ascendo_brew_xcode_license_ok        -- rc 1 only when Xcode.app is selected and its
 #                                             licence is not accepted
 #     ascendo_brew_xcode_license_gate      -- emit XCODE_LICENSE message (no item), rc 1
@@ -46,6 +69,16 @@ ascendo_brew_version() {
     if command -v brew >/dev/null 2>&1; then
         brew --version 2>/dev/null | head -n1 || true
     fi
+}
+
+# Directory of this library (brew_casks.py lives next to it).
+_ASCENDO_BREW_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Run the pure cask-facts module (system python 3.9 is enough).
+_ascendo_brew_casks_py() {
+    local _py=/usr/bin/python3
+    [ -x "$_py" ] || _py=python3
+    "$_py" "$_ASCENDO_BREW_LIB_DIR/brew_casks.py" "$@"
 }
 
 # Print one "<cask-token> <version>" line per installed cask.
@@ -96,13 +129,19 @@ ascendo_brew_formula_versions() {
 }
 
 # Run `brew outdated --json=v2 [--greedy]` and print the JSON to stdout.
+# With greedy tokens, additionally run
+#   brew outdated --json=v2 --cask --greedy-auto-updates <tokens>
+# (the casks the toolkit manages that self-update / are `version :latest`,
+# which plain `brew outdated` never lists) and print the union, de-duplicated
+# by cask name.
 # stderr is NEVER merged into stdout: brew writes progress chatter
 # ("==> Downloading Homebrew API data", "✔︎ JSON API ...") to stderr,
 # and capturing it with 2>&1 made post-upgrade verification treat that
 # chatter as outstanding packages (macOS_updates 2026-08-19 regression).
-# rc 1 without an "Error:" stderr line is treated as success (brew's
-# "something is outdated" exit); a real error returns non-zero with the
-# stderr text forwarded to fd 2.
+# For EACH query rc 1 without an "Error:" stderr line is success (brew's
+# "something is outdated" exit, notably for named queries); a real error
+# returns non-zero with the stderr text forwarded to fd 2 and the empty
+# JSON stub on stdout.
 # If brew is not installed, prints an empty JSON stub and returns 0.
 ascendo_brew_outdated_json() {
     if ! command -v brew >/dev/null 2>&1; then
@@ -112,37 +151,88 @@ ascendo_brew_outdated_json() {
     local greedy_flag=""
     if [ "${1:-}" = "--greedy" ]; then
         greedy_flag="--greedy"
+        shift
     fi
-    local err_file rc out
+    local err_file rc out q first_json="" second_json=""
     err_file="$(mktemp "${TMPDIR:-/tmp}/ascendo_brew_outdated.XXXXXX")" || {
         printf '{"formulae":[],"casks":[]}\n'
         return 1
     }
-    # brew exits 0 even when there are no outdated packages. Keep stderr
-    # off stdout so a later 2>&1 regression cannot poison the JSON.
-    # shellcheck disable=SC2086
-    out="$(brew outdated --json=v2 ${greedy_flag} 2>"$err_file")"
-    rc=$?
-    # rc 1 WITHOUT an "Error:" line on stderr is success: `brew outdated`
-    # exits 1 when it found outdated items (notably for named queries).
-    # Only a real "Error:" line (or any other rc) is a failure, and then the
-    # stderr is passed on so the caller can report the actual reason.
-    if [ "$rc" -eq 1 ] && ! grep -Eq '^[[:space:]]*Error:' "$err_file" 2>/dev/null; then
-        rc=0
-    fi
-    if [ "$rc" -ne 0 ]; then
-        cat "$err_file" >&2
-        rm -f "$err_file" 2>/dev/null || true
-        printf '{"formulae":[],"casks":[]}\n'
-        return "$rc"
-    fi
+    # q1: everything outdated; q2 (only when tokens were given): the greedy
+    # auto-updating casks. Keep stderr off stdout so a later 2>&1 regression
+    # cannot poison the JSON.
+    q=1
+    while [ "$q" -le 2 ]; do
+        if [ "$q" -eq 2 ] && [ $# -eq 0 ]; then
+            break
+        fi
+        if [ "$q" -eq 1 ]; then
+            # shellcheck disable=SC2086
+            out="$(brew outdated --json=v2 ${greedy_flag} 2>"$err_file")"
+        else
+            out="$(brew outdated --json=v2 --cask --greedy-auto-updates "$@" 2>"$err_file")"
+        fi
+        rc=$?
+        # rc 1 WITHOUT an "Error:" line on stderr is success: `brew outdated`
+        # exits 1 when it found outdated items. Only a real "Error:" line (or
+        # any other rc) is a failure, and then the stderr is passed on so the
+        # caller can report the actual reason.
+        if [ "$rc" -eq 1 ] && ! grep -Eq '^[[:space:]]*Error:' "$err_file" 2>/dev/null; then
+            rc=0
+        fi
+        if [ "$rc" -ne 0 ]; then
+            cat "$err_file" >&2
+            rm -f "$err_file" 2>/dev/null || true
+            printf '{"formulae":[],"casks":[]}\n'
+            return "$rc"
+        fi
+        # Defensive: drop any progress lines that leaked onto stdout.
+        out="$(printf '%s\n' "$out" | grep -v '^==>' | grep -v '^✔')" || out=""
+        if [ "$q" -eq 1 ]; then
+            first_json="$out"
+        else
+            second_json="$out"
+        fi
+        q=$((q + 1))
+    done
     rm -f "$err_file" 2>/dev/null || true
-    # Defensive: drop any progress lines that leaked onto stdout.
-    if [ -z "$out" ]; then
-        printf '{"formulae":[],"casks":[]}\n'
+    [ -n "$first_json" ] || first_json='{"formulae":[],"casks":[]}'
+    if [ -z "$second_json" ] || ! command -v jq >/dev/null 2>&1; then
+        printf '%s\n' "$first_json"
         return 0
     fi
-    printf '%s\n' "$out" | grep -v '^==>' | grep -v '^✔' || printf '{"formulae":[],"casks":[]}\n'
+    # Union by cask name (string, or first element of the name array).
+    printf '%s\n%s\n' "$first_json" "$second_json" | jq -c -s '
+        {formulae: (.[0].formulae // []),
+         casks: (((.[0].casks // []) + (.[1].casks // []))
+                 | unique_by(if (.name | type) == "array" then .name[0] else .name end))}
+    ' 2>/dev/null || printf '%s\n' "$first_json"
+}
+
+# Brew-managed auto-updating casks that must be queried with
+# `--greedy-auto-updates` (plain `brew outdated` never reports them), limited
+# to the ones that are actually installed. Prints them space-separated.
+# Config: config/brew_greedy_casks.txt (one token per line, '#' comments);
+# ASCENDO_BREW_GREEDY_FILE overrides the path (tests).
+ascendo_brew_greedy_tokens() {
+    local file="${ASCENDO_BREW_GREEDY_FILE:-$_ASCENDO_BREW_LIB_DIR/../config/brew_greedy_casks.txt}"
+    local installed tok out=""
+    [ -f "$file" ] || return 0
+    installed="$(ascendo_brew_cask_versions 2>/dev/null | awk 'NF {print $1}')" || installed=""
+    [ -n "$installed" ] || return 0
+    while IFS= read -r tok; do
+        tok="${tok%%#*}"
+        tok="$(printf '%s' "$tok" | tr -d '[:space:]')"
+        [ -n "$tok" ] || continue
+        if printf '%s\n' "$installed" | grep -Fxq -- "$tok"; then
+            case " $out " in
+                (*" $tok "*) ;;
+                (*) out="${out:+$out }$tok" ;;
+            esac
+        fi
+    done < "$file"
+    printf '%s\n' "$out"
+    return 0
 }
 
 # Parse a saved `brew outdated --json=v2` file (or stdin with "-") and emit
@@ -203,8 +293,9 @@ ascendo_brew_parse_outdated() {
     fi
 }
 
-# Map a cask token to its /Applications bundle name (without .app suffix).
-# Returns empty string for unknown casks.
+# LAST-RESORT table: map a cask token to its /Applications bundle name (without
+# .app suffix). Only consulted when the cask's real artifact facts are not
+# available (see ascendo_brew_cask_app_paths). Returns empty for unknown casks.
 # Bash 3.2-safe: uses case statement, NOT associative array.
 ascendo_brew_cask_app_name() {
     case "$1" in
@@ -232,30 +323,178 @@ ascendo_brew_cask_app_name() {
     esac
 }
 
-# Print the installed .app bundle path(s) of a cask, one per line.
-# Currently derived from the small token->bundle-name table above (the
-# cask-facts module replaces this with the cask's real artifact targets).
-# ASCENDO_BREW_APPLICATIONS_DIR overrides /Applications (tests).
-# Prints nothing when the token is unknown or the bundle is not on disk.
-ascendo_brew_cask_app_paths() {
-    local token="$1"
-    local apps_dir="${ASCENDO_BREW_APPLICATIONS_DIR:-/Applications}"
-    local app
-    app="$(ascendo_brew_cask_app_name "$token")"
-    [ -n "$app" ] || return 0
-    if [ -d "$apps_dir/${app}.app" ]; then
-        printf '%s\n' "$apps_dir/${app}.app"
+# ---------------------------------------------------------------------------
+# Cask facts (one `brew info --json=v2 --cask` per phase, parsed by brew_casks.py)
+# ---------------------------------------------------------------------------
+# ASCENDO_BREW_FACTS  : lines "token|version|installed|targets|quit_ids|sudo"
+#                       (targets / quit_ids are ';'-joined)
+# ASCENDO_BREW_ORPHANS: newline-separated orphan cask tokens
+# ASCENDO_BREW_FACTS_LOADED=1 marks that a phase loaded them, so a token with
+# no line is "unknown" and is NOT re-queried one by one on every helper call.
+ASCENDO_BREW_FACTS=""
+ASCENDO_BREW_ORPHANS=""
+ASCENDO_BREW_FACTS_LOADED=""
+
+# Application directories searched for a cask's app targets.
+# ASCENDO_BREW_APPLICATIONS_DIR overrides them (tests) -- then it is the only one.
+_ascendo_brew_app_dirs() {
+    if [ -n "${ASCENDO_BREW_APPLICATIONS_DIR:-}" ]; then
+        printf '%s\n' "$ASCENDO_BREW_APPLICATIONS_DIR"
+    else
+        printf '%s\n' "/Applications" "$HOME/Applications"
+    fi
+}
+
+# Append facts + orphans for the casks in one brew-info JSON document.
+_ascendo_brew_absorb_info_json() {
+    local json="$1" lines orphans _dirs _d
+    [ -n "$json" ] || return 0
+    lines="$(printf '%s' "$json" | _ascendo_brew_casks_py facts 2>/dev/null)" || lines=""
+    _dirs=()
+    while IFS= read -r _d; do
+        [ -n "$_d" ] && _dirs+=("$_d")
+    done <<EOF_DIRS
+$(_ascendo_brew_app_dirs)
+EOF_DIRS
+    orphans="$(printf '%s' "$json" | _ascendo_brew_casks_py orphans "${_dirs[@]}" 2>/dev/null)" || orphans=""
+    if [ -n "$lines" ]; then
+        ASCENDO_BREW_FACTS="${ASCENDO_BREW_FACTS:+$ASCENDO_BREW_FACTS
+}$lines"
+    fi
+    if [ -n "$orphans" ]; then
+        ASCENDO_BREW_ORPHANS="${ASCENDO_BREW_ORPHANS:+$ASCENDO_BREW_ORPHANS
+}$orphans"
     fi
     return 0
 }
 
+# ascendo_brew_load_cask_facts <token...>
+# One batched `brew info --json=v2 --cask <tokens>`; if that fails or leaves a
+# token without facts (a single unknown token makes brew reject the whole
+# call), those tokens are queried one by one. Facts are best-effort: anything
+# that cannot be loaded simply has no line (callers fall back / stay
+# conservative). Must be called in the phase shell, NOT inside $(...).
+ascendo_brew_load_cask_facts() {
+    ASCENDO_BREW_FACTS=""
+    ASCENDO_BREW_ORPHANS=""
+    ASCENDO_BREW_FACTS_LOADED=1
+    [ $# -gt 0 ] || return 0
+    command -v brew >/dev/null 2>&1 || return 0
+    local json tok
+    json="$(brew info --json=v2 --cask "$@" 2>/dev/null)" || json=""
+    _ascendo_brew_absorb_info_json "$json"
+    for tok in "$@"; do
+        if printf '%s\n' "$ASCENDO_BREW_FACTS" | awk -F'|' -v t="$tok" '$1 == t {f=1} END {exit f ? 0 : 1}'; then
+            continue
+        fi
+        json="$(brew info --json=v2 --cask "$tok" 2>/dev/null)" || json=""
+        _ascendo_brew_absorb_info_json "$json"
+    done
+    return 0
+}
+
+# ascendo_brew_prepare_cask_facts <outdated_json_file> [all]
+# Load facts for every outdated cask in the file; with `all` also for every
+# installed cask (check.sh needs them to spot orphan casks among the
+# up-to-date ones).
+ascendo_brew_prepare_cask_facts() {
+    local file="$1" scope="${2:-}" tokens="" t list=()
+    tokens="$(ascendo_brew_parse_outdated "$file" cask 2>/dev/null | cut -d, -f1)" || tokens=""
+    if [ "$scope" = "all" ]; then
+        tokens="$(printf '%s\n%s\n' "$tokens" "$(ascendo_brew_cask_versions 2>/dev/null | awk 'NF {print $1}')")"
+    fi
+    while IFS= read -r t; do
+        [ -n "$t" ] && list+=("$t")
+    done <<EOF_TOK
+$(printf '%s\n' "$tokens" | awk 'NF && !seen[$0]++')
+EOF_TOK
+    if [ "${#list[@]}" -gt 0 ]; then
+        ascendo_brew_load_cask_facts "${list[@]}"
+    else
+        ASCENDO_BREW_FACTS=""
+        ASCENDO_BREW_ORPHANS=""
+        ASCENDO_BREW_FACTS_LOADED=1
+    fi
+    return 0
+}
+
+# Print the facts line for a cask ("" when unknown). Uses the phase-loaded
+# facts; only when none were loaded does it query brew for this one token.
+ascendo_brew_cask_facts_line() {
+    local token="$1" line=""
+    [ -n "$token" ] || return 0
+    if [ -n "$ASCENDO_BREW_FACTS" ]; then
+        line="$(printf '%s\n' "$ASCENDO_BREW_FACTS" | awk -F'|' -v t="$token" '$1 == t {print; exit}')"
+    fi
+    if [ -z "$line" ] && [ -z "$ASCENDO_BREW_FACTS_LOADED" ] && command -v brew >/dev/null 2>&1; then
+        line="$(brew info --json=v2 --cask "$token" 2>/dev/null | _ascendo_brew_casks_py facts 2>/dev/null | head -n1)" || line=""
+    fi
+    printf '%s' "$line"
+}
+
+# Field N (1-based) of a facts line; empty fields are preserved.
+_ascendo_brew_fact_field() {
+    printf '%s' "$1" | cut -d'|' -f"$2"
+}
+
+# Print the installed .app bundle path(s) of a cask, one per line, derived from
+# the cask's REAL facts: `app` artifact targets (string or {target:}) or, for
+# pkg casks, the uninstall.delete /Applications/X.app hints. Only when no facts
+# are available at all does the small token->bundle-name table apply.
+# Prints nothing when no bundle of the cask is on disk.
+ascendo_brew_cask_app_paths() {
+    local token="$1"
+    local line targets t d
+    line="$(ascendo_brew_cask_facts_line "$token")"
+    if [ -z "$line" ]; then
+        local app
+        app="$(ascendo_brew_cask_app_name "$token")"
+        [ -n "$app" ] || return 0
+        while IFS= read -r d; do
+            [ -n "$d" ] || continue
+            if [ -d "$d/${app}.app" ]; then
+                printf '%s\n' "$d/${app}.app"
+                return 0
+            fi
+        done <<EOF_DIRS
+$(_ascendo_brew_app_dirs)
+EOF_DIRS
+        return 0
+    fi
+    targets="$(_ascendo_brew_fact_field "$line" 4)"
+    [ -n "$targets" ] || return 0
+    while IFS= read -r t; do
+        [ -n "$t" ] || continue
+        while IFS= read -r d; do
+            [ -n "$d" ] || continue
+            if [ -d "$d/$t" ]; then
+                printf '%s\n' "$d/$t"
+            fi
+        done <<EOF_DIRS
+$(_ascendo_brew_app_dirs)
+EOF_DIRS
+    done <<EOF_TARGETS
+$(printf '%s' "$targets" | tr ';' '\n')
+EOF_TARGETS
+    return 0
+}
+
+# Exit 0 iff an app with this bundle id is running (LaunchServices).
+ascendo_brew_bundle_running() {
+    local id="$1" n
+    command -v lsappinfo >/dev/null 2>&1 || return 1
+    n="$(lsappinfo list 2>/dev/null | /usr/bin/grep -c "bundleID=\"$id\"")"
+    [ "${n:-0}" -gt 0 ]
+}
+
 # Exit 0 when a process is running from any .app bundle of the cask
-# (main binary or a helper under <bundle>/Contents/). Read-only: this
+# (main binary or a helper under <bundle>/Contents/), or when a bundle id
+# from the cask's uninstall/zap `quit:` stanza is running. Read-only: this
 # never quits, signals or kills anything -- an app the user has open is
 # left alone (the caller defers the upgrade instead).
 ascendo_brew_cask_app_running() {
     local token="$1"
-    local _path _esc
+    local _path _esc _id _line
     while IFS= read -r _path; do
         [ -n "$_path" ] || continue
         # Regex-escape the path for pgrep -f (extended regex). Inside a
@@ -269,7 +508,42 @@ ascendo_brew_cask_app_running() {
     done <<EOF_PATHS
 $(ascendo_brew_cask_app_paths "$token")
 EOF_PATHS
+    _line="$(ascendo_brew_cask_facts_line "$token")"
+    if [ -n "$_line" ]; then
+        while IFS= read -r _id; do
+            [ -n "$_id" ] || continue
+            if ascendo_brew_bundle_running "$_id"; then
+                return 0
+            fi
+        done <<EOF_IDS
+$(_ascendo_brew_fact_field "$_line" 5 | tr ';' '\n')
+EOF_IDS
+    fi
     return 1
+}
+
+# Exit 0 when the cask declares app artifact(s) and none is on disk (the user
+# deleted the app; Homebrew still has the record). Needs the facts loaded by
+# ascendo_brew_prepare_cask_facts / ascendo_brew_load_cask_facts.
+ascendo_brew_cask_is_orphan() {
+    [ -n "$1" ] && [ -n "$ASCENDO_BREW_ORPHANS" ] || return 1
+    printf '%s\n' "$ASCENDO_BREW_ORPHANS" | grep -Fxq -- "$1"
+}
+
+# Exit 0 when upgrading the cask needs administrator rights (pkg/installer
+# artifacts, or an uninstall stanza with pkgutil/launchctl/kext).
+ascendo_brew_cask_needs_admin() {
+    local line
+    line="$(ascendo_brew_cask_facts_line "$1")"
+    [ -n "$line" ] || return 1
+    [ "$(_ascendo_brew_fact_field "$line" 6)" = "1" ]
+}
+
+# Exit 0 when a sudo askpass helper is wired (Homebrew's SystemCommand then
+# adds `sudo -A`). Dashboard runs are TTY-less: without it a sudo cask cannot
+# be upgraded non-interactively.
+ascendo_brew_admin_available() {
+    [ -n "${SUDO_ASKPASS:-}" ] && [ -x "${SUDO_ASKPASS}" ]
 }
 
 # 0 = fine (CLT selected, no Xcode.app, or licence accepted);
@@ -371,37 +645,142 @@ sys.exit(0 if left > right else 1)
 PY
 }
 
-# Print the installed .app short version for a cask token, or empty.
+# Print the installed .app short version of a cask (first bundle found), or empty.
 # ASCENDO_BREW_APPLICATIONS_DIR overrides /Applications (tests).
 ascendo_brew_cask_installed_app_version() {
-    local token="$1"
-    local apps_dir="${ASCENDO_BREW_APPLICATIONS_DIR:-/Applications}"
-    local app path plist
-    app="$(ascendo_brew_cask_app_name "$token")"
-    [ -n "$app" ] || return 1
-    path="$apps_dir/${app}.app"
-    plist="$path/Contents/Info.plist"
-    [ -f "$plist" ] || return 1
-    /usr/bin/python3 - "$plist" <<'PY'
-import plistlib, sys
-try:
-    with open(sys.argv[1], "rb") as f:
-        data = plistlib.load(f)
-except Exception:
-    sys.exit(1)
-print(data.get("CFBundleShortVersionString") or data.get("CFBundleVersion") or "")
-PY
+    local token="$1" path v
+    path="$(ascendo_brew_cask_app_paths "$token" | head -n1)"
+    [ -n "$path" ] || return 1
+    v="$(_ascendo_brew_casks_py bundle-version "$path" 2>/dev/null)"
+    [ -n "$v" ] || return 1
+    printf '%s\n' "$v"
 }
 
-# Exit 0 when upgrading this cask to $2 would replace a newer installed app.
+# Scheme-aware installed-vs-cask relation: newer | current | unknown.
+# (Brave's bundle "151.1.93.138" vs cask "1.93.138.0" is `current`, not newer.)
+ascendo_brew_app_vs_package_relation() {
+    _ascendo_brew_casks_py relation "$1" "$2" 2>/dev/null || printf 'unknown\n'
+}
+
+# Downgrade / orphan guard for one outdated cask. Prints one line
+#   <disposition>|<detail>
+# and always returns 0. Dispositions:
+#   downgrade      -- Homebrew's own record, or the installed bundle, is provably
+#                     newer than the cask version: upgrading would downgrade
+#   orphan         -- the cask declares app target(s) and none exists on disk
+#                     (the user deleted the app): do not reinstall it
+#   scheme_unknown -- bundle and cask version schemes are not comparable; proceed
+#                     (Homebrew's recorded version already agreed) and note it
+#   proceed        -- nothing speaks against the upgrade
+# Order (macOS_updates v1.5.0): (1) recorded-vs-cask version; (2) locate the
+# bundle from the cask's real .app targets (else Caskroom, else the last-resort
+# table); (3) scheme-aware bundle-vs-cask relation.
+ascendo_brew_cask_disposition() {
+    local token="$1" target="${2:-}"
+    local line ver="" recorded="" targets="" path="" t d found room prefix bver rel
+    line="$(ascendo_brew_cask_facts_line "$token")"
+    if [ -n "$line" ]; then
+        ver="$(_ascendo_brew_fact_field "$line" 2)"
+        recorded="$(_ascendo_brew_fact_field "$line" 3)"
+        targets="$(_ascendo_brew_fact_field "$line" 4)"
+    fi
+    [ -n "$ver" ] || ver="$target"
+
+    # (1) Homebrew's own record of what it installed is the only like-for-like
+    # operand for the cask version; the bundle version may use another scheme.
+    if [ -n "$recorded" ] && [ -n "$ver" ]; then
+        if [ "$(_ascendo_brew_casks_py cmp "$recorded" "$ver" 2>/dev/null)" = "newer" ]; then
+            printf 'downgrade|Homebrew recorded %s, newer than cask %s\n' "$recorded" "$ver"
+            return 0
+        fi
+    fi
+
+    # (2) find the bundle.
+    if [ -n "$targets" ]; then
+        found=0
+        while IFS= read -r t; do
+            [ -n "$t" ] || continue
+            while IFS= read -r d; do
+                [ -n "$d" ] || continue
+                if [ -d "$d/$t" ]; then
+                    path="$d/$t"
+                    found=1
+                    break
+                fi
+            done <<EOF_DIRS
+$(_ascendo_brew_app_dirs)
+EOF_DIRS
+            [ "$found" -eq 1 ] && break
+        done <<EOF_TARGETS
+$(printf '%s' "$targets" | tr ';' '\n')
+EOF_TARGETS
+        if [ "$found" -eq 0 ]; then
+            printf 'orphan|%s\n' "${targets%%;*}"
+            return 0
+        fi
+    elif [ -n "$line" ]; then
+        # Only casks without app targets use the Caskroom fallback.
+        prefix="$(ascendo_brew_prefix)"
+        [ -n "$prefix" ] || prefix="/opt/homebrew"
+        room="$prefix/Caskroom/$token"
+        if [ -d "$room" ]; then
+            path="$(find "$room" -maxdepth 3 -name '*.app' 2>/dev/null | head -n1)"
+        fi
+    else
+        # Facts unavailable: last-resort token->bundle table.
+        path="$(ascendo_brew_cask_app_paths "$token" | head -n1)"
+    fi
+
+    # (3) bundle-vs-cask relation.
+    if [ -n "$path" ] && [ -d "$path" ] && [ -n "$ver" ]; then
+        bver="$(_ascendo_brew_casks_py bundle-version "$path" 2>/dev/null)"
+        if [ -n "$bver" ]; then
+            rel="$(ascendo_brew_app_vs_package_relation "$bver" "$ver")"
+            case "$rel" in
+                newer)
+                    printf 'downgrade|installed app %s is newer than cask %s\n' "$bver" "$ver"
+                    return 0 ;;
+                unknown)
+                    printf 'scheme_unknown|app %s and cask %s use different version schemes\n' "$bver" "$ver"
+                    return 0 ;;
+            esac
+        fi
+    fi
+    printf 'proceed|\n'
+    return 0
+}
+
+# Back-compat wrapper: exit 0 only when the guard says upgrading would downgrade.
 ascendo_brew_cask_would_downgrade() {
-    local token="$1"
-    local target="$2"
-    local installed
+    local token="$1" target="${2:-}" disp
     [ -n "$token" ] && [ -n "$target" ] || return 1
-    installed="$(ascendo_brew_cask_installed_app_version "$token")" || return 1
-    [ -n "$installed" ] || return 1
-    ascendo_brew_version_gt "$installed" "$target"
+    disp="$(ascendo_brew_cask_disposition "$token" "$target")"
+    [ "${disp%%|*}" = "downgrade" ]
+}
+
+# Record a guard skip (downgrade / orphan) for a cask as a `skipped` item plus
+# a coded message; used identically by check/plan/apply. Returns 0 when the
+# cask was recorded (caller must not process it further), 1 otherwise.
+# Needs ascendo_json.sh. The item keeps the candidate version for an orphan
+# (the cask IS outdated per brew -- inventory must still show it); a downgrade
+# keeps current == target (the "candidate" is older than what is installed).
+ascendo_brew_emit_cask_guard_skip() {
+    local disp="$1" id="$2" cur="$3" cand="$4" detail="$5"
+    case "$disp" in
+        downgrade)
+            json_add_item "$id" "$cur" "$cur" "skipped" "brew" "cask"
+            json_add_message "warn" \
+                "${id}: skipped -- cask ${cand} would downgrade the installed app (${detail})" \
+                "CASK_DOWNGRADE_GUARD"
+            return 0 ;;
+        orphan)
+            json_add_item "$id" "$cur" "$cand" "skipped" "brew" "cask"
+            json_add_message "warn" \
+                "${id}: skipped -- app ${detail} was removed manually; remove the record with: brew uninstall --cask --force ${id} | $(ascendo_action_required_token cask_orphan "$cur" "$cand")" \
+                "CASK_ORPHAN"
+            return 0 ;;
+    esac
+    return 1
 }
 
 # Translate a brew exit code into an ascendo phase exit code.
