@@ -28,6 +28,8 @@ from ascendo_macos.managers.brew import BrewManager
 from ascendo_macos.managers.mas import MasManager
 from ascendo_macos.managers.softwareupdate import SoftwareUpdateManager
 
+from .su_fakes import su_env
+
 ADAPTER_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ADAPTER_ROOT / "scripts"
 LIB = ADAPTER_ROOT / "lib"
@@ -83,21 +85,6 @@ def _fake_sudo(tmp_path: Path, log: Path) -> Path:
         f"echo \"$@\" >> {log}\n"
         "if [ \"$1\" = '-A' ]; then shift; fi\n"
         "\"$@\"\n"
-    )
-    os.chmod(p, 0o755)
-    return p
-
-
-def _fake_su(tmp_path: Path, fixture: str = "incremental-updates.txt") -> Path:
-    text = (FIX / "softwareupdate" / fixture).read_text()
-    p = tmp_path / "fake_softwareupdate"
-    p.write_text(
-        "#!/usr/bin/env bash\n"
-        "if [ \"$1\" = '--help' ] || [ \"$1\" = '-h' ]; then echo fake-su; exit 0; fi\n"
-        "if [ \"$1\" = '-l' ] || [ \"$1\" = '--list' ]; then\n"
-        f"    cat <<'EOF_SU'\n{text}\nEOF_SU\n    exit 0\n"
-        "fi\n"
-        "echo \"simulated install: $@\"\nexit 0\n"
     )
     os.chmod(p, 0o755)
     return p
@@ -217,12 +204,8 @@ def test_mas_verify_cleanup_tolerate_filter(tmp_path, script):
 
 
 def _su_env(tmp_path: Path, fixture: str = "incremental-updates.txt"):
-    sudo_log = tmp_path / "sudo.log"
-    sudo = _fake_sudo(tmp_path, sudo_log)
-    return {
-        "SU_BIN": str(_fake_su(tmp_path, fixture)),
-        "PATH": f"{sudo.parent}:{os.environ['PATH']}",
-    }, sudo_log
+    ctx = su_env(tmp_path, fixture)
+    return ctx["env"], ctx["sudo_log"]
 
 
 def test_su_apply_dry_run_matches_every_label_in_csv(tmp_path):
@@ -250,7 +233,7 @@ def test_su_apply_second_label_alone_is_matched(tmp_path):
     assert [i.id for i in sc.items] == ["XProtectPlistConfigData_10_15-2174"]
 
 
-def test_su_apply_real_passes_all_matched_labels_and_R(tmp_path):
+def test_su_apply_real_installs_every_matched_label_with_R(tmp_path):
     env, sudo_log = _su_env(tmp_path)
     out = tmp_path / "out"
     rid = str(uuid.uuid4())
@@ -259,12 +242,14 @@ def test_su_apply_real_passes_all_matched_labels_and_R(tmp_path):
     assert res.returncode == 0, res.stderr
     lines = sudo_log.read_text().strip().splitlines()
     inst = [ln for ln in lines if " -i " in (" " + ln + " ")]
-    assert inst, lines
-    line = inst[-1]
-    assert "Safari17.4-17.4" in line and "XProtectPlistConfigData_10_15-2174" in line
-    assert "Nope-1" not in line       # only PENDING labels are installed
-    assert " -R " in (" " + line + " ")
-    assert " -ia " not in line and " -a " not in (" " + line + " ")
+    # One install call per (non-restart) label, each with -R.
+    assert len(inst) == 2, lines
+    joined = "\n".join(inst)
+    assert "Safari17.4-17.4" in joined and "XProtectPlistConfigData_10_15-2174" in joined
+    assert "Nope-1" not in joined     # only PENDING labels are installed
+    for line in inst:
+        assert " -R " in (" " + line + " ")
+        assert " -ia " not in line and " -a " not in (" " + line + " ")
 
 
 def test_su_apply_app_names_select_nothing_and_never_install(tmp_path):

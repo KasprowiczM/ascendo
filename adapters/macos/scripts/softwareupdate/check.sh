@@ -6,7 +6,8 @@
 # an ascendo/v1 sidecar at <output-dir>/<run-id>/check__softwareupdate.json on
 # every code path via EXIT trap.
 #
-# Each "* Label: <X>" block becomes one planned item; if the block has
+# Each pending update becomes one planned item (a major macOS upgrade becomes a
+# skipped item + ACTION-REQUIRED token); if a planned update has
 # "Action: restart" the needs_reboot flag is set to true on the sidecar.
 #
 # Args:
@@ -25,6 +26,8 @@ ADAPTER_LIB="$SCRIPT_DIR/../../lib"
 
 # shellcheck source=../../lib/ascendo_json.sh
 . "$ADAPTER_LIB/ascendo_json.sh"
+# shellcheck source=../../lib/ascendo_softwareupdate.sh
+. "$ADAPTER_LIB/ascendo_softwareupdate.sh"
 
 # -- configurable binary (overridable in tests via SU_BIN) --------------------
 SU_BIN="${SU_BIN:-/usr/sbin/softwareupdate}"
@@ -82,54 +85,28 @@ json_init "check" "softwareupdate" "$RUN_ID" "$TRIGGER" "$PROFILE_NAME" \
 # Install EXIT trap AFTER json_init (bufdir is now valid)
 trap 'json_save_on_exit "$OUTPUT_DIR"' EXIT
 
-# -- run softwareupdate -l --include-config-data (Tahoe omits XProtect without it)
-SU_RC=0
-SU_OUT="$("$SU_BIN" -l --include-config-data 2>&1)" || SU_RC=$?
+# -- run softwareupdate -l --include-config-data (C locale; Tahoe omits XProtect without it)
+ascendo_su_list
 if [ "$SU_RC" -ne 0 ]; then
-    json_add_message "error" "softwareupdate -l failed (exit $SU_RC): $SU_OUT"
+    if [ "$SU_RC" -eq 124 ]; then
+        json_add_message "error" "softwareupdate -l timed out after ${ASCENDO_SU_LIST_TIMEOUT:-300}s"
+    else
+        json_add_message "error" "softwareupdate -l failed (exit $SU_RC): $SU_OUT"
+    fi
     json_add_item "softwareupdate:list-error" "" "" "failed" "softwareupdate"
     exit 30
 fi
 
-# -- empty case ----------------------------------------------------------------
-if printf '%s\n' "$SU_OUT" | grep -q "No new software available\."; then
-    # Zero items; status heuristic in lib emits success
-    exit 0
-fi
+# -- parse + classify (su_classify.py): SAME / OTHER -> planned, MAJOR -> skipped
+CUR_OS="$(ascendo_su_current_os)"
+SU_RECORDS="$(ascendo_su_records "$SU_OUT" "$CUR_OS")" || {
+    json_add_message "error" "softwareupdate listing could not be parsed (su_classify.py failed)"
+    json_add_item "softwareupdate:list-error" "" "" "failed" "softwareupdate"
+    exit 30
+}
 
-# -- parse `* Label:` blocks --------------------------------------------------
-# State machine: "* Label: <X>" sets CURRENT_LABEL; the next TAB-prefixed line
-# carries Title/Version/Action attributes.
-#
-# Use a here-string (<<< "$SU_OUT") so the while loop runs in the CURRENT
-# shell, not a subshell -- this lets NEEDS_REBOOT mutations survive.
-# bash 3.2 supports <<< since 2.05b.
 NEEDS_REBOOT=0
-CURRENT_LABEL=""
-
-while IFS= read -r line; do
-    case "$line" in
-        '* Label: '*)
-            CURRENT_LABEL="${line#'* Label: '}"
-            ;;
-        "	"*)
-            # Line begins with a literal TAB: attribute block for current label
-            [ -n "$CURRENT_LABEL" ] || continue
-            attrs="${line#	}"   # strip leading TAB
-            # Extract Version field: "Version: X.Y.Z,"
-            version="$(printf '%s\n' "$attrs" | sed -n 's/.*Version: \([^,]*\),.*/\1/p' | head -1)"
-            # Trim surrounding whitespace
-            version="${version# }"
-            version="${version% }"
-            # Detect Action: restart
-            if printf '%s\n' "$attrs" | grep -q "Action: restart"; then
-                NEEDS_REBOOT=1
-            fi
-            json_add_item "$CURRENT_LABEL" "$version" "$version" "planned" "softwareupdate"
-            CURRENT_LABEL=""
-            ;;
-    esac
-done <<< "$SU_OUT"
+ascendo_su_emit_pending "$SU_RECORDS" "$CUR_OS"
 
 if [ "$NEEDS_REBOOT" -eq 1 ]; then
     json_set_needs_reboot true

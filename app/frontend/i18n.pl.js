@@ -1403,7 +1403,7 @@ window.I18N.pl = {
         m_npm:            "npm: globalne CLI Node.js w user-site (NPM_CONFIG_PREFIX), bez sudo.",
         m_pip:            "pip: globalne CLI Pythona (uv, ruff, mypy, pytest, black) — instalacja do site-packages brew Pythona lub --user, bez sudo. Reguła self-skip dla pip zarządzanego przez brew.",
         m_web:            "web: apki zewnętrzne spoza brew/mas przez 7 handlerów — sparkle, github_dmg, keystone, squirrel, builtin, msupdate, docker, release_feed, omaha. 38 kuratorowanych apek, ~100% pokrycie kandydatów w v0.4.5.",
-        m_softwareupdate: "softwareupdate: łatki OS Apple przez CLI softwareupdate — sudo -A softwareupdate -i -r -R --verbose. Flaga -R obowiązkowa (uruchamia update przy następnym restarcie).",
+        m_softwareupdate: "softwareupdate: łatki OS Apple przez CLI softwareupdate — sudo -A softwareupdate -i <etykieta> -R --verbose dla każdej etykiety (nigdy -ia; duże aktualizacje macOS nigdy nie są instalowane automatycznie). Flaga -R obowiązkowa (uruchamia update przy następnym restarcie).",
         web_h:            "WebManager: 7 mechanizmów aktualizacji (v0.3.0 / M5.6)",
         web_p:            "Sparkle (appcast XML + DMG install), github_dmg (GitHub Releases API + asset arm64), keystone (Google Software Update agent), squirrel (Squirrel.Mac auto-on-relaunch), builtin (open + instrukcja), msupdate (Microsoft AutoUpdate per-apka), docker (Docker Desktop CLI), release_feed (generic JSON-feed probe), omaha (Google Update protocol). Defer-if-running per-handler — sparkle/github_dmg/squirrel deferują gdy apka działa, keystone/msupdate/docker aplikują niezależnie.",
         discovery_h:      "Auto-discovery + tiered probes (v0.4.0 / M5.7)",

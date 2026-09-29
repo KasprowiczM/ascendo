@@ -1,21 +1,17 @@
 """Tests for adapters/macos/scripts/softwareupdate/apply.sh.
 
-The mutating phase. Mirrors test_apply_mas_script.py harness pattern:
-fake sudo binary logs argv to a tempfile so tests can assert on the
-sudo invocation shape; fake softwareupdate binary feeds canned text
-fixtures for the discovery (`-l`) call.
+The mutating phase. NEVER runs a real softwareupdate: ``su_fakes`` provides a
+fake softwareupdate (canned ``-l`` listing that drops installed labels and
+records every install), a fake ``sudo`` that logs its argv, and a fake
+``sw_vers`` that pins the installed macOS version (26.6.2 by default).
 
-Six tests:
-  1. --dry-run emits planned items, NEVER invokes sudo
-  2. real apply invokes `sudo -A softwareupdate -ir -R --verbose` (default)
-  3. --all switches to `-ia` instead of `-ir`
-  4. --filter LABEL passes -i <LABEL> -R --verbose
-  5. no-updates fixture -> exit 0, no sudo invocation
-  6. softwareupdate -l failure -> exit 30, no sudo invocation
+Hard rules under test: every install keeps ``-R``; never ``-ia`` / ``-a`` /
+bare ``-r``; a major macOS upgrade is never installed automatically; success
+only after a post-install remeasure; restart labels are batched last and are
+deferred under the safe profile.
 """
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import sys
@@ -24,70 +20,20 @@ from pathlib import Path
 
 import pytest
 
+from .su_fakes import su_env
+
 ADAPTER_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ADAPTER_ROOT / "scripts" / "softwareupdate" / "apply.sh"
-FIX = ADAPTER_ROOT / "tests" / "fixtures" / "softwareupdate"
+
+MAJOR_LABEL = "macOS 27-26A428"
+TAHOE = "macOS Tahoe 26.7-25G229"
+SAFARI = "Safari27.0TahoeAuto-27.0"
 
 
 @pytest.fixture(autouse=True)
 def _require_jq() -> None:
     if shutil.which("jq") is None:
         pytest.skip("jq not on PATH")
-
-
-def _make_fake_sudo(tmp_path: Path, *, log_path: Path) -> Path:
-    """Fake sudo: logs argv to log_path, then forwards to argv[2:] (skipping -A)."""
-    p = tmp_path / "fake_sudo"
-    body = (
-        "#!/usr/bin/env bash\n"
-        f"echo \"$@\" >> {log_path}\n"
-        "if [ \"$1\" = '-A' ]; then shift; fi\n"
-        "\"$@\"\n"
-    )
-    p.write_text(body)
-    os.chmod(p, 0o755)
-    return p
-
-
-def _make_fake_su(tmp_path: Path, *, fixture_name: str = "incremental-updates.txt",
-                  fail_on_l: bool = False) -> Path:
-    """Fake softwareupdate binary.
-
-    `-l` returns the named fixture (or exits 1 if fail_on_l=True).
-    `-i ...` (the install path) succeeds silently — we don't care about
-    the install side effect; the test asserts via the captured sudo log.
-    `--help` returns a stub.
-    """
-    p = tmp_path / "fake_softwareupdate"
-    if fail_on_l:
-        body = (
-            "#!/usr/bin/env bash\n"
-            "if [ \"$1\" = '--help' ] || [ \"$1\" = '-h' ]; then\n"
-            "    echo 'fake-su test'; exit 0\n"
-            "fi\n"
-            "if [ \"$1\" = '-l' ] || [ \"$1\" = '--list' ]; then\n"
-            "    echo 'broken' >&2; exit 1\n"
-            "fi\n"
-            "exit 0\n"
-        )
-    else:
-        fixture = (FIX / fixture_name).read_text()
-        body = (
-            "#!/usr/bin/env bash\n"
-            "if [ \"$1\" = '--help' ] || [ \"$1\" = '-h' ]; then\n"
-            "    echo 'fake-su test'; exit 0\n"
-            "fi\n"
-            "if [ \"$1\" = '-l' ] || [ \"$1\" = '--list' ]; then\n"
-            f"    cat <<'EOF_SU'\n{fixture}\nEOF_SU\n"
-            "    exit 0\n"
-            "fi\n"
-            # Install path: simulate success, just print
-            "echo \"==> simulated install: $@\"\n"
-            "exit 0\n"
-        )
-    p.write_text(body)
-    os.chmod(p, 0o755)
-    return p
 
 
 def _parse(p: Path):
@@ -99,145 +45,283 @@ def _parse(p: Path):
         sys.path.pop(0)
 
 
-def _run_apply(fake_su: Path, fake_sudo: Path, output_dir: Path,
-               run_id: str, *extra: str):
-    """Run apply.sh with fake binaries on PATH so `sudo` resolves to the fake."""
-    env = dict(os.environ)
-    env["SU_BIN"] = str(fake_su)
-    bindir = fake_sudo.parent
-    env["PATH"] = f"{bindir}:{env['PATH']}"
-    sudo_link = bindir / "sudo"
-    if not sudo_link.exists():
-        sudo_link.symlink_to(fake_sudo.name)
-    return subprocess.run(
-        ["bash", str(SCRIPT),
-         "--run-id", run_id, "--trigger", "cli",
-         "--profile", "default", "--output-dir", str(output_dir),
-         *extra],
-        capture_output=True, text=True, env=env, check=False,
+def _run(ctx: dict, tmp_path: Path, *extra: str, profile: str = "default"):
+    out = tmp_path / "out"
+    rid = str(uuid.uuid4())
+    res = subprocess.run(
+        ["bash", str(SCRIPT), "--run-id", rid, "--trigger", "cli",
+         "--profile", profile, "--output-dir", str(out), *extra],
+        capture_output=True, text=True, env=ctx["env"], check=False,
     )
+    side = out / rid / "apply__softwareupdate.json"
+    return res, (_parse(side) if side.exists() else None)
+
+
+def _subdir(tmp_path: Path) -> Path:
+    """A second, independent sandbox (own fakes/state/out) inside the test."""
+    sub = tmp_path / "second"
+    sub.mkdir()
+    return sub
+
+
+def _status(sc) -> dict:
+    return {i.id: i.status.value for i in sc.items}
+
+
+def _sudo_lines(ctx: dict) -> list:
+    p = ctx["sudo_log"]
+    return p.read_text().strip().splitlines() if p.exists() else []
+
+
+def _has_flag(line: str, flag: str) -> bool:
+    return f" {flag} " in f" {line} "
+
+
+# -- basics ---------------------------------------------------------------------
 
 
 def test_dry_run_emits_planned_items_no_sudo(tmp_path):
-    sudo_log = tmp_path / "sudo.log"
-    fake_sudo = _make_fake_sudo(tmp_path, log_path=sudo_log)
-    fake_su = _make_fake_su(tmp_path, fixture_name="incremental-updates.txt")
-    out = tmp_path / "out"
-    rid = str(uuid.uuid4())
-    res = _run_apply(fake_su, fake_sudo, out, rid, "--dry-run")
+    ctx = su_env(tmp_path, "incremental-updates.txt")
+    res, sc = _run(ctx, tmp_path, "--dry-run")
     assert res.returncode == 0, res.stderr
-
-    sc = _parse(out / rid / "apply__softwareupdate.json")
-    statuses = {i.status.value for i in sc.items}
-    assert statuses <= {"planned"}, f"expected only planned items, got {statuses}"
-    # Sudo MUST NOT have been invoked
-    assert not sudo_log.exists() or sudo_log.read_text() == ""
+    assert {i.status.value for i in sc.items} == {"planned"}
+    assert _sudo_lines(ctx) == []
+    assert ctx["installs"]() == []
 
 
-def test_real_apply_invokes_sudo_a_softwareupdate_ir(tmp_path):
-    """Default invocation: `sudo -A softwareupdate -i -r -R --verbose`."""
-    sudo_log = tmp_path / "sudo.log"
-    fake_sudo = _make_fake_sudo(tmp_path, log_path=sudo_log)
-    fake_su = _make_fake_su(tmp_path, fixture_name="incremental-updates.txt")
-    out = tmp_path / "out"
-    rid = str(uuid.uuid4())
-    res = _run_apply(fake_su, fake_sudo, out, rid)
-    # Exit 0 (no Action: restart in incremental fixture)
+def test_real_apply_installs_each_label_individually_with_R(tmp_path):
+    ctx = su_env(tmp_path, "incremental-updates.txt")
+    res, sc = _run(ctx, tmp_path)
     assert res.returncode == 0, res.stderr
-
-    log_lines = sudo_log.read_text().strip().splitlines()
-    # _ascendo_sudo picks `-A` (askpass) or plain sudo (TTY-PAM /
-    # Touch-ID-only) by env. Both flows MUST keep -i -r -R --verbose
-    # — the -R flag is mandatory per the legacy macOS update_system.sh
-    # rule.
-    assert any(
-        "-i" in line and "-r" in line
-        and "-R" in line and "--verbose" in line
-        and "--include-config-data" in line
-        for line in log_lines
-    ), f"sudo log lacks -i -r -R --verbose --include-config-data: {log_lines}"
+    installs = ctx["installs"]()
+    assert installs == [
+        "-i|Safari17.4-17.4|-R|--verbose|--include-config-data",
+        "-i|XProtectPlistConfigData_10_15-2174|-R|--verbose|--include-config-data",
+    ]
+    for line in _sudo_lines(ctx):
+        assert _has_flag(line, "-R")
+        assert not _has_flag(line, "-r") and not _has_flag(line, "-a") and not _has_flag(line, "-ia")
+    assert _status(sc) == {"Safari17.4-17.4": "success",
+                           "XProtectPlistConfigData_10_15-2174": "success"}
 
 
-def test_all_flag_invokes_dash_a_not_dash_r(tmp_path):
-    """--all switches default `-ir` to `-ia` (all available, not just recommended)."""
-    sudo_log = tmp_path / "sudo.log"
-    fake_sudo = _make_fake_sudo(tmp_path, log_path=sudo_log)
-    fake_su = _make_fake_su(tmp_path, fixture_name="incremental-updates.txt")
-    out = tmp_path / "out"
-    rid = str(uuid.uuid4())
-    res = _run_apply(fake_su, fake_sudo, out, rid, "--all")
+def test_all_flag_stays_label_based_and_never_dash_ia(tmp_path):
+    ctx = su_env(tmp_path, "incremental-updates.txt")
+    res, sc = _run(ctx, tmp_path, "--all")
     assert res.returncode == 0, res.stderr
-
-    log_lines = sudo_log.read_text().strip().splitlines()
-    # Must have -a flag, must NOT have standalone -r flag. -A askpass
-    # prefix only present on dashboard flow; this test runs without
-    # SUDO_ASKPASS so plain sudo is picked.
-    assert any(
-        " -a " in (" " + line + " ")
-        and " -r " not in (" " + line + " ")
-        for line in log_lines
-    ), f"sudo log: expected -a but not -r, got: {log_lines}"
+    for line in ctx["installs"]():
+        assert "-a" not in line.split("|") and "-ia" not in line.split("|")
+        assert "-R" in line.split("|")
+    assert len(ctx["installs"]()) == 2
 
 
 def test_filter_passes_label_to_softwareupdate(tmp_path):
-    """--filter LABEL → `sudo -A softwareupdate -i <LABEL> -R --verbose`."""
-    sudo_log = tmp_path / "sudo.log"
-    fake_sudo = _make_fake_sudo(tmp_path, log_path=sudo_log)
-    fake_su = _make_fake_su(tmp_path, fixture_name="incremental-updates.txt")
-    out = tmp_path / "out"
-    rid = str(uuid.uuid4())
-    label = "Safari17.4-17.4"
-    res = _run_apply(fake_su, fake_sudo, out, rid, "--filter", label)
+    ctx = su_env(tmp_path, "incremental-updates.txt")
+    res, sc = _run(ctx, tmp_path, "--filter", "Safari17.4-17.4")
     assert res.returncode == 0, res.stderr
-
-    log_lines = sudo_log.read_text().strip().splitlines()
-    # Sudo log should contain the label exactly once after -i
-    assert any(label in line for line in log_lines), (
-        f"sudo log missing label {label!r}: {log_lines}"
-    )
+    assert ctx["installs"]() == ["-i|Safari17.4-17.4|-R|--verbose|--include-config-data"]
+    assert _status(sc) == {"Safari17.4-17.4": "success"}
 
 
 def test_no_updates_exit_0_no_sudo(tmp_path):
-    """When `softwareupdate -l` returns 'No new software available', exit 0,
-    no sudo invocation."""
-    sudo_log = tmp_path / "sudo.log"
-    fake_sudo = _make_fake_sudo(tmp_path, log_path=sudo_log)
-    fake_su = _make_fake_su(tmp_path, fixture_name="no-updates.txt")
-    out = tmp_path / "out"
-    rid = str(uuid.uuid4())
-    res = _run_apply(fake_su, fake_sudo, out, rid)
+    ctx = su_env(tmp_path, "no-updates.txt")
+    res, sc = _run(ctx, tmp_path)
     assert res.returncode == 0, res.stderr
-    sc = _parse(out / rid / "apply__softwareupdate.json")
     assert sc.items == []
-    assert not sudo_log.exists() or sudo_log.read_text() == ""
+    assert _sudo_lines(ctx) == []
 
 
 def test_softwareupdate_l_failure_exit_30_no_sudo(tmp_path):
-    """When `softwareupdate -l` exits non-zero, abort BEFORE sudo with exit 30."""
-    sudo_log = tmp_path / "sudo.log"
-    fake_sudo = _make_fake_sudo(tmp_path, log_path=sudo_log)
-    fake_su = _make_fake_su(tmp_path, fail_on_l=True)
-    out = tmp_path / "out"
-    rid = str(uuid.uuid4())
-    res = _run_apply(fake_su, fake_sudo, out, rid)
-    # Exit 30 (apply-fail-unknown — softwareupdate -l discovery failed)
+    ctx = su_env(tmp_path, "incremental-updates.txt", FAKE_SU_LIST_FAIL="1")
+    res, sc = _run(ctx, tmp_path)
     assert res.returncode == 30
-    sc = _parse(out / rid / "apply__softwareupdate.json")
     assert sc.status.value == "failed"
     assert any(m.level.value == "error" for m in sc.messages)
-    # Sudo MUST NOT have been invoked (we abort before the sudo call)
-    assert not sudo_log.exists() or sudo_log.read_text() == ""
+    assert _sudo_lines(ctx) == []
+
+
+def test_listing_probe_runs_in_C_locale(tmp_path):
+    ctx = su_env(tmp_path, "incremental-updates.txt", LANG="pl_PL.UTF-8", LC_ALL="pl_PL.UTF-8")
+    _run(ctx, tmp_path, "--dry-run")
+    calls = (ctx["state"] / "list_calls.log").read_text()
+    assert "LANG=C LC_ALL=C" in calls and "--include-config-data" in calls
+
+
+# -- restart handling -------------------------------------------------------------
 
 
 def test_restart_required_exits_75(tmp_path):
-    """When apply succeeds and any item has Action: restart, exit 75 (NEEDS_REBOOT)."""
-    sudo_log = tmp_path / "sudo.log"
-    fake_sudo = _make_fake_sudo(tmp_path, log_path=sudo_log)
-    fake_su = _make_fake_su(tmp_path, fixture_name="restart-required.txt")
-    out = tmp_path / "out"
-    rid = str(uuid.uuid4())
-    res = _run_apply(fake_su, fake_sudo, out, rid)
-    # Exit 75 = needs reboot (success, but operator must reboot)
+    ctx = su_env(tmp_path, "restart-required.txt")
+    res, sc = _run(ctx, tmp_path)
     assert res.returncode == 75, res.stderr
-    sc = _parse(out / rid / "apply__softwareupdate.json")
     assert sc.needs_reboot is True
+    assert set(_status(sc).values()) == {"success"}
+
+
+def test_restart_labels_batched_in_one_call_last(tmp_path):
+    ctx = su_env(tmp_path, "two-restart.txt")
+    res, sc = _run(ctx, tmp_path)
+    assert res.returncode == 75, res.stderr
+    installs = ctx["installs"]()
+    # non-restart label first (own call), then ONE batch with both restart labels.
+    assert installs == [
+        "-i|Safari17.5-17.5|-R|--verbose|--include-config-data",
+        f"-i|{TAHOE}|Firmware Update-1.0|-R|--verbose|--include-config-data",
+    ]
+    assert sc.needs_reboot is True
+
+
+def test_safe_profile_defers_restart_labels_even_when_pinned(tmp_path):
+    ctx = su_env(tmp_path, "mixed-with-major.txt")
+    res, sc = _run(ctx, tmp_path, "--filter", TAHOE, profile="safe")
+    assert res.returncode == 0, res.stderr
+    assert ctx["installs"]() == []
+    assert _status(sc) == {TAHOE: "skipped"}
+    text = " ".join(m.text for m in sc.messages)
+    assert "ASCENDO-ACTION-REQUIRED reason=needs_restart" in text
+    assert sc.needs_reboot in (False, None)
+
+
+def test_safe_profile_still_installs_non_restart_labels(tmp_path):
+    ctx = su_env(tmp_path, "mixed-with-major.txt")
+    res, sc = _run(ctx, tmp_path, profile="safe")
+    assert res.returncode == 0, res.stderr
+    assert ctx["installs"]() == [f"-i|{SAFARI}|-R|--verbose|--include-config-data"]
+    st = _status(sc)
+    assert st[SAFARI] == "success" and st[TAHOE] == "skipped" and st[MAJOR_LABEL] == "skipped"
+
+
+def test_safe_mode_env_defers_restart_labels(tmp_path):
+    ctx = su_env(tmp_path, "mixed-with-major.txt", ASCENDO_SAFE_MODE="true")
+    res, sc = _run(ctx, tmp_path, "--filter", TAHOE)
+    assert ctx["installs"]() == []
+    assert _status(sc) == {TAHOE: "skipped"}
+
+
+# -- major macOS upgrades --------------------------------------------------------
+
+
+def test_major_upgrade_never_installed_and_never_dash_ia(tmp_path):
+    ctx = su_env(tmp_path, "mixed-with-major.txt")
+    res, sc = _run(ctx, tmp_path)
+    assert res.returncode == 75, res.stderr    # Tahoe 26.7 (same major) restarts
+    log = "\n".join(_sudo_lines(ctx))
+    assert MAJOR_LABEL not in log
+    assert " -ia" not in f" {log}" and not any(_has_flag(l, "-a") for l in _sudo_lines(ctx))
+    assert _status(sc)[MAJOR_LABEL] == "skipped"
+    major = next(i for i in sc.items if i.id == MAJOR_LABEL)
+    assert major.current_version == "26.6.2" and major.target_version == "27"
+    assert any("ASCENDO-ACTION-REQUIRED reason=major_upgrade cur=26.6.2 cand=27" in m.text
+               for m in sc.messages)
+    assert ctx["installs"]() == [
+        f"-i|{SAFARI}|-R|--verbose|--include-config-data",
+        f"-i|{TAHOE}|-R|--verbose|--include-config-data",
+    ]
+
+
+def test_major_pinned_explicitly_is_still_never_installed(tmp_path):
+    ctx = su_env(tmp_path, "mixed-with-major.txt")
+    res, sc = _run(ctx, tmp_path, "--filter", MAJOR_LABEL)
+    assert res.returncode == 0, res.stderr
+    assert ctx["installs"]() == []
+    assert _status(sc) == {MAJOR_LABEL: "skipped"}
+
+
+def test_major_installed_only_with_allow_flag_and_keeps_R(tmp_path):
+    ctx = su_env(tmp_path, "mixed-with-major.txt", ASCENDO_ALLOW_MAJOR_UPGRADE="1")
+    res, sc = _run(ctx, tmp_path, "--filter", MAJOR_LABEL)
+    assert res.returncode == 75, res.stderr
+    assert ctx["installs"]() == [f"-i|{MAJOR_LABEL}|-R|--verbose|--include-config-data"]
+
+
+# -- selection / labels with spaces ------------------------------------------------
+
+
+def test_items_not_requested_are_not_success(tmp_path):
+    ctx = su_env(tmp_path, "mixed-with-major.txt")
+    res, sc = _run(ctx, tmp_path, "--filter", SAFARI)
+    assert res.returncode == 0, res.stderr
+    assert list(_status(sc)) == [SAFARI]      # nothing else reported, let alone success
+
+
+def test_filter_multiple_labels_repeatable_and_csv(tmp_path):
+    ctx = su_env(tmp_path, "incremental-updates.txt")
+    res, sc = _run(ctx, tmp_path, "--filter", "Safari17.4-17.4",
+                   "--filter", "XProtectPlistConfigData_10_15-2174")
+    assert res.returncode == 0, res.stderr
+    assert len(ctx["installs"]()) == 2
+    sub = _subdir(tmp_path)
+    ctx2 = su_env(sub, "incremental-updates.txt")
+    res2, sc2 = _run(ctx2, sub, "--filter",
+                     "Safari17.4-17.4,XProtectPlistConfigData_10_15-2174,Nope-1")
+    assert res2.returncode == 0, res2.stderr
+    assert len(ctx2["installs"]()) == 2
+
+
+def test_label_with_spaces_is_one_whole_argument(tmp_path):
+    ctx = su_env(tmp_path, "mixed-with-major.txt")
+    res, sc = _run(ctx, tmp_path, "--filter", TAHOE)
+    assert res.returncode == 75, res.stderr
+    # '|' joins argv: the label is ONE argument, not split on its spaces.
+    assert ctx["installs"]() == [f"-i|{TAHOE}|-R|--verbose|--include-config-data"]
+
+
+def test_not_recommended_label_skipped_by_default_installed_with_all(tmp_path):
+    listing = (
+        "Software Update Tool\n\nFinding available software\n"
+        "Software Update found the following new or updated software:\n"
+        "* Label: OptionalThing-1.0\n"
+        "\tTitle: Optional Thing, Version: 1.0, Size: 10K, Recommended: NO, \n"
+    )
+    ctx = su_env(tmp_path, listing_text=listing)
+    res, sc = _run(ctx, tmp_path)
+    assert res.returncode == 0
+    assert ctx["installs"]() == [] and _status(sc) == {"OptionalThing-1.0": "skipped"}
+    sub = _subdir(tmp_path)
+    ctx2 = su_env(sub, listing_text=listing)
+    res2, sc2 = _run(ctx2, sub, "--all")
+    assert ctx2["installs"]() == ["-i|OptionalThing-1.0|-R|--verbose|--include-config-data"]
+    assert _status(sc2) == {"OptionalThing-1.0": "success"}
+
+
+# -- honest per-label status -------------------------------------------------------
+
+
+def test_per_label_failure_and_success(tmp_path):
+    ctx = su_env(tmp_path, "incremental-updates.txt", FAKE_SU_FAIL_LABELS="Safari17.4-17.4")
+    res, sc = _run(ctx, tmp_path)
+    assert res.returncode == 20, res.stderr
+    assert _status(sc) == {"Safari17.4-17.4": "failed",
+                           "XProtectPlistConfigData_10_15-2174": "success"}
+    assert any("Safari17.4-17.4: softwareupdate -i failed (rc=1)" in m.text for m in sc.messages)
+    # the failed label did not stop the next one
+    assert len(ctx["installs"]()) == 2
+
+
+def test_remeasure_still_listed_is_failed_not_success(tmp_path):
+    ctx = su_env(tmp_path, "incremental-updates.txt",
+                 FAKE_SU_KEEP_LABELS="Safari17.4-17.4")
+    res, sc = _run(ctx, tmp_path)
+    assert res.returncode == 20, res.stderr
+    assert _status(sc)["Safari17.4-17.4"] == "failed"
+    assert _status(sc)["XProtectPlistConfigData_10_15-2174"] == "success"
+    assert any("still pending after install" in m.text for m in sc.messages)
+
+
+def test_remeasure_probe_failure_is_unknown_never_success(tmp_path):
+    ctx = su_env(tmp_path, "incremental-updates.txt", FAKE_SU_LIST_FAIL_AFTER_INSTALL="1")
+    res, sc = _run(ctx, tmp_path)
+    assert res.returncode == 0, res.stderr
+    assert set(_status(sc).values()) == {"skipped"}
+    assert any("unknown" in m.text for m in sc.messages)
+    assert len(ctx["installs"]()) == 2
+
+
+def test_restart_batch_failure_is_failed_no_reboot(tmp_path):
+    ctx = su_env(tmp_path, "two-restart.txt", FAKE_SU_FAIL_LABELS="Firmware Update-1.0")
+    res, sc = _run(ctx, tmp_path)
+    assert res.returncode == 20, res.stderr
+    st = _status(sc)
+    assert st[TAHOE] == "failed" and st["Firmware Update-1.0"] == "failed"
+    assert st["Safari17.5-17.5"] == "success"
+    assert sc.needs_reboot in (False, None)

@@ -153,8 +153,12 @@ def test_required_args_validation(tmp_path):
 
 
 def test_softwareupdate_scripts_include_config_data_flag() -> None:
+    """Every phase lists with --include-config-data (Tahoe omits XProtect
+    without it): apply.sh in its install calls, the others via the shared lib
+    they source."""
+    sudir = ADAPTER_ROOT / "scripts" / "softwareupdate"
+    lib = (ADAPTER_ROOT / "lib" / "ascendo_softwareupdate.sh").read_text(encoding="utf-8")
+    assert "-l --include-config-data" in lib
+    assert "--include-config-data" in (sudir / "apply.sh").read_text(encoding="utf-8")
     for name in ("check.sh", "plan.sh", "apply.sh", "verify.sh"):
-        text = (ADAPTER_ROOT / "scripts" / "softwareupdate" / name).read_text(
-            encoding="utf-8"
-        )
-        assert "--include-config-data" in text, name
+        assert "ascendo_softwareupdate.sh" in (sudir / name).read_text(encoding="utf-8"), name

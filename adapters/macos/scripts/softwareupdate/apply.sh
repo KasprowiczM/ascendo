@@ -17,35 +17,42 @@
 # Args:
 #   --run-id ID --trigger TRIG --profile NAME --output-dir DIR
 #   [--dry-run]            emits planned items; NEVER invokes sudo
-#   [--all]                use -ia (all available) instead of -ir (recommended only)
-#   [--filter L1,L2,...]   label apply: `sudo -A softwareupdate -i <L1> <L2> -R --verbose`
-#                          (comma-separated; every pending label matching ANY entry is
-#                           installed; entries that are not pending labels are ignored)
+#   [--all]                also install updates that are not marked Recommended
+#                          (still label based: NEVER `-ia`, never a bare `-r`)
+#   [--filter LABEL]       repeatable; a value may also be a comma-separated list.
+#                          Only pending labels EXACTLY matching an entry are
+#                          installed; other entries are ignored. Labels are kept
+#                          whole (they contain spaces).
 #
-# Reboot-survival + post-apply reconciliation:
-#   Apply may reboot the Mac mid-run when any update has Action: restart.
-#   We pre-emit "planned" items + call json_save BEFORE invoking sudo so the
-#   sidecar persists across the reboot. JSON_FINALIZED is set to 1 to make
-#   the first EXIT trap a no-op.
+# Install policy (Ascendo parity with macOS_updates, Spec A):
+#   * updates are classified by su_classify.py against `sw_vers`:
+#       SAME/OTHER -> eligible; MAJOR (newer macOS release) -> NEVER installed,
+#       item `skipped` + ASCENDO-ACTION-REQUIRED reason=major_upgrade, unless
+#       ASCENDO_ALLOW_MAJOR_UPGRADE=1.
+#   * non-restart labels: one `sudo softwareupdate -i "<label>" -R --verbose
+#     --include-config-data` call PER label, first; then a post-install
+#     `-l` remeasure decides success (still listed -> failed; `-l` failed ->
+#     skipped "state unknown", never success).
+#   * restart labels: ONE batched `-i "<L1>" "<L2>" -R ...` call, last. Deferred
+#     (`skipped`, reason needs_restart) under the safe/quick profile or
+#     ASCENDO_SAFE_MODE=true, even when the category is pinned explicitly.
+#   * `-R` is on EVERY install call. No timeout wraps an install (a restart
+#     label can legitimately take very long); only the `-l` probes are bounded.
 #
-#   When sudo returns normally (the typical case — softwareupdate -R only
-#   reboots AFTER its process exits, mediated by launchd), we re-init the
-#   buffer and re-emit items with their TRUE post-apply status: ``success``
-#   on RC=0, ``failed`` on non-zero. The re-emit overwrites the same
-#   sidecar path so the operator sees accurate state once apply finishes
-#   without rebooting.
-#
-#   If sudo IS killed mid-stream by a forced reboot, the original "planned"
-#   sidecar is what survives — verify phase reconciles by re-running
-#   softwareupdate -l. "planned" beats "success" as a default-on-disk
-#   state because it's truthful: we asked for the update but didn't
-#   confirm it landed.
+# Reboot-survival + honest status:
+#   The sidecar is rebuilt from in-memory state after every step (_su_flush);
+#   anything not yet finished is on disk as `planned` (truthful default). Just
+#   BEFORE the batched restart call the sidecar is saved with needs_reboot set
+#   and JSON_FINALIZED=1 (EXIT trap becomes a no-op), so it survives a restart
+#   that kills this process. If the process survives (softwareupdate -R
+#   normally restarts AFTER it exits) the true outcome is written over it:
+#   rc 0 -> `success` (staged; applied on restart), else `failed`.
 #
 # Exit codes (per docs/agents/contract.md):
-#   0  success
+#   0  success (or nothing eligible: everything skipped)
 #   2  bad usage (missing required args / unknown flag)
-#   20 apply-fail-known (sudo softwareupdate non-zero exit)
-#   30 apply-fail-unknown (softwareupdate -l discovery failed)
+#   20 apply-fail-known (a label failed to install / is still pending)
+#   30 apply-fail-unknown (softwareupdate -l discovery failed or timed out)
 #   75 needs reboot (success, but operator must reboot)
 # =============================================================================
 set -o pipefail
@@ -55,6 +62,8 @@ ADAPTER_LIB="$SCRIPT_DIR/../../lib"
 
 # shellcheck source=../../lib/ascendo_json.sh
 . "$ADAPTER_LIB/ascendo_json.sh"
+# shellcheck source=../../lib/ascendo_softwareupdate.sh
+. "$ADAPTER_LIB/ascendo_softwareupdate.sh"
 
 # -- arg parsing ---------------------------------------------------------------
 RUN_ID=""
@@ -63,7 +72,33 @@ PROFILE_NAME=""
 OUTPUT_DIR=""
 DRY_RUN=0
 ALL=0
-FILTER_CSV=""
+FILTER_LABELS=""   # newline-delimited; each entry is one whole label
+FILTER_RAW=""      # the filter values as given, for messages
+
+# --filter is repeatable. A value is kept whole (labels contain spaces) AND, when
+# it contains commas, also split so the legacy "L1,L2" form keeps working. The
+# script only ever installs pending labels EXACTLY equal to an entry.
+_add_filter() {
+    local _v="$1" _part _rest
+    [ -n "$_v" ] || return 0
+    FILTER_RAW="${FILTER_RAW}${FILTER_RAW:+,}${_v}"
+    FILTER_LABELS="${FILTER_LABELS}${FILTER_LABELS:+
+}${_v}"
+    case "$_v" in
+        *,*)
+            _rest="$_v"
+            while [ -n "$_rest" ]; do
+                _part="${_rest%%,*}"
+                case "$_rest" in
+                    *,*) _rest="${_rest#*,}" ;;
+                    *)   _rest="" ;;
+                esac
+                [ -n "$_part" ] && FILTER_LABELS="${FILTER_LABELS}
+${_part}"
+            done
+            ;;
+    esac
+}
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -73,7 +108,7 @@ while [ $# -gt 0 ]; do
         --output-dir) OUTPUT_DIR="$2";   shift 2 ;;
         --dry-run)    DRY_RUN=1;         shift ;;
         --all)        ALL=1;             shift ;;
-        --filter)     FILTER_CSV="$2";   shift 2 ;;
+        --filter)     _add_filter "$2";  shift 2 ;;
         *) printf 'apply.sh: unknown arg: %s\n' "$1" >&2; exit 2 ;;
     esac
 done
@@ -121,89 +156,167 @@ _sudo_softwareupdate() {
     _ascendo_sudo "$SU_BIN" "$@"
 }
 
+
 # -- discover pending updates via softwareupdate -l --include-config-data ------
-SU_RC=0
-SU_OUT="$("$SU_BIN" -l --include-config-data 2>&1)" || SU_RC=$?
+# (C locale + bounded: see ascendo_softwareupdate.sh). A failed/timed-out probe
+# is a failure of the phase, never an empty (== "nothing to do") result.
+ascendo_su_list
 if [ "$SU_RC" -ne 0 ]; then
-    json_add_message "error" "softwareupdate -l failed (exit $SU_RC): $SU_OUT"
+    if [ "$SU_RC" -eq 124 ]; then
+        json_add_message "error" "softwareupdate -l timed out after ${ASCENDO_SU_LIST_TIMEOUT:-300}s"
+    else
+        json_add_message "error" "softwareupdate -l failed (exit $SU_RC): $SU_OUT"
+    fi
     json_add_item "softwareupdate:list-error" "" "" "failed" "softwareupdate"
     exit 30
 fi
 
+CUR_OS="$(ascendo_su_current_os)"
+SU_RECORDS="$(ascendo_su_records "$SU_OUT" "$CUR_OS")" || {
+    json_add_message "error" "softwareupdate listing could not be parsed (su_classify.py failed)"
+    json_add_item "softwareupdate:list-error" "" "" "failed" "softwareupdate"
+    exit 30
+}
+
 # Empty case: nothing to upgrade. Exit cleanly with zero items.
-if printf '%s\n' "$SU_OUT" | grep -q "No new software available\."; then
+if [ -z "$SU_RECORDS" ]; then
     json_add_message "info" "softwareupdate -l reports no pending updates"
     exit 0
 fi
 
-# -- helper: filter check (--filter is a comma-separated list of labels; each
-# pending label is matched EXACTLY against every entry, not just the first;
-# entries that are not pending labels are ignored) ---------------------------
-in_filter() {
-    [ -z "$FILTER_CSV" ] && return 0
-    case ",$FILTER_CSV," in
-        (*",$1,"*) return 0 ;;
-        (*) return 1 ;;
-    esac
+# -- state (bash 3.2: newline-delimited lists, US-separated fields) -----------
+NL='
+'
+US="$ASCENDO_SU_US"
+NEEDS_REBOOT=0
+RES=""        # final items:   label US cur US tgt US status
+MSGS=""       # messages:      level US text
+NR_TODO=""    # non-restart labels not yet installed:  label US version
+NR_AWAIT=""   # non-restart labels installed (rc 0), awaiting the remeasure
+RS_TODO=""    # restart labels (batched, last):        label US version
+FAILED_COUNT=0
+
+_res_add() { RES="${RES}${RES:+$NL}$1${US}$2${US}$3${US}$4"; }
+_msg_add() { MSGS="${MSGS}${MSGS:+$NL}$1${US}$2"; }
+
+# _in_filter LABEL -- no filter selects everything; else EXACT match on an entry.
+_in_filter() {
+    [ -n "$FILTER_LABELS" ] || return 0
+    local _entry
+    while IFS= read -r _entry; do
+        [ "$_entry" = "$1" ] && return 0
+    done <<< "$FILTER_LABELS"
+    return 1
 }
 
-# -- parse pending updates into space-separated TARGET_LABELS + TARGET_PAIRS --
-# Each pair is "<label>|<version>|<needs_restart>" where needs_restart is 1/0.
-# Use here-string (<<<) so the loop runs in current shell, not subshell.
-NEEDS_REBOOT=0
-TARGET_LABELS=""
-TARGET_PAIRS=""
-CURRENT_LABEL=""
+# _list_has LIST ITEM -- exact whole-line membership.
+_list_has() {
+    local _line
+    while IFS= read -r _line; do
+        [ "$_line" = "$2" ] && return 0
+    done <<< "$1"
+    return 1
+}
 
-while IFS= read -r line; do
-    case "$line" in
-        '* Label: '*)
-            CURRENT_LABEL="${line#'* Label: '}"
-            ;;
-        "	"*)
-            [ -n "$CURRENT_LABEL" ] || continue
-            attrs="${line#	}"
-            version="$(printf '%s\n' "$attrs" | sed -n 's/.*Version: \([^,]*\),.*/\1/p' | head -1)"
-            version="${version# }"
-            version="${version% }"
-            item_restart=0
-            if printf '%s\n' "$attrs" | grep -q "Action: restart"; then
-                item_restart=1
-                NEEDS_REBOOT=1
-            fi
-            if in_filter "$CURRENT_LABEL"; then
-                TARGET_LABELS="$TARGET_LABELS $CURRENT_LABEL"
-                TARGET_PAIRS="$TARGET_PAIRS $CURRENT_LABEL|$version|$item_restart"
-            fi
-            CURRENT_LABEL=""
-            ;;
-    esac
-done <<< "$SU_OUT"
+# Restart labels are deferred under safe/quick profiles even when the category
+# is pinned explicitly (profile is passed by the manager as --profile).
+DEFER_RESTART=0
+case "$PROFILE_NAME" in
+    safe|quick) DEFER_RESTART=1 ;;
+esac
+[ "${ASCENDO_SAFE_MODE:-}" = "true" ] && DEFER_RESTART=1
 
-# strip leading whitespace
-TARGET_LABELS="${TARGET_LABELS# }"
-TARGET_PAIRS="${TARGET_PAIRS# }"
+# -- selection -----------------------------------------------------------------
+MATCHED=0
+while IFS="$US" read -r _kind _label _title _ver _restart _recommended; do
+    [ -n "$_label" ] || continue
+    _in_filter "$_label" || continue
+    MATCHED=$(( MATCHED + 1 ))
+    _is_restart="$_restart"
 
-if [ -z "$TARGET_LABELS" ]; then
-    if [ -n "$FILTER_CSV" ]; then
-        json_add_message "info" "nothing selected: none of the filter entries ($FILTER_CSV) is a pending softwareupdate label"
+    if [ "$_kind" = "MAJOR" ]; then
+        _is_restart=1     # a macOS upgrade always restarts
+        if ! ascendo_su_major_allowed; then
+            _res_add "$_label" "$CUR_OS" "$_ver" "skipped"
+            _msg_add "warn" "${_label}: skipped -- major macOS upgrade is never installed automatically | $(ascendo_action_required_token major_upgrade "$CUR_OS" "$_ver")"
+            continue
+        fi
+    fi
+
+    if [ -z "$FILTER_LABELS" ] && [ "$ALL" -eq 0 ] && [ "$_recommended" != "1" ]; then
+        _res_add "$_label" "$_ver" "$_ver" "skipped"
+        _msg_add "info" "${_label}: skipped -- not marked Recommended (use --all, or pin it with --filter)"
+        continue
+    fi
+
+    if [ "$_is_restart" = "1" ]; then
+        if [ "$DEFER_RESTART" -eq 1 ]; then
+            _res_add "$_label" "$_ver" "$_ver" "skipped"
+            _msg_add "info" "${_label}: skipped -- restart required; deferred under the '${PROFILE_NAME}' profile (run the full profile to install) | $(ascendo_action_required_token needs_restart "?" "$_ver")"
+            continue
+        fi
+        RS_TODO="${RS_TODO}${RS_TODO:+$NL}${_label}${US}${_ver}"
+    else
+        NR_TODO="${NR_TODO}${NR_TODO:+$NL}${_label}${US}${_ver}"
+    fi
+done <<< "$SU_RECORDS"
+
+if [ "$MATCHED" -eq 0 ]; then
+    if [ -n "$FILTER_LABELS" ]; then
+        json_add_message "info" "nothing selected: none of the filter entries (${FILTER_RAW}) is a pending softwareupdate label"
     else
         json_add_message "info" "no pending updates after filter"
     fi
     exit 0
 fi
 
-# -- dry-run path: emit planned items, NEVER invoke sudo ----------------------
-if [ "$DRY_RUN" -eq 1 ]; then
-    for _pair in $TARGET_PAIRS; do
-        _label="$(printf '%s' "$_pair" | awk -F'|' '{print $1}')"
-        _ver="$(printf '%s' "$_pair" | awk -F'|' '{print $2}')"
-        json_add_item "$_label" "$_ver" "$_ver" "planned" "softwareupdate"
+# -- sidecar (re)builder --------------------------------------------------------
+# Rebuilds the whole sidecar buffer from the state lists: final results first,
+# then everything still to be done as `planned` (truthful default on disk if we
+# are killed / the Mac reboots mid-run).
+_su_flush() {
+    local _l _c _t _s _lvl _txt _v
+    if [ -n "${JSON_BUFDIR:-}" ] && [ -d "$JSON_BUFDIR" ]; then
+        rm -rf "$JSON_BUFDIR"
+    fi
+    json_init "apply" "softwareupdate" "$RUN_ID" "$TRIGGER" "$PROFILE_NAME" \
+              "softwareupdate" "$SU_VER" \
+              "$HOST_NAME" "$HOST_OS" "$HOST_OS_VERSION" "$HOST_ARCH" \
+              "$HOST_USER" "$HOST_IS_ELEVATED"
+    if [ -n "$RES" ]; then
+        while IFS="$US" read -r _l _c _t _s; do
+            json_add_item "$_l" "$_c" "$_t" "$_s" "softwareupdate"
+        done <<< "$RES"
+    fi
+    for _list in "$NR_TODO" "$NR_AWAIT" "$RS_TODO"; do
+        [ -n "$_list" ] || continue
+        while IFS="$US" read -r _l _v; do
+            json_add_item "$_l" "$_v" "$_v" "planned" "softwareupdate"
+        done <<< "$_list"
     done
+    if [ -n "$MSGS" ]; then
+        while IFS="$US" read -r _lvl _txt; do
+            json_add_message "$_lvl" "$_txt"
+        done <<< "$MSGS"
+    fi
     if [ "$NEEDS_REBOOT" -eq 1 ]; then
         json_set_needs_reboot true
     fi
-    json_add_message "info" "dry-run: no real upgrades performed"
+}
+
+# -- dry-run path: emit planned items, NEVER invoke sudo ----------------------
+if [ "$DRY_RUN" -eq 1 ]; then
+    [ -n "$RS_TODO" ] && NEEDS_REBOOT=1
+    _msg_add "info" "dry-run: no real upgrades performed"
+    _su_flush
+    json_save "$OUTPUT_DIR"
+    exit 0
+fi
+
+# Nothing eligible (everything skipped): report and stop before touching sudo.
+if [ -z "$NR_TODO" ] && [ -z "$RS_TODO" ]; then
+    _su_flush
+    json_save "$OUTPUT_DIR"
     exit 0
 fi
 
@@ -211,105 +324,119 @@ fi
 # Touch-ID-first sudo warming (Sesja 34). See ascendo_json.sh for the
 # rationale: native macOS auth dialog presents Touch ID first when
 # pam_tid is configured, password fallback otherwise. After this
-# returns, the `sudo -A` invocation below uses the warmed timestamp.
+# returns, the `sudo` invocations below use the warmed timestamp.
 _ascendo_sudo_warm
 
-# 1. Build sudo argv based on flags
-SU_ARGV=""
-if [ -n "$FILTER_CSV" ]; then
-    # Label apply: -i <LABEL> [<LABEL> ...] (no -a/-r flag; softwareupdate
-    # disambiguates by label). Only labels that are actually pending are passed.
-    SU_ARGV="-i $TARGET_LABELS -R --verbose --include-config-data"
-elif [ "$ALL" -eq 1 ]; then
-    SU_ARGV="-i -a -R --verbose --include-config-data"
-else
-    # Default: recommended only
-    SU_ARGV="-i -r -R --verbose --include-config-data"
-fi
-
-# 2. Pre-emit PLANNED items BEFORE sudo (reboot survival; truthful default).
-for _pair in $TARGET_PAIRS; do
-    _label="$(printf '%s' "$_pair" | awk -F'|' '{print $1}')"
-    _ver="$(printf '%s' "$_pair" | awk -F'|' '{print $2}')"
-    json_add_item "$_label" "$_ver" "$_ver" "planned" "softwareupdate"
-done
-
-# 3. Set top-level needs_reboot flag if any item required restart.
-if [ "$NEEDS_REBOOT" -eq 1 ]; then
-    json_set_needs_reboot true
-fi
-
-# 4. Save sidecar to disk BEFORE sudo invocation (sidecar must persist across
-#    a mid-apply reboot). Disable EXIT trap save by setting JSON_FINALIZED=1.
-json_save "$OUTPUT_DIR"
-JSON_FINALIZED=1
-
-# 5. Invoke sudo. tee both stdout + stderr to a log file alongside the sidecar
-#    AND through _stream_tee so the dashboard SSE endpoint sees every line in
-#    real time.
 mkdir -p "$OUTPUT_DIR/$RUN_ID" 2>/dev/null || true
 _log_path="$OUTPUT_DIR/$RUN_ID/apply__softwareupdate.log"
 
-_total_labels=0
-for _pair in $TARGET_PAIRS; do
-    _total_labels=$(( _total_labels + 1 ))
-done
-if [ "$_total_labels" -gt 0 ]; then
-    _stream_progress 5 "softwareupdate apply: $_total_labels update(s)"
-fi
-_stream_emit ">>> sudo softwareupdate $SU_ARGV"
+_count_lines() { [ -n "$1" ] && printf '%s\n' "$1" | wc -l | tr -d ' ' || echo 0; }
+_total_labels=$(( $(_count_lines "$NR_TODO") + $(_count_lines "$RS_TODO") ))
+_stream_progress 5 "softwareupdate apply: $_total_labels update(s)"
 
-# Word-splitting on $SU_ARGV is intentional + safe — values are controlled
-# (literal flags + pending labels).
-# shellcheck disable=SC2086
-_sudo_softwareupdate $SU_ARGV 2>&1 | tee -a "$_log_path" | _stream_tee >/dev/null
-_RC="${PIPESTATUS[0]}"
-_stream_progress 100 "softwareupdate apply: done (rc=$_RC)"
+_su_flush     # everything eligible on disk as `planned` before the first install
 
-# 6. Post-apply reconciliation: re-init buffer + re-emit items with true
-#    status (success on RC=0, failed otherwise), then overwrite the sidecar.
-#    If we get here, the process survived sudo — so the operator deserves
-#    accurate state on disk instead of the stale "planned" pre-emit.
-if [ "$_RC" -eq 0 ]; then
-    _final_status="success"
-else
-    _final_status="failed"
-fi
-
-json_init "apply" "softwareupdate" "$RUN_ID" "$TRIGGER" "$PROFILE_NAME" \
-          "softwareupdate" "$SU_VER" \
-          "$HOST_NAME" "$HOST_OS" "$HOST_OS_VERSION" "$HOST_ARCH" \
-          "$HOST_USER" "$HOST_IS_ELEVATED"
-
-# The trap was already armed before the first json_save (which set
-# JSON_FINALIZED=1). json_init resets JSON_FINALIZED to 0, so re-arm
-# the EXIT trap so a crash between here and the post-apply json_save
-# still produces SOMETHING on disk.
-trap 'json_save_on_exit "$OUTPUT_DIR"' EXIT
-
-for _pair in $TARGET_PAIRS; do
-    _label="$(printf '%s' "$_pair" | awk -F'|' '{print $1}')"
-    _ver="$(printf '%s' "$_pair" | awk -F'|' '{print $2}')"
-    json_add_item "$_label" "$_ver" "$_ver" "$_final_status" "softwareupdate"
-done
-
-if [ "$NEEDS_REBOOT" -eq 1 ]; then
-    json_set_needs_reboot true
+# 1. Non-restart labels: ONE install call per label, each with -R. stdin is
+#    detached so an install can never swallow the label list being iterated.
+_done_labels=0
+_NR_ITER="$NR_TODO"
+if [ -n "$_NR_ITER" ]; then
+    while IFS="$US" read -r _label _ver; do
+        [ -n "$_label" ] || continue
+        NR_TODO="$(printf '%s\n' "$NR_TODO" | sed '1d')"
+        _stream_emit ">>> sudo softwareupdate -i \"$_label\" -R --verbose --include-config-data"
+        _sudo_softwareupdate -i "$_label" -R --verbose --include-config-data </dev/null 2>&1 \
+            | tee -a "$_log_path" | _stream_tee >/dev/null
+        _RC="${PIPESTATUS[0]}"
+        _done_labels=$(( _done_labels + 1 ))
+        if [ "$_RC" -eq 0 ]; then
+            NR_AWAIT="${NR_AWAIT}${NR_AWAIT:+$NL}${_label}${US}${_ver}"
+        else
+            _res_add "$_label" "$_ver" "$_ver" "failed"
+            _msg_add "error" "${_label}: softwareupdate -i failed (rc=${_RC})"
+            FAILED_COUNT=$(( FAILED_COUNT + 1 ))
+        fi
+        _stream_progress $(( 5 + 85 * _done_labels / (_total_labels > 0 ? _total_labels : 1) )) "softwareupdate apply: ${_done_labels}/${_total_labels}"
+        _su_flush
+    done <<< "$_NR_ITER"
 fi
 
-if [ "$_RC" -ne 0 ]; then
-    json_add_message "error" "sudo softwareupdate exited $_RC"
+# 2. Post-install remeasure for the non-restart labels: success only when the
+#    label is really gone from `softwareupdate -l`. A failed probe is UNKNOWN
+#    (skipped + reason), never success.
+if [ -n "$NR_AWAIT" ]; then
+    _known=1
+    ascendo_su_list || _known=0
+    _still=""
+    if [ "$_known" -eq 1 ]; then
+        _post_recs="$(ascendo_su_records "$SU_OUT" "$CUR_OS")" || _known=0
+    fi
+    if [ "$_known" -eq 1 ] && [ -n "$_post_recs" ]; then
+        while IFS="$US" read -r _pk _plabel _rest; do
+            [ -n "$_plabel" ] && _still="${_still}${_still:+$NL}${_plabel}"
+        done <<< "$_post_recs"
+    fi
+    while IFS="$US" read -r _label _ver; do
+        [ -n "$_label" ] || continue
+        if [ "$_known" -eq 0 ]; then
+            _res_add "$_label" "$_ver" "$_ver" "skipped"
+            _msg_add "warn" "${_label}: installed (rc=0) but the post-install state is unknown -- softwareupdate -l failed (rc=${SU_RC}); not reported as success"
+        elif _list_has "$_still" "$_label"; then
+            _res_add "$_label" "$_ver" "$_ver" "failed"
+            _msg_add "error" "${_label}: still pending after install"
+            FAILED_COUNT=$(( FAILED_COUNT + 1 ))
+        else
+            _res_add "$_label" "$_ver" "$_ver" "success"
+        fi
+    done <<< "$NR_AWAIT"
+    NR_AWAIT=""
+    _su_flush
 fi
 
+# 3. Restart labels: ONE batched call, LAST. Save the sidecar (planned +
+#    needs_reboot) BEFORE it so it survives a restart that kills this process;
+#    JSON_FINALIZED=1 makes the EXIT trap a no-op until the next rebuild.
+if [ -n "$RS_TODO" ]; then
+    set --
+    while IFS="$US" read -r _label _ver; do
+        [ -n "$_label" ] && set -- "$@" "$_label"
+    done <<< "$RS_TODO"
+    NEEDS_REBOOT=1
+    _su_flush
+    json_save "$OUTPUT_DIR"
+    JSON_FINALIZED=1
+    _stream_emit ">>> sudo softwareupdate -i (batched, restart) $* -R --verbose --include-config-data"
+    _sudo_softwareupdate -i "$@" -R --verbose --include-config-data </dev/null 2>&1 \
+        | tee -a "$_log_path" | _stream_tee >/dev/null
+    _RC="${PIPESTATUS[0]}"
+
+    # The process survived softwareupdate -R (it normally restarts AFTER we
+    # exit): record the true outcome. Restart updates stay listed until the
+    # reboot, so no remeasure is possible here -- rc 0 means "staged".
+    while IFS="$US" read -r _label _ver; do
+        [ -n "$_label" ] || continue
+        if [ "$_RC" -eq 0 ]; then
+            _res_add "$_label" "$_ver" "$_ver" "success"
+            _msg_add "info" "${_label}: staged with -R; it is applied on restart"
+        else
+            _res_add "$_label" "$_ver" "$_ver" "failed"
+            _msg_add "error" "${_label}: softwareupdate -i failed (rc=${_RC})"
+            FAILED_COUNT=$(( FAILED_COUNT + 1 ))
+        fi
+    done <<< "$RS_TODO"
+    RS_TODO=""
+    [ "$_RC" -eq 0 ] || NEEDS_REBOOT=0
+fi
+
+_stream_progress 100 "softwareupdate apply: done"
+_su_flush
 json_save "$OUTPUT_DIR"
 
-# 7. Exit-code logic
-if [ "$NEEDS_REBOOT" -eq 1 ] && [ "$_RC" -eq 0 ]; then
-    exit 75   # NEEDS_REBOOT (success, but operator must reboot)
-fi
-
-if [ "$_RC" -ne 0 ]; then
+# Exit-code logic
+if [ "$FAILED_COUNT" -gt 0 ]; then
     exit 20   # apply-fail-known
 fi
-
+if [ "$NEEDS_REBOOT" -eq 1 ]; then
+    exit 75   # NEEDS_REBOOT (success, but operator must reboot)
+fi
 exit 0

@@ -216,7 +216,7 @@ json_save_on_exit() {
 #
 # Usage from inside an apply.sh:
 #     brew upgrade --formula foo 2>&1 | _stream_tee
-#     sudo -A softwareupdate -ir -R --verbose 2>&1 | _stream_tee
+#     sudo -A softwareupdate -i "<label>" -R --verbose 2>&1 | _stream_tee
 #     sudo -A mas upgrade $TARGET_IDS 2>&1 | _stream_tee
 #
 # The exit code of the original command is preserved via PIPESTATUS[0]

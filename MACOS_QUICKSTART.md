@@ -357,7 +357,7 @@ logged.
 | **npm global CLIs** | npm → apply | No sudo; user-site only |
 | **Python global tools** | pip → apply | No sudo; user-site or brew-Python-site depending on flavour |
 | **Web-installed apps** | web → apply | 7 handlers: silent updates for Sparkle/GH/Keystone/Squirrel/msupdate/Docker. Defer-if-running policy: sparkle/github_dmg/squirrel skip when app is open (close it and re-run); keystone/msupdate/docker apply regardless. `/Applications` writes try without sudo first; sudo on EACCES. spctl signature verify + quarantine xattr strip on installed bundles. |
-| **macOS itself** | softwareupdate → apply | `sudo -A softwareupdate -ir -R --verbose`. The `-R` flag is mandatory — without it updates download but never apply. May reboot the Mac mid-run. |
+| **macOS itself** | softwareupdate → apply | `sudo -A softwareupdate -i "<label>" -R --verbose --include-config-data`, one call per label (restart labels are batched into one call, last). The `-R` flag is mandatory — without it updates download but never apply. Never `-ia`; a major macOS upgrade (e.g. 26 → 27) is skipped with an "action required" entry unless `ASCENDO_ALLOW_MAJOR_UPGRADE=1`; restart updates are deferred under the `safe` profile. Success is reported only after a post-install `softwareupdate -l` remeasure. May reboot the Mac mid-run. |
 
 After every apply phase, the dashboard invalidates the inventory cache
 and a banner appears at the top if a reboot is required.

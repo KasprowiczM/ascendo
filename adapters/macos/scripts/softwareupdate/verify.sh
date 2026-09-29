@@ -4,8 +4,11 @@
 # =============================================================================
 # Reads sibling apply__softwareupdate.json, re-runs softwareupdate -l, and for
 # each apply-success item checks whether the same Label still appears in the
-# output. If it does, the update is still pending -> verify failed. If not,
-# the update is confirmed installed -> verify success.
+# output. If it does, the update is still pending -> verify failed (except a
+# restart update while the apply run flagged needs_reboot: `triggered`, it is
+# applied on restart). If not, the update is confirmed installed -> success.
+# If `softwareupdate -l` itself fails/times out the state is unknown ->
+# `skipped` with a reason (never success).
 #
 # Soft no-op (exit 0, success sidecar) when apply sidecar is absent (verify
 # can run after check-only).
@@ -25,6 +28,8 @@ ADAPTER_LIB="$SCRIPT_DIR/../../lib"
 
 # shellcheck source=../../lib/ascendo_json.sh
 . "$ADAPTER_LIB/ascendo_json.sh"
+# shellcheck source=../../lib/ascendo_softwareupdate.sh
+. "$ADAPTER_LIB/ascendo_softwareupdate.sh"
 
 # -- configurable binary (overridable in tests via SU_BIN) --------------------
 SU_BIN="${SU_BIN:-/usr/sbin/softwareupdate}"
@@ -99,40 +104,71 @@ if [ -z "$APPLY_SUCCESS_IDS" ]; then
     exit 0
 fi
 
-# -- re-run softwareupdate -l --include-config-data to build still-pending set
-SU_RC=0
-SU_OUT="$("$SU_BIN" -l --include-config-data 2>&1)" || SU_RC=$?
+# -- re-run softwareupdate -l (same parser as check/plan/apply) --------------
+# A failed/timed-out probe leaves the outcome UNKNOWN: skipped + reason, never
+# success (and not a fabricated failure either).
+ascendo_su_list
+_pending_ok=1
+STILL_PENDING=""      # newline-delimited labels still offered
+STILL_RESTART=""      # ...of which need a restart
 if [ "$SU_RC" -ne 0 ]; then
-    json_add_message "error" "softwareupdate -l failed during verify (exit $SU_RC): $SU_OUT"
-    # Emit all applied items as failed -- cannot confirm installation
-    printf '%s\n' "$APPLY_SUCCESS_IDS" | while IFS= read -r _id; do
-        [ -n "$_id" ] || continue
-        json_add_item "$_id" "" "" "failed" "softwareupdate"
-    done
-    exit 0
+    _pending_ok=0
+    if [ "$SU_RC" -eq 124 ]; then
+        json_add_message "warn" "softwareupdate -l timed out during verify; post-apply state unknown"
+    else
+        json_add_message "warn" "softwareupdate -l failed during verify (exit $SU_RC): $SU_OUT -- post-apply state unknown"
+    fi
+else
+    CUR_OS="$(ascendo_su_current_os)"
+    if SU_RECORDS="$(ascendo_su_records "$SU_OUT" "$CUR_OS")"; then
+        if [ -n "$SU_RECORDS" ]; then
+            while IFS="$ASCENDO_SU_US" read -r _pk _plabel _ptitle _pver _prestart _prec; do
+                [ -n "$_plabel" ] || continue
+                STILL_PENDING="${STILL_PENDING}${STILL_PENDING:+
+}${_plabel}"
+                if [ "$_prestart" = "1" ] || [ "$_pk" = "MAJOR" ]; then
+                    STILL_RESTART="${STILL_RESTART}${STILL_RESTART:+
+}${_plabel}"
+                fi
+            done <<< "$SU_RECORDS"
+        fi
+    else
+        _pending_ok=0
+        json_add_message "warn" "softwareupdate listing could not be parsed during verify; post-apply state unknown"
+    fi
 fi
 
-# Build a newline-delimited list of labels still reported by softwareupdate -l
-# (each "* Label: <X>" line becomes just <X>)
-STILL_PENDING="$(printf '%s\n' "$SU_OUT" | sed -n 's/^\* Label: //p')"
+_list_has() {
+    local _line
+    while IFS= read -r _line; do
+        [ "$_line" = "$2" ] && return 0
+    done <<< "$1"
+    return 1
+}
+
+APPLY_NEEDS_REBOOT="$(jq -r '.needs_reboot // false' "$APPLY_SIDECAR" 2>/dev/null)"
 
 # -- emit one verify item per apply success id ---------------------------------
-# Iterate apply success items and check whether each label is still pending in
-# `softwareupdate -l` output. NOTE: this `printf | while` subshell is safe because
-# json_add_item persists each item to disk via JSON_BUFDIR (set by json_init); we
-# don't rely on any bash variable mutation surviving the subshell.
-printf '%s\n' "$APPLY_SUCCESS_IDS" | while IFS= read -r _id; do
+# Iterate in the CURRENT shell (here-string) so labels stay whole strings.
+while IFS= read -r _id; do
     [ -n "$_id" ] || continue
-    # Look up resolved_version from apply sidecar
     RESOLVED="$(jq -r --arg id "$_id" \
         '.items[]? | select(.id==$id) | (.resolved_version // .target_version // "")' \
-        "$APPLY_SIDECAR" 2>/dev/null)"
-    # Check whether this label is still pending
-    if printf '%s\n' "$STILL_PENDING" | grep -qxF "$_id"; then
-        json_add_item "$_id" "" "" "failed" "softwareupdate"
+        "$APPLY_SIDECAR" 2>/dev/null | head -1)"
+    if [ "$_pending_ok" -eq 0 ]; then
+        json_add_item "$_id" "" "$RESOLVED" "skipped" "softwareupdate"
+    elif _list_has "$STILL_PENDING" "$_id"; then
+        if [ "$APPLY_NEEDS_REBOOT" = "true" ] && _list_has "$STILL_RESTART" "$_id"; then
+            # A restart update stays listed until the reboot: not a failure.
+            json_add_item "$_id" "" "$RESOLVED" "triggered" "softwareupdate"
+            json_add_message "info" "${_id}: still listed -- it is applied on restart (reboot required)"
+        else
+            json_add_item "$_id" "" "" "failed" "softwareupdate"
+            json_add_message "error" "${_id}: still pending after install"
+        fi
     else
         json_add_item "$_id" "" "$RESOLVED" "success" "softwareupdate"
     fi
-done
+done <<< "$APPLY_SUCCESS_IDS"
 
 exit 0
