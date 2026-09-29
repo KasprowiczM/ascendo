@@ -19,6 +19,8 @@
 # =============================================================================
 # shellcheck shell=bash
 
+[ -n "${_ASCENDO_PROC_LOADED:-}" ] || . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ascendo_proc.sh"
+
 # -- toolchain home ---------------------------------------------------------
 # User-scope (no sudo). Mirrors legacy update_npm_cli.sh.
 ascendo_npm_toolchain_home() {
@@ -405,37 +407,9 @@ ascendo_npm_preferred_path() {
     printf '%s' "$_parts"
 }
 
-# Bound a command to $1 seconds. Prefers GNU timeout/gtimeout; otherwise a
-# bash 3.2 poll loop. Exit 124 when the deadline is hit (same as GNU timeout).
+# Bound a command to $1 seconds. Thin wrapper over the shared runner in
+# ascendo_proc.sh (GNU timeout --kill-after, else process-group TERM->KILL).
+# Exit 124 when the deadline is hit.
 ascendo_npm_run_with_timeout() {
-    local seconds="$1"
-    local command_pid command_exit elapsed grace
-    shift
-    if command -v timeout >/dev/null 2>&1; then
-        timeout "$seconds" "$@"
-    elif command -v gtimeout >/dev/null 2>&1; then
-        gtimeout "$seconds" "$@"
-    else
-        "$@" &
-        command_pid=$!
-        elapsed=0
-        while kill -0 "$command_pid" 2>/dev/null; do
-            if [ "$elapsed" -ge "$seconds" ]; then
-                kill -TERM "$command_pid" 2>/dev/null || true
-                grace=0
-                while kill -0 "$command_pid" 2>/dev/null && [ "$grace" -lt 5 ]; do
-                    sleep 1
-                    grace=$((grace + 1))
-                done
-                kill -KILL "$command_pid" 2>/dev/null || true
-                wait "$command_pid" 2>/dev/null || true
-                return 124
-            fi
-            sleep 1
-            elapsed=$((elapsed + 1))
-        done
-        wait "$command_pid"
-        command_exit=$?
-        return "$command_exit"
-    fi
+    ascendo_run_with_timeout "$@"
 }

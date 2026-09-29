@@ -23,7 +23,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-import time
 from collections.abc import Iterable
 from pathlib import Path
 from typing import ClassVar
@@ -35,6 +34,7 @@ from ascendo.models.package import SourceType
 from ascendo.models.run import Phase, RunInfo
 from ascendo.orchestrator.stream_log import child_env_with_stream_log
 from ascendo.models.sidecar import Sidecar
+from ascendo_macos.managers._proc import run_streaming, salvage_timeout_sidecar
 from ascendo.orchestrator.sidecar_io import (
     SidecarIOError,
     SidecarReadError,
@@ -154,10 +154,17 @@ class SoftwareUpdateManager(IPackageManager):
             try:
                 completed = self._run_streaming(argv, log_path, self._timeout_sec, env=env)
             except subprocess.TimeoutExpired as exc:
-                raise ManagerError(
+                timeout_msg = (
                     f"softwareupdate {phase.value} script timed out after "
                     f"{self._timeout_sec}s: {script_path}"
-                ) from exc
+                )
+                salvaged = salvage_timeout_sidecar(
+                    output_dir / str(run.id) / f"{phase.value}__softwareupdate.json",
+                    timeout_msg,
+                )
+                if salvaged is not None:
+                    return salvaged
+                raise ManagerError(timeout_msg) from exc
             except OSError as exc:
                 raise ManagerError(
                     f"failed to spawn bash for softwareupdate {phase.value}: {exc}"
@@ -246,40 +253,8 @@ class SoftwareUpdateManager(IPackageManager):
         *,
         env: dict[str, str],
     ) -> subprocess.CompletedProcess[str]:
-        proc = subprocess.Popen(  # noqa: S603 (argv list)
-            argv,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            env=env,
-        )
-        captured: list[str] = []
-        started = time.monotonic()
-        try:
-            with log_path.open("a", encoding="utf-8") as fh:
-                for line in iter(proc.stdout.readline, ""):
-                    if time.monotonic() - started > timeout:
-                        proc.kill()
-                        raise subprocess.TimeoutExpired(argv, timeout)
-                    if not line:
-                        break
-                    captured.append(line)
-                    try:
-                        fh.write(line)
-                        fh.flush()
-                    except OSError:
-                        pass
-        finally:
-            proc.stdout.close()
-        try:
-            rc = proc.wait(timeout=max(1.0, timeout - (time.monotonic() - started)))
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            raise
-        return subprocess.CompletedProcess(
-            args=argv, returncode=rc, stdout="".join(captured), stderr="",
-        )
+        # Wall-clock deadline + process-group kill live in the shared helper.
+        return run_streaming(argv, log_path, timeout, env=env)
 
     def _missing_sidecar_error(
         self,

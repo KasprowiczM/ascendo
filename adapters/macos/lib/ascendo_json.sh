@@ -41,6 +41,9 @@ if [ ! -f "$_ASCENDO_JSON_EMIT" ]; then
     return 1 2>/dev/null || exit 1
 fi
 
+# Bounded process runner (ascendo_run_with_timeout) for every phase script.
+[ -f "${ASCENDO_JSON_DIR}/ascendo_proc.sh" ] && . "${ASCENDO_JSON_DIR}/ascendo_proc.sh"
+
 JSON_BUFDIR=""
 JSON_PHASE=""
 JSON_CATEGORY=""
