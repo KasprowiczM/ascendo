@@ -159,11 +159,16 @@ while IFS= read -r _id; do
     esac
 
     if [ "$_still_outdated" -eq 1 ] && [ "$_is_greedy" -eq 1 ]; then
-        # Greedy casks (auto_updates / :latest) stay listed by brew even after a
-        # successful upgrade: informational, not a failure.
-        json_add_item "$_id" "" "" "success" "brew" ""
+        # Greedy casks (auto_updates / :latest) can stay listed by brew after a
+        # successful upgrade. We measured "still outdated", so this is NOT a
+        # success: `skipped` (candidate kept, current from the measurement),
+        # non-failing, explained.
+        _row="$(ascendo_brew_parse_outdated "$TMP_CURRENT" cask 2>/dev/null | awk -F, -v id="$_id" '$1 == id {print; exit}')"
+        _mcur="$(printf '%s' "$_row" | cut -d, -f2)"
+        _mcand="$(printf '%s' "$_row" | cut -d, -f3)"
+        json_add_item "$_id" "$_mcur" "$_mcand" "skipped" "brew" "cask"
         json_add_message "warn" \
-            "verify: '$_id' is an auto-updating cask that brew still lists as outdated after apply (informational)" \
+            "${_id}: brew still lists this auto-updating cask as outdated (${_mcur} -> ${_mcand}) after apply; the app updates itself, so this is not treated as a failure or as up to date" \
             "CASK_GREEDY_RESIDUE"
     elif [ "$_still_outdated" -eq 1 ]; then
         json_add_item "$_id" "" "" "failed" "brew" ""

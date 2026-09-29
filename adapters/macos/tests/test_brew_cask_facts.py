@@ -41,7 +41,7 @@ class Sandbox:
 
     def __init__(self, tmp: Path, *, outdated=(), greedy_outdated=(), installed=(),
                  info=(), apps=(), running_apps=(), running_ids=(),
-                 outdated_rc=0, greedy_rc=0, greedy_stderr="", greedy_file=None):
+                 outdated_rc=0, greedy_rc=0, greedy_stderr="", greedy_file=None, info_sleep=0):
         self.tmp = tmp
         tmp.mkdir(parents=True, exist_ok=True)
         self.bin = tmp / "bin"
@@ -69,6 +69,7 @@ case "$1" in
     cat "{tmp}/outdated.json"; exit {outdated_rc} ;;
   list) case "$*" in *--cask*--versions*) cat "{tmp}/installed.txt" ;; esac; exit 0 ;;
   info)
+    [ {info_sleep} -gt 0 ] && sleep {info_sleep}
     # like real brew: only the requested casks, and a single unknown token
     # rejects the whole call (rc 1, no JSON).
     shift; [ "$1" = "--json=v2" ] && shift; [ "$1" = "--cask" ] && shift
@@ -347,19 +348,33 @@ def _verify(sb: Sandbox, applied_ids):
     return res, json.loads((out / rid / "verify__brew.json").read_text())
 
 
-def test_verify_greedy_residue_is_informational_others_still_fail(tmp_path):
+def test_verify_greedy_residue_is_skipped_not_success_others_still_fail(tmp_path):
+    """GC5: brew still lists the cask -> the measurement did NOT reach the target."""
     sb = Sandbox(tmp_path,
                  outdated=[outdated_entry("slack", "3", "4")],
-                 greedy_outdated=[outdated_entry("brave-browser")],
+                 greedy_outdated=[outdated_entry("brave-browser", "1.0", "2.0")],
                  installed=[("brave-browser", "1.0")])
     sb.greedy_file("brave-browser")
     res, sc = _verify(sb, ["brave-browser", "slack", "gone-cask"])
     items = by_id(sc)
-    assert items["brave-browser"]["status"] == "success"
-    assert message(sc, "CASK_GREEDY_RESIDUE")
+    brave = items["brave-browser"]
+    assert brave["status"] == "skipped"                       # never `success` / up_to_date
+    assert (brave["current_version"], brave["target_version"]) == ("1.0", "2.0")  # measurement kept
+    msg = message(sc, "CASK_GREEDY_RESIDUE")
+    assert msg["level"] == "warn" and "updates itself" in msg["text"]
     assert items["slack"]["status"] == "failed"      # a normal cask still outdated = real failure
     assert items["gone-cask"]["status"] == "success"  # no longer outdated
-    assert res.returncode == 1
+    assert res.returncode == 1                        # only because of slack
+
+
+def test_verify_greedy_residue_alone_does_not_fail_the_phase(tmp_path):
+    sb = Sandbox(tmp_path, greedy_outdated=[outdated_entry("brave-browser", "1.0", "2.0")],
+                 installed=[("brave-browser", "1.0")])
+    sb.greedy_file("brave-browser")
+    res, sc = _verify(sb, ["brave-browser"])
+    assert res.returncode == 0
+    assert by_id(sc)["brave-browser"]["status"] == "skipped"
+    assert sc["status"] != "failed"
 
 
 # ── orphan casks ─────────────────────────────────────────────────────────────
@@ -530,6 +545,94 @@ def test_dry_run_apply_never_upgrades_or_probes_admin(tmp_path):
     sb = Sandbox(tmp_path, outdated=[outdated_entry("zzz-pkg")], info=[PKG_CASK])
     _, sc = sb.run_phase("apply", "--dry-run")
     assert by_id(sc)["zzz-pkg"]["status"] == "planned"
+    assert sb.upgrades() == []
+
+
+# ── fail-safe: no facts => never upgrade blind ───────────────────────────────
+
+def test_cask_without_facts_and_without_table_entry_is_not_upgraded(tmp_path):
+    """brew info fails for it (unknown to the fake), and it is in no token table."""
+    sb = Sandbox(tmp_path, outdated=[outdated_entry("zzz-mystery")], info=[])
+    res, sc = sb.run_phase("apply")
+    assert res.returncode == 0, res.stderr
+    item = by_id(sc)["zzz-mystery"]
+    assert item["status"] == "skipped"
+    assert (item["current_version"], item["target_version"]) == ("1.0", "2.0")  # candidate kept
+    msg = message(sc, "APP_FACTS_UNAVAILABLE")
+    assert msg["text"].startswith("zzz-mystery: ")
+    assert "cannot tell whether the app is running" in msg["text"]
+    assert "reason=app_facts_unavailable cur=1.0 cand=2.0" in msg["text"]
+    assert sb.upgrades() == []
+    assert sb.killed() == []
+
+
+def test_table_cask_without_facts_still_upgrades_when_idle(tmp_path):
+    """Last-resort table keeps working: slack has no facts but a table entry."""
+    sb = Sandbox(tmp_path, outdated=[outdated_entry("slack", "3", "4")], info=[], apps=["Slack.app"])
+    res, sc = sb.run_phase("apply")
+    assert by_id(sc)["slack"]["status"] == "success"
+    assert sb.upgrades() == ["upgrade --cask slack"]
+
+
+def test_cask_with_facts_but_no_app_or_quit_ids_upgrades(tmp_path):
+    """Facts loaded (cli-only cask): known state, nothing to be running -> proceed."""
+    cli = cask("zzz-cli", artifacts=[{"binary": ["x"]}])
+    sb = Sandbox(tmp_path, outdated=[outdated_entry("zzz-cli")], info=[cli])
+    _, sc = sb.run_phase("apply")
+    assert by_id(sc)["zzz-cli"]["status"] == "success"
+
+
+def test_per_token_fallback_when_one_unknown_token_rejects_the_batch(tmp_path):
+    outdated = [outdated_entry("zzz-fancy"), outdated_entry("zzz-unknown"), outdated_entry("zzz-two")]
+    sb = Sandbox(tmp_path, outdated=outdated,
+                 info=[FANCY, cask("zzz-two", artifacts=[{"app": ["Two.app"]}])],
+                 apps=["Fancy Thing.app", "Two.app"], running_apps=["Fancy Thing"])
+    res, sc = sb.run_phase("apply")
+    assert res.returncode == 0, res.stderr
+    infos = [c for c in sb.brew_calls() if c.startswith("info")]
+    # 1 rejected batch, then ONE call per token still missing facts (all 3: the
+    # batch yielded nothing); after that facts exist for fancy/two, not unknown.
+    assert infos[0] == "info --json=v2 --cask zzz-fancy zzz-unknown zzz-two"
+    assert set(infos[1:]) == {"info --json=v2 --cask zzz-fancy", "info --json=v2 --cask zzz-unknown",
+                              "info --json=v2 --cask zzz-two"}
+    items = by_id(sc)
+    assert items["zzz-fancy"]["status"] == "skipped"           # facts found -> running detected
+    assert message(sc, "CASK_APP_RUNNING")["text"].startswith("zzz-fancy: ")
+    assert items["zzz-two"]["status"] == "success"             # facts found -> idle -> upgraded
+    assert items["zzz-unknown"]["status"] == "skipped"          # no facts -> fail-safe
+    assert message(sc, "APP_FACTS_UNAVAILABLE")["text"].startswith("zzz-unknown: ")
+    assert sb.upgrades() == ["upgrade --cask zzz-two"]
+
+
+def test_load_facts_keeps_facts_for_known_tokens_when_batch_is_rejected(tmp_path):
+    sb = Sandbox(tmp_path, info=[FANCY])
+    res = sb.bash("ascendo_brew_load_cask_facts zzz-fancy zzz-unknown; "
+                  "ascendo_brew_cask_facts_line zzz-fancy; echo; "
+                  "ascendo_brew_cask_facts_line zzz-unknown; echo END")
+    lines = res.stdout.splitlines()
+    assert lines[0] == "zzz-fancy|2.0|1.0|Fancy Thing.app||0"
+    assert lines[1:] == ["END"]                       # unknown token: no line, no re-query
+    assert [c for c in sb.brew_calls() if c.startswith("info")] == [
+        "info --json=v2 --cask zzz-fancy zzz-unknown",   # rejected batch
+        "info --json=v2 --cask zzz-fancy",               # per-token fallback ...
+        "info --json=v2 --cask zzz-unknown",             # ... (fails, stays unknown)
+    ]
+
+
+def test_hanging_brew_info_is_bounded_by_the_timeout(tmp_path):
+    import time
+
+    sb = Sandbox(tmp_path, outdated=[outdated_entry("zzz-fancy")], info=[FANCY],
+                 apps=["Fancy Thing.app"], info_sleep=30)
+    sb.env["ASCENDO_BREW_INFO_TIMEOUT"] = "1"
+    sb.env["ASCENDO_KILL_AFTER"] = "1"
+    start = time.time()
+    res, sc = sb.run_phase("apply")
+    elapsed = time.time() - start
+    assert res.returncode == 0, res.stderr
+    assert elapsed < 20, f"phase took {elapsed:.1f}s: brew info must be killed at the deadline"
+    assert by_id(sc)["zzz-fancy"]["status"] == "skipped"
+    assert message(sc, "APP_FACTS_UNAVAILABLE")
     assert sb.upgrades() == []
 
 

@@ -227,6 +227,19 @@ _apply_one() {
         return 0
     fi
 
+    # Fail-safe: with no facts (brew info failed even per token) and no table
+    # entry we cannot tell whether the app is open, and `brew upgrade --cask`
+    # replaces the bundle underneath a running app. Never upgrade blind.
+    if [ "$_feed" = "cask" ] && ! ascendo_brew_cask_running_state_known "$_id"; then
+        _stream_progress "$_pct" "skipping $_id (cannot determine whether its app is running)"
+        _stream_emit ">>> skipping $_id (cask facts unavailable -- cannot tell if the app is running)"
+        json_add_item "$_id" "$_current" "$_target" "skipped" "brew" "cask"
+        json_add_message "warn" \
+            "${_id}: skipped -- could not read the cask's app facts (brew info failed), so Ascendo cannot tell whether the app is running; not upgraded to avoid closing it. Re-run apply or run: brew upgrade --cask ${_id} | $(ascendo_action_required_token app_facts_unavailable "$_current" "$_target")" \
+            "APP_FACTS_UNAVAILABLE"
+        return 0
+    fi
+
     # A pkg/installer cask needs administrator rights. Dashboard runs are
     # TTY-less, so without an askpass helper (SUDO_ASKPASS) brew's sudo would
     # fail or hang: defer it instead. Keep the candidate so inventory still

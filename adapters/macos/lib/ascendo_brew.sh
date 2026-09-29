@@ -34,6 +34,9 @@
 #                                          -- rc 0 when any process runs from one of those bundles
 #                                             or a `quit:` bundle id is running (read-only probe;
 #                                             NEVER quits or kills anything)
+#     ascendo_brew_cask_running_state_known <token>
+#                                          -- rc 0 when facts (or the table) let us tell whether the
+#                                             app is running; else apply must not upgrade it
 #     ascendo_brew_cask_disposition <token> <candidate>
 #                                          -- print "<proceed|downgrade|orphan|scheme_unknown>|<detail>"
 #                                             (recorded-version + bundle-relation downgrade guard)
@@ -73,6 +76,14 @@ ascendo_brew_version() {
 
 # Directory of this library (brew_casks.py lives next to it).
 _ASCENDO_BREW_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+[ -n "${_ASCENDO_PROC_LOADED:-}" ] || . "$_ASCENDO_BREW_LIB_DIR/ascendo_proc.sh"
+
+# Seconds each `brew info` (facts) call may take before it is killed, so N
+# sequential per-token fallbacks cannot hang a phase. ASCENDO_BREW_INFO_TIMEOUT overrides.
+_ascendo_brew_info() {
+    ascendo_run_with_timeout "${ASCENDO_BREW_INFO_TIMEOUT:-60}" brew info --json=v2 --cask "$@" 2>/dev/null
+}
 
 # Run the pure cask-facts module (system python 3.9 is enough).
 _ascendo_brew_casks_py() {
@@ -381,13 +392,13 @@ ascendo_brew_load_cask_facts() {
     [ $# -gt 0 ] || return 0
     command -v brew >/dev/null 2>&1 || return 0
     local json tok
-    json="$(brew info --json=v2 --cask "$@" 2>/dev/null)" || json=""
+    json="$(_ascendo_brew_info "$@")" || json=""
     _ascendo_brew_absorb_info_json "$json"
     for tok in "$@"; do
         if printf '%s\n' "$ASCENDO_BREW_FACTS" | awk -F'|' -v t="$tok" '$1 == t {f=1} END {exit f ? 0 : 1}'; then
             continue
         fi
-        json="$(brew info --json=v2 --cask "$tok" 2>/dev/null)" || json=""
+        json="$(_ascendo_brew_info "$tok")" || json=""
         _ascendo_brew_absorb_info_json "$json"
     done
     return 0
@@ -427,7 +438,7 @@ ascendo_brew_cask_facts_line() {
         line="$(printf '%s\n' "$ASCENDO_BREW_FACTS" | awk -F'|' -v t="$token" '$1 == t {print; exit}')"
     fi
     if [ -z "$line" ] && [ -z "$ASCENDO_BREW_FACTS_LOADED" ] && command -v brew >/dev/null 2>&1; then
-        line="$(brew info --json=v2 --cask "$token" 2>/dev/null | _ascendo_brew_casks_py facts 2>/dev/null | head -n1)" || line=""
+        line="$(_ascendo_brew_info "$token" | _ascendo_brew_casks_py facts 2>/dev/null | head -n1)" || line=""
     fi
     printf '%s' "$line"
 }
@@ -477,6 +488,16 @@ EOF_DIRS
 $(printf '%s' "$targets" | tr ';' '\n')
 EOF_TARGETS
     return 0
+}
+
+# Exit 0 when Ascendo can tell whether the cask's app is running: real facts
+# were loaded for it, or (last resort) the token table knows its bundle. When
+# neither holds (brew info failed even per token AND no table entry) the
+# running-app probe would silently answer "not running"; callers must then NOT
+# upgrade (never-close-user-apps outranks coverage).
+ascendo_brew_cask_running_state_known() {
+    [ -n "$(ascendo_brew_cask_facts_line "$1")" ] && return 0
+    [ -n "$(ascendo_brew_cask_app_name "$1")" ]
 }
 
 # Exit 0 iff an app with this bundle id is running (LaunchServices).
