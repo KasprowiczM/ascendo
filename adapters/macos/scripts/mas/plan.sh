@@ -78,8 +78,7 @@ trap 'json_save_on_exit "$OUTPUT_DIR"' EXIT
 
 # -- sign-in probe -------------------------------------------------------------
 if ! mas_signed_in; then
-    json_add_message "error" "Not signed into Mac App Store. Open App Store.app and sign in."
-    json_add_item "mas:not-signed-in" "" "" "failed" "mas"
+    mas_report_signin_failure
     exit 0
 fi
 
@@ -89,7 +88,13 @@ in_filter() {
 }
 
 # -- planned (outdated apps only; no up_to_date sweep) ------------------------
-OUTDATED_JSON="$(mas_outdated_json)"
+# Probe failure/timeout = UNKNOWN (skipped + reason), never an empty plan.
+if ! mas_probe_outdated; then
+    mas_report_outdated_unknown
+    mas_report_ipad_pending "planned" "$FILTER_CSV"
+    exit 0
+fi
+OUTDATED_JSON="$MAS_OUTDATED_JSON"
 
 printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, (if (.name // "") == "" then .id else .name end), .current_version, .target_version] | @tsv' 2>/dev/null | \
 while IFS="$(printf '\t')" read -r _id _name _cur _tgt; do
@@ -98,5 +103,8 @@ while IFS="$(printf '\t')" read -r _id _name _cur _tgt; do
         json_add_item "$_id" "$_cur" "$_tgt" "planned" "mas"
     fi
 done
+
+# -- iPad / iOS-on-Mac apps (report-only, iTunes Lookup gate) ------------------
+mas_report_ipad_pending "planned" "$FILTER_CSV"
 
 exit 0

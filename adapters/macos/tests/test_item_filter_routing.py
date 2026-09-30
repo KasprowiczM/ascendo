@@ -28,6 +28,7 @@ from ascendo_macos.managers.brew import BrewManager
 from ascendo_macos.managers.mas import MasManager
 from ascendo_macos.managers.softwareupdate import SoftwareUpdateManager
 
+from .mas_fakes import mas_env
 from .su_fakes import su_env
 
 ADAPTER_ROOT = Path(__file__).resolve().parents[1]
@@ -59,37 +60,6 @@ def _parse(p: Path):
 # -- fakes -----------------------------------------------------------------
 
 
-def _fake_mas(tmp_path: Path, upgrade_log: Path | None = None) -> Path:
-    list_text = (FIX / "mas-list.txt").read_text()
-    upg = f"echo \"$@\" >> {upgrade_log}\n" if upgrade_log else ""
-    p = tmp_path / "fake_mas"
-    p.write_text(
-        "#!/usr/bin/env bash\n"
-        "case \"$1\" in\n"
-        f"  list) cat <<'EOF_L'\n{list_text}EOF_L\n ;;\n"
-        f"  outdated) cat <<'EOF_O'\n{MAS_OUTDATED}EOF_O\n ;;\n"
-        "  version) echo 4.3.0 ;;\n"
-        f"  upgrade) {upg} ;;\n"
-        "  *) exit 1 ;;\n"
-        "esac\n"
-    )
-    os.chmod(p, 0o755)
-    return p
-
-
-def _fake_sudo(tmp_path: Path, log: Path) -> Path:
-    p = tmp_path / "bin" / "sudo"
-    p.parent.mkdir(exist_ok=True)
-    p.write_text(
-        "#!/usr/bin/env bash\n"
-        f"echo \"$@\" >> {log}\n"
-        "if [ \"$1\" = '-A' ]; then shift; fi\n"
-        "\"$@\"\n"
-    )
-    os.chmod(p, 0o755)
-    return p
-
-
 def _run(script: Path, env_extra: dict, out: Path, rid: str, *extra: str):
     env = dict(os.environ)
     env.update(env_extra)
@@ -100,13 +70,11 @@ def _run(script: Path, env_extra: dict, out: Path, rid: str, *extra: str):
     )
 
 
-def _mas_env(tmp_path: Path, upgrade_log: Path | None = None):
-    sudo_log = tmp_path / "sudo.log"
-    sudo = _fake_sudo(tmp_path, sudo_log)
-    return {
-        "MAS_BIN": str(_fake_mas(tmp_path, upgrade_log)),
-        "PATH": f"{sudo.parent}:{os.environ['PATH']}",
-    }, sudo_log
+def _mas_env(tmp_path: Path):
+    """(env overrides, sudo log path). The shared fake records upgrades to
+    ``<tmp>/mas_state/upgrades.log``."""
+    fakes = mas_env(tmp_path)
+    return fakes["env"], fakes["state"] / "sudo.log"
 
 
 # -- mas_filter_match (helper) ---------------------------------------------
@@ -149,8 +117,8 @@ def test_mas_apply_dry_run_filter_by_id_and_by_name(tmp_path, flt):
 
 def test_mas_apply_real_filter_by_name_upgrades_only_that_app(tmp_path):
     """The reported bug: with a NAME filter mas apply upgraded nothing."""
-    upgrade_log = tmp_path / "upgrade.log"
-    env, _ = _mas_env(tmp_path, upgrade_log)
+    upgrade_log = tmp_path / "mas_state" / "upgrades.log"
+    env, _ = _mas_env(tmp_path)
     out = tmp_path / "out"
     rid = str(uuid.uuid4())
     res = _run(SCRIPTS / "mas" / "apply.sh", env, out, rid, "--filter", "Keka")
@@ -163,8 +131,8 @@ def test_mas_apply_real_filter_by_name_upgrades_only_that_app(tmp_path):
 
 
 def test_mas_apply_filter_name_with_spaces_and_dash(tmp_path):
-    upgrade_log = tmp_path / "upgrade.log"
-    env, _ = _mas_env(tmp_path, upgrade_log)
+    upgrade_log = tmp_path / "mas_state" / "upgrades.log"
+    env, _ = _mas_env(tmp_path)
     out = tmp_path / "out"
     rid = str(uuid.uuid4())
     res = _run(SCRIPTS / "mas" / "apply.sh", env, out, rid,

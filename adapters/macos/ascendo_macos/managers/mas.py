@@ -53,7 +53,13 @@ class MasManager(IPackageManager):
                      password is cached and to retrieve the SUDO_ASKPASS
                      helper path for the apply phase.
         bash_path:   Optional override for bash binary.
-        timeout_sec: Per-phase timeout. Default 1800 (30 min).
+        timeout_sec: Per-phase timeout, the OUTER bound. Default 14400 (4 h):
+                     the scripts bound their own commands (``mas outdated``
+                     120 s, each ``mas upgrade`` 1800 s -- see
+                     ``ASCENDO_MAS_CHECK_TIMEOUT`` / ``ASCENDO_MAS_UPGRADE_TIMEOUT``)
+                     and an apply can run several of those plus a
+                     re-measurement, so a 1800 s outer kill would discard the
+                     whole sidecar before the script could report honestly.
     """
 
     SCRIPT_BY_PHASE: ClassVar[dict[Phase, str]] = {
@@ -67,7 +73,7 @@ class MasManager(IPackageManager):
     FILTER_PHASES: ClassVar[frozenset[Phase]] = frozenset(
         {Phase.CHECK, Phase.PLAN, Phase.APPLY}
     )
-    DEFAULT_TIMEOUT_SEC: ClassVar[int] = 1800
+    DEFAULT_TIMEOUT_SEC: ClassVar[int] = 14400
     MIN_MAS_MAJOR: ClassVar[int] = 4
 
     def __init__(

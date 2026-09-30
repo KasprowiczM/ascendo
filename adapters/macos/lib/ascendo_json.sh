@@ -309,6 +309,20 @@ _ascendo_sudo() {
     fi
 }
 
+# _ascendo_sudo_prefix
+#   Prints the sudo command prefix `_ascendo_sudo` would use ("sudo -A" when an
+#   askpass helper is wired, else "sudo"), so a caller can hand the whole argv
+#   to an EXECUTABLE-only wrapper such as `ascendo_run_with_timeout`
+#   (which must not be given a shell function). Word-split it unquoted:
+#       ascendo_run_with_timeout 1800 $(_ascendo_sudo_prefix) env X=1 cmd ...
+_ascendo_sudo_prefix() {
+    if [ -n "${SUDO_ASKPASS:-}" ] && [ -x "${SUDO_ASKPASS}" ]; then
+        printf 'sudo -A'
+    else
+        printf 'sudo'
+    fi
+}
+
 _ascendo_sudo_warm() {
     # Test-fixture opt-out: pytest exports PYTEST_CURRENT_TEST for every
     # test it runs; ASCENDO_SUDO_WARM_DISABLE is the explicit operator

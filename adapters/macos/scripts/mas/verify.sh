@@ -89,7 +89,12 @@ fi
 
 # -- sign-in probe (must be signed in to re-query) ----------------------------
 if ! mas_signed_in; then
-    json_add_message "error" "Not signed into Mac App Store. Cannot re-query outdated status."
+    if [ "${MAS_SIGNIN_RC:-1}" -eq 124 ]; then
+        json_add_message "warn" "mas list timed out; cannot re-query outdated status (unknown)."
+        json_add_item "mas:probe-unknown" "" "" "skipped" "mas"
+    else
+        json_add_message "error" "Not signed into Mac App Store. Cannot re-query outdated status."
+    fi
     exit 0
 fi
 
@@ -102,7 +107,18 @@ if [ -z "$APPLY_SUCCESS_IDS" ]; then
 fi
 
 # -- re-run outdated query to build still-outdated set -------------------------
-OUTDATED_JSON="$(mas_outdated_json)"
+# If the re-measurement itself fails we cannot say the apply took: each id is
+# `skipped` (unknown) -- never `success` without a measurement.
+if ! mas_probe_outdated; then
+    json_add_message "warn" "mas outdated $(mas_probe_reason); cannot re-measure applied apps (unverified)."
+    printf '%s\n' "$APPLY_SUCCESS_IDS" | while IFS= read -r _id; do
+        [ -n "$_id" ] || continue
+        RESOLVED="$(jq -r --arg id "$_id" '.items[]? | select(.id==$id) | (.resolved_version // .target_version // "")' "$APPLY_SIDECAR" 2>/dev/null)"
+        json_add_item "$_id" "" "$RESOLVED" "skipped" "mas"
+    done
+    exit 0
+fi
+OUTDATED_JSON="$MAS_OUTDATED_JSON"
 
 # Build space-delimited string of still-outdated ids (Bash 3.2-safe, no arrays)
 STILL_OUTDATED=" $(printf '%s' "$OUTDATED_JSON" | jq -r '.[].id' 2>/dev/null | tr '\n' ' ') "

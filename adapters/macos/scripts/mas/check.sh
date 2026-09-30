@@ -81,9 +81,9 @@ json_init "check" "mas" "$RUN_ID" "$TRIGGER" "$PROFILE_NAME" \
 trap 'json_save_on_exit "$OUTPUT_DIR"' EXIT
 
 # -- sign-in probe -------------------------------------------------------------
+# Bounded (ASCENDO_MAS_CHECK_TIMEOUT). A timeout is UNKNOWN, not "signed out".
 if ! mas_signed_in; then
-    json_add_message "error" "Not signed into Mac App Store. Open App Store.app and sign in."
-    json_add_item "mas:not-signed-in" "" "" "failed" "mas"
+    mas_report_signin_failure
     exit 0
 fi
 
@@ -95,7 +95,14 @@ in_filter() {
 }
 
 # -- planned (outdated apps) ---------------------------------------------------
-OUTDATED_JSON="$(mas_outdated_json)"
+# A failed/timed-out `mas outdated` means the state is UNKNOWN: report that and
+# do NOT sweep the installed list as "up_to_date" (we don't know that).
+if ! mas_probe_outdated; then
+    mas_report_outdated_unknown
+    mas_report_ipad_pending "planned" "$FILTER_CSV"
+    exit 0
+fi
+OUTDATED_JSON="$MAS_OUTDATED_JSON"
 
 # Collect outdated ids as a space-delimited string for the up_to_date loop.
 # Bash 3.2-safe: no arrays, use plain string with space sentinels.
@@ -120,7 +127,13 @@ while IFS="$(printf '\t')" read -r _id _name _cur _tgt; do
 done
 
 # -- up_to_date (installed minus outdated) -------------------------------------
-LIST_JSON="$(mas_list_json)"
+if ! mas_probe_list; then
+    json_add_message "warn" "mas list $(mas_probe_reason); installed App Store apps could not be enumerated."
+    json_add_item "mas:list-probe" "" "" "skipped" "mas"
+    LIST_JSON="[]"
+else
+    LIST_JSON="$MAS_LIST_JSON"
+fi
 
 printf '%s' "$LIST_JSON" | jq -r '.[] | [.id, .name, .version] | @tsv' 2>/dev/null | \
 while IFS="$(printf '\t')" read -r _id _name _ver; do
@@ -137,5 +150,8 @@ while IFS="$(printf '\t')" read -r _id _name _ver; do
         json_add_item "$_id" "$_ver" "$_ver" "up_to_date" "mas"
     fi
 done
+
+# -- iPad / iOS-on-Mac apps (report-only, iTunes Lookup gate) ------------------
+mas_report_ipad_pending "planned" "$FILTER_CSV"
 
 exit 0
