@@ -72,6 +72,16 @@ while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
             STATUS="success"
         fi
     fi
+    # A native CLI that is present must actually run `--version` and print a
+    # digit-bearing version; a bare product name ("codex-cli") is not one.
+    if [ "$METHOD" = "native-installer" ] && [ -n "$INSTALLED" ]; then
+        _native_path="$(ascendo_npm_native_command_path "$CMD")"
+        if [ -z "$_native_path" ] \
+           || ! ascendo_npm_report_cli_version_or_fail "$DISPLAY" "$_native_path" >/dev/null; then
+            STATUS="failed"
+            json_add_message "error" "$DISPLAY: '$CMD --version' does not print a version"
+        fi
+    fi
     json_add_item "$DISPLAY" "$INSTALLED" "$LATEST" "$STATUS" "npm" "$METHOD"
 done < <(ascendo_npm_manifest_lines)
 

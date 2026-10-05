@@ -10,6 +10,7 @@ prefix.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -214,7 +215,16 @@ def test_run_with_timeout_returns_124_when_command_exceeds_limit() -> None:
     assert res.returncode == 124, res.stderr + res.stdout
 
 
-def test_native_installer_apply_wraps_curl_in_timeout() -> None:
+def test_native_installer_apply_is_bounded_download_then_exec() -> None:
+    """apply.sh runs vendor installers through the shared bounded runner with a
+    360 s default -- downloaded to a file first, never `curl | sh`."""
     text = (ADAPTER_ROOT / "scripts" / "npm" / "apply.sh").read_text(encoding="utf-8")
     assert "ascendo_npm_run_with_timeout" in text
-    assert "ASCENDO_NPM_NATIVE_INSTALL_TIMEOUT" in text
+    assert "ascendo_npm_fetch_installer" in text
+    assert "ascendo_npm_native_installer_timeout" in text
+    assert 'sh -c "curl' not in text
+    res = subprocess.run(
+        ["bash", "-c", f'. "{LIB}"; ascendo_npm_native_installer_timeout'],
+        capture_output=True, text=True, check=False,
+        env={"PATH": os.environ["PATH"], "HOME": os.environ["HOME"]})
+    assert res.stdout.strip() == "360"

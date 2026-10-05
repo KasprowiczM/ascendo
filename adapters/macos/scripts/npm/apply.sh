@@ -6,6 +6,9 @@
 #   * native-node:  install/upgrade Node via `n` under $TOOLCHAIN_HOME/node
 #   * native-bun:   run the official bun installer (curl https://bun.sh/install)
 #   * npm:          `npm install -g <package_name>` under $NPM_GLOBAL_PREFIX
+#   * native-installer: claude/codex/agy/cursor-agent -- `<cmd> update` when
+#                   installed, else a downloaded (not piped) vendor installer;
+#                   success needs a working `--version` (see apply_native_installer)
 #
 # Bootstrap order:
 #   1. Ensure $TOOLCHAIN_HOME/node/bin/node exists (install via brew first
@@ -273,14 +276,34 @@ apply_npm() {
     json_add_item "$_display" "$_new" "$_new" "success" "npm" "npm"
 }
 
-# Vendor install scripts are idempotent: they download the latest binary
-# into ~/.local/bin. Always run on apply (macOS_updates 2026-08-24) —
-# an up_to_date check would skip agy/cursor-agent forever because they
-# have no npm registry candidate.
+# Bounded, tab-free tail of a captured log for sidecar messages. (Credential
+# redaction of these tails is a separate step -- do not widen the bound here.)
+_native_log_tail() {
+    tail -n 12 "$1" 2>/dev/null | tr '\t' ' ' | awk 'NF{print}' | head -c 1500 || true
+}
+
+# Record the outcome of a native CLI update/install after a verified version.
+_native_record_success() {   # display before after
+    if [ -n "$2" ] && [ "$2" = "$3" ]; then
+        json_add_item "$1" "$3" "$3" "up_to_date" "npm" "native-installer"
+    else
+        json_add_item "$1" "$2" "$3" "success" "npm" "native-installer"
+    fi
+}
+
+# Native CLIs (claude, codex, agy, cursor-agent; macOS_updates T10/H4/H5):
+#   1. installed (~/.local/bin/<cmd>)  -> `<cmd> update`, never the install
+#      script (claude's install.sh runs a TUI that ignores SIGTERM and hung
+#      the whole pipeline). Only a failed update of a NON-claude CLI falls
+#      through to step 2; a claude binary that still runs is reported failed.
+#   2. missing / broken                -> vendor installer, DOWNLOADED to a temp
+#      file (https only, size cap, non-empty) and exec'd with per-vendor env +
+#      args, stdin </dev/null, wall-clock bound; never `curl | sh`.
+# Success needs a post-action `--version` that prints a digit-bearing version.
 apply_native_installer() {
     local _display="$1"
     local _cmd="$2"
-    local _url
+    local _url _path _upd _env _bargs _timeout _before _after _rc _tail _tmp_log _installer_tmp _runs=0
     _url="$(ascendo_npm_native_install_url "$_cmd")" || _url=""
     if [ "$DRY_RUN" = "true" ]; then
         json_add_item "$_display" "" "" "planned" "npm" "native-installer"
@@ -291,34 +314,90 @@ apply_native_installer() {
         json_add_message "error" "no native-installer URL for command '$_cmd' ($_display)"
         return
     fi
-    if ! command -v curl >/dev/null 2>&1; then
-        json_add_item "$_display" "" "" "failed" "npm" "native-installer"
-        json_add_message "error" "curl missing; cannot run native installer for $_display"
-        return
-    fi
-    _stream_emit ">>> native-installer $_display ($_url)"
-    local _tmp_log
+    _path="$(ascendo_npm_local_bin)/$_cmd"
+    _upd="$(ascendo_npm_native_update_cmd "$_cmd")"
+    _env="$(ascendo_npm_native_installer_env "$_cmd")"
+    _bargs="$(ascendo_npm_native_bootstrap_args "$_cmd")"
+    _timeout="$(ascendo_npm_native_installer_timeout)"
+    _before=""
+    [ -x "$_path" ] && _before="$(ascendo_npm_native_installed_version "$_display" "$_cmd")"
     _tmp_log="$(mktemp -t ascendo-native-install.XXXXXX 2>/dev/null || mktemp /tmp/ascendo-native-install.XXXXXX)"
-    {
-        ascendo_npm_run_with_timeout "${ASCENDO_NPM_NATIVE_INSTALL_TIMEOUT:-180}" sh -c "curl -fsSL \"$_url\" | sh"
-    } >"$_tmp_log" 2>&1
-    local _rc=$?
-    if [ "$_rc" -ne 0 ]; then
-        local _tail
-        _tail="$(tail -n 12 "$_tmp_log" 2>/dev/null | tr '\t' ' ' | awk 'NF{print}' | head -c 1500 || true)"
-        json_add_item "$_display" "" "" "failed" "npm" "native-installer"
-        if [ "$_rc" -eq 124 ]; then
-            json_add_message "error" "native installer for $_display timed out (exit 124) — ${_tail:-no output}"
+
+    # -- 1. installed: the CLI's own update subcommand ------------------------
+    if [ -x "$_path" ] && [ -n "$_upd" ]; then
+        _stream_emit ">>> $_display: $_cmd $_upd"
+        # $_env / $_upd are unquoted on purpose (empty or KEY=VAL / one word).
+        # shellcheck disable=SC2086
+        ascendo_npm_run_with_timeout "$_timeout" env $_env "$_path" $_upd >"$_tmp_log" 2>&1
+        _rc=$?
+        _tail="$(_native_log_tail "$_tmp_log")"
+        if [ "$_rc" -eq 0 ]; then
+            if _after="$(ascendo_npm_report_cli_version_or_fail "$_display" "$_path")"; then
+                _native_record_success "$_display" "$_before" "$_after"
+                rm -f "$_tmp_log" 2>/dev/null
+                return
+            fi
+            _tail="'$_cmd $_upd' exited 0 but '$_cmd --version' does not print a version${_tail:+ -- $_tail}"
+        elif [ "$_rc" -eq 124 ]; then
+            _tail="'$_cmd $_upd' timed out (exit 124)${_tail:+ -- $_tail}"
         else
-            json_add_message "error" "native installer for $_display exited $_rc — ${_tail:-no output}"
+            _tail="'$_cmd $_upd' exited $_rc${_tail:+ -- $_tail}"
         fi
+        ascendo_npm_report_cli_version_or_fail "$_display" "$_path" >/dev/null && _runs=1
+        if [ "$_cmd" = "claude" ] && [ "$_runs" -eq 1 ]; then
+            # Never re-run install.sh over a working claude (TUI hang class).
+            json_add_item "$_display" "$_before" "" "failed" "npm" "native-installer"
+            json_add_message "error" "$_display: $_tail"
+            rm -f "$_tmp_log" 2>/dev/null
+            return
+        fi
+        json_add_message "warn" "$_display: $_tail -- falling back to the vendor installer"
+    fi
+
+    # -- 2. bootstrap / fallback: downloaded installer ------------------------
+    if ! command -v curl >/dev/null 2>&1; then
+        json_add_item "$_display" "$_before" "" "failed" "npm" "native-installer"
+        json_add_message "error" "curl missing; cannot run native installer for $_display"
         rm -f "$_tmp_log" 2>/dev/null
         return
     fi
+    _stream_emit ">>> native-installer $_display ($_url)"
+    _installer_tmp="$(mktemp "${TMPDIR:-/tmp}/ascendo-installer.XXXXXX")" || _installer_tmp=""
+    if [ -z "$_installer_tmp" ] || ! ascendo_npm_fetch_installer "$_url" "$_installer_tmp"; then
+        [ -n "$_installer_tmp" ] && rm -f "$_installer_tmp" "${_installer_tmp}.part" 2>/dev/null
+        json_add_item "$_display" "$_before" "" "failed" "npm" "native-installer"
+        json_add_message "error" "native installer for $_display: download failed ($_url)"
+        rm -f "$_tmp_log" 2>/dev/null
+        return
+    fi
+    # shellcheck disable=SC2086
+    ascendo_npm_run_with_timeout "$_timeout" env $_env /bin/sh "$_installer_tmp" $_bargs >"$_tmp_log" 2>&1
+    _rc=$?
+    rm -f "$_installer_tmp" 2>/dev/null
+    _tail="$(_native_log_tail "$_tmp_log")"
     rm -f "$_tmp_log" 2>/dev/null
-    local _new
-    _new="$(ascendo_npm_native_installed_version "$_display" "$_cmd")"
-    json_add_item "$_display" "$_new" "$_new" "success" "npm" "native-installer"
+    if [ "$_rc" -ne 0 ]; then
+        json_add_item "$_display" "$_before" "" "failed" "npm" "native-installer"
+        if [ "$_rc" -eq 124 ]; then
+            json_add_message "error" "native installer for $_display timed out (exit 124) -- ${_tail:-no output}"
+        else
+            json_add_message "error" "native installer for $_display exited $_rc -- ${_tail:-no output}"
+        fi
+        return
+    fi
+    # Vendor installers drop the binary in ~/.local/bin; verify exactly that
+    # file, not whatever happens to be on PATH.
+    if [ ! -x "$_path" ]; then
+        json_add_item "$_display" "$_before" "" "failed" "npm" "native-installer"
+        json_add_message "error" "$_display: installer exited 0 but no '$_cmd' binary appeared in $(ascendo_npm_local_bin)"
+        return
+    fi
+    if ! _after="$(ascendo_npm_report_cli_version_or_fail "$_display" "$_path")"; then
+        json_add_item "$_display" "$_before" "" "failed" "npm" "native-installer"
+        json_add_message "error" "$_display: installer exited 0 but '$_cmd --version' does not print a version"
+        return
+    fi
+    _native_record_success "$_display" "$_before" "$_after"
 }
 
 # Total count for live-stream progress accounting.

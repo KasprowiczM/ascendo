@@ -146,7 +146,13 @@ ascendo_npm_bun_bin() {
 # adapters/macos/config/npm_global_clis.txt — pipe-delimited:
 #   display_name|package_name|method|brew_formula|command
 # Lines starting with # and blank lines are skipped.
+# ASCENDO_NPM_MANIFEST (test seam) overrides the shipped manifest so tests can
+# drive check/apply/verify with a one-row manifest and fake CLIs.
 ascendo_npm_manifest_path() {
+    if [ -n "${ASCENDO_NPM_MANIFEST:-}" ]; then
+        printf '%s' "$ASCENDO_NPM_MANIFEST"
+        return 0
+    fi
     local _self_dir
     _self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     printf '%s/../config/npm_global_clis.txt' "$_self_dir"
@@ -359,29 +365,118 @@ ascendo_npm_native_command_path() {
     command -v "$_cmd" 2>/dev/null || true
 }
 
+# Pick the version token out of one `--version` output line, per CLI:
+#   claude-code  "2.1.5 (Claude Code)"  -> first token
+#   codex-cli    "codex-cli 0.153.4"    -> last token (first is the product name)
+#   others       first token when it carries a digit, else the last token
+# A leading "v" is stripped. No digit check here (see report_cli_version_or_fail).
+_ascendo_npm_native_parse_version() {
+    local _display="$1" _line="$2" _first _last _v
+    _first="$(printf '%s' "$_line" | awk '{print $1}')"
+    _last="$(printf '%s' "$_line" | awk '{print $NF}')"
+    case "$_display" in
+        claude-code) _v="$_first" ;;
+        codex-cli)   _v="$_last" ;;
+        *)
+            case "$_first" in
+                *[0-9]*) _v="$_first" ;;
+                *)       _v="$_last" ;;
+            esac
+            ;;
+    esac
+    printf '%s' "$_v" | sed 's/^v//'
+}
+
 # Installed version of a native-installer CLI (or empty if missing).
 # display_name matches config/npm_global_clis.txt.
 ascendo_npm_native_installed_version() {
     local _display="$1"
     local _cmd="$2"
-    local _path version=""
+    local _path _line=""
     _path="$(ascendo_npm_native_command_path "$_cmd")"
     [ -n "$_path" ] || return 0
     case "$_display" in
-        claude-code)
-            version="$("$_path" -v </dev/null 2>/dev/null | head -1 | sed 's/ .*//')"
-            ;;
-        codex-cli)
-            version="$("$_path" --version </dev/null 2>/dev/null | head -1 | awk '{print $NF}')"
-            ;;
-        agy-cli|cursor-agent)
-            version="$("$_path" --version </dev/null 2>/dev/null | head -1)"
-            ;;
-        *)
-            version="$("$_path" --version </dev/null 2>/dev/null | head -1 | awk '{print $NF}')"
-            ;;
+        claude-code) _line="$("$_path" -v </dev/null 2>/dev/null | head -1)" ;;
+        *)           _line="$("$_path" --version </dev/null 2>/dev/null | head -1)" ;;
     esac
-    printf '%s' "$version" | sed 's/^v//; s/ .*//'
+    _ascendo_npm_native_parse_version "$_display" "$_line"
+}
+
+# Honest verification: exit 0 from an installer/updater is not success. The
+# binary must run `--version` (or `-v`) and print a digit-bearing version; a
+# product name alone (`codex-cli`) is not a version. Prints the version and
+# returns 0, or prints `?` and returns 1.
+ascendo_npm_report_cli_version_or_fail() {   # <display> <path>
+    local _display="$1" _path="$2" _line="" _v
+    if [ ! -x "$_path" ]; then printf '?\n'; return 1; fi
+    if _line="$("$_path" --version </dev/null 2>/dev/null)"; then
+        :
+    elif _line="$("$_path" -v </dev/null 2>/dev/null)"; then
+        :
+    else
+        printf '?\n'; return 1
+    fi
+    _line="$(printf '%s\n' "$_line" | head -1)"
+    _v="$(_ascendo_npm_native_parse_version "$_display" "$_line")"
+    case "$_v" in
+        *[0-9]*) printf '%s\n' "$_v"; return 0 ;;
+    esac
+    printf '?\n'; return 1
+}
+
+# Self-update subcommand of an already-installed native CLI.
+ascendo_npm_native_update_cmd() {
+    case "$1" in
+        claude|agy|codex|agent) printf 'update' ;;
+        *) printf '' ;;
+    esac
+}
+
+# Extra environment (KEY=VAL, unquoted on purpose) for the vendor installer /
+# updater. codex prompts on /dev/tty without CODEX_NON_INTERACTIVE=1.
+ascendo_npm_native_installer_env() {
+    case "$1" in
+        codex) printf 'CODEX_NON_INTERACTIVE=1' ;;
+        *)     printf '' ;;
+    esac
+}
+
+# Per-vendor arguments for the downloaded bootstrap script (never a shared one).
+ascendo_npm_native_bootstrap_args() {
+    case "$1" in
+        claude) printf 'latest' ;;
+        codex)  printf -- '--release latest' ;;
+        *)      printf '' ;;
+    esac
+}
+
+# Wall-clock bound (seconds) for one installer / `<cmd> update` run. Default
+# 360; env ASCENDO_NATIVE_INSTALLER_TIMEOUT (legacy: ASCENDO_NPM_NATIVE_INSTALL_
+# TIMEOUT, MAC_UPDATE_NATIVE_INSTALLER_TIMEOUT). Non-numeric or below the floor
+# (60 s; ASCENDO_NATIVE_INSTALLER_TIMEOUT_FLOOR is a test seam) => 360.
+ascendo_npm_native_installer_timeout() {
+    local _raw="${ASCENDO_NATIVE_INSTALLER_TIMEOUT:-${ASCENDO_NPM_NATIVE_INSTALL_TIMEOUT:-${MAC_UPDATE_NATIVE_INSTALLER_TIMEOUT:-360}}}"
+    local _floor="${ASCENDO_NATIVE_INSTALLER_TIMEOUT_FLOOR:-60}"
+    case "$_floor" in ''|*[!0-9]*) _floor=60 ;; esac
+    case "$_raw" in ''|*[!0-9]*) echo 360; return 0 ;; esac
+    if [ "$_raw" -lt "$_floor" ]; then echo 360; else echo "$_raw"; fi
+}
+
+# Download a vendor install script to a file: https only (also on redirects),
+# size cap, bounded time, non-empty. Never executes anything. rc 1 on failure
+# and no dest is left behind.
+ascendo_npm_fetch_installer() {   # url dest [timeout_s=60] [max_bytes=10485760]
+    local _url="$1" _dest="$2" _t="${3:-60}" _max="${4:-10485760}" _tmp
+    [ -n "$_url" ] && [ -n "$_dest" ] || return 1
+    case "$_url" in https://*) ;; *) return 1 ;; esac
+    _tmp="${_dest}.part"
+    rm -f "$_tmp" "$_dest"
+    curl -fsSL --proto =https --proto-redir =https --max-filesize "$_max" \
+         --max-time "$_t" --retry 2 --retry-delay 1 -o "$_tmp" "$_url" \
+         </dev/null 2>/dev/null || { rm -f "$_tmp"; return 1; }
+    [ -s "$_tmp" ] || { rm -f "$_tmp"; return 1; }
+    [ "$(wc -c < "$_tmp" | tr -d ' ')" -le "$_max" ] || { rm -f "$_tmp"; return 1; }
+    mv "$_tmp" "$_dest"
 }
 
 # Colon-separated PATH prefix: ~/.local/bin, managed npm-global, managed
