@@ -60,17 +60,37 @@ while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
                 *) LATEST="" ;;
             esac
             ;;
+        self-update) INSTALLED="$(ascendo_npm_self_update_installed_version "$DISPLAY" "$CMD")"; LATEST="$(ascendo_npm_latest_version "$PKG")" ;;
         npm)         INSTALLED="$(ascendo_npm_installed_version "$PKG")"; LATEST="$(ascendo_npm_latest_version "$PKG")" ;;
         *) continue ;;
     esac
 
-    # Verify is success when installed!="" AND (latest=="" OR installed==latest).
-    # Anything else is failure.
+    # Only-installed model (cli.md P5): something that is not installed and was
+    # not asked for was never going to be installed -- skipped, not failed.
+    # A self-update command that is present but silent is a real failure.
+    _present_broken=0
+    if [ "$METHOD" = "self-update" ] && [ -z "$INSTALLED" ] \
+       && [ -n "$(ascendo_npm_self_update_command_path "$CMD")" ]; then
+        _present_broken=1
+    fi
+    if [ -z "$INSTALLED" ] && [ "$_present_broken" -eq 0 ] \
+       && ! ascendo_npm_bootstrap_allowed "$DISPLAY"; then
+        json_add_item "$DISPLAY" "" "$LATEST" "skipped" "npm" "$METHOD"
+        json_add_message "info" "$DISPLAY is not installed — skipping (set ASCENDO_BOOTSTRAP_CLI=1 or select it explicitly to install)"
+        continue
+    fi
+
+    # Verify is success when installed!="" AND (latest=="" OR installed==latest
+    # OR installed is provably newer). Anything else is failure.
     STATUS="failed"
     if [ -n "$INSTALLED" ]; then
-        if [ -z "$LATEST" ] || [ "$INSTALLED" = "$LATEST" ]; then
+        if [ -z "$LATEST" ] || [ "$INSTALLED" = "$LATEST" ] \
+           || ascendo_npm_version_newer "$INSTALLED" "$LATEST"; then
             STATUS="success"
         fi
+    fi
+    if [ "$_present_broken" -eq 1 ]; then
+        json_add_message "error" "$DISPLAY: '$CMD' is present but '$CMD --version' does not print a version"
     fi
     # A native CLI that is present must actually run `--version` and print a
     # digit-bearing version; a bare product name ("codex-cli") is not one.

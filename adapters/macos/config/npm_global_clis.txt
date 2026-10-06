@@ -12,6 +12,16 @@
 #   npm          — `npm install -g <package_name>`. Honors $NPM_GLOBAL_PREFIX.
 #   native-installer — vendor install.sh into ~/.local/bin (claude, codex,
 #                  agy, cursor-agent). Not the npm-global stub.
+#   self-update  — the CLI updates itself: `<command> update` (opencode:
+#                  native-first, `opencode upgrade --method curl` /
+#                  https://opencode.ai/install; the npm distribution is only a
+#                  guarded fallback, `opencode upgrade --method npm`, when an
+#                  npm install of it already exists).
+#
+# Only-installed model: a CLI/Node/bun that is not installed is `skipped`
+# ("not installed - skipping") unless ASCENDO_BOOTSTRAP_CLI=1 or it is named
+# explicitly in --filter. Native installer / native-first rows run BEFORE
+# Node/npm.
 #
 # brew_formula:  if non-empty, ascendo will prefer the npm-installed copy
 #                and remove the Homebrew formula on apply (one-time
@@ -28,7 +38,7 @@ claude-code|@anthropic-ai/claude-code|native-installer||claude
 codex-cli|@openai/codex|native-installer||codex
 gemini-cli|@google/gemini-cli|npm|gemini-cli|gemini
 qwen-code|@qwen-code/qwen-code|npm|qwen-code|qwen
-opencode-cli|opencode-ai|npm|opencode|opencode
+opencode-cli|opencode-ai|self-update|opencode|opencode
 agy-cli|agy|native-installer||agy
 cursor-agent|cursor-agent|native-installer||agent
 bun|bun|native-bun|bun|bun

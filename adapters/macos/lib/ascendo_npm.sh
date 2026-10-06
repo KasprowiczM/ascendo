@@ -16,6 +16,11 @@
 #   ascendo_npm_installed_version       prints installed version of one pkg
 #   ascendo_npm_latest_version          prints latest published version
 #   ascendo_npm_bun_installed_version   prints bun --version (or empty)
+#   ascendo_npm_bootstrap_allowed       only-installed gate (env or --filter)
+#   ascendo_npm_sanitize_output         redact tokens/URL credentials in tails
+#   ascendo_npm_native_path_supported   realpath is the vendor's own install
+#   ascendo_npm_opencode_*              OpenCode native-first helpers
+#   ascendo_npm_repair_broken_opencode  repair an existing npm-12 opencode stub
 # =============================================================================
 # shellcheck shell=bash
 
@@ -348,6 +353,7 @@ ascendo_npm_native_install_url() {
         codex)  printf '%s\n' "https://chatgpt.com/codex/install.sh" ;;
         agy)    printf '%s\n' "https://antigravity.google/cli/install.sh" ;;
         agent)  printf '%s\n' "https://cursor.com/install" ;;
+        opencode) printf '%s\n' "https://opencode.ai/install" ;;
         *) return 1 ;;
     esac
 }
@@ -484,7 +490,7 @@ ascendo_npm_fetch_installer() {   # url dest [timeout_s=60] [max_bytes=10485760]
 # Mirrors macOS_updates: the managed prefix wins over nvm; native CLIs
 # in ~/.local/bin win over npm stubs.
 ascendo_npm_preferred_path() {
-    local _local _npmg _node _bun _parts=""
+    local _local _npmg _node _bun _p _parts=""
     _local="$(ascendo_npm_local_bin)"
     _npmg="$(ascendo_npm_global_prefix)/bin"
     _node="$(ascendo_npm_n_prefix)/bin"
@@ -496,9 +502,15 @@ ascendo_npm_preferred_path() {
         *) [ -d "$_node" ] && _parts="${_parts:+$_parts:}$_node" ;;
     esac
     [ -d "$_bun" ] && _parts="${_parts:+$_parts:}$_bun"
-    for _p in /opt/homebrew/bin /usr/local/bin; do
-        [ -d "$_p" ] && _parts="${_parts:+$_parts:}$_p"
+    # ASCENDO_NPM_BREW_DIRS (colon-separated; set-but-empty = none) is a test
+    # seam so a hermetic test PATH is not re-prefixed with the real Homebrew bin.
+    local _brew_dirs="${ASCENDO_NPM_BREW_DIRS-/opt/homebrew/bin:/usr/local/bin}"
+    local _oifs="$IFS"
+    IFS=:
+    for _p in $_brew_dirs; do
+        [ -n "$_p" ] && [ -d "$_p" ] && _parts="${_parts:+$_parts:}$_p"
     done
+    IFS="$_oifs"
     printf '%s' "$_parts"
 }
 
@@ -507,4 +519,146 @@ ascendo_npm_preferred_path() {
 # Exit 124 when the deadline is hit.
 ascendo_npm_run_with_timeout() {
     ascendo_run_with_timeout "$@"
+}
+
+# -- only-installed gate (cli.md P5) -----------------------------------------
+# A dashboard run is TTY-less and a per-app "Update" passes --filter, so an
+# explicitly selected missing CLI is an explicit install request; everything
+# else that is missing is skipped. ASCENDO_BOOTSTRAP_CLI=1 (legacy
+# MAC_UPDATE_BOOTSTRAP_CLI) is the global opt-in.
+
+# ascendo_npm_bootstrap_allowed <display_name>   (reads script-scope $FILTER)
+ascendo_npm_bootstrap_allowed() {
+    case "${ASCENDO_BOOTSTRAP_CLI:-${MAC_UPDATE_BOOTSTRAP_CLI:-0}}" in
+        1|true|yes) return 0 ;;
+    esac
+    [ -n "${FILTER:-}" ] || return 1
+    case ",${FILTER}," in
+        *",$1,"*) return 0 ;;
+    esac
+    return 1
+}
+
+# Managed Node = $TOOLCHAIN_HOME/node (NOT a system / nvm / brew node).
+ascendo_npm_managed_node_installed() { [ -x "$(ascendo_npm_n_prefix)/bin/node" ]; }
+
+# ascendo_npm_pkg_installed <package> <command>: present in the managed prefix.
+ascendo_npm_pkg_installed() {
+    local _g
+    _g="$(ascendo_npm_global_prefix)"
+    [ -d "$_g/lib/node_modules/$1" ] || [ -x "$_g/bin/$2" ]
+}
+
+ascendo_npm_bun_managed_installed() { [ -x "$(ascendo_npm_bun_home)/bin/bun" ]; }
+
+# -- recorded-output hygiene (cli.md P8) ---------------------------------------
+# Filter for every output tail that is put into a sidecar message: auth /
+# token / password lines and URL credentials are replaced by a marker, every
+# other line is capped at 500 characters. (awk body from macOS_updates
+# update_npm_cli.sh sanitize_npm_stderr.)
+ascendo_npm_sanitize_output() {
+    awk '{ lower=tolower($0)
+      if (lower ~ /(_authtoken|_auth[[:space:]]*[:=]|authorization[[:space:]]*[:=]|npm_token[[:space:]]*[:=]|password[[:space:]]*[:=]|token[[:space:]]*[:=])/) { print "[REDACTED sensitive diagnostic line]"; next }
+      if ($0 ~ /https?:\/\/[^[:space:]\/@]+@/) { print "[REDACTED URL credentials]"; next }
+      print substr($0, 1, 500) }'
+}
+
+# -- native-origin proof + version relation (python helpers in this dir) -------
+_ascendo_npm_lib_dir() {
+    cd "$(dirname "${BASH_SOURCE[0]}")" && pwd
+}
+
+# ascendo_npm_native_path_supported <command> <executable>
+# True only when the executable's realpath is the vendor's own install root
+# (cli_duplicates.supported_native_path). An npm wrapper symlinked into
+# ~/.local/bin, a Homebrew binary or an arbitrary file is NOT native.
+ascendo_npm_native_path_supported() {
+    local _lib
+    _lib="$(_ascendo_npm_lib_dir)"
+    PYTHONPATH="$_lib${PYTHONPATH:+:$PYTHONPATH}" python3 -c '
+import sys
+from cli_duplicates import supported_native_path
+sys.exit(0 if supported_native_path(sys.argv[1], sys.argv[2], sys.argv[3]) else 1)
+' "$HOME" "$1" "$2" </dev/null 2>/dev/null
+}
+
+# ascendo_npm_version_newer <a> <b>: rc 0 only when a is provably newer than b
+# (brew_casks.py cmp; unparseable / empty => rc 1, i.e. never "newer").
+ascendo_npm_version_newer() {
+    [ -n "${1:-}" ] && [ -n "${2:-}" ] || return 1
+    [ "$(python3 "$(_ascendo_npm_lib_dir)/brew_casks.py" cmp "$1" "$2" </dev/null 2>/dev/null)" = "newer" ]
+}
+
+# -- OpenCode (native-first; cli.md P6 as amended by upstream v1.5.3/v1.5.4) ---
+ascendo_npm_global_bin() { printf '%s/bin' "$(ascendo_npm_global_prefix)"; }
+
+# The vendor installer's own location (its install dir is not configurable).
+ascendo_npm_opencode_native_bin() { printf '%s/.opencode/bin/opencode' "${HOME}"; }
+
+# Existing OpenCode, in upstream's resolve order: ~/.local/bin, PATH, managed
+# npm bin, ~/.opencode/bin. Empty when none exists (never bootstraps).
+ascendo_npm_opencode_resolve_path() {
+    local _p
+    _p="$(ascendo_npm_native_command_path opencode)"
+    if [ -n "$_p" ]; then printf '%s' "$_p"; return 0; fi
+    for _p in "$(ascendo_npm_global_bin)/opencode" "$(ascendo_npm_opencode_native_bin)"; do
+        if [ -x "$_p" ]; then printf '%s' "$_p"; return 0; fi
+    done
+    return 0
+}
+
+# The npm distribution may be updated by `opencode upgrade --method npm` only
+# when it already exists in the managed prefix (never bootstrapped).
+ascendo_npm_opencode_npm_wrapper_exists() {
+    [ -d "$(ascendo_npm_global_prefix)/lib/node_modules/opencode-ai" ] \
+        && [ -x "$(ascendo_npm_global_bin)/opencode" ]
+}
+
+# Resolved command of a `self-update` row (empty when it is not installed).
+ascendo_npm_self_update_command_path() {   # cmd
+    case "$1" in
+        opencode) ascendo_npm_opencode_resolve_path ;;
+        *)        ascendo_npm_native_command_path "$1" ;;
+    esac
+}
+
+# Version of a `self-update` row's resolved command, read by RUNNING it.
+# Empty when the command is absent or does not print a version (broken stub).
+ascendo_npm_self_update_installed_version() {   # display cmd
+    local _path _v
+    _path="$(ascendo_npm_self_update_command_path "$2")"
+    [ -n "$_path" ] || return 0
+    if _v="$(ascendo_npm_report_cli_version_or_fail "$1" "$_path")"; then
+        printf '%s' "$_v"
+    fi
+    return 0
+}
+
+# Repair an already-installed OpenCode npm stub in the managed prefix only
+# (npm 12 skips the postinstall that fetches the real binary). Ported from
+# macOS_updates native_installers.sh repair_broken_opencode.
+# Returns 0 repaired, 1 failed, 2 not installed (never bootstrap here).
+ascendo_npm_repair_broken_opencode() {   # prefix binary
+    local _prefix="$1" _binary="$2" _npm_bin="" _rc=1 _pkg _node
+    [ -x "$_binary" ] || return 2
+    { [ -n "$_prefix" ] && [ -d "$_prefix" ]; } || return 1
+    _npm_bin="$_prefix/bin/npm"
+    [ -x "$_npm_bin" ] || _npm_bin="$(ascendo_npm_npm_bin)"
+    [ -n "$_npm_bin" ] || return 1
+    # npm 12's allow-scripts list blocks the postinstall even with
+    # ignore-scripts=false; scope the exception to this child (no ~/.npmrc).
+    NPM_CONFIG_IGNORE_SCRIPTS=false \
+        _ascendo_npm_invoke "$_npm_bin" install -g --prefix "$_prefix" \
+        --allow-scripts=opencode-ai opencode-ai@latest </dev/null
+    _rc=$?
+    if [ "$_rc" -eq 0 ] && "$_binary" --version </dev/null >/dev/null 2>&1; then
+        return 0
+    fi
+    _pkg="$_prefix/lib/node_modules/opencode-ai"
+    if [ -x "$_prefix/bin/node" ]; then _node="$_prefix/bin/node"; else _node="$(ascendo_npm_node_bin)"; fi
+    if [ -n "$_node" ] && [ -f "$_pkg/postinstall.mjs" ]; then
+        (cd "$_pkg" && "$_node" postinstall.mjs </dev/null) || return 1
+        return 0
+    fi
+    return "$_rc"
 }

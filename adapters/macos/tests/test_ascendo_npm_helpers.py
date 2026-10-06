@@ -206,6 +206,7 @@ def test_manifest_uses_native_installer_for_agent_clis() -> None:
     assert rows["codex-cli"] == "native-installer"
     assert rows["agy-cli"] == "native-installer"
     assert rows["cursor-agent"] == "native-installer"
+    assert rows["opencode-cli"] == "self-update"
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash required")

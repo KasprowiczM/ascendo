@@ -75,10 +75,25 @@ while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
                 *) LATEST="" ;;
             esac
             ;;
+        self-update) INSTALLED="$(ascendo_npm_self_update_installed_version "$DISPLAY" "$CMD")"; LATEST="$(ascendo_npm_latest_version "$PKG")" ;;
         npm)         INSTALLED="$(ascendo_npm_installed_version "$PKG")"; LATEST="$(ascendo_npm_latest_version "$PKG")" ;;
         *) continue ;;
     esac
     STATUS="$(classify "$INSTALLED" "$LATEST")"
+    if [ "$METHOD" = "self-update" ] && [ -z "$INSTALLED" ] \
+       && [ -n "$(ascendo_npm_self_update_command_path "$CMD")" ]; then
+        STATUS="planned"     # present but broken: apply repairs it
+    fi
+    # Only-installed model (cli.md P5): apply skips what is not installed unless
+    # bootstrap is allowed, so plan must not promise it. The managed Node / bun
+    # rows are about the managed toolchain, not whatever node/bun is on PATH.
+    if ! ascendo_npm_bootstrap_allowed "$DISPLAY"; then
+        [ "$STATUS" = "missing" ] && continue
+        case "$METHOD" in
+            native-node) ascendo_npm_managed_node_installed || continue ;;
+            native-bun)  ascendo_npm_bun_managed_installed || continue ;;
+        esac
+    fi
     # Only emit items that would CHANGE in apply (planned + missing) — plan
     # phase is "what would change", not full inventory.
     case "$STATUS" in

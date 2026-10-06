@@ -80,12 +80,29 @@ exit 0
 """
 
 
+# Vendor install roots (cli_duplicates.supported_native_path) per command.
+_NATIVE_ROOTS = {
+    "claude": ".local/share/claude/versions/9.9.9",
+    "codex": ".codex/packages/standalone/releases/9.9.9",
+}
+
+
 def _install_cli(home: Path, cmd: str, log: Path, version: str,
                  version_line: str = "{v}", **kw) -> Path:
     p = home / ".local" / "bin" / cmd
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(_fake_cli_script(log, version_line, **kw))
-    p.chmod(0o755)
+    real = _NATIVE_ROOTS.get(cmd)
+    if real is None:
+        target = p
+    else:
+        # claude/codex count as native only inside the vendor's own install
+        # root (F4): install the script there and link it from ~/.local/bin.
+        target = home / real / cmd
+        target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(_fake_cli_script(log, version_line, **kw))
+    target.chmod(0o755)
+    if target != p:
+        p.symlink_to(target)
     Path(str(p) + ".ver").write_text(version + "\n")
     return p
 
@@ -119,6 +136,13 @@ class Env:
         self.home.mkdir()
         self.bin = tmp / "bin"
         self.bin.mkdir()
+        # Hermetic PATH: the developer's real claude/codex/agy/... must never
+        # be found by the PATH-fallback locator. Only python3 is borrowed.
+        self.tools = tmp / "tools"
+        self.tools.mkdir()
+        py = shutil.which("python3")
+        if py:
+            (self.tools / "python3").symlink_to(py)
         self.fixtures = tmp / "fixtures"
         self.fixtures.mkdir()
         self.curl_log = tmp / "curl.log"
@@ -130,6 +154,11 @@ class Env:
         self.out = tmp / "out"
         self._write_fake_curl()
         self._write_fake_npm()
+        # Never let a test reach the real brew (`brew install node` is a real,
+        # mutating command): the only brew on PATH is this failing fake.
+        brew = self.bin / "brew"
+        brew.write_text("#!/bin/sh\ncat >/dev/null\nexit 1\n")
+        brew.chmod(0o755)
 
     def _write_fake_curl(self) -> None:
         p = self.bin / "curl"
@@ -178,10 +207,11 @@ exit 0
         env = dict(os.environ)
         env.update({
             "HOME": str(self.home),
-            "PATH": f"{self.bin}:{os.environ['PATH']}",
+            "PATH": f"{self.bin}:{self.tools}:/usr/bin:/bin:/usr/sbin:/sbin",
             "MAC_UPDATE_TOOLCHAIN_HOME": str(self.tmp / "toolchain"),
             "ASCENDO_NPM_MANIFEST": str(self.manifest(name)),
             "ASCENDO_KILL_AFTER": "1",
+            "ASCENDO_NPM_BREW_DIRS": "",
         })
         env.update(env_extra or {})
         rid = str(uuid.uuid4())
@@ -302,7 +332,7 @@ def test_missing_cli_is_installed_via_downloaded_script_with_vendor_args(
     display, _pkg, cmd, url, bargs = CLIS[name]
     env.serve(url, _installer_script(env.home, cmd, env.installer_log, env.cli_log,
                                      new_version="3.1.4"))
-    res = env.run(APPLY, name)
+    res = env.run(APPLY, name, env_extra={"ASCENDO_BOOTSTRAP_CLI": "1"})
     assert res.returncode == 0, res.stderr
     it = _item(res, display)
     assert it["status"] == "success"
@@ -323,7 +353,8 @@ def test_native_installer_function_never_pipes_curl_into_sh() -> None:
     start = text.index("apply_native_installer() {")
     body = text[start:text.index("\n}\n", start)]
     code = "\n".join(l for l in body.splitlines() if not l.lstrip().startswith("#"))
-    assert "|" not in code.replace("||", "").replace("| awk", ""), code
+    assert "|" not in code.replace("||", "").replace("| awk", "").replace(
+        "claude|codex)", ""), code
     assert "curl" not in code.replace("command -v curl", "").replace(
         "curl missing", "").replace("ascendo_npm_fetch_installer", "")
     assert "ascendo_npm_fetch_installer" in code
@@ -331,7 +362,7 @@ def test_native_installer_function_never_pipes_curl_into_sh() -> None:
 
 def test_download_failure_is_failed_and_installer_not_run(env: Env) -> None:
     # nothing served -> fake curl exits 22
-    res = env.run(APPLY, "agy")
+    res = env.run(APPLY, "agy", env_extra={"ASCENDO_BOOTSTRAP_CLI": "1"})
     it = _item(res, "agy-cli")
     assert it["status"] == "failed"
     assert "download" in _msgs(res).lower()
@@ -342,6 +373,7 @@ def test_term_ignoring_installer_is_killed_within_deadline(env: Env) -> None:
     env.serve(CLIS["claude"][3], _installer_script(
         env.home, "claude", env.installer_log, env.cli_log, hang=True))
     res = env.run(APPLY, "claude", env_extra={
+        "ASCENDO_BOOTSTRAP_CLI": "1",
         "ASCENDO_NATIVE_INSTALLER_TIMEOUT": "2",
         "ASCENDO_NATIVE_INSTALLER_TIMEOUT_FLOOR": "1",
         "ASCENDO_FORCE_TIMEOUT_FALLBACK": "1"}, timeout=40)
@@ -360,7 +392,7 @@ def test_installer_exit0_but_product_name_only_is_failed(env: Env) -> None:
     env.serve(CLIS["codex"][3], _installer_script(
         env.home, "codex", env.installer_log, env.cli_log,
         new_version="", version_line="codex-cli"))
-    res = env.run(APPLY, "codex")
+    res = env.run(APPLY, "codex", env_extra={"ASCENDO_BOOTSTRAP_CLI": "1"})
     it = _item(res, "codex-cli")
     assert it["status"] == "failed"
     assert "--version" in _msgs(res)
@@ -369,7 +401,7 @@ def test_installer_exit0_but_product_name_only_is_failed(env: Env) -> None:
 def test_installer_exit0_but_no_binary_is_failed(env: Env) -> None:
     env.serve(CLIS["agy"][3], _installer_script(
         env.home, "agy", env.installer_log, env.cli_log, write_cli=False))
-    res = env.run(APPLY, "agy")
+    res = env.run(APPLY, "agy", env_extra={"ASCENDO_BOOTSTRAP_CLI": "1"})
     assert _item(res, "agy-cli")["status"] == "failed"
 
 
@@ -379,7 +411,7 @@ def test_installer_exit0_but_version_command_broken_is_failed(env: Env) -> None:
             f"cat > '{env.home}/.local/bin/agent' <<'X'\n{broken}X\n"
             f"chmod 755 '{env.home}/.local/bin/agent'\nexit 0\n")
     env.serve(CLIS["agent"][3], body)
-    res = env.run(APPLY, "agent")
+    res = env.run(APPLY, "agent", env_extra={"ASCENDO_BOOTSTRAP_CLI": "1"})
     assert _item(res, "cursor-agent")["status"] == "failed"
     assert "--version" in _msgs(res)
 

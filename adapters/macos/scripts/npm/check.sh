@@ -6,6 +6,8 @@
 #   * native-node:  reports installed Node version + latest LTS (via `n`)
 #   * native-bun:   reports installed bun --version + latest GitHub release
 #   * npm:          reports installed via `npm ls -g`, latest via `npm view`
+#   * self-update:  OpenCode -- installed = the resolved command's `--version`,
+#                   latest via `npm view opencode-ai version`
 # Items emit as up_to_date when installed==latest, planned when installed<latest,
 # missing when not installed at all.
 # =============================================================================
@@ -127,6 +129,13 @@ while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
                 *) LATEST="" ;;
             esac
             ;;
+        self-update)
+            # INSTALLED = the resolved command's own `--version` (ascendo_npm_
+            # self_update_installed_version); LATEST = npm registry for now
+            # (Task 9 adds the vendor feed for native OpenCode installs).
+            INSTALLED="$(ascendo_npm_self_update_installed_version "$DISPLAY" "$CMD")"
+            LATEST="$(ascendo_npm_latest_version "$PKG")"
+            ;;
         npm)
             INSTALLED="$(ascendo_npm_installed_version "$PKG")"
             LATEST="$(ascendo_npm_latest_version "$PKG")"
@@ -138,6 +147,13 @@ while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
     esac
 
     STATUS="$(classify "$INSTALLED" "$LATEST")"
+    # Present but not running (e.g. an npm-12 opencode stub whose postinstall
+    # was skipped) is not "missing": it needs a repair, say so.
+    if [ "$METHOD" = "self-update" ] && [ -z "$INSTALLED" ] \
+       && [ -n "$(ascendo_npm_self_update_command_path "$CMD")" ]; then
+        STATUS="planned"
+        json_add_message "warn" "$DISPLAY: '$CMD' is present but '$CMD --version' does not print a version (broken install?)"
+    fi
     case "$STATUS" in
         planned)    COUNT_PLANNED=$((COUNT_PLANNED + 1)) ;;
         up_to_date) COUNT_UTD=$((COUNT_UTD + 1)) ;;
