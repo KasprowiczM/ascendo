@@ -146,11 +146,12 @@ def process_listing(timeout: int = 10) -> str | None:
 def brew_copies(brew_dirs: list[str], command: str) -> list[tuple[str, str, str]]:
     """Homebrew-owned copies of ``command``: ``(kind, name, version)``.
 
-    ``kind`` is ``formula`` or ``cask``. The name/version come from the Cellar /
-    Caskroom component of the resolved path; a binary that sits in a brew bin
-    dir without resolving into either is reported under the command's own name
-    with an unknown version (``""``). Nothing is executed. Homebrew copies are
-    never removable by Ascendo.
+    ``kind`` is ``formula`` or ``cask``; name/version come from the Cellar /
+    Caskroom component of the RESOLVED path. A path that does not really resolve
+    into a keg is not claimed, and neither is anything inside a ``node_modules``
+    tree: ``/opt/homebrew/bin/claude -> lib/node_modules/.../cli.js`` is an npm
+    global under the brew prefix (found by ``npm_duplicates``), not a formula.
+    Nothing is executed. Homebrew copies are never removable by Ascendo.
     """
     found: list[tuple[str, str, str]] = []
     for directory in brew_dirs:
@@ -160,6 +161,8 @@ def brew_copies(brew_dirs: list[str], command: str) -> list[tuple[str, str, str]
         if not (candidate.exists() or candidate.is_symlink()):
             continue
         parts = Path(os.path.realpath(candidate)).parts
+        if "node_modules" in parts:
+            continue
         entry: tuple[str, str, str] | None = None
         for marker, kind in (("Cellar", "formula"), ("Caskroom", "cask")):
             if marker in parts:
@@ -168,9 +171,7 @@ def brew_copies(brew_dirs: list[str], command: str) -> list[tuple[str, str, str]
                     version = parts[idx + 2] if idx + 2 < len(parts) else ""
                     entry = (kind, parts[idx + 1], version)
                 break
-        if entry is None:
-            entry = ("formula", command, "")
-        if entry not in found:
+        if entry is not None and entry not in found:
             found.append(entry)
     return found
 

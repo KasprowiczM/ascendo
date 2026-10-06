@@ -77,6 +77,21 @@ i=$n; [ "$i" -le "$k" ] || i=$k
 cat "$d/$i"
 """)
         self.processes([""])      # no running process, ever
+        # python3 wrapper: FAKE_DUP_PY_FAIL=<mode> makes `cli_duplicates.py <mode>`
+        # crash (traceback on stderr, exit 1); everything else is the real python.
+        real_py = (self.tools / "python3").resolve()
+        (self.tools / "python3").unlink()
+        self.script(self.tools / "python3", f"""#!/bin/sh
+case "$1" in
+  */cli_duplicates.py)
+    if [ "$2" = "${{FAKE_DUP_PY_FAIL:-}}" ]; then
+      echo "ImportError: boom" >&2
+      echo "token=abc123secret" >&2
+      exit 1
+    fi ;;
+esac
+exec "{real_py}" "$@"
+""")
 
     def processes(self, listings: list[str]) -> None:
         """The i-th `ps -axo command=` call prints listings[i] (last one repeats);
@@ -109,6 +124,22 @@ cat "$d/$i"
             link.unlink()
         link.symlink_to(keg)
         return keg
+
+    def brew_prefix_npm(self, pkg: str, version: str, command: str) -> Path:
+        """An npm global under a Homebrew prefix (one with a Cellar):
+        <hb>/lib/node_modules/<pkg>/{package.json,cli.js}, linked from <hb>/bin."""
+        hb = self.tmp / "hb"
+        d = hb / "lib" / "node_modules" / pkg
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "package.json").write_text(json.dumps({"name": pkg, "version": version}))
+        self.cli(d / "cli.js", f"npm-{command}", version)
+        (hb / "Cellar").mkdir(exist_ok=True)
+        (hb / "bin").mkdir(exist_ok=True)
+        link = hb / "bin" / command
+        if link.is_symlink():
+            link.unlink()
+        link.symlink_to(d / "cli.js")
+        return d
 
     def run(self, script, rows, *extra, env_extra=None, **kw):
         merged = {"ASCENDO_NPM_BREW_DIRS": str(self.tmp / "hb" / "bin")
@@ -337,8 +368,8 @@ def test_opt_in_accepts_equal_versions(env: DupEnv) -> None:
     assert not dup.exists()
 
 
-@pytest.mark.parametrize("value", ["0", "", "no", "false"])
-def test_only_explicit_opt_in_values_enable_removal(env: DupEnv, value: str) -> None:
+@pytest.mark.parametrize("value", ["0", "", "no", "false", "true", "yes", "TRUE", "2"])
+def test_only_the_exact_value_1_enables_removal(env: DupEnv, value: str) -> None:
     dup = _claude_with_npm_dup(env)
     env.run(APPLY, [CLAUDE_ROW], env_extra={"ASCENDO_REMOVE_CLI_DUPLICATES": value})
     assert dup.exists() and env.uninstalls() == []
@@ -458,3 +489,110 @@ def test_lib_helpers_are_defined_and_syntax_clean() -> None:
         ["bash", "-c", f'. "{lib}"; type ascendo_npm_duplicates_handle >/dev/null && echo ok'],
         capture_output=True, text=True)
     assert out.stdout.strip() == "ok", out.stderr
+
+
+# =============================================================================
+# fix round 1
+# =============================================================================
+
+def test_npm_global_under_a_brew_prefix_is_reported_once_as_an_npm_duplicate(env: DupEnv) -> None:
+    """Ruling 19: /opt/homebrew/bin/claude -> lib/node_modules/.../cli.js is an
+    npm copy in the brew prefix: ONE message, npm remedy, no bogus brew remedy."""
+    env.claude("2.0.0")
+    pkg = env.brew_prefix_npm("@anthropic-ai/claude-code", "1.0.0", "claude")
+    hb = env.tmp / "hb"
+    res = env.run(CHECK, [CLAUDE_ROW])
+    texts = _dup_msgs(res)
+    assert len(texts) == 1, _msgs(res)
+    assert f"{UNINSTALL} {hb} @anthropic-ai/claude-code" in texts[0]
+    assert "reason=cli_duplicate cur=2.0.0 cand=1.0.0" in texts[0]
+    assert "brew uninstall" not in _msgs(res) and "homebrew" not in _msgs(res).lower()
+    assert pkg.exists() and env.uninstalls() == []
+
+
+def test_brew_prefix_npm_copy_is_removable_only_with_opt_in_and_all_guards(env: DupEnv) -> None:
+    env.claude("2.0.0")
+    pkg = env.brew_prefix_npm("@anthropic-ai/claude-code", "1.0.0", "claude")
+    hb = env.tmp / "hb"
+    # report-only default: kept
+    res = env.run(APPLY, [CLAUDE_ROW])
+    assert pkg.exists() and env.uninstalls() == []
+    assert len(_dup_msgs(res)) == 1 and "brew uninstall" not in _msgs(res)
+    # opt-in but a guard fails (running process): kept
+    env.processes(["/some/bin/claude run"])
+    env.run(APPLY, [CLAUDE_ROW], env_extra=OPT_IN)
+    assert pkg.exists() and env.uninstalls() == []
+    # opt-in and every guard holds: removed through the npm path, brew untouched
+    env.processes([""])
+    res = env.run(APPLY, [CLAUDE_ROW], env_extra=OPT_IN)
+    assert env.uninstalls() == [
+        f"npm uninstall -g --prefix {hb} --ignore-scripts @anthropic-ai/claude-code"]
+    assert not pkg.exists()
+    assert _dup_msgs(res) == []
+    assert "brew " not in env.ev()
+
+
+def test_brew_prefix_without_a_cellar_is_not_a_package_root(env: DupEnv) -> None:
+    """/usr/local without Homebrew must not become an npm prefix (no Cellar)."""
+    env.claude("2.0.0")
+    hb = env.tmp / "hb"
+    d = hb / "lib" / "node_modules" / "@anthropic-ai" / "claude-code"
+    d.mkdir(parents=True)
+    (d / "package.json").write_text(json.dumps({"name": "@anthropic-ai/claude-code", "version": "1.0.0"}))
+    (hb / "bin").mkdir()
+    res = env.run(CHECK, [CLAUDE_ROW])
+    assert _tokens(res) == []
+
+
+def test_helper_failure_is_surfaced_as_a_sanitised_warn_message(env: DupEnv) -> None:
+    _claude_with_npm_dup(env)
+    res = env.run(CHECK, [CLAUDE_ROW], env_extra={"FAKE_DUP_PY_FAIL": "list"})
+    assert res.returncode == 0
+    warns = [m["text"] for m in res.sidecar["messages"]
+             if m["level"] == "warn" and "helper 'list'" in m["text"]]
+    assert len(warns) == 1, _msgs(res)
+    assert "ImportError" in warns[0] and "abc123secret" not in warns[0]
+    assert "REDACTED" in warns[0]
+    assert _tokens(res) == []
+    assert [i["id"] for i in res.sidecar["items"]] == ["claude-code"]
+
+
+def test_brew_helper_failure_is_surfaced_too(env: DupEnv) -> None:
+    env.oc_native("2.0.0")
+    env.brew_keg("formula", "opencode", "1.0.0", "opencode")
+    res = env.run(CHECK, [OPENCODE_ROW], env_extra={"FAKE_DUP_PY_FAIL": "brew"})
+    assert any("helper 'brew'" in m["text"] for m in res.sidecar["messages"]), _msgs(res)
+    assert _tokens(res) == []
+
+
+def test_removal_check_helper_crash_keeps_the_fallback_and_says_why(env: DupEnv) -> None:
+    dup = _claude_with_npm_dup(env)
+    res = env.run(APPLY, [CLAUDE_ROW],
+                  env_extra={**OPT_IN, "FAKE_DUP_PY_FAIL": "removal-check"})
+    assert dup.exists() and env.uninstalls() == []
+    msgs = _msgs(res)
+    assert "helper 'removal-check'" in msgs
+    assert len(_dup_msgs(res)) == 1
+
+
+def test_hanging_uninstall_keeps_fallback_and_is_still_reported(env: DupEnv) -> None:
+    dup = _claude_with_npm_dup(env)
+    res = env.run(APPLY, [CLAUDE_ROW], timeout=120,
+                  env_extra={**OPT_IN, "FAKE_UNINSTALL_SLEEP": "60",
+                             "ASCENDO_CLI_DUPLICATE_TIMEOUT": "2"})
+    assert dup.exists() and len(env.uninstalls()) == 1
+    t = "\n".join(_dup_msgs(res))
+    assert "timed out (exit 124)" in t and "reason=cli_duplicate cur=2.0.0 cand=1.0.0" in t
+    assert (env.local_bin / "claude").exists()
+
+
+@pytest.mark.parametrize("value,expected", [("", "120"), ("abc", "120"), ("0", "120"),
+                                            ("-5", "120"), ("7", "7")])
+def test_duplicate_timeout_falls_back_to_120_on_bad_values(env: DupEnv, value: str, expected: str) -> None:
+    import subprocess
+    lib = Path(__file__).resolve().parents[1] / "lib" / "ascendo_npm.sh"
+    out = subprocess.run(["bash", "-c", f'. "{lib}"; ascendo_npm_duplicate_timeout'],
+                         capture_output=True, text=True,
+                         env={"PATH": "/usr/bin:/bin", "HOME": str(env.home),
+                              "ASCENDO_CLI_DUPLICATE_TIMEOUT": value})
+    assert out.stdout.strip() == expected

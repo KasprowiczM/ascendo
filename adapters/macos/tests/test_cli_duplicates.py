@@ -177,11 +177,31 @@ def test_brew_copy_name_and_version_come_from_cellar_or_caskroom(tmp_path: Path)
     assert brew_copies([str(brew / "bin")], "claude") == [("cask", "claude-code", "2.0.1")]
 
 
-def test_brew_copy_outside_a_keg_uses_command_name_unknown_version(tmp_path: Path) -> None:
+def test_binary_in_brew_bin_that_resolves_into_no_keg_is_not_claimed(tmp_path: Path) -> None:
+    """Only a path that really resolves into Cellar/Caskroom is a Homebrew copy."""
     _write(tmp_path / "hb/bin/codex")
-    assert brew_copies([str(tmp_path / "hb/bin")], "codex") == [("formula", "codex", "")]
+    assert brew_copies([str(tmp_path / "hb/bin")], "codex") == []
     assert brew_copies([str(tmp_path / "hb/bin"), ""], "claude") == []
     assert brew_copies([], "codex") == []
+
+
+def test_npm_global_under_the_brew_prefix_is_not_a_brew_copy(tmp_path: Path) -> None:
+    """Ruling 19: /opt/homebrew/bin/claude -> lib/node_modules/@anthropic-ai/claude-code/cli.js
+    is an npm copy (already found by npm_duplicates), not a Homebrew formula."""
+    hb = tmp_path / "hb"
+    (hb / "Cellar").mkdir(parents=True)
+    cli = _write(hb / "lib/node_modules/@anthropic-ai/claude-code/cli.js")
+    (hb / "bin").mkdir()
+    (hb / "bin/claude").symlink_to(cli)
+    assert brew_copies([str(hb / "bin")], "claude") == []
+
+
+def test_node_modules_inside_a_keg_is_still_not_a_brew_copy(tmp_path: Path) -> None:
+    hb = tmp_path / "hb"
+    cli = _write(hb / "Cellar/node/22.1.0/lib/node_modules/opencode-ai/bin/opencode")
+    (hb / "bin").mkdir()
+    (hb / "bin/opencode").symlink_to(cli)
+    assert brew_copies([str(hb / "bin")], "opencode") == []
 
 
 def test_cli_rejects_bad_usage(capsys) -> None:

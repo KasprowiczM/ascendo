@@ -812,9 +812,9 @@ ascendo_npm_duplicates_supported() {   # cmd
     return 1
 }
 
+# Destructive, so only the exact value `1` enables it (not true/yes/empty).
 ascendo_npm_remove_duplicates_enabled() {
-    case "${ASCENDO_REMOVE_CLI_DUPLICATES:-0}" in 1|true|yes) return 0 ;; esac
-    return 1
+    [ "${ASCENDO_REMOVE_CLI_DUPLICATES:-0}" = "1" ]
 }
 
 # Wall-clock bound (seconds) of the `npm uninstall` (default 120).
@@ -851,10 +851,27 @@ ascendo_npm_active_command() {   # cmd
     ( [ -z "$_pref" ] || PATH="$_pref:$PATH"; command -v "$1" 2>/dev/null )
 }
 
+# Run a cli_duplicates.py mode. stdout passes through; a helper that writes to
+# stderr (import error, traceback) is surfaced as ONE sanitised warn message so a
+# broken helper is never silently read as "no duplicates" / "process changed".
 _ascendo_npm_dup_py() {
-    local _lib
+    local _lib _err _rc _tail _msg
     _lib="$(_ascendo_npm_lib_dir)"
-    PYTHONPATH="$_lib${PYTHONPATH:+:$PYTHONPATH}" python3 "$_lib/cli_duplicates.py" "$@" </dev/null 2>/dev/null
+    _err="$(mktemp -t ascendo-dup-err.XXXXXX 2>/dev/null || mktemp /tmp/ascendo-dup-err.XXXXXX)"
+    PYTHONPATH="$_lib${PYTHONPATH:+:$PYTHONPATH}" python3 "$_lib/cli_duplicates.py" "$@" \
+        </dev/null 2>"$_err"
+    _rc=$?
+    if [ -s "$_err" ]; then
+        _tail="$(tail -n 5 "$_err" | tr '\t' ' ' | ascendo_npm_sanitize_output | tr '\n' ' ' | head -c 600 || true)"
+        _msg="cli duplicates: helper '$1' reported an error (exit $_rc) -- $_tail"
+        if type json_add_message >/dev/null 2>&1; then
+            json_add_message "warn" "$_msg"
+        else
+            printf '%s\n' "$_msg" >&2
+        fi
+    fi
+    rm -f "$_err" 2>/dev/null
+    return "$_rc"
 }
 
 # Prints "<path>\x1f<version>" and returns 0 only when the native copy of <cmd>
