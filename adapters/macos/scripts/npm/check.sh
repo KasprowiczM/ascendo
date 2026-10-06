@@ -169,6 +169,9 @@ while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
     esac
 
     json_add_item "$DISPLAY" "$INSTALLED" "$LATEST" "$STATUS" "npm" "$METHOD"
+    # Report (never remove) an npm / Homebrew copy next to a proven native CLI:
+    # a warn message with ASCENDO-ACTION-REQUIRED reason=cli_duplicate, no item.
+    ascendo_npm_duplicates_handle "$DISPLAY" "$CMD" 0 ""
 done < <(ascendo_npm_manifest_lines)
 
 json_add_message "info" "npm: ${COUNT_PLANNED} outdated, ${COUNT_UTD} up-to-date, ${COUNT_MISSING} missing"

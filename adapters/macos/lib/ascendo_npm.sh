@@ -21,6 +21,8 @@
 #   ascendo_npm_native_path_supported   realpath is the vendor's own install
 #   ascendo_npm_opencode_*              OpenCode native-first helpers
 #   ascendo_npm_repair_broken_opencode  repair an existing npm-12 opencode stub
+#   ascendo_npm_duplicates_handle       report (opt-in: remove) a npm / Homebrew
+#                                       copy that sits next to a native CLI
 # =============================================================================
 # shellcheck shell=bash
 
@@ -790,4 +792,170 @@ ascendo_npm_repair_broken_opencode() {   # prefix binary
         return 0
     fi
     return "$_rc"
+}
+
+# -- native vs npm / Homebrew duplicates (Task 8b; upstream v1.5.3) -------------
+# claude / codex / opencode may be installed natively AND as an npm package (or
+# by Homebrew). When the native copy is PROVEN (vendor root + digit-bearing
+# --version, and it is the active command), every other copy is a duplicate:
+#   * always REPORTED -- a phase-level warn message carrying
+#     `ASCENDO-ACTION-REQUIRED reason=cli_duplicate cur=<native> cand=<dup>` and
+#     the remedy; never a sidecar item (no fake inventory row);
+#   * an npm copy in a known prefix is REMOVED only in apply, only with
+#     ASCENDO_REMOVE_CLI_DUPLICATES=1 and only when every guard holds
+#     (ascendo_npm_duplicate_remove); any failure keeps the fallback;
+#   * a Homebrew copy is NEVER removed, and never executed to read its version.
+# Needs ascendo_json.sh (json_add_message, ascendo_action_required_token).
+
+ascendo_npm_duplicates_supported() {   # cmd
+    case "$1" in claude|codex|opencode) return 0 ;; esac
+    return 1
+}
+
+ascendo_npm_remove_duplicates_enabled() {
+    case "${ASCENDO_REMOVE_CLI_DUPLICATES:-0}" in 1|true|yes) return 0 ;; esac
+    return 1
+}
+
+# Wall-clock bound (seconds) of the `npm uninstall` (default 120).
+ascendo_npm_duplicate_timeout() {
+    case "${ASCENDO_CLI_DUPLICATE_TIMEOUT:-}" in
+        ''|*[!0-9]*|0) echo 120 ;;
+        *) echo "$ASCENDO_CLI_DUPLICATE_TIMEOUT" ;;
+    esac
+}
+
+# Colon list of brew bin dirs (the same seam as ascendo_npm_preferred_path).
+ascendo_npm_brew_dirs() {
+    printf '%s' "${ASCENDO_NPM_BREW_DIRS-/opt/homebrew/bin:/usr/local/bin}"
+}
+
+# Colon list of Homebrew prefixes: the parent of a brew bin dir, but only when
+# it really is a Homebrew prefix (has a Cellar), so a plain /usr/local without
+# Homebrew is not treated as a package root.
+ascendo_npm_brew_prefixes() {
+    local _d _out=""
+    local IFS=:
+    for _d in $(ascendo_npm_brew_dirs); do
+        [ -n "$_d" ] && [ -d "$(dirname "$_d")/Cellar" ] || continue
+        _out="${_out:+$_out:}$(dirname "$_d")"
+    done
+    printf '%s' "$_out"
+}
+
+# `command -v <cmd>` as the user's tool PATH would resolve it (~/.local/bin and
+# the managed prefixes ahead of Homebrew), without touching the caller's PATH.
+ascendo_npm_active_command() {   # cmd
+    local _pref
+    _pref="$(ascendo_npm_preferred_path 2>/dev/null || true)"
+    ( [ -z "$_pref" ] || PATH="$_pref:$PATH"; command -v "$1" 2>/dev/null )
+}
+
+_ascendo_npm_dup_py() {
+    local _lib
+    _lib="$(_ascendo_npm_lib_dir)"
+    PYTHONPATH="$_lib${PYTHONPATH:+:$PYTHONPATH}" python3 "$_lib/cli_duplicates.py" "$@" </dev/null 2>/dev/null
+}
+
+# Prints "<path>\x1f<version>" and returns 0 only when the native copy of <cmd>
+# is proven: ~/.local/bin/<cmd> resolves into the vendor's own root, is the
+# active command, and `--version` prints a digit-bearing version.
+ascendo_npm_duplicate_native() {   # display cmd
+    local _display="$1" _cmd="$2" _path _v
+    _path="$(ascendo_npm_local_bin)/$_cmd"
+    [ -x "$_path" ] || return 1
+    ascendo_npm_native_path_supported "$_cmd" "$_path" || return 1
+    [ "$(ascendo_npm_active_command "$_cmd")" = "$_path" ] || return 1
+    _v="$(ascendo_npm_report_cli_version_or_fail "$_display" "$_path")" || return 1
+    printf '%s\x1f%s' "$_path" "$_v"
+}
+
+# Remove one npm duplicate under every upstream guard. Prints the reason and
+# returns 1 when the duplicate is KEPT; returns 2 when it was removed but the
+# native CLI then stopped running; returns 0 when removed and verified.
+# $8 = "removable" flag computed at discovery (removal_allowed at that time).
+ascendo_npm_duplicate_remove() {   # display cmd native native_version prefix package version removable npm_bin
+    local _display="$1" _cmd="$2" _native="$3" _nv="$4" _prefix="$5" _pkg="$6" _ver="$7"
+    local _removable="$8" _npm_bin="$9"
+    local _nv2 _log _rc _tail
+    if [ "$_removable" != "1" ]; then
+        printf 'retained: active process, older native or uncertain state'; return 1
+    fi
+    if [ -z "$_npm_bin" ] || [ ! -x "$_npm_bin" ]; then
+        printf 'retained: npm is not available to run the uninstall'; return 1
+    fi
+    if [ "$(ascendo_npm_active_command "$_cmd")" != "$_native" ]; then
+        printf 'retained: the native %s is not the active command' "$_cmd"; return 1
+    fi
+    if ! _nv2="$(ascendo_npm_report_cli_version_or_fail "$_display" "$_native")"; then
+        printf 'retained: the native %s no longer reports a version' "$_cmd"; return 1
+    fi
+    # Recheck processes immediately before deletion, after discovery.
+    if ! _ascendo_npm_dup_py removal-check "$_cmd" "$_nv2" "$_ver"; then
+        printf 'retained: process state changed or is uncertain'; return 1
+    fi
+    _log="$(mktemp -t ascendo-dup.XXXXXX 2>/dev/null || mktemp /tmp/ascendo-dup.XXXXXX)"
+    _ascendo_npm_cli_argv "$_npm_bin"
+    ascendo_run_with_timeout "$(ascendo_npm_duplicate_timeout)" \
+        env NPM_CONFIG_PREFIX="$_prefix" "${_ASCENDO_NPM_ARGV[@]}" \
+        uninstall -g --prefix "$_prefix" --ignore-scripts "$_pkg" >"$_log" 2>&1
+    _rc=$?
+    _tail="$(tail -n 12 "$_log" 2>/dev/null | tr '\t' ' ' | awk 'NF{print}' \
+        | ascendo_npm_sanitize_output | head -c 600 || true)"
+    rm -f "$_log" 2>/dev/null
+    if [ "$_rc" -eq 124 ]; then
+        printf 'retained: npm uninstall timed out (exit 124)%s' "${_tail:+ -- $_tail}"; return 1
+    elif [ "$_rc" -ne 0 ]; then
+        printf 'retained: npm uninstall failed (exited %s)%s' "$_rc" "${_tail:+ -- $_tail}"; return 1
+    fi
+    if [ -d "$_prefix/lib/node_modules/$_pkg" ]; then
+        printf 'retained: npm uninstall exited 0 but the package is still present'; return 1
+    fi
+    if ! ascendo_npm_report_cli_version_or_fail "$_display" "$_native" >/dev/null; then
+        printf 'after the removal the native %s no longer runs -- reinstall it' "$_cmd"; return 2
+    fi
+    return 0
+}
+
+# Report (and with $3=1 possibly remove) every duplicate of native <cmd>.
+# $3: 1 = apply with ASCENDO_REMOVE_CLI_DUPLICATES=1, else report-only.
+# $4: npm binary used for the removal.
+ascendo_npm_duplicates_handle() {   # display cmd remove npm_bin
+    local _display="$1" _cmd="$2" _remove="${3:-0}" _npm_bin="${4:-}"
+    local _us=$'\x1f' _rec _native _nv _prefix _pkg _ver _removable _kind _name
+    local _slug _note _remedy _rc _why _tok
+    ascendo_npm_duplicates_supported "$_cmd" || return 0
+    _rec="$(ascendo_npm_duplicate_native "$_display" "$_cmd")" || return 0
+    IFS="$_us" read -r _native _nv <<<"$_rec"
+    while IFS="$_us" read -r _prefix _pkg _ver _removable; do
+        [ -n "$_prefix" ] || continue
+        _slug="$_display@$_prefix"
+        _note="report-only; set ASCENDO_REMOVE_CLI_DUPLICATES=1 to let apply remove it"
+        if [ "$_remove" = "1" ]; then
+            _why="$(ascendo_npm_duplicate_remove "$_display" "$_cmd" "$_native" "$_nv" \
+                    "$_prefix" "$_pkg" "$_ver" "$_removable" "$_npm_bin")"
+            _rc=$?
+            case "$_rc" in
+                0)
+                    json_add_message "info" "$_slug: Removed npm duplicate $_pkg ${_ver:-?} from $_prefix (native $_cmd $_nv stays)"
+                    continue ;;
+                2)
+                    json_add_message "error" "$_slug: Removed npm duplicate $_pkg ${_ver:-?} from $_prefix but $_why"
+                    continue ;;
+                *) _note="$_why" ;;
+            esac
+        fi
+        _remedy="npm uninstall -g --prefix $_prefix $_pkg"
+        _tok="$(ascendo_action_required_token cli_duplicate "$_nv" "${_ver:-?}")"
+        json_add_message "warn" "$_slug: native $_cmd $_nv is installed but a duplicate $_pkg ${_ver:-?} remains in $_prefix ($_note); remove it with: $_remedy | $_tok"
+    done < <(_ascendo_npm_dup_py list "$HOME" "$(ascendo_npm_toolchain_home)" \
+                "$(ascendo_npm_brew_prefixes)" "$_cmd" "$_native" "$_nv")
+    # Homebrew copies: reported, never removed, never executed.
+    while IFS="$_us" read -r _kind _name _ver; do
+        [ -n "$_name" ] || continue
+        if [ "$_kind" = "cask" ]; then _remedy="brew uninstall --cask $_name"; else _remedy="brew uninstall $_name"; fi
+        _tok="$(ascendo_action_required_token cli_duplicate "$_nv" "${_ver:-?}")"
+        json_add_message "warn" "$_display@homebrew/$_name: native $_cmd $_nv is installed next to a Homebrew copy ($_name ${_ver:-?}); Ascendo never removes Homebrew copies -- remove it with: $_remedy | $_tok"
+    done < <(_ascendo_npm_dup_py brew "$(ascendo_npm_brew_dirs)" "$_cmd")
+    return 0
 }

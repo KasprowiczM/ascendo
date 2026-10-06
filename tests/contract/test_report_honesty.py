@@ -342,3 +342,27 @@ def test_machine_token_never_leaks_into_human_reasons(run_dir):
     failed = md[md.index("## Failed"):]
     assert "upgrade failed" in failed
     assert "ASCENDO-ACTION-REQUIRED" not in failed
+
+
+def test_npm_cli_duplicate_message_token_is_collected_without_an_item(run_dir):
+    """Task 8b: a duplicate of a native CLI is a phase-level warn message (no
+    synthetic item) carrying reason=cli_duplicate; the report lists it."""
+    ok = _build_item(item_id="claude-code", category=SourceType.NPM,
+                     status=ItemStatus.UP_TO_DATE, current="2.0.0", target="2.0.0")
+    _sc(run_dir, Phase.APPLY, SourceType.NPM, [ok], messages=[
+        Message(level=MessageLevel.WARN, text=(
+            "claude-code@/p/npm-global: native claude 2.0.0 is installed but a duplicate "
+            "@anthropic-ai/claude-code 1.0.0 remains in /p/npm-global (report-only); remove "
+            "it with: npm uninstall -g --prefix /p/npm-global @anthropic-ai/claude-code | "
+            + _token("cli_duplicate", "2.0.0", "1.0.0"))),
+    ])
+    items = collect_action_required(run_dir)
+    assert [(a.category, a.slug, a.reason, a.current, a.candidate) for a in items] == [
+        ("npm", "claude-code@/p/npm-global", "cli_duplicate", "2.0.0", "1.0.0")]
+    a = items[0]
+    assert "second copy" in a.reason_text and "brew uninstall" in a.reason_text
+    assert a.reason_text != "Open the app and check for updates manually."
+    assert a.open_hint
+    md = generate_apply_report(run_dir)
+    assert "## ⚠ Action required — 1 item needs your attention" in md
+    assert "claude-code@/p/npm-global" in md

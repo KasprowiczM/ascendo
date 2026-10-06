@@ -197,6 +197,13 @@ _REASON_TEXT = {
     "needs_restart": (
         "Needs a restart / the app is running — quit it (or restart) and re-run apply."
     ),
+    "cli_duplicate": (
+        "A second copy of this CLI sits next to the working native install. "
+        "Remove the one you do not use: `npm uninstall -g --prefix <prefix> "
+        "<package>` for an npm copy, `brew uninstall <formula>` for a Homebrew "
+        "copy (Ascendo never removes Homebrew copies; npm copies only with "
+        "ASCENDO_REMOVE_CLI_DUPLICATES=1)."
+    ),
 }
 _OPEN_HINT_TEXT = {
     "major_upgrade": "Open System Settings → Software Update",
@@ -206,6 +213,7 @@ _OPEN_HINT_TEXT = {
     "cask_needs_admin": "Run: brew upgrade --cask {slug}",
     "needs_restart": "Quit {name} and re-run",
     "app_in_use": "Quit {name} and re-run",
+    "cli_duplicate": "Remove the duplicate copy (see the remedy in the run's npm messages)",
 }
 _DEFAULT_REASON_TEXT = "Open the app and check for updates manually."
 

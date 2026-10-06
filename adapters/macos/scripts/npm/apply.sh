@@ -20,6 +20,8 @@
 #
 # Order (two passes over the manifest):
 #   pass 1  native-installer rows + OpenCode native-first   (need no Node/npm)
+#   --      duplicate report of a proven native claude/codex/opencode (report-only;
+#           removal of an npm copy only with ASCENDO_REMOVE_CLI_DUPLICATES=1)
 #   pass 2  native-node, npm, self-update (OpenCode npm fallback), native-bun
 #
 # Every mutating child runs with stdin </dev/null (the manifest is read through
@@ -848,9 +850,29 @@ _walk_pass() {   # 1 | 2
     done < <(ascendo_npm_manifest_lines)
 }
 
+# Duplicates of a PROVEN native claude/codex/opencode (cli.md / Task 8b): npm and
+# Homebrew copies are reported as ASCENDO-ACTION-REQUIRED reason=cli_duplicate
+# messages (report-only). Only with ASCENDO_REMOVE_CLI_DUPLICATES=1 is an npm
+# copy removed, under every upstream guard; a Homebrew copy never is. Runs after
+# pass 1 so the native version is the freshly updated one, and before pass 2
+# (a successful native OpenCode already owns its row, so pass 2's npm fallback
+# is not needed once the native copy is proven).
+_handle_native_duplicates() {
+    [ "$DRY_RUN" = "true" ] && return 0
+    local _remove=0 _d _p _m _b _c
+    ascendo_npm_remove_duplicates_enabled && _remove=1
+    while IFS='|' read -r _d _p _m _b _c; do
+        [ "$_d" = "display_name" ] && continue
+        [ -z "$_d" ] && continue
+        in_filter "$_d" || continue
+        ascendo_npm_duplicates_handle "$_d" "$_c" "$_remove" "$NPM_BIN"
+    done < <(ascendo_npm_manifest_lines)
+}
+
 # Pass 2 order matters inside the pass: `bun` last, node before npm packages.
 # (Manifest order is node, npm, ... bun, which is exactly that.)
 _walk_pass 1
+_handle_native_duplicates
 _walk_pass 2
 
 if [ "$DRY_RUN" != "true" ] && [ "$TOTAL_ITEMS" -gt 0 ]; then
