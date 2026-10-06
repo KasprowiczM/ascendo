@@ -164,13 +164,32 @@ Implements `cli.md` Specs P5, P6, P8, P9 and row 17 (bun).
 - Only-installed: missing CLIs/Node/bun are `skipped` ("not installed — skipping") unless
   `ASCENDO_BOOTSTRAP_CLI=1` or explicitly named in `--filter`; verify does not fail not-installed CLIs;
   never `brew install node` unasked.
-- opencode: `self-update` method (`opencode upgrade --method npm` with managed prefix env and
+- (SUPERSEDED by T8-a..d below — npm self-update is now only the guarded fallback) opencode: `self-update` method (`opencode upgrade --method npm` with managed prefix env and
   `NPM_CONFIG_ALLOW_SCRIPTS=opencode-ai`), broken-stub detection by running the binary, repair only if
   installed. Update `config/npm_global_clis.txt`.
 - bun: `bun upgrade` when installed.
 - Sanitise every recorded stderr tail (tokens, auth lines, URL credentials, 500 chars/line).
 - Every mutating child in manifest loops gets `</dev/null`; add `ASCENDO_NPM_MANIFEST` test seam.
 - Tests per the report.
+
+**Upstream v1.5.4 delta (binding; source delta-v1.5.4.md, Ruling 9):**
+
+- T8-a Opencode primary path = native, run in pass 1 (before Node/npm): installed native (`~/.opencode/bin/opencode`, or `~/.local/bin/opencode` whose realpath is under `~/.opencode/bin`) -> `opencode upgrade --method curl` (timeout 300 via the shared runner, stdin `/dev/null`); not native-installed -> only if the CLI already exists (npm wrapper) or `ASCENDO_BOOTSTRAP_CLI=1`: downloaded installer `https://opencode.ai/install` (Task 7 fetch helper), args `--no-modify-path`, env `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, timeout 360. Add `opencode` to `ascendo_npm_native_install_url`.
+- T8-b Success needs `<native> --version` digit-bearing; if an existing fallback version is newer than the native one (semver) -> keep npm, do not publish the symlink, warn.
+- T8-c Publish `~/.local/bin/opencode` with `ln -s` (no `-f`); if `~/.local/bin/opencode` exists (file, link or dangling) and is not a verified native path -> warn "unverified installation origin; retaining existing distribution", never execute or replace it. Finally require `command -v opencode == ~/.local/bin/opencode` (PATH prefixed `~/.local/bin:$NPM_GLOBAL_BIN:...`).
+- T8-d Keep manifest row `opencode-cli|opencode-ai|self-update|opencode|opencode` but the `self-update` arm for opencode: skip when native succeeded; otherwise run npm `upgrade --method npm` (+`NPM_CONFIG_ALLOW_SCRIPTS=opencode-ai`, `repair_broken_opencode`) ONLY when `$NPM_GLOBAL_PREFIX/lib/node_modules/opencode-ai` and `$NPM_GLOBAL_BIN/opencode` exist; never bootstrap npm opencode; never touch the native command. check/plan/verify read INSTALLED from the resolved command's `--version`; LATEST from the npm registry `opencode-ai` version in both cases for now (Ruling 11: the Task 9 `opencode` tauri_latest feed replaces it for native installs when Task 9 lands).
+- T8-e Two-pass apply order: pass 1 native-installer rows (claude, codex, agy, cursor-agent) + opencode native-first; pass 2 `native-node`, `npm`, `self-update`, `native-bun`.
+- Carry (Task 7 ledger): the only-installed gate and every post-install/update check locate the binary via `ascendo_npm_native_command_path` (~/.local/bin, then PATH) so a PATH-only CLI is updated, never given a second copy.
+- F4: `apply_native_installer` must treat `~/.local/bin/<cmd>` as native only when its realpath is a supported native location (port upstream `supported_native_path`); an npm-wrapper symlink there is not 'updated' as native.
+- Tests: port upstream `NativeFirstTests` (native before node/npm, native opencode skips npm self-update, failed native keeps npm, unknown user-local command not executed/replaced, older native retains npm, installer hides PATH + no profile edit) as bash/pytest fakes.
+- T8-f (cli_duplicates) is moved to Task 8b (Ruling 10). No auto-removal of Homebrew `opencode`/`bun`/`node` formulas (Global Constraint 4).
+
+### Task 8b: npm CLIs — native vs npm duplicate detection (report-only by default)
+
+Port of upstream v1.5.3 `lib/python/cli_duplicates.py` (Ruling 10 split from Task 8).
+
+- T8-f Duplicate handling for claude/codex/opencode: port `cli_duplicates.py`. **Default report-only**: item `skipped`, token `ASCENDO-ACTION-REQUIRED reason=cli_duplicate ...`, remedy `npm uninstall -g --prefix <prefix> <package>` (add `cli_duplicate` to `report.py` `_REASON_TEXT`/`_OPEN_HINT_TEXT`). With `ASCENDO_REMOVE_CLI_DUPLICATES=1`: remove exactly per upstream guards (native proof, known prefixes, `removal_allowed`, process re-check immediately before delete, `--ignore-scripts`, post-check that the native command still runs; any failure keeps the fallback). Tests: port `test_cli_duplicates.py` (`DuplicatePlannerTests`, 5 cases); swap its `vendor_feeds.version_compare` import for the existing Ascendo version compare.
+- No auto-removal of Homebrew `opencode`/`bun`/`node` formulas (Global Constraint 4).
 
 ### Task 9: Web — vendor feeds module, registry schema, three-way compare, Sparkle parity
 
@@ -186,6 +205,13 @@ Implements `web-vendor.md` Spec A, Spec D, Spec E (rows 1-7, 16-18 config).
 - Existing `sparkle.sh` uses the new parser (RDM must parse as its real newest version).
 - Tests: fixtures for each selector, stale feed, prerelease ordering, channel filter.
 
+**Upstream v1.5.4 delta (binding; source delta-v1.5.4.md, Ruling 9):**
+
+- Port `select_proton_releases(obj, os_version=None)` exactly as in `lib/python/vendor_feeds.py:253-300` (MinimumOsVersion filter via `version_compare(min, os) == 1`, dict `File`, `.dmg` URL fallback, `rollout_hold` flag) and pass `os_version` from `evaluate_feed` for `proton_releases`.
+- `_web_vendor_lookup` prints 7 fields; **policy is last** (`...|artifact|host|policy`). Test: `test_vendor_lookup_policy_does_not_contaminate_artifact_host`, `test_proton_respects_minimum_os_and_preserves_rollout`, `test_proton_drive_file_object_has_verified_download`.
+- Add the `protondrive` feed row (same values as `config/vendor_feeds.txt:18`).
+- `older` (feed < installed) -> `feed_stale` item: `skipped`, empty `target_version`, installed + vendor versions in the message (see Task 12).
+
 ### Task 10: Web — hardened installer with atomic swap, identity check, rollback
 
 Implements `web-vendor.md` Spec B and Spec C (rows 10-15, 24).
@@ -200,6 +226,14 @@ Implements `web-vendor.md` Spec B and Spec C (rows 10-15, 24).
   `files[]` entry.
 - Tests with fake `hdiutil`/`spctl`/`codesign`/`ditto` and temp `/Applications` root (env override).
 
+**Upstream v1.5.4 delta (binding; source delta-v1.5.4.md, Ruling 9):**
+
+- Add return code **4 = deferred** to `_web_vendor_install` / `copy_verified_app` (2 = deferred in the copy helper, mapped to 4 by the installer). Callers: item `skipped` + `needs_restart` token, soft.
+- Idle test = `ascendo_app_running_state` == `false` (explicit). Probe twice: before staging and immediately before the backup/swap; on the second failure delete staging + backup dirs.
+- Remove every `quit`/`pkill` from the common swap path (there is none today; keep it that way). Only a handler that recorded a toolkit launch (Task 12) may quit, via its own function.
+- Tests (port names): `test_running_or_unknown_app_is_never_copied_or_quit`, `test_user_launch_during_staging_preserves_existing_bundle` (fake probe flips to `true` between the two checks), `test_ambiguous_running_probe_never_authorizes_quit`, `test_direct_defer_is_soft_without_launch`.
+- F2: make `ascendo_brew_bundle_running` (lib/ascendo_brew.sh) and `_web_is_running` (lib/ascendo_web.sh) tri-state via one shared `ascendo_app_running_state` (true/false/unknown); missing/failing/empty lsappinfo => unknown => treated as running (brew cask upgrade deferred as needs_restart). Tests for both callers.
+
 ### Task 11: Web — vendor-truth flow, direct-first apps, Docker Desktop, RDM
 
 Implements `web-vendor.md` Spec F and Spec G (rows 9, 15-20) and the app-by-app handler diff.
@@ -213,6 +247,14 @@ Implements `web-vendor.md` Spec F and Spec G (rows 9, 15-20) and the app-by-app 
   verified DMG, running Docker never updated (`needs_restart`).
 - RDM: productinfo kv feed with sha256 DMG.
 - Update `tests/test_web_apps_toml_shipped.py` (`_SISTER_WEB_HANDLERS`, docker/rdm assertions).
+
+**Upstream v1.5.4 delta (binding; source delta-v1.5.4.md, Ruling 9):**
+
+- `direct_first = true` for **cursor, opencode, codex, proton-mail, protondrive** (not only Cursor/OpenCode). Update the shipped-registry test that asserts "only cursor+opencode have direct_first".
+- `protondrive`: `handler = "squirrel"` + `[app.vendor_feed] kind="json" arg="proton_releases" artifact="dmg" allowed_host="proton.me" direct_first=true`; drop the "Not a second proton.me JSON DMG install" note.
+- Algorithm additions: (a) feed `equal`/`older(feed_stale)` -> no launch, no wait; (b) policy `rollout_hold` -> never vendor-direct, keep native updater, code `rollout_hold`; (c) running + newer -> `needs_restart` BEFORE any launch; (d) direct download/verify failure on a direct-first app -> `error_soft` + one hidden launch (if idle and not SAFE_MODE) reported `triggered`; (e) rc 4 -> `needs_restart`, no launch; (f) launch cycle = poll installed version every 1 s up to `ASCENDO_WEB_STAGE_WAIT` (default 90, clamp 0-600, non-numeric -> 90), return `success`/`updated` the moment it reaches the feed version; if `open` fails return `error_soft` immediately (no wait, no quit).
+- Docker: treat rc 4 from the vendor install as `needs_restart` (`INTERNET_LAST_VERIFIED=0`).
+- Tests: `test_sparkle_equal_and_stale_do_not_launch`, `test_proton_staged_rollout_uses_native_without_forcing_direct`, `test_chatgpt_fast_direct_does_not_launch_or_wait` (use `codex`), `test_direct_download_failure_retains_native_fallback`, `test_native_launch_failure_has_no_wait_or_quit`, `test_native_observed_update_finishes_without_sleep`, `test_chatgpt_running_has_no_side_effect`.
 
 ### Task 12: Web — verify that works, toolkit-launched quit, status codes, Firefox Dev
 
@@ -229,6 +271,13 @@ Implements `web-updaters.md` Spec D, Spec E, Spec G, Spec H (rows 8-16, 26, 28).
   codes; `report.py` must not promote every `triggered` item to action-required — only unverified /
   behind / needs_restart, listed by name.
 - Firefox Dev: `version_regex` fix so new-major betas are not skipped forever.
+
+**Upstream v1.5.4 delta (binding; source delta-v1.5.4.md, Ruling 9):**
+
+- Launch ownership: write `toolkit_launched.txt` only when `ascendo_app_running_state` was explicit `false` before `open`; unknown = running. Quit only bundle ids in that file; settle/verify sleep only when the file is non-empty or a `triggered` item exists (else 0 s).
+- `feed_stale`: sidecar item `skipped`, `current_version=<installed>`, `target_version=""`, message `"<slug>: vendor feed <vendor> is older than installed <installed> | ASCENDO-STATUS code=feed_stale"`; **not** promoted to Action-required and **no** extra generic "triggered/unconfirmed" item for the same app. `report.py`: add group "Manufacturer warnings" (counted as warning, never "Still pending"/"failed"); keep hard failures, unknown/uncoded `triggered` items and unrecognised codes surfacing as before (mirror `internet_unexplained_status` logic: unknown code => generic diagnostic stays).
+- Tests: `test_stale_feed_is_warning_without_an_update_target_or_fake_launch`, `test_stale_feed_preserves_actual_unconfirmed_apps_and_hard_steps`, `test_stale_feed_does_not_hide_unexplained_or_malformed_status`, `test_warning_without_parseable_versions_preserves_diagnostic`.
+- F3: soft system/SUDO_UNAVAILABLE deferral counts as a run warning; RunStatus.CANCELLED does not.
 
 ### Task 13: Web — Chromium updaters (Chrome, Google Drive, Gemini, Comet)
 
@@ -264,6 +313,11 @@ Implements `inventory-orchestration.md` Spec 4 and Spec 8 (rows 11-13, 24, 25).
 - Wire `inventory_db.reconcile()` (drift-free, never wipe a group when new count is 0 but old > 0).
 - Tests with fixture app trees.
 
+**Upstream v1.5.4 delta (binding; source delta-v1.5.4.md, Ruling 9):**
+
+- Absent registry apps (incl. `dji-assistant`) emit no item and no message in check/plan/apply; add the test.
+- F5: pin mas never-bare-upgrade with `test_unparseable_native_queue_never_runs_bare_upgrade`.
+
 ### Task 16: Orchestration safety — restart-safe blocking, run lock, unattended sudo
 
 Implements `inventory-orchestration.md` Spec 5, Spec 6, Spec 7 (rows 5-9, 18, 23).
@@ -275,6 +329,13 @@ Implements `inventory-orchestration.md` Spec 5, Spec 6, Spec 7 (rows 5-9, 18, 23
 - TTY-less runs without askpass/password never attempt interactive `sudo -v`; root-only tracks skip
   softly with a reason. One sudo keep-alive per run, killed on all exit paths.
 - Tests (contract + adapter). Keep Windows/Ubuntu paths unaffected.
+
+**Upstream v1.5.4 delta (binding; source delta-v1.5.4.md, Ruling 9):**
+
+- `ASCENDO_NO_SUDO=1` (also set by `_ascendo_sudo_warm` in unattended mode) makes softwareupdate and mas apply skip ALL root work even when the sudo cache is hot (port `test_no_sudo_policy_skips_even_cached_authorization`).
+- After `_ascendo_sudo_warm`, if neither `sudo -n true` succeeds nor an askpass helper is wired -> items `skipped` code `SUDO_UNAVAILABLE`, message "authenticate interactively and re-run", exit 0 (soft); no sudo install command is invoked (port `test_no_terminal_and_cold_sudo_defers_without_installing`). Do NOT use "no tty => defer" alone: Ascendo's TTY-less Touch-ID flow (Sesja 81) must keep working; the criterion is the cache/askpass state after warm.
+- Soft system deferral propagates as a run warning (REPORT.md "Deferred" + warning count / `degraded`); a deliberate user cancel (`RunStatus.CANCELLED`) does not (port `test_system_soft_warning_propagates_but_user_skip_does_not`).
+- F1: softwareupdate/apply.sh and mas/apply.sh: post-warm authorization gate (soft `skipped` SUDO_UNAVAILABLE), `ASCENDO_NO_SUDO`, and `sudo -n` for install commands when no askpass is wired (first validate `sudo -n` honours the timestamp from TTY-less `sudo -v </dev/null`).
 
 ### Task 17: Architecture/Rosetta awareness, scheduler honesty, CLT health, P2 items
 
@@ -299,3 +360,8 @@ Spec 9 and rows 19/22 where cheap, `cli.md` Spec P7.
   record that and keep notes in `docs/releases/`). i18n EN+PL parity if any UI string changes.
 - Run full gates: adapter tests, contract tests, `bash bin/validate-macos.sh --quick` style read-only
   stages (no real apply), `scripts/check-i18n-parity.py`.
+
+**Upstream v1.5.4 delta (binding; source delta-v1.5.4.md, Ruling 9):**
+
+- Task 18 notes: document `ASCENDO_REMOVE_CLI_DUPLICATES`, `ASCENDO_WEB_STAGE_WAIT`, `ASCENDO_NO_SUDO`, new codes `feed_stale`/`rollout_hold`/`cli_duplicate`/`SUDO_UNAVAILABLE`; record "OpenCode: native-first".
+
