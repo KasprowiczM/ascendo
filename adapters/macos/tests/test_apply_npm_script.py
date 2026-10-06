@@ -112,9 +112,34 @@ def _run_apply_with_npmrc_setup(
     out_dir = tmp_path / "out"
     rid = str(uuid.uuid4())
 
+    # Hermetic: nothing real (brew, npm, vendor CLIs) may be reachable even if a
+    # --dry-run regression let a handler execute something. PATH = fake bin +
+    # python3 only + system dirs; the only brew is a failing fake.
+    brew = bindir / "brew"
+    brew.write_text("#!/bin/sh\ncat >/dev/null\nexit 1\n")
+    brew.chmod(0o755)
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    py = shutil.which("python3")
+    assert py
+    (tools / "python3").symlink_to(py)
+    manifest = tmp_path / "manifest.txt"
+    manifest.write_text(
+        "display_name|package_name|method|brew_formula|command\n"
+        "node|node|native-node|node|node\n"
+        "pnpm|pnpm|npm||pnpm\n"
+        "claude-code|@anthropic-ai/claude-code|native-installer||claude\n"
+        "opencode-cli|opencode-ai|self-update|opencode|opencode\n"
+        "bun|bun|native-bun|bun|bun\n")
+
     env = dict(os.environ)
+    for key in list(env):
+        if key.startswith(("ASCENDO_", "MAC_UPDATE_")) or key == "BUN_INSTALL":
+            del env[key]
     env["HOME"] = str(fake_home)
-    env["PATH"] = f"{bindir}:{env['PATH']}"
+    env["PATH"] = f"{bindir}:{tools}:/usr/bin:/bin:/usr/sbin:/sbin"
+    env["ASCENDO_NPM_BREW_DIRS"] = ""
+    env["ASCENDO_NPM_MANIFEST"] = str(manifest)
     # Point Ascendo's toolchain elsewhere so we don't touch real
     # ~/.local/share/mac-update during the test.
     env["MAC_UPDATE_TOOLCHAIN_HOME"] = str(tmp_path / "toolchain")

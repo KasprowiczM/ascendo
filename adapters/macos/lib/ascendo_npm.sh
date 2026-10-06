@@ -115,9 +115,19 @@ _ascendo_npm_invoke() {
     # `npm cache clean` etc. all agree on where global packages live.
     # Per-call, not exported, so we don't poison sibling commands.
     local _prefix="$(ascendo_npm_global_prefix)"
-    # Resolve sibling node: <prefix>/bin/node lives next to <prefix>/bin/npm.
+    _ascendo_npm_cli_argv "$_npm"
+    NPM_CONFIG_PREFIX="$_prefix" "${_ASCENDO_NPM_ARGV[@]}" "$@"
+}
+
+# _ascendo_npm_cli_argv <npm_bin>: sets _ASCENDO_NPM_ARGV to the command that
+# runs this npm under its SIBLING node (see _ascendo_npm_invoke), or to the npm
+# binary itself when there is no sibling node. Lets callers wrap npm in the
+# bounded runner (which only takes executables, never shell functions).
+_ascendo_npm_cli_argv() {
+    local _npm="$1"
     local _node_dir="$(dirname "$_npm")"
     local _node="$_node_dir/node"
+    _ASCENDO_NPM_ARGV=("$_npm")
     if [ -x "$_node" ] && [ -f "$_npm" ]; then
         # NPM_BIN may be a symlink to lib/node_modules/npm/bin/npm-cli.js
         local _npm_cli="$_npm"
@@ -129,10 +139,8 @@ _ascendo_npm_invoke() {
                 *)  _npm_cli="$_node_dir/$_t" ;;
             esac
         fi
-        NPM_CONFIG_PREFIX="$_prefix" "$_node" "$_npm_cli" "$@"
-        return $?
+        _ASCENDO_NPM_ARGV=("$_node" "$_npm_cli")
     fi
-    NPM_CONFIG_PREFIX="$_prefix" "$_npm" "$@"
 }
 
 ascendo_npm_npm_bin() {
@@ -408,16 +416,34 @@ ascendo_npm_native_installed_version() {
     _ascendo_npm_native_parse_version "$_display" "$_line"
 }
 
+# Wall-clock bounds (seconds, positive integer else default): one `--version`
+# probe (ASCENDO_CLI_VERSION_TIMEOUT, default 20) and the OpenCode repair's
+# `npm install -g` (ASCENDO_OPENCODE_REPAIR_TIMEOUT, default 300).
+ascendo_npm_cli_version_timeout() {
+    case "${ASCENDO_CLI_VERSION_TIMEOUT:-}" in
+        ''|*[!0-9]*|0) echo 20 ;;
+        *) echo "$ASCENDO_CLI_VERSION_TIMEOUT" ;;
+    esac
+}
+ascendo_npm_repair_timeout() {
+    case "${ASCENDO_OPENCODE_REPAIR_TIMEOUT:-}" in
+        ''|*[!0-9]*|0) echo 300 ;;
+        *) echo "$ASCENDO_OPENCODE_REPAIR_TIMEOUT" ;;
+    esac
+}
+
 # Honest verification: exit 0 from an installer/updater is not success. The
 # binary must run `--version` (or `-v`) and print a digit-bearing version; a
 # product name alone (`codex-cli`) is not a version. Prints the version and
 # returns 0, or prints `?` and returns 1.
 ascendo_npm_report_cli_version_or_fail() {   # <display> <path>
-    local _display="$1" _path="$2" _line="" _v
+    local _display="$1" _path="$2" _line="" _v _t
     if [ ! -x "$_path" ]; then printf '?\n'; return 1; fi
-    if _line="$("$_path" --version </dev/null 2>/dev/null)"; then
+    _t="$(ascendo_npm_cli_version_timeout)"
+    # Bounded: a hung `--version` must not stall the phase (stdin is /dev/null).
+    if _line="$(ascendo_run_with_timeout "$_t" "$_path" --version 2>/dev/null)"; then
         :
-    elif _line="$("$_path" -v </dev/null 2>/dev/null)"; then
+    elif _line="$(ascendo_run_with_timeout "$_t" "$_path" -v 2>/dev/null)"; then
         :
     else
         printf '?\n'; return 1
@@ -595,15 +621,114 @@ ascendo_npm_global_bin() { printf '%s/bin' "$(ascendo_npm_global_prefix)"; }
 # The vendor installer's own location (its install dir is not configurable).
 ascendo_npm_opencode_native_bin() { printf '%s/.opencode/bin/opencode' "${HOME}"; }
 
-# Existing OpenCode, in upstream's resolve order: ~/.local/bin, PATH, managed
-# npm bin, ~/.opencode/bin. Empty when none exists (never bootstraps).
+# Realpath via python (no GNU realpath on stock macOS). Missing/dangling paths
+# come back lexically normalised, never an error.
+ascendo_npm_realpath() {
+    python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$1" </dev/null 2>/dev/null \
+        || printf '%s' "$1"
+}
+
+# Homebrew prefixes = the brew dirs of ascendo_npm_preferred_path
+# (ASCENDO_NPM_BREW_DIRS, default /opt/homebrew/bin:/usr/local/bin). A command is
+# brew-owned when it sits in one of those dirs or its realpath is inside the
+# prefix's Cellar/Caskroom (a ~/.local/bin link into a brew keg).
+ascendo_npm_path_brew_owned() {   # path
+    local _path="$1" _real _dir _root
+    _real="$(ascendo_npm_realpath "$_path")"
+    local IFS=:     # function-scoped: splits the colon list below only
+    for _dir in ${ASCENDO_NPM_BREW_DIRS-/opt/homebrew/bin:/usr/local/bin}; do
+        [ -n "$_dir" ] || continue
+        _root="$(dirname "$_dir")"
+        case "$_path" in "$_dir"/*) return 0 ;; esac
+        case "$_real" in
+            "$_dir"/*|"$_root"/Cellar/*|"$_root"/Caskroom/*) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# Where an OpenCode command comes from. Prints one of:
+#   native      realpath inside ~/.opencode/bin (cli_duplicates.supported_native_path)
+#   npm         the managed npm distribution ($NPM_GLOBAL_BIN/opencode + node_modules/opencode-ai)
+#   brew        under a Homebrew prefix
+#   unverified  anything else (user file, foreign link, dangling link, missing)
+# An `unverified` command is NEVER executed (not even `--version`) or replaced.
+ascendo_npm_opencode_origin() {   # path
+    local _p="$1"
+    if [ -e "$_p" ] && ascendo_npm_native_path_supported opencode "$_p"; then
+        echo native; return 0
+    fi
+    if [ "$_p" = "$(ascendo_npm_global_bin)/opencode" ] && ascendo_npm_opencode_npm_wrapper_exists; then
+        echo npm; return 0
+    fi
+    if [ -e "$_p" ] && ascendo_npm_path_brew_owned "$_p"; then
+        echo brew; return 0
+    fi
+    echo unverified
+}
+
+# Existing OpenCode commands in upstream's order, one per line, de-duplicated:
+# ~/.local/bin (also a dangling link), PATH, managed npm bin, ~/.opencode/bin.
+_ascendo_npm_opencode_candidates() {
+    local _local _p _seen=""
+    _local="$(ascendo_npm_local_bin)/opencode"
+    for _p in "$_local" "$(command -v opencode 2>/dev/null || true)" \
+              "$(ascendo_npm_global_bin)/opencode" "$(ascendo_npm_opencode_native_bin)"; do
+        [ -n "$_p" ] || continue
+        if [ "$_p" = "$_local" ]; then
+            [ -e "$_p" ] || [ -L "$_p" ] || continue
+        else
+            [ -x "$_p" ] || continue
+        fi
+        case "
+$_seen
+" in *"
+$_p
+"*) continue ;; esac
+        _seen="$_seen
+$_p"
+        printf '%s\n' "$_p"
+    done
+}
+
+# First existing OpenCode whose origin is KNOWN (native / managed npm / brew).
+# Empty when none exists OR only unverified ones do (see
+# ascendo_npm_opencode_unverified_path). Never bootstraps.
 ascendo_npm_opencode_resolve_path() {
     local _p
-    _p="$(ascendo_npm_native_command_path opencode)"
-    if [ -n "$_p" ]; then printf '%s' "$_p"; return 0; fi
-    for _p in "$(ascendo_npm_global_bin)/opencode" "$(ascendo_npm_opencode_native_bin)"; do
-        if [ -x "$_p" ]; then printf '%s' "$_p"; return 0; fi
-    done
+    while IFS= read -r _p; do
+        [ -n "$_p" ] || continue
+        if [ "$(ascendo_npm_opencode_origin "$_p")" != "unverified" ]; then
+            printf '%s' "$_p"; return 0
+        fi
+    done < <(_ascendo_npm_opencode_candidates)
+    return 0
+}
+
+# First existing OpenCode of unverified origin (empty when there is none).
+ascendo_npm_opencode_unverified_path() {
+    local _p
+    while IFS= read -r _p; do
+        [ -n "$_p" ] || continue
+        if [ "$(ascendo_npm_opencode_origin "$_p")" = "unverified" ]; then
+            printf '%s' "$_p"; return 0
+        fi
+    done < <(_ascendo_npm_opencode_candidates)
+    return 0
+}
+
+# Ownership state of a `self-update` row for check/plan/verify (prints one of
+# "", unverified, brew): `unverified` = only an unverified command exists (never
+# executed; skip the row); `brew` = the resolved command is Homebrew's.
+ascendo_npm_self_update_state() {   # cmd
+    [ "$1" = "opencode" ] || return 0
+    local _p
+    _p="$(ascendo_npm_opencode_resolve_path)"
+    if [ -z "$_p" ]; then
+        [ -n "$(ascendo_npm_opencode_unverified_path)" ] && echo unverified
+        return 0
+    fi
+    [ "$(ascendo_npm_opencode_origin "$_p")" = "brew" ] && echo brew
     return 0
 }
 
@@ -647,11 +772,15 @@ ascendo_npm_repair_broken_opencode() {   # prefix binary
     [ -n "$_npm_bin" ] || return 1
     # npm 12's allow-scripts list blocks the postinstall even with
     # ignore-scripts=false; scope the exception to this child (no ~/.npmrc).
-    NPM_CONFIG_IGNORE_SCRIPTS=false \
-        _ascendo_npm_invoke "$_npm_bin" install -g --prefix "$_prefix" \
-        --allow-scripts=opencode-ai opencode-ai@latest </dev/null
+    # Bounded; the runner pins stdin to /dev/null.
+    _ascendo_npm_cli_argv "$_npm_bin"
+    ascendo_run_with_timeout "$(ascendo_npm_repair_timeout)" \
+        env NPM_CONFIG_PREFIX="$(ascendo_npm_global_prefix)" NPM_CONFIG_IGNORE_SCRIPTS=false \
+        "${_ASCENDO_NPM_ARGV[@]}" install -g --prefix "$_prefix" \
+        --allow-scripts=opencode-ai opencode-ai@latest
     _rc=$?
-    if [ "$_rc" -eq 0 ] && "$_binary" --version </dev/null >/dev/null 2>&1; then
+    if [ "$_rc" -eq 0 ] \
+       && ascendo_run_with_timeout "$(ascendo_npm_cli_version_timeout)" "$_binary" --version >/dev/null 2>&1; then
         return 0
     fi
     _pkg="$_prefix/lib/node_modules/opencode-ai"

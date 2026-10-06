@@ -205,6 +205,11 @@ exit 0
     def run(self, script: Path, name: str, *extra: str,
             env_extra: dict | None = None, timeout: float = 120):
         env = dict(os.environ)
+        # A developer's own toggles (ASCENDO_BOOTSTRAP_CLI=1, BUN_INSTALL, ...)
+        # must not change what these tests assert.
+        for key in list(env):
+            if key.startswith(("ASCENDO_", "MAC_UPDATE_")) or key == "BUN_INSTALL":
+                del env[key]
         env.update({
             "HOME": str(self.home),
             "PATH": f"{self.bin}:{self.tools}:/usr/bin:/bin:/usr/sbin:/sbin",

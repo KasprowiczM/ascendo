@@ -464,9 +464,10 @@ apply_native_installer() {
             _tail="'$_cmd $_upd' exited $_rc${_tail:+ -- $_tail}"
         fi
         ascendo_npm_report_cli_version_or_fail "$_display" "$_path" >/dev/null && _runs=1
-        if [ "$_runs" -eq 1 ] && { [ "$_cmd" = "claude" ] || [ "$_path" != "$_local" ]; }; then
+        if { [ "$_cmd" = "claude" ] && [ "$_runs" -eq 1 ]; } || [ "$_path" != "$_local" ]; then
             # Never re-run install.sh over a working claude (TUI hang class),
-            # and never drop a second copy next to a CLI that lives elsewhere.
+            # and never drop a second copy next to a CLI that lives elsewhere
+            # (PATH-only / non-vendor-root), whether or not it still runs.
             json_add_item "$_display" "$_before" "" "failed" "npm" "native-installer"
             json_add_message "error" "$_display: $_tail"
             rm -f "$_tmp_log" 2>/dev/null
@@ -525,9 +526,12 @@ apply_native_installer() {
 # -- OpenCode: native-first (macOS_updates update_opencode_native_first) ---------
 # Pass 1, before Node/npm. State is handed to pass 2 (apply_self_update), which
 # owns the guarded npm fallback and the final item for this row.
-OPENCODE_NATIVE_STATE=""    # "" (not attempted) | failed | older | unverified
+OPENCODE_NATIVE_STATE=""    # "" (not attempted) | failed | older | unverified | brew
 OPENCODE_NATIVE_MSG=""
 OPENCODE_ROW_HANDLED=0      # 1 => item already emitted (native verified + published, or dry run)
+
+_UNVERIFIED_MSG="OpenCode user-local command has an unverified installation origin; retaining existing distribution (reason=unverified_origin)"
+_BREW_MSG="OpenCode is managed by Homebrew -- skipping (update it with brew; set ASCENDO_BOOTSTRAP_CLI=1 or select opencode-cli explicitly to install a native copy)"
 
 _opencode_native_stop() {   # state message
     OPENCODE_NATIVE_STATE="$1"
@@ -547,27 +551,46 @@ apply_opencode_native() {
     fi
     _local="$(ascendo_npm_local_bin)/opencode"
     _native="$(ascendo_npm_opencode_native_bin)"
-    _old_path="$(ascendo_npm_opencode_resolve_path)"
-    # Only-installed gate: nothing installed and nobody asked => nothing to do
-    # (pass 2 reports the skip).
-    if [ -z "$_old_path" ] && ! ascendo_npm_bootstrap_allowed "$_display"; then
-        return 0
-    fi
-    [ -n "$_old_path" ] && _old_version="$(ascendo_npm_report_cli_version_or_fail "$_display" "$_old_path")" || true
-    [ "$_old_version" = "?" ] && _old_version=""
-
-    # A user-local `opencode` may be npm's wrapper, a Homebrew link or any other
-    # user-owned file. Anything that is not provably the vendor's native install
-    # is retained as is: never executed (beyond --version), never replaced.
+    # T8-c FIRST, before anything is executed: a user-local `opencode` that is
+    # not provably the vendor's native install (npm wrapper link, Homebrew link,
+    # user file, dangling link) is retained as is -- never run (not even
+    # --version), never replaced, and the native symlink cannot be published
+    # over it anyway.
     if [ -e "$_local" ] || [ -L "$_local" ]; then
         if [ -x "$_local" ] && ascendo_npm_native_path_supported opencode "$_local"; then
             _native="$_local"
+        elif [ "$(ascendo_npm_opencode_origin "$_local")" = "brew" ]; then
+            _opencode_native_stop brew "$_BREW_MSG"
+            return 1
         else
-            _opencode_native_stop unverified \
-                "OpenCode user-local command has an unverified installation origin; retaining existing distribution"
+            _opencode_native_stop unverified "$_UNVERIFIED_MSG"
             return 1
         fi
     fi
+    # Only a command of KNOWN origin (native / managed npm / Homebrew) is ever
+    # resolved or run.
+    _old_path="$(ascendo_npm_opencode_resolve_path)"
+    if [ -z "$_old_path" ]; then
+        if ! ascendo_npm_bootstrap_allowed "$_display"; then
+            if [ -n "$(ascendo_npm_opencode_unverified_path)" ]; then
+                _opencode_native_stop unverified "$_UNVERIFIED_MSG"
+                return 1
+            fi
+            # Only-installed gate: nothing installed and nobody asked => nothing
+            # to do (pass 2 reports the skip).
+            return 0
+        fi
+    elif [ "$(ascendo_npm_opencode_origin "$_old_path")" = "brew" ] \
+         && ! ascendo_npm_bootstrap_allowed "$_display"; then
+        # Homebrew owns it: never install a native copy next to it unasked.
+        _opencode_native_stop brew "$_BREW_MSG"
+        return 1
+    fi
+    if [ -n "$_old_path" ]; then
+        _old_version="$(ascendo_npm_report_cli_version_or_fail "$_display" "$_old_path")" || true
+    fi
+    [ "$_old_version" = "?" ] && _old_version=""
+
     # The distribution a successful native install must not regress: the first
     # existing command that is not the native one.
     _fb_path="$_old_path"
@@ -679,7 +702,7 @@ apply_self_update() {
                     json_add_item "$_display" "" "" "failed" "npm" "self-update"
                     json_add_message "error" "$_display: $OPENCODE_NATIVE_MSG"
                     ;;
-                older|unverified)
+                older|unverified|brew)
                     json_add_item "$_display" "" "" "skipped" "npm" "self-update"
                     json_add_message "warn" "$_display: $OPENCODE_NATIVE_MSG"
                     ;;
@@ -735,8 +758,12 @@ apply_self_update() {
             ascendo_npm_repair_broken_opencode "$NPM_GLOBAL_PREFIX" "$_command_path" >>"$_tmp_log" 2>&1
             _rrc=$?
             if [ "$_rrc" -eq 2 ]; then
+                # The npm install existed (precondition) and `opencode upgrade`
+                # ran; the binary is gone afterwards: a failed mutation.
+                _tail="$(_native_log_tail "$_tmp_log")"
                 rm -f "$_tmp_log" 2>/dev/null
-                _skip_not_installed "$_display" "self-update"
+                json_add_item "$_display" "$_before" "" "failed" "npm" "self-update"
+                json_add_message "error" "$_display: the OpenCode binary disappeared after '$_cmd $_sub $_args'${_tail:+ -- $_tail}"
                 return
             fi
             if [ "$_rrc" -eq 0 ] && _verified="$(ascendo_npm_report_cli_version_or_fail "$_display" "$_command_path")"; then

@@ -153,15 +153,22 @@ if [ -n "$out" ]; then cp "$src" "$out"; else cat "$src"; fi
 
     def cli(self, path: Path, name: str, version: str, *, sub_rc: int = 0,
             sub_to: str | None = None, version_rc: int = 0, extra_out: str = "",
-            log_unknown: bool = True) -> Path:
+            log_version: bool = False, sub_removes_self: bool = False,
+            version_hang: bool = False) -> Path:
         """A fake CLI. Version lives in `<real path>.ver`; `update` / `upgrade`
         are logged to events.log (with env bits), may bump the version, may fail."""
         bump = f'echo "{sub_to}" > "$self.ver"' if sub_to else ":"
+        if sub_removes_self:
+            bump = 'rm -f "$self"'
+        # log_version: record EVERY invocation (also --version) so a test can
+        # prove a command was never executed at all.
+        pre = f'echo "{name} $*" >> "{self.events}"\n' if log_version else ""
+        hang = "sleep 300\n" if version_hang else ""
         body = f"""#!/bin/sh
 self="$0"; [ -L "$self" ] && self="$(readlink "$self")"
-case "$1" in
+{pre}case "$1" in
   --version|-v)
-    [ {version_rc} -eq 0 ] || exit {version_rc}
+    {hang}[ {version_rc} -eq 0 ] || exit {version_rc}
     printf '%s\\n' "$(cat "$self.ver" 2>/dev/null)"; exit 0 ;;
 esac
 echo "{name} $*" >> "{self.events}"
@@ -268,6 +275,10 @@ exit 0
         path = ":".join([str(self.bin), *map(str, self.extra_path), str(self.tools),
                          "/usr/bin:/bin:/usr/sbin:/sbin"])
         env = dict(os.environ)
+        # a developer's own ASCENDO_* / MAC_UPDATE_* toggles must not leak in
+        for k in list(env):
+            if k.startswith(("ASCENDO_", "MAC_UPDATE_")) or k == "BUN_INSTALL":
+                del env[k]
         env.update({
             "HOME": str(self.home),
             "PATH": path,
@@ -278,8 +289,6 @@ exit 0
             "FAKE_EVENTS": str(self.events),
             "FAKE_STATE": str(self.state),
         })
-        for k in ("ASCENDO_BOOTSTRAP_CLI", "MAC_UPDATE_BOOTSTRAP_CLI", "BUN_INSTALL"):
-            env.pop(k, None)
         env.update(env_extra or {})
         rid = str(uuid.uuid4())
         res = subprocess.run(
@@ -530,6 +539,20 @@ def test_path_only_agy_failed_update_does_not_install_second_copy(env: Env) -> N
     assert not (env.local_bin / "agy").exists()
 
 
+def test_path_only_agy_failed_update_and_dead_version_does_not_install_second_copy(env: Env) -> None:
+    other = env.tmp / "elsewhere"
+    env.cli(other / "agy", "agy", "1.0.0", sub_rc=2, version_rc=1,
+            extra_out="//registry.npmjs.org/:_authToken=abc123")
+    env.extra_path.append(other)
+    env.installer("agy", "https://antigravity.google/cli/install.sh", "9.9.9")
+    res = env.run(APPLY, [AGY_ROW])
+    assert _status(res, "agy-cli") == "failed"
+    assert "installer agy" not in env.ev()
+    assert env.curl() == ""
+    assert not (env.local_bin / "agy").exists()
+    assert "abc123" not in _msgs(res) and "REDACTED" in _msgs(res)
+
+
 def test_npm_wrapper_symlinked_into_local_bin_is_not_updated_as_native(env: Env) -> None:
     """F4: only a realpath inside the vendor root is native."""
     wrapper = env.prefix / "lib" / "node_modules" / "@anthropic-ai" / "claude-code" / "cli.js"
@@ -596,7 +619,9 @@ def test_failed_update_tail_in_sidecar_is_redacted(env: Env) -> None:
     text = _msgs(res)
     assert "abc123" not in text and "pw@host" not in text
     assert "[REDACTED" in text
-    assert all(len(line) < 2000 for line in text.splitlines())
+    long_lines = [l for l in text.splitlines() if l and set(l) == {"L"}]
+    assert long_lines, text
+    assert max(len(l) for l in long_lines) <= 500, [len(l) for l in long_lines]
 
 
 # =============================================================================
@@ -723,9 +748,15 @@ def test_failed_native_migration_preserves_npm_fallback(env: Env) -> None:
 def test_npm_fallback_requires_existing_package_dir_and_binary(env: Env) -> None:
     """The wrapper binary alone (no package dir) is not an npm install."""
     npm = env.oc_npm("1.2.3", package_dir=False, sub_to="1.2.4")
+    npm_log = env.cli(env.prefix / "bin" / "opencode", "opencode-npm", "1.2.3",
+                      sub_to="1.2.4", log_version=True)
+    assert npm_log == npm
     res = env.run(APPLY, [OPENCODE_ROW])
-    assert _status(res, "opencode-cli") == "failed"      # native failed, no fallback
-    assert "opencode-npm upgrade" not in env.ev()
+    # Without the package dir the wrapper is NOT a verified (managed npm) origin:
+    # skipped as unverified, never executed at all (T8-c beats T8-d).
+    assert _status(res, "opencode-cli") == "skipped"
+    assert "unverified_origin" in _msgs(res)
+    assert "opencode-npm" not in env.ev()
     assert npm.exists()
 
 
@@ -742,12 +773,13 @@ def test_native_installed_but_failed_then_npm_exists_keeps_npm(env: Env) -> None
 
 
 def test_unknown_user_local_command_is_not_executed_or_replaced(env: Env) -> None:
-    cmd = env.cli(env.local_bin / "opencode", "user-opencode", "1.2.3")
+    cmd = env.cli(env.local_bin / "opencode", "user-opencode", "1.2.3", log_version=True)
     env.oc_installer("9.9.9")
     res = env.run(APPLY, [OPENCODE_ROW])
     assert _status(res, "opencode-cli") == "skipped"
     assert "unverified installation origin; retaining existing distribution" in _msgs(res)
-    assert "user-opencode" not in env.ev(), "never executed beyond --version"
+    assert "unverified_origin" in _msgs(res)
+    assert "user-opencode" not in env.ev(), "never executed - not even --version"
     assert not cmd.is_symlink()
     assert env.curl() == "" and "opencode-installer" not in env.ev()
 
@@ -764,7 +796,7 @@ def test_dangling_user_local_link_is_retained(env: Env) -> None:
 
 
 def test_unverified_local_command_with_npm_install_updates_only_the_npm_copy(env: Env) -> None:
-    local = env.cli(env.local_bin / "opencode", "user-opencode", "1.0.0")
+    local = env.cli(env.local_bin / "opencode", "user-opencode", "1.0.0", log_version=True)
     env.oc_npm("1.2.3", sub_to="1.2.4")
     res = env.run(APPLY, [OPENCODE_ROW])
     assert _status(res, "opencode-cli") == "success"
@@ -781,7 +813,8 @@ def test_older_native_release_retains_npm_and_does_not_publish_symlink(env: Env)
     assert not (env.local_bin / "opencode").exists()
     assert "older than the installed fallback" in _msgs(res)
     assert "opencode-npm upgrade --method npm" in env.ev()
-    assert _status(res, "opencode-cli") in ("up_to_date", "success")
+    it = _item(res, "opencode-cli")
+    assert (it["status"], it["current_version"], it["target_version"]) == ("up_to_date", "1.2.3", "1.2.3")
 
 
 def test_older_native_without_npm_install_is_skipped_not_published(env: Env) -> None:
@@ -789,7 +822,10 @@ def test_older_native_without_npm_install_is_skipped_not_published(env: Env) -> 
     env.cli(other / "opencode", "brew-opencode", "1.2.3")
     env.extra_path.append(other)
     env.oc_native("1.2.2", link=False)
-    res = env.run(APPLY, [OPENCODE_ROW])
+    # brew-owned opencode + the user asked for opencode explicitly => native
+    # attempt runs, is older than the brew copy, and is not published.
+    res = env.run(APPLY, [OPENCODE_ROW], "--filter", "opencode-cli",
+                  env_extra={"ASCENDO_NPM_BREW_DIRS": str(other)})
     assert not (env.local_bin / "opencode").exists()
     assert _status(res, "opencode-cli") == "skipped"
     assert "older than the installed fallback" in _msgs(res)
@@ -930,3 +966,196 @@ def test_verify_success_when_native_is_current_or_newer(env: Env) -> None:
     assert _status(env.run(VERIFY, [OPENCODE_ROW]), "opencode-cli") == "success"
     env.oc_native("1.2.4", link=False)   # newer than the registry
     assert _status(env.run(VERIFY, [OPENCODE_ROW]), "opencode-cli") == "success"
+
+
+# =============================================================================
+# Fix round 1: T8-c beats T8-d in every phase (Ruling 16), brew-owned (Ruling 15),
+# M1 repair rc 2, M8 bounded probes
+# =============================================================================
+
+UNVERIFIED = "unverified installation origin; retaining existing distribution"
+
+
+def _unverified_local(env: Env) -> Path:
+    return env.cli(env.local_bin / "opencode", "user-opencode", "1.2.3", log_version=True)
+
+
+@pytest.mark.parametrize("script", [CHECK, PLAN, VERIFY])
+def test_unverified_local_opencode_is_skipped_and_never_executed_in_every_phase(
+        env: Env, script: Path) -> None:
+    _unverified_local(env)
+    env.registry("opencode-ai", "1.2.4")
+    res = env.run(script, [OPENCODE_ROW])
+    it = _item(res, "opencode-cli")
+    assert it["status"] == "skipped"
+    assert UNVERIFIED in _msgs(res) and "unverified_origin" in _msgs(res)
+    assert "user-opencode" not in env.ev(), "an unverified command must never be executed"
+    assert not (env.local_bin / "opencode").is_symlink()
+
+
+@pytest.mark.parametrize("script", [CHECK, PLAN, VERIFY])
+def test_unverified_path_only_opencode_is_skipped_and_never_executed(env: Env, script: Path) -> None:
+    other = env.tmp / "mystery" / "bin"
+    env.cli(other / "opencode", "mystery-opencode", "1.2.3", log_version=True)
+    env.extra_path.append(other)
+    res = env.run(script, [OPENCODE_ROW])
+    assert _status(res, "opencode-cli") == "skipped"
+    assert "unverified_origin" in _msgs(res)
+    assert "mystery-opencode" not in env.ev()
+
+
+@pytest.mark.parametrize("script", [CHECK, PLAN, VERIFY])
+def test_installed_is_read_from_verified_origin_not_the_unverified_local(env: Env, script: Path) -> None:
+    """Unverified ~/.local/bin/opencode + a managed npm wrapper: the wrapper is
+    the (verified) origin the version is read from; the local file never runs."""
+    _unverified_local(env)
+    env.oc_npm("1.2.2")
+    env.registry("opencode-ai", "1.2.3")
+    res = env.run(script, [OPENCODE_ROW])
+    assert "user-opencode" not in env.ev()
+    if script is VERIFY:
+        assert _status(res, "opencode-cli") == "failed"      # 1.2.2 != 1.2.3
+    else:
+        it = _item(res, "opencode-cli")
+        assert (it["current_version"], it["target_version"], it["status"]) == ("1.2.2", "1.2.3", "planned")
+
+
+def _brew_opencode(env: Env, version: str = "1.2.3") -> Path:
+    brew = env.tmp / "homebrew" / "bin"
+    env.cli(brew / "opencode", "brew-opencode", version)
+    env.extra_path.append(brew)
+    return brew
+
+
+def test_brew_owned_opencode_is_skipped_and_no_native_copy_installed(env: Env) -> None:
+    brew = _brew_opencode(env)
+    env.oc_installer("9.9.9")
+    res = env.run(APPLY, [OPENCODE_ROW], env_extra={"ASCENDO_NPM_BREW_DIRS": str(brew)})
+    assert _status(res, "opencode-cli") == "skipped"
+    assert "managed by Homebrew" in _msgs(res)
+    assert env.curl() == ""
+    assert "opencode-installer" not in env.ev() and "brew-opencode" not in env.ev()
+    assert not (env.home / ".opencode").exists()
+    assert not (env.local_bin / "opencode").exists()
+
+
+@pytest.mark.parametrize("how", ["env", "filter"])
+def test_brew_owned_opencode_gets_native_copy_only_when_asked(env: Env, how: str) -> None:
+    brew = _brew_opencode(env)
+    env.oc_installer("1.2.3")
+    extra = {"ASCENDO_NPM_BREW_DIRS": str(brew)}
+    args: list[str] = []
+    if how == "env":
+        extra["ASCENDO_BOOTSTRAP_CLI"] = "1"
+    else:
+        args = ["--filter", "opencode-cli"]
+    res = env.run(APPLY, [OPENCODE_ROW], *args, env_extra=extra)
+    assert _status(res, "opencode-cli") in ("up_to_date", "success"), _msgs(res)
+    assert (env.local_bin / "opencode").is_symlink()
+    assert "opencode-installer --no-modify-path" in env.ev()
+
+
+def test_brew_owned_opencode_version_is_read_but_plan_and_verify_skip(env: Env) -> None:
+    brew = _brew_opencode(env, "1.2.2")
+    env.registry("opencode-ai", "1.2.3")
+    extra = {"ASCENDO_NPM_BREW_DIRS": str(brew)}
+    res = env.run(CHECK, [OPENCODE_ROW], env_extra=extra)
+    it = _item(res, "opencode-cli")
+    assert it["current_version"] == "1.2.2"         # reading --version of a brew-owned command is allowed
+    assert "managed by Homebrew" in _msgs(res)
+    for script in (PLAN, VERIFY):
+        res = env.run(script, [OPENCODE_ROW], env_extra=extra)
+        assert _status(res, "opencode-cli") == "skipped"
+        assert "managed by Homebrew" in _msgs(res)
+
+
+def test_brew_owned_opencode_plus_existing_npm_install_updates_only_the_npm_copy(env: Env) -> None:
+    brew = _brew_opencode(env)
+    env.oc_npm("1.2.3", sub_to="1.2.4")
+    res = env.run(APPLY, [OPENCODE_ROW], env_extra={"ASCENDO_NPM_BREW_DIRS": str(brew)})
+    assert _status(res, "opencode-cli") == "success"
+    assert "opencode-npm upgrade --method npm" in env.ev()
+    # the npm copy resolves first (managed prefix precedes Homebrew on PATH); the
+    # brew command itself is never run beyond --version and never replaced
+    assert not (env.home / ".opencode").exists()
+    assert "brew-opencode" not in env.ev()
+
+
+def test_origin_classification_units(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    (home / ".opencode" / "bin").mkdir(parents=True)
+    native = home / ".opencode" / "bin" / "opencode"
+    native.write_text("x")
+    brew = tmp_path / "brew" / "bin"
+    brew.mkdir(parents=True)
+    (brew / "opencode").write_text("x")
+    cellar = tmp_path / "brew" / "Cellar" / "opencode" / "1" / "bin"
+    cellar.mkdir(parents=True)
+    (cellar / "opencode").write_text("x")
+    elsewhere = tmp_path / "e" / "opencode"
+    elsewhere.parent.mkdir()
+    elsewhere.write_text("x")
+    link = tmp_path / "link"
+    link.symlink_to(cellar / "opencode")
+    tc = tmp_path / "tc"
+    env_vars = dict(HOME=str(home), MAC_UPDATE_TOOLCHAIN_HOME=str(tc),
+                    ASCENDO_NPM_BREW_DIRS=str(brew))
+    def origin(p: Path) -> str:
+        return _bash(f'ascendo_npm_opencode_origin "{p}"', **env_vars).stdout.strip()
+    assert origin(native) == "native"
+    assert origin(brew / "opencode") == "brew"
+    assert origin(link) == "brew"                      # realpath under <prefix>/Cellar
+    assert origin(elsewhere) == "unverified"
+    assert origin(tmp_path / "missing") == "unverified"
+
+
+def test_repair_rc2_after_a_real_upgrade_is_failed_not_skipped(env: Env) -> None:
+    """`upgrade --method npm` ran and the binary is gone afterwards: that is a
+    failure, not "not installed"."""
+    env.oc_npm("1.2.3", sub_removes_self=True)
+    res = env.run(APPLY, [OPENCODE_ROW])
+    assert _status(res, "opencode-cli") == "failed"
+    assert "not installed" not in _msgs(res)
+    assert "opencode-npm upgrade --method npm" in env.ev()
+
+
+def _hermetic_bash(tmp_path: Path, code: str, **extra: str) -> tuple[subprocess.CompletedProcess, float]:
+    import time
+    tools = tmp_path / "tools"
+    tools.mkdir(exist_ok=True)
+    if not (tools / "python3").exists():
+        (tools / "python3").symlink_to(shutil.which("python3"))
+    e = dict(os.environ)
+    e.update({"PATH": f"{tools}:/usr/bin:/bin:/usr/sbin:/sbin", "HOME": str(tmp_path / "home"),
+              "MAC_UPDATE_TOOLCHAIN_HOME": str(tmp_path / "tc"), "ASCENDO_NPM_BREW_DIRS": "",
+              "ASCENDO_KILL_AFTER": "1"})
+    e.update(extra)
+    t0 = time.monotonic()
+    res = subprocess.run(["bash", "-c", f'. "{LIB}"; {code}'], capture_output=True, text=True,
+                         env=e, check=False, timeout=60)
+    return res, time.monotonic() - t0
+
+
+def test_version_probe_is_bounded(tmp_path: Path) -> None:
+    hang = tmp_path / "hang"
+    hang.write_text("#!/bin/sh\nsleep 300\n")
+    hang.chmod(0o755)
+    res, took = _hermetic_bash(tmp_path, f'ascendo_npm_report_cli_version_or_fail x "{hang}"',
+                               ASCENDO_CLI_VERSION_TIMEOUT="1")
+    assert res.returncode == 1 and res.stdout.strip() == "?"
+    assert took < 30, took
+
+
+def test_repair_npm_install_is_bounded(tmp_path: Path) -> None:
+    prefix = tmp_path / "prefix"
+    (prefix / "bin").mkdir(parents=True)
+    npm = prefix / "bin" / "npm"
+    npm.write_text("#!/bin/sh\nsleep 300\n")
+    npm.chmod(0o755)
+    binary = tmp_path / "opencode"
+    binary.write_text("#!/bin/sh\nexit 1\n")
+    binary.chmod(0o755)
+    res, took = _hermetic_bash(tmp_path, f'ascendo_npm_repair_broken_opencode "{prefix}" "{binary}"',
+                               ASCENDO_OPENCODE_REPAIR_TIMEOUT="1")
+    assert res.returncode != 0
+    assert took < 30, took

@@ -130,9 +130,17 @@ while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
             esac
             ;;
         self-update)
-            # INSTALLED = the resolved command's own `--version` (ascendo_npm_
-            # self_update_installed_version); LATEST = npm registry for now
-            # (Task 9 adds the vendor feed for native OpenCode installs).
+            # T8-c beats T8-d: an unverified command is never executed; the row
+            # is skipped. INSTALLED = the resolved (known-origin) command's own
+            # `--version`; LATEST = npm registry for now (Task 9 adds the vendor
+            # feed for native OpenCode installs).
+            _su_state="$(ascendo_npm_self_update_state "$CMD")"
+            if [ "$_su_state" = "unverified" ]; then
+                json_add_item "$DISPLAY" "" "" "skipped" "npm" "$METHOD"
+                json_add_message "info" "$DISPLAY: unverified installation origin; retaining existing distribution (reason=unverified_origin)"
+                continue
+            fi
+            [ "$_su_state" = "brew" ] && json_add_message "info" "$DISPLAY: managed by Homebrew (updates flow through brew)"
             INSTALLED="$(ascendo_npm_self_update_installed_version "$DISPLAY" "$CMD")"
             LATEST="$(ascendo_npm_latest_version "$PKG")"
             ;;

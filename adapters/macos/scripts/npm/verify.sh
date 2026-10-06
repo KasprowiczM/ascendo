@@ -60,7 +60,21 @@ while IFS='|' read -r DISPLAY PKG METHOD BREW CMD; do
                 *) LATEST="" ;;
             esac
             ;;
-        self-update) INSTALLED="$(ascendo_npm_self_update_installed_version "$DISPLAY" "$CMD")"; LATEST="$(ascendo_npm_latest_version "$PKG")" ;;
+        self-update)
+            # T8-c beats T8-d: never execute an unverified command; Homebrew-owned
+            # is not verified by the npm category unless explicitly asked.
+            _su_state="$(ascendo_npm_self_update_state "$CMD")"
+            if [ "$_su_state" = "unverified" ]; then
+                json_add_item "$DISPLAY" "" "" "skipped" "npm" "$METHOD"
+                json_add_message "info" "$DISPLAY: unverified installation origin; retaining existing distribution (reason=unverified_origin)"
+                continue
+            fi
+            if [ "$_su_state" = "brew" ] && ! ascendo_npm_bootstrap_allowed "$DISPLAY"; then
+                json_add_item "$DISPLAY" "" "" "skipped" "npm" "$METHOD"
+                json_add_message "info" "$DISPLAY: managed by Homebrew (updates flow through brew)"
+                continue
+            fi
+            INSTALLED="$(ascendo_npm_self_update_installed_version "$DISPLAY" "$CMD")"; LATEST="$(ascendo_npm_latest_version "$PKG")" ;;
         npm)         INSTALLED="$(ascendo_npm_installed_version "$PKG")"; LATEST="$(ascendo_npm_latest_version "$PKG")" ;;
         *) continue ;;
     esac
