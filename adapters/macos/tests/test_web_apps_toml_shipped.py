@@ -107,12 +107,16 @@ def test_shipped_registry_brave_uses_sparkle_arm64_appcast() -> None:
 
 
 def test_shipped_registry_docker_uses_docker_cli_handler() -> None:
-    """macOS_updates channel is `docker desktop update --quiet`, not Sparkle."""
+    """Handler stays `docker` (Task 11 reworks it); it now carries the vendor
+    appcast as its version truth (the CLI-plugin version is not the app's)."""
     reg = WebRegistry.load(SHIPPED, None)
     docker = reg.find("docker")
     assert docker is not None
     assert docker.handler == "docker"
     assert docker.appcast_url is None
+    assert docker.vendor_feed is not None
+    assert docker.vendor_feed.kind == "sparkle"
+    assert docker.vendor_feed.artifact == "dmg"
 
 
 def test_shipped_registry_ms365_uses_msupdate_handler() -> None:
@@ -362,3 +366,73 @@ def test_rdm_and_protondrive_sparkle_read_sufeedurl() -> None:
     assert rdm is not None and drive is not None
     assert rdm.handler == "sparkle" and rdm.appcast_url is None
     assert drive.handler == "sparkle" and drive.appcast_url is None
+
+
+# Spec A item 4: exact vendor_feed rows (kind, url, arg, artifact, allowed_host).
+_VENDOR_FEED_ROWS = {
+    "codex": ("sparkle", "https://persistent.oaistatic.com/codex-app-prod/appcast.xml", "-", "zip",
+              "persistent.oaistatic.com"),
+    "claude": ("json", "https://downloads.claude.ai/releases/darwin/universal/RELEASES.json",
+               "claude_releases", "zip", "downloads.claude.ai"),
+    "cursor": ("json", "https://api2.cursor.sh/updates/api/update/darwin-arm64/cursor/0.0.0/stable",
+               "cursor_update", "zip", "downloads.cursor.com"),
+    "warp": ("json", "https://releases.warp.dev/channel_versions.json", "warp_channels", "-", "-"),
+    "antigravity": ("yml", "https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/"
+                           "manifest/latest-arm64-mac.yml", "-", "zip", "storage.googleapis.com"),
+    "antigravity-ide": ("json", "https://antigravity-ide-auto-updater-974169037036.us-central1.run.app/"
+                                "api/update/darwin-arm64/stable/latest", "antigravity_ide", "zip",
+                        "edgedl.me.gvt1.com"),
+    "opencode": ("json", "https://github.com/anomalyco/opencode/releases/latest/download/latest.json",
+                 "tauri_latest", "tar.gz", "github.com"),
+    "proton-mail": ("json", "https://proton.me/download/mail/macos/version.json", "proton_releases",
+                    "dmg", "proton.me"),
+    "docker": ("sparkle", "https://desktop.docker.com/mac/main/arm64/appcast.xml", "-", "dmg",
+               "desktop.docker.com"),
+}
+
+
+def test_shipped_vendor_feed_rows_match_spec_exactly() -> None:
+    reg = WebRegistry.load(SHIPPED, None)
+    for slug, (kind, url, arg, artifact, host) in _VENDOR_FEED_ROWS.items():
+        app = reg.find(slug)
+        assert app is not None, slug
+        vf = app.vendor_feed
+        assert vf is not None, f"{slug}: missing [app.vendor_feed]"
+        assert (vf.kind, str(vf.url), vf.arg, vf.artifact, vf.allowed_host) == (kind, url, arg, artifact, host), slug
+
+
+def test_only_the_spec_a_slugs_carry_a_vendor_feed_in_task_9() -> None:
+    """rdm / protondrive feed rows (and their handler switches) belong to Task 11."""
+    reg = WebRegistry.load(SHIPPED, None)
+    carriers = {a.slug for a in reg.apps if a.vendor_feed is not None}
+    assert carriers == set(_VENDOR_FEED_ROWS)
+    assert reg.find("rdm").handler == "sparkle" and reg.find("rdm").vendor_feed is None
+    assert reg.find("protondrive").handler == "sparkle" and reg.find("protondrive").vendor_feed is None
+    assert reg.find("chatgpt").vendor_feed is None  # com.openai.chat is a different bundle
+
+
+def test_only_cursor_and_opencode_have_direct_first_for_now() -> None:
+    reg = WebRegistry.load(SHIPPED, None)
+    direct = {a.slug for a in reg.apps if a.vendor_feed is not None and a.vendor_feed.direct_first}
+    assert direct == {"cursor", "opencode"}
+
+
+def test_handlers_with_vendor_feed_are_unchanged() -> None:
+    reg = WebRegistry.load(SHIPPED, None)
+    for slug in _VENDOR_FEED_ROWS:
+        want = "docker" if slug == "docker" else "squirrel"
+        assert reg.find(slug).handler == want, slug
+
+
+def test_vendor_feed_rows_use_known_selectors_and_hosts_match_artifact_urls() -> None:
+    import sys
+    sys.path.insert(0, str(SHIPPED.parent.parent / "lib"))
+    import vendor_feeds
+    reg = WebRegistry.load(SHIPPED, None)
+    for app in reg.apps:
+        vf = app.vendor_feed
+        if vf is None:
+            continue
+        if vf.kind == "json":
+            assert vf.arg in vendor_feeds.JSON_SELECTORS, app.slug
+        assert str(vf.url).startswith("https://"), app.slug

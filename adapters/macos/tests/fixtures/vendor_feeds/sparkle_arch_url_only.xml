@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>
+<item><title>5.0.0 intel</title>
+  <sparkle:shortVersionString>5.0.0</sparkle:shortVersionString>
+  <enclosure url="https://example.test/App-5.0.0-x64.dmg" sparkle:version="500"/></item>
+<item><title>4.0.0 arm</title>
+  <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
+  <enclosure url="https://example.test/App-4.0.0-arm64.dmg" sparkle:version="400"/></item>
+</channel></rss>

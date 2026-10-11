@@ -190,6 +190,58 @@ class ReleaseFeedConfig(BaseModel):
                     f"download_asset_pattern is not a valid Python regex: {exc}")
         return self
 
+# Names accepted for ``[app.vendor_feed] kind = "json"``. Mirrors
+# ``lib/vendor_feeds.py:JSON_SELECTORS`` (that module is a byte-identical
+# upstream copy living outside this package; a test pins the two together).
+VENDOR_FEED_JSON_SELECTORS = (
+    "claude_releases",
+    "cursor_update",
+    "warp_channels",
+    "antigravity_ide",
+    "tauri_latest",
+    "proton_releases",
+)
+
+
+class VendorFeedConfig(BaseModel):
+    """Vendor-truth feed for an app whose update channel is opaque (v1.5.0).
+
+    The feed is the observable truth about the newest release (installed
+    version vs ``vendor_feeds.evaluate_feed`` result). ``artifact`` /
+    ``allowed_host`` describe the only installer the toolkit may ever fetch:
+    ``artifact = "-"`` means verify-only (never install from the vendor).
+
+    * ``kind``: sparkle (``arg`` = comma channels or ``-``), json (``arg`` =
+      selector name), yml (``arg`` = ``-``), kv (``arg`` = productinfo prefix).
+    * ``direct_first``: skip the hidden-launch cycle and go straight to the
+      vendor-direct install when the app is idle (upstream
+      ``vendor_direct_first.txt``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["sparkle", "json", "yml", "kv"]
+    url: HttpsUrl
+    arg: Annotated[str, Field(min_length=1, max_length=128)] = "-"
+    artifact: Literal["zip", "dmg", "tar.gz", "-"] = "-"
+    allowed_host: Annotated[str, Field(pattern=r"^(-|[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?)$",
+                                       max_length=253)] = "-"
+    direct_first: bool = False
+
+    @model_validator(mode="after")
+    def _validate_combination(self) -> "VendorFeedConfig":
+        if self.kind == "json" and self.arg not in VENDOR_FEED_JSON_SELECTORS:
+            raise ValueError(
+                f"vendor_feed json selector {self.arg!r} unknown; "
+                f"expected one of {', '.join(VENDOR_FEED_JSON_SELECTORS)}")
+        if self.kind == "kv" and self.arg == "-":
+            raise ValueError("vendor_feed kind=kv requires arg = productinfo prefix (e.g. RDMMacbin)")
+        if self.artifact != "-" and self.allowed_host == "-":
+            raise ValueError("vendor_feed allowed_host must name the download host when artifact != '-'")
+        if self.artifact == "-" and self.allowed_host != "-":
+            raise ValueError("vendor_feed allowed_host must be '-' when artifact is '-' (verify-only)")
+        return self
+
 
 class WebApp(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -242,6 +294,10 @@ class WebApp(BaseModel):
     # Apply still routes through keystone_apply when ksadmin_product_id
     # is also set; otherwise apply is `open -a` (Tier-B trigger).
     omaha: Optional["OmahaConfig"] = None
+
+    # Vendor-truth feed (v1.5.0 port). Only squirrel (opaque in-app updater)
+    # and docker (CLI-plugin version is not the app version) consume it.
+    vendor_feed: Optional["VendorFeedConfig"] = None
 
     # Behaviour overrides (apply to any handler)
     defer_if_running: Optional[bool] = None
@@ -302,6 +358,9 @@ class WebApp(BaseModel):
         if h != "omaha" and self.omaha is not None:
             raise ValueError(
                 f"omaha sub-table only valid for omaha handler; got handler={h!r}")
+        if h not in ("squirrel", "docker") and self.vendor_feed is not None:
+            raise ValueError(
+                f"vendor_feed sub-table only valid for squirrel or docker; got handler={h!r}")
         return self
 
 

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>
+<item><title>3.0.0 intel</title>
+  <sparkle:shortVersionString>3.0.0</sparkle:shortVersionString>
+  <sparkle:hardwareRequirements>x86_64</sparkle:hardwareRequirements>
+  <enclosure url="https://example.test/App-3.0.0-x86_64.zip" sparkle:version="300"/></item>
+<item><title>2.0.0 arm</title>
+  <sparkle:shortVersionString>2.0.0</sparkle:shortVersionString>
+  <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+  <enclosure url="https://example.test/App-2.0.0-arm64.zip" sparkle:version="200"/></item>
+<item><title>1.0.0 universal</title>
+  <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+  <enclosure url="https://example.test/App-1.0.0-universal.zip" sparkle:version="100"/></item>
+</channel></rss>

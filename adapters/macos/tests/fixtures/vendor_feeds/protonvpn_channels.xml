@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>
+<item>
+    <title>6.5.0</title>
+    <sparkle:shortVersionString>6.5.0</sparkle:shortVersionString>
+    <sparkle:version>6500</sparkle:version>
+    <enclosure url="https://protonvpn.com/download/6.5.0.dmg" type="application/octet-stream"/>
+</item>
+<item>
+    <title>6.5.1</title>
+    <sparkle:shortVersionString>6.5.1</sparkle:shortVersionString>
+    <sparkle:version>6510</sparkle:version>
+    <enclosure url="https://protonvpn.com/download/6.5.1.dmg" type="application/octet-stream"/>
+</item>
+<item>
+    <title>6.5.2</title>
+    <sparkle:channel>beta</sparkle:channel>
+    <sparkle:shortVersionString>6.5.2</sparkle:shortVersionString>
+    <sparkle:version>6520</sparkle:version>
+    <enclosure url="https://protonvpn.com/download/6.5.2.dmg" type="application/octet-stream"/>
+</item>
+</channel></rss>

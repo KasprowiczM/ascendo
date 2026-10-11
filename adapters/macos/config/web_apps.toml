@@ -59,6 +59,13 @@ display_name = "Claude"
 handler = "squirrel"
 notes = "macOS_updates channel: silent_launch (open -gjF). Not a second DMG/release_feed installer."
 
+[app.vendor_feed]
+kind = "json"
+url = "https://downloads.claude.ai/releases/darwin/universal/RELEASES.json"
+arg = "claude_releases"
+artifact = "zip"
+allowed_host = "downloads.claude.ai"
+
 [[app]]
 slug = "chatgpt"
 bundle_id = "com.openai.chat"  # verified on Mac.r12.home (2026-05-06)
@@ -72,6 +79,13 @@ bundle_id = "dev.warp.Warp-Stable"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Warp"
 handler = "squirrel"
 notes = "macOS_updates channel: silent_launch (open -gjF) for Warp."
+
+[app.vendor_feed]
+kind = "json"
+url = "https://releases.warp.dev/channel_versions.json"
+arg = "warp_channels"
+artifact = "-"
+allowed_host = "-"
 
 [[app]]
 slug = "megasync"
@@ -139,6 +153,13 @@ bundle_id = "com.openai.codex"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Codex Desktop"
 handler = "squirrel"
 notes = "macOS_updates channel: silent_launch (open -gjF) for Codex Desktop."
+
+[app.vendor_feed]
+kind = "sparkle"
+url = "https://persistent.oaistatic.com/codex-app-prod/appcast.xml"
+arg = "-"
+artifact = "zip"
+allowed_host = "persistent.oaistatic.com"
 
 # opencode moved to M5.7.1 vendor-probe section as github_dmg (disabled
 # pending repo verification — sst/opencode vs anomalyco/opencode).
@@ -246,6 +267,13 @@ display_name = "Docker Desktop"
 handler = "docker"
 notes = "macOS_updates channel: docker desktop update --quiet (docker_cli). Not a second Sparkle DMG path."
 
+[app.vendor_feed]
+kind = "sparkle"
+url = "https://desktop.docker.com/mac/main/arm64/appcast.xml"
+arg = "-"
+artifact = "dmg"
+allowed_host = "desktop.docker.com"
+
 # ═════════════════════════════ M5.7.1 Vendor Probes ═════════════════════════
 # Added 2026-05-08 after user-driven coverage push. Each entry has a
 # verified URL + response-shape pair. Discovery's auto-classification
@@ -338,6 +366,14 @@ display_name = "OpenCode"
 handler = "squirrel"
 notes = "macOS_updates channel: silent_launch (open -gjF) for OpenCode Desktop. Not a second GitHub DMG install."
 
+[app.vendor_feed]
+kind = "json"
+url = "https://github.com/anomalyco/opencode/releases/latest/download/latest.json"
+arg = "tauri_latest"
+artifact = "tar.gz"
+allowed_host = "github.com"
+direct_first = true
+
 # ─── Trezor Suite ──────────────────────────────────────────────────────────
 # (Already shipped in M5.6 as github_dmg; no override needed.)
 
@@ -360,6 +396,14 @@ handler = "squirrel"
 enabled = true
 notes = "macOS_updates channel: silent_launch (open -gjF) for Cursor. Not a second ToDesktop DMG/zip install."
 
+[app.vendor_feed]
+kind = "json"
+url = "https://api2.cursor.sh/updates/api/update/darwin-arm64/cursor/0.0.0/stable"
+arg = "cursor_update"
+artifact = "zip"
+allowed_host = "downloads.cursor.com"
+direct_first = true
+
 # ═════════════════════════════ M5.7.3 Vendor Probes ═════════════════════════
 # Added 2026-05-08 via continued binary-mining + app.asar inspection.
 # ────────────────────────────────────────────────────────────────────────────
@@ -371,6 +415,13 @@ bundle_id = "ch.protonmail.desktop"
 display_name = "Proton Mail"
 handler = "squirrel"
 notes = "macOS_updates channel: silent_launch (open -gjF) for Proton Mail."
+
+[app.vendor_feed]
+kind = "json"
+url = "https://proton.me/download/mail/macos/version.json"
+arg = "proton_releases"
+artifact = "dmg"
+allowed_host = "proton.me"
 
 # ─── Apps that still need mitmproxy on launch ──────────────────────────────
 # ChatGPT (com.openai.chat) — RESOLVED M5.7.3: Sparkle SUFeedURL is set
@@ -465,6 +516,13 @@ display_name = "Antigravity"
 handler = "squirrel"
 notes = "macOS_updates channel: silent_launch (open -gjF) for Antigravity."
 
+[app.vendor_feed]
+kind = "yml"
+url = "https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/manifest/latest-arm64-mac.yml"
+arg = "-"
+artifact = "zip"
+allowed_host = "storage.googleapis.com"
+
 # ─── Ascendo (this very app) ───────────────────────────────────────────────
 # REMOVED in M5.7.5 follow-up: Ascendo updates via `git pull` against the
 # canonical KasprowiczM/ascendo repo (the operator's installed-from-source
@@ -490,6 +548,13 @@ bundle_id = "com.google.antigravity-ide"  # verified on Mac.r12.home (2026-05-24
 display_name = "Antigravity IDE"
 handler = "squirrel"
 notes = "macOS_updates channel: silent_launch (open -gjF) for Antigravity IDE."
+
+[app.vendor_feed]
+kind = "json"
+url = "https://antigravity-ide-auto-updater-974169037036.us-central1.run.app/api/update/darwin-arm64/stable/latest"
+arg = "antigravity_ide"
+artifact = "zip"
+allowed_host = "edgedl.me.gvt1.com"
 
 # ─── AppCleaner (FreeMacSoft) ──────────────────────────────────────────────
 [[app]]

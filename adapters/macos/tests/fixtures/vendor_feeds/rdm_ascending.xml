@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>
+<item><title>0.9.0.3</title><enclosure url="https://cdn.devolutions.net/a.dmg" sparkle:shortVersionString="0.9.0.3" sparkle:version="0.9.0.3" type="application/octet-stream"/></item>
+<item><title>2023.1.11.1</title><enclosure url="https://cdn.devolutions.net/b.dmg" sparkle:shortVersionString="2023.1.11.1" sparkle:version="2023.1.11.1" type="application/octet-stream"/></item>
+<item><title>2023.1.12.0</title><enclosure url="https://cdn.devolutions.net/c.dmg" sparkle:shortVersionString="2023.1.12.0" sparkle:version="2023.1.12.0" type="application/octet-stream"/></item>
+</channel></rss>

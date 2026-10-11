@@ -214,6 +214,36 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
     CAND=$(_web_read_probe_result "$RESULTS_DIR" "$i")
     i=$((i + 1))
 
+    # Feed-backed handlers (sparkle): three-way relation of the vendor feed to
+    # the installed version (Spec E). Only `newer` proceeds; `equal` is
+    # up_to_date; `older` is a stale feed (skipped, unverified, no target);
+    # `unknown` is skipped -- never up_to_date. An empty probe falls through
+    # to the generic probe_unavailable handling below.
+    FEED_REL=""
+    if _web_feed_backed "$HANDLER" && [ -n "$CAND" ] && [ "$CAND" != "__GH_RATE_LIMITED__" ]; then
+        FEED_REL=$(_web_version_cmp "$CAND" "$INSTALLED")
+        case "$FEED_REL" in
+            newer) ;;
+            equal)
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "up_to_date" "web" "$HANDLER"
+                COUNT_UPTODATE=$((COUNT_UPTODATE + 1))
+                continue
+                ;;
+            older)
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "warn" "$(_web_feed_stale_message "$SLUG" "$INSTALLED" "$CAND")"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                continue
+                ;;
+            *)
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "warn" "$(_web_unknown_version_message "$SLUG" "$INSTALLED" "$CAND")"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                continue
+                ;;
+        esac
+    fi
+
     case "$HANDLER" in
         sparkle|github_dmg|release_feed|docker|msupdate|omaha)
             # CAND came from parallel pass 2 above (already probed).
@@ -227,7 +257,7 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
             #     stable with beta.
             # Without this guard we'd attempt the DOWNGRADE, destroy user
             # data, and silently report "success".
-            if _should_skip_upgrade "$INSTALLED" "$CAND"; then
+            if [ -z "$FEED_REL" ] && _should_skip_upgrade "$INSTALLED" "$CAND"; then
                 json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "up_to_date" "web" "$HANDLER"
                 COUNT_UPTODATE=$((COUNT_UPTODATE + 1))
                 continue

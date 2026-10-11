@@ -90,3 +90,25 @@ def test_validate_malformed_toml_exits_2(tmp_path: Path) -> None:
     r = _run(["--validate"], p)
     assert r.returncode == 2
     assert r.stderr.strip()
+
+
+def test_get_app_dumps_vendor_feed_table_for_bash(tmp_path: Path) -> None:
+    body = VH + (
+        '[[app]]\nslug = "a"\nbundle_id = "x"\ndisplay_name = "A"\nhandler = "squirrel"\n'
+        '[app.vendor_feed]\nkind = "json"\nurl = "https://downloads.claude.ai/r.json"\n'
+        'arg = "claude_releases"\nartifact = "zip"\nallowed_host = "downloads.claude.ai"\n'
+    )
+    r = _run(["--get-app", "a"], _toml(tmp_path, body))
+    assert r.returncode == 0, r.stderr
+    vf = json.loads(r.stdout)["vendor_feed"]
+    assert vf["kind"] == "json" and vf["arg"] == "claude_releases" and vf["direct_first"] is False
+
+
+def test_validate_rejects_vendor_feed_on_sparkle(tmp_path: Path) -> None:
+    body = VH + (
+        '[[app]]\nslug = "a"\nbundle_id = "x"\ndisplay_name = "A"\nhandler = "sparkle"\n'
+        '[app.vendor_feed]\nkind = "sparkle"\nurl = "https://x.test/a.xml"\n'
+    )
+    r = _run(["--validate"], _toml(tmp_path, body))
+    assert r.returncode == 2
+    assert "vendor_feed" in r.stderr

@@ -141,7 +141,7 @@ def test_web_extract_sparkle_latest_version() -> None:
     snippet = textwrap.dedent("""\
         cat <<'XML' | _web_extract_sparkle_latest_version
         <?xml version="1.0"?>
-        <rss><channel>
+        <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>
           <item>
             <enclosure url="https://e/foo.dmg" sparkle:shortVersionString="2.5.0"/>
           </item>

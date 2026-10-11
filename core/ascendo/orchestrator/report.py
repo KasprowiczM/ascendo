@@ -197,6 +197,15 @@ _REASON_TEXT = {
     "needs_restart": (
         "Needs a restart / the app is running — quit it (or restart) and re-run apply."
     ),
+    "feed_stale": (
+        "The vendor's update feed is older than the installed version, so the "
+        "version could not be verified — nothing was changed. Check the app's "
+        "own updater if you expect a newer release."
+    ),
+    "behind": (
+        "A newer version is published but could not be installed silently — "
+        "open the app and use its own updater."
+    ),
     "cli_duplicate": (
         "A second copy of this CLI sits next to the working native install. "
         "Remove the one you do not use: `npm uninstall -g --prefix <prefix> "

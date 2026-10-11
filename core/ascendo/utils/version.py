@@ -12,7 +12,7 @@ This module provides a Python-native comparison that:
 
 - Uses ``packaging.version.Version`` (PEP-440) when both strings parse
 - Falls back to a dotted-integer comparison when they don't
-- Never raises — returns ``False`` on incomparable garbage
+- Never raises — returns ``False`` on incomparable garbage (never "newer")
 
 The shell scripts can call this via ``python3 -c "from ascendo.utils.version
 import version_gt; print(version_gt('$a', '$b'))"`` or the orchestrator
@@ -34,8 +34,11 @@ def version_gt(a: str, b: str) -> bool:
        pre-release, post-release, dev releases, epochs.
     2. Fall back to dotted-integer comparison. Each segment is compared
        as an integer; missing trailing segments default to 0.
-    3. If both fail, compare as plain strings (deterministic but
-       semantically meaningless — caller should fix their data).
+    3. If both fail the input is unparseable: return ``False``. A string
+       comparison of garbage is semantically meaningless and used to make
+       unparseable data compare as "newer" (planning an upgrade on
+       nonsense). Callers that need to tell "not newer" from "cannot tell"
+       use the three-way ``vendor_feeds.version_compare`` (adapter lib).
 
     Never raises.
     """
@@ -61,8 +64,8 @@ def version_gt(a: str, b: str) -> bool:
     except Exception:  # noqa: BLE001
         pass
 
-    # Strategy 3: string fallback
-    return a > b
+    # Strategy 3: unparseable on at least one side -> never "newer".
+    return False
 
 
 def version_gte(a: str, b: str) -> bool:

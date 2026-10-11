@@ -210,7 +210,13 @@ while [ "$i" -lt "$WORK_IDX" ]; do
             if [ -z "$LATEST" ]; then
                 continue   # probe broken; surfaced in check, not plan
             fi
-            if ! _version_gt "$LATEST" "$INSTALLED"; then
+            if _web_feed_backed "$HANDLER"; then
+                # Three-way: plan only when the feed is strictly newer.
+                # equal = up to date; older = feed_stale; unknown = cannot
+                # tell -- the last two are reported by check/apply, never
+                # planned (and never reported as current here).
+                [ "$(_web_version_cmp "$LATEST" "$INSTALLED")" = "newer" ] || continue
+            elif ! _version_gt "$LATEST" "$INSTALLED"; then
                 continue   # up-to-date
             fi
             # An outdated item is PLANNED regardless of whether the app

@@ -252,6 +252,37 @@ while [ "$i" -lt "$WORK_IDX" ]; do
         continue
     fi
 
+    # Feed-backed handlers (sparkle) classify the candidate three-way against
+    # the installed version (Spec E): newer -> planned, equal -> up_to_date,
+    # older -> feed_stale (skipped, NO target: a stale feed is unverified, not
+    # "current" and not a downgrade offer), unknown -> skipped (never
+    # up_to_date). github_dmg/release_feed keep the two-way
+    # _should_skip_upgrade below (brew/Spotify lag guard is intentional).
+    if _web_feed_backed "$HANDLER"; then
+        REL=$(_web_version_cmp "$LATEST" "$INSTALLED")
+        case "$REL" in
+            newer)
+                json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "planned" "web" "$HANDLER"
+                COUNT_PLANNED=$((COUNT_PLANNED + 1))
+                ;;
+            equal)
+                json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "up_to_date" "web" "$HANDLER"
+                COUNT_UTD=$((COUNT_UTD + 1))
+                ;;
+            older)
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "warn" "$(_web_feed_stale_message "$SLUG" "$INSTALLED" "$LATEST")"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
+            *)
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "warn" "$(_web_unknown_version_message "$SLUG" "$INSTALLED" "$LATEST")"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
+        esac
+        continue
+    fi
+
     # Reuse the same skip-upgrade logic apply.sh uses — keeps check and
     # apply consistent and catches all four "no upgrade needed" cases:
     #   1. Strict string match

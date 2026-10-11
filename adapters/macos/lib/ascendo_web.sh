@@ -22,6 +22,9 @@
 #   _web_is_running <bundle_id>
 #   _web_extract_sparkle_latest_version          (reads stdin)
 #   _web_extract_sparkle_enclosure_url           (reads stdin)
+#   _web_version_cmp <candidate> <installed>     (newer|equal|older|unknown)
+#   _web_vendor_lookup <slug> <cfg_json>         (7-field vendor line)
+#   _web_fetch_feed <https-url>
 #   _web_download <url> <dest>
 #   _web_verify_signature <app_path>
 #   _web_install_dmg <slug> <dmg_url> <app_path>
@@ -381,205 +384,125 @@ _web_is_running() {
 }
 
 # ============================================================
+# Vendor truth: feeds, Sparkle parsing, three-way compare (Spec A/D/E)
+# ============================================================
+#
+# All parsing lives in lib/vendor_feeds.py (byte-identical upstream copy);
+# lib/web_feed.py is the Ascendo glue (arm64/x86 Sparkle filter, 7-field
+# vendor line, newer|equal|older|unknown). Bash only moves bytes.
+
+_ASCENDO_WEB_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# _web_feed_py <web_feed.py args...>  -- stdin/stdout pass-through.
+_web_feed_py() {
+    PYTHONPATH="$_ASCENDO_WEB_LIB_DIR${PYTHONPATH:+:$PYTHONPATH}" \
+        python3 "$_ASCENDO_WEB_LIB_DIR/web_feed.py" "$@"
+}
+
+# _web_curl <curl args...>  -- ASCENDO_WEB_CURL_BIN is the test hook.
+_web_curl() {
+    "${ASCENDO_WEB_CURL_BIN:-/usr/bin/curl}" "$@"
+}
+
+# _web_host_os_version
+# Host macOS version for minimumSystemVersion / MinimumOsVersion filtering.
+# ASCENDO_WEB_HOST_OS_VERSION overrides (tests must never depend on sw_vers).
+_web_host_os_version() {
+    if [ -n "${ASCENDO_WEB_HOST_OS_VERSION:-}" ]; then
+        printf '%s' "$ASCENDO_WEB_HOST_OS_VERSION"
+    else
+        /usr/bin/sw_vers -productVersion 2>/dev/null || true
+    fi
+}
+
+# _web_version_cmp <candidate> <installed>
+# Echoes newer|equal|older|unknown. Unparseable input on either side is
+# `unknown` -- never a string-order guess, never "newer".
+_web_version_cmp() {
+    _web_feed_py cmp "$1" "$2" 2>/dev/null || printf 'unknown\n'
+}
+
+# _web_feed_backed <handler> <cfg_json>
+# Exit 0 when the handler's candidate comes from a vendor feed whose
+# relation to the installed version must be classified three-way
+# (newer/equal/older/unknown) instead of "skip vs proceed".
+# Today: sparkle only. squirrel/docker with [app.vendor_feed] join this in
+# the vendor-truth task once their *_check returns the feed version.
+_web_feed_backed() {
+    [ "$1" = "sparkle" ]
+}
+
+# _web_feed_stale_message <slug> <installed> <vendor>
+_web_feed_stale_message() {
+    printf '%s: feed_stale (vendor feed %s < installed %s) - version not verified | ASCENDO-STATUS code=feed_stale' \
+        "$1" "$3" "$2"
+}
+
+# _web_unknown_version_message <slug> <installed> <candidate>
+_web_unknown_version_message() {
+    printf '%s: unknown_version (installed %s vs vendor %s cannot be compared) - not treated as up to date' \
+        "$1" "${2:-?}" "${3:-?}"
+}
+
+# _web_fetch_feed <https-url>
+# Echoes the body (<= 5 MiB). https only (also for redirects); bounded time
+# and size. Non-zero rc = unreachable / refused (callers treat as unknown).
+_web_fetch_feed() {
+    local url="$1" tmp rc=0
+    case "$url" in
+        https://?*) ;;
+        *) return 1 ;;
+    esac
+    tmp=$(/usr/bin/mktemp "${TMPDIR:-/tmp}/ascendo-feed.XXXXXX") || return 1
+    _web_curl -fsSL --proto =https --proto-redir =https --max-time 15 --retry 2 --retry-delay 1 \
+        --max-filesize 5242880 -o "$tmp" "$url" 2>/dev/null || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        /usr/bin/head -c 5242880 "$tmp"
+    fi
+    /bin/rm -f "$tmp"
+    return "$rc"
+}
+
+# _web_vendor_lookup <slug> <cfg_json>
+# Evaluate the app's [app.vendor_feed] table. Echoes ONE line:
+#   version|url|checksum_kind|checksum|artifact|host|policy
+# ('-' for an absent field; policy = eligible|rollout_hold, always LAST).
+# Non-zero rc: no vendor_feed table, or the feed is unreachable/unparseable.
+# Test hook: ASCENDO_WEB_VENDOR_FEED_DIR=<dir> reads <dir>/<slug>.feed
+# instead of fetching (curl --proto =https would reject file://).
+_web_vendor_lookup() {
+    local slug="$1" cfg="$2" cfg_out feed_url feed_json body
+    cfg_out=$(ASCENDO_WEB_CFG="$cfg" _web_feed_py vendor-cfg 2>/dev/null) || return 1
+    feed_url=${cfg_out%%$'\n'*}
+    feed_json=${cfg_out#*$'\n'}
+    [ -n "$feed_url" ] && [ -n "$feed_json" ] || return 1
+    if [ -n "${ASCENDO_WEB_VENDOR_FEED_DIR:-}" ]; then
+        [ -f "$ASCENDO_WEB_VENDOR_FEED_DIR/$slug.feed" ] || return 1
+        body=$(/bin/cat "$ASCENDO_WEB_VENDOR_FEED_DIR/$slug.feed") || return 1
+    else
+        body=$(_web_fetch_feed "$feed_url") || return 1
+    fi
+    printf '%s' "$body" \
+        | ASCENDO_WEB_VENDOR_FEED_JSON="$feed_json" _web_feed_py vendor --os-version "$(_web_host_os_version)"
+}
+
+# ============================================================
 # Sparkle appcast parsing
 # ============================================================
 
+# _web_extract_sparkle_latest_version   (appcast XML on stdin)
+# Newest qualifying item's version (channel {none,stable}, minimumSystemVersion
+# <= host, shortVersionString -> sparkle:version fallback, max by version key,
+# prerelease < final) among items built for THIS Mac's architecture. Empty
+# output = no candidate (unparseable XML is never guessed at).
 _web_extract_sparkle_latest_version() {
-    local _xml
-    _xml="$(cat)"
-    ASCENDO_WEB_XML="$_xml" /usr/bin/python3 <<'PY'
-import os
-import re
-import sys
-import platform
-import xml.etree.ElementTree as ET
-
-xml_data = os.environ.get("ASCENDO_WEB_XML", "")
-if not xml_data.strip():
-    sys.exit(0)
-
-def _ver_key(s: str):
-    parts = re.split(r'[.\-_]', s.strip())
-    out = []
-    for p in parts:
-        m = re.match(r'^(\d+)', p)
-        if m:
-            out.append((int(m.group(1)), p[m.end():] or ''))
-        else:
-            out.append((-1, p))
-    return out
-
-def get_best_item():
-    try:
-        root = ET.fromstring(xml_data)
-    except Exception:
-        # Regex fallback if XML is malformed
-        versions = re.findall(r'<sparkle:shortVersionString>([^<]+)</sparkle:shortVersionString>', xml_data)
-        if not versions:
-            versions = re.findall(r'sparkle:shortVersionString="([^"]+)"', xml_data)
-        if not versions:
-            return None, None
-        versions.sort(key=_ver_key)
-        # Extract first URL blindly as fallback
-        m_url = re.search(r'url="(https?://[^"]+)"', xml_data)
-        return versions[-1].strip(), (m_url.group(1) if m_url else "")
-
-    arch = platform.machine().lower()
-    is_arm = arch in ('arm64', 'aarch64')
-    if sys.platform == 'darwin' and not is_arm:
-        try:
-            if os.popen('sysctl -n hw.optional.arm64 2>/dev/null').read().strip() == '1':
-                is_arm = True
-        except Exception:
-            pass
-    
-    ns = {'sparkle': 'http://www.andymatuschak.org/xml-namespaces/sparkle'}
-    valid_items = []
-    
-    for item in root.findall('.//item'):
-        ver_elem = item.find('sparkle:shortVersionString', ns)
-        if ver_elem is not None and ver_elem.text:
-            ver = ver_elem.text
-        else:
-            ver = item.attrib.get('{http://www.andymatuschak.org/xml-namespaces/sparkle}shortVersionString', '')
-            if not ver:
-                enc = item.find('enclosure')
-                if enc is not None:
-                    ver = enc.attrib.get('{http://www.andymatuschak.org/xml-namespaces/sparkle}shortVersionString', '')
-        if not ver:
-            continue
-            
-        hw_elem = item.find('sparkle:hardwareRequirements', ns)
-        hw = hw_elem.text.lower() if hw_elem is not None and hw_elem.text else ''
-        
-        enc = item.find('enclosure')
-        url = enc.attrib.get('url', '') if enc is not None else ''
-        
-        if hw:
-            if is_arm and hw not in ('arm64', 'aarch64', 'universal'):
-                continue
-            if not is_arm and hw in ('arm64', 'aarch64'):
-                continue
-        else:
-            url_lower = url.lower()
-            if is_arm:
-                if any(x in url_lower for x in ('x86_64', 'amd64', 'x64', 'intel')) and not any(x in url_lower for x in ('arm64', 'aarch64', 'universal')):
-                    continue
-            else:
-                if any(x in url_lower for x in ('arm64', 'aarch64', 'apple-silicon')) and not any(x in url_lower for x in ('x86_64', 'x64', 'amd64', 'universal')):
-                    continue
-                    
-        valid_items.append((ver.strip(), url))
-        
-    if not valid_items:
-        return None, None
-        
-    valid_items.sort(key=lambda x: _ver_key(x[0]))
-    return valid_items[-1]
-
-ver, _ = get_best_item()
-if ver:
-    print(ver)
-PY
+    _web_feed_py sparkle --field version --os-version "$(_web_host_os_version)"
 }
 
-# _web_extract_sparkle_enclosure_url
-# Reads stdin, echoes the architecture-appropriate enclosure URL for the highest version.
+# _web_extract_sparkle_enclosure_url    (appcast XML on stdin)
+# Enclosure URL of that same item (spaces -> %20).
 _web_extract_sparkle_enclosure_url() {
-    local _xml
-    _xml="$(cat)"
-    ASCENDO_WEB_XML="$_xml" /usr/bin/python3 <<'PY'
-import os
-import re
-import sys
-import platform
-import xml.etree.ElementTree as ET
-
-xml_data = os.environ.get("ASCENDO_WEB_XML", "")
-if not xml_data.strip():
-    sys.exit(0)
-
-def _ver_key(s: str):
-    parts = re.split(r'[.\-_]', s.strip())
-    out = []
-    for p in parts:
-        m = re.match(r'^(\d+)', p)
-        if m:
-            out.append((int(m.group(1)), p[m.end():] or ''))
-        else:
-            out.append((-1, p))
-    return out
-
-def get_best_item():
-    try:
-        root = ET.fromstring(xml_data)
-    except Exception:
-        # Regex fallback
-        versions = re.findall(r'<sparkle:shortVersionString>([^<]+)</sparkle:shortVersionString>', xml_data)
-        if not versions:
-            versions = re.findall(r'sparkle:shortVersionString="([^"]+)"', xml_data)
-        if not versions:
-            return None, None
-        versions.sort(key=_ver_key)
-        m_url = re.search(r'url="(https?://[^"]+)"', xml_data)
-        return versions[-1].strip(), (m_url.group(1) if m_url else "")
-
-    arch = platform.machine().lower()
-    is_arm = arch in ('arm64', 'aarch64')
-    if sys.platform == 'darwin' and not is_arm:
-        try:
-            if os.popen('sysctl -n hw.optional.arm64 2>/dev/null').read().strip() == '1':
-                is_arm = True
-        except Exception:
-            pass
-    ns = {'sparkle': 'http://www.andymatuschak.org/xml-namespaces/sparkle'}
-    valid_items = []
-    
-    for item in root.findall('.//item'):
-        ver_elem = item.find('sparkle:shortVersionString', ns)
-        if ver_elem is not None and ver_elem.text:
-            ver = ver_elem.text
-        else:
-            ver = item.attrib.get('{http://www.andymatuschak.org/xml-namespaces/sparkle}shortVersionString', '')
-            if not ver:
-                enc = item.find('enclosure')
-                if enc is not None:
-                    ver = enc.attrib.get('{http://www.andymatuschak.org/xml-namespaces/sparkle}shortVersionString', '')
-        if not ver:
-            continue
-            
-        hw_elem = item.find('sparkle:hardwareRequirements', ns)
-        hw = hw_elem.text.lower() if hw_elem is not None and hw_elem.text else ''
-        
-        enc = item.find('enclosure')
-        url = enc.attrib.get('url', '') if enc is not None else ''
-        
-        if hw:
-            if is_arm and hw not in ('arm64', 'aarch64', 'universal'):
-                continue
-            if not is_arm and hw in ('arm64', 'aarch64'):
-                continue
-        else:
-            url_lower = url.lower()
-            if is_arm:
-                if any(x in url_lower for x in ('x86_64', 'amd64', 'x64', 'intel')) and not any(x in url_lower for x in ('arm64', 'aarch64', 'universal')):
-                    continue
-            else:
-                if any(x in url_lower for x in ('arm64', 'aarch64', 'apple-silicon')) and not any(x in url_lower for x in ('x86_64', 'x64', 'amd64', 'universal')):
-                    continue
-                    
-        valid_items.append((ver.strip(), url))
-        
-    if not valid_items:
-        return None, None
-        
-    valid_items.sort(key=lambda x: _ver_key(x[0]))
-    return valid_items[-1]
-
-_, url = get_best_item()
-if url:
-    print(url)
-PY
+    _web_feed_py sparkle --field url --os-version "$(_web_host_os_version)"
 }
 
 # ============================================================

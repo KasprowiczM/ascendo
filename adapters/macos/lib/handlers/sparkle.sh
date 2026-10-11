@@ -6,7 +6,10 @@
 #   sparkle_apply <slug> <config_json>   -> exit 0 on success, non-0 on failure
 #
 # Depends on lib/ascendo_web.sh helpers:
-#   _web_extract_sparkle_latest_version, _web_extract_sparkle_enclosure_url,
+#   _web_curl, _web_extract_sparkle_latest_version,
+#   _web_extract_sparkle_enclosure_url (both parse via lib/vendor_feeds.py:
+#   channel + minimumSystemVersion filters, short->build fallback, max by
+#   version key; Ascendo's arm64/x86 item filter stays ON here),
 #   _web_install_dmg, _web_run_apply_cli
 #
 # config_json is the per-app TOML row serialised as JSON. The handler
@@ -106,7 +109,7 @@ sparkle_check() {
         fi
     fi
     [ -z "$appcast_url" ] && return 0
-    /usr/bin/curl -fsSL --max-time 10 "$appcast_url" 2>/dev/null \
+    _web_curl -fsSL --max-time 10 "$appcast_url" 2>/dev/null \
         | _web_extract_sparkle_latest_version
 }
 
@@ -137,7 +140,7 @@ sparkle_apply() {
     [ -z "$appcast_url" ] && return 25
 
     local enclosure_url
-    enclosure_url=$(/usr/bin/curl -fsSL --max-time 10 "$appcast_url" 2>/dev/null \
+    enclosure_url=$(_web_curl -fsSL --max-time 10 "$appcast_url" 2>/dev/null \
         | _web_extract_sparkle_enclosure_url)
     [ -z "$enclosure_url" ] && return 26
 
