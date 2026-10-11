@@ -271,12 +271,12 @@ while [ "$i" -lt "$WORK_IDX" ]; do
                 ;;
             older)
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
-                json_add_message "warn" "$(_web_feed_stale_message "$SLUG" "$INSTALLED" "$LATEST")"
+                json_add_message "warn" "$(_web_feed_stale_message "$SLUG" "$INSTALLED" "$LATEST")" "feed_stale"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 ;;
             *)
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
-                json_add_message "warn" "$(_web_unknown_version_message "$SLUG" "$INSTALLED" "$LATEST")"
+                json_add_message "warn" "$(_web_unknown_version_message "$SLUG" "$INSTALLED" "$LATEST")" "unknown_version"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 ;;
         esac

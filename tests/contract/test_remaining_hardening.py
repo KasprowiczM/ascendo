@@ -193,10 +193,11 @@ class TestW11VersionCompare:
     def test_version_gt_invalid_falls_back_to_string(self) -> None:
         from ascendo.utils.version import version_gt
 
-        # Invalid versions should fall back to string comparison
-        # and not crash
-        result = version_gt("abc", "def")
-        assert isinstance(result, bool)
+        # Legacy two-way contract: unparseable pairs fall back to plain
+        # string order (and never crash). The honest "unknown" answer lives
+        # in version_cmp3.
+        assert version_gt("abc", "def") is False
+        assert version_gt("def", "abc") is True
 
 
 # ── P12: Stale sidecar-lock detection ────────────────────────────────

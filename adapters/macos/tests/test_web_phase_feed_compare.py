@@ -77,6 +77,7 @@ def test_check_sparkle_older_feed_is_stale_skipped_never_up_to_date(tmp_path: Pa
     assert not item.get("target_version")          # no downgrade candidate leaks into inventory
     msg = _messages(sc)
     assert "feed_stale" in msg and "1.1.0" in msg and "2.0.0" in msg
+    assert "feed_stale" in [m.get("code") for m in sc["messages"]]   # machine-readable code, not only text
 
 
 def test_check_sparkle_unparseable_installed_is_unknown_skipped(tmp_path: Path) -> None:
@@ -88,6 +89,7 @@ def test_check_sparkle_unparseable_installed_is_unknown_skipped(tmp_path: Path) 
     item = sc["items"][0]
     assert item["status"] == "skipped" and not item.get("target_version")
     assert "unknown_version" in _messages(sc)
+    assert "unknown_version" in [m.get("code") for m in sc["messages"]]
 
 
 # ------------------------------------------------------------------ plan.sh

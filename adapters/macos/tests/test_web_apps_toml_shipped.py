@@ -424,15 +424,32 @@ def test_handlers_with_vendor_feed_are_unchanged() -> None:
         assert reg.find(slug).handler == want, slug
 
 
-def test_vendor_feed_rows_use_known_selectors_and_hosts_match_artifact_urls() -> None:
+def test_vendor_feed_rows_use_known_selectors_and_valid_artifact_hosts() -> None:
+    """Selectors exist; allowed_host follows the artifact rule (bare hostname
+    iff an installer may be fetched, '-' iff verify-only); the Ruling-22 rows
+    carry the exact hosts from web-vendor.md Spec A item 4."""
+    import re
     import sys
     sys.path.insert(0, str(SHIPPED.parent.parent / "lib"))
     import vendor_feeds
+    bare_host = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$")
     reg = WebRegistry.load(SHIPPED, None)
+    seen = set()
     for app in reg.apps:
         vf = app.vendor_feed
         if vf is None:
             continue
+        seen.add(app.slug)
+        assert str(vf.url).startswith("https://"), app.slug
         if vf.kind == "json":
             assert vf.arg in vendor_feeds.JSON_SELECTORS, app.slug
-        assert str(vf.url).startswith("https://"), app.slug
+        if vf.artifact == "-":
+            assert vf.allowed_host == "-", app.slug
+            assert not vf.direct_first, f"{app.slug}: verify-only app cannot be direct_first"
+        else:
+            assert bare_host.match(vf.allowed_host), f"{app.slug}: {vf.allowed_host!r} is not a bare hostname"
+            assert "/" not in vf.allowed_host and ":" not in vf.allowed_host
+    assert seen == set(_VENDOR_FEED_ROWS)
+    for slug, (_k, _u, _a, artifact, host) in _VENDOR_FEED_ROWS.items():
+        vf = reg.find(slug).vendor_feed
+        assert (vf.artifact, vf.allowed_host) == (artifact, host), slug

@@ -369,18 +369,20 @@ def test_npm_cli_duplicate_message_token_is_collected_without_an_item(run_dir):
 
 
 def test_feed_stale_and_behind_reason_codes_have_their_own_text(run_dir):
-    """Task 9: the new vendor-truth reason codes are known to the report."""
+    """Reason text exists for the vendor-truth codes; feed_stale is a warning
+    (message code), NOT an action-required item (delta-v1.5.4 row 15)."""
     from ascendo.orchestrator.report import _DEFAULT_REASON_TEXT, _REASON_TEXT
 
     for code in ("feed_stale", "behind", "needs_restart"):
         assert code in _REASON_TEXT, code
         assert _REASON_TEXT[code] != _DEFAULT_REASON_TEXT
-    app = _build_item(item_id="web:cursor", category=SourceType.WEB,
-                      status=ItemStatus.SKIPPED, current="3.22.7", target=None)
-    _sc(run_dir, Phase.APPLY, SourceType.WEB, [app], messages=[
-        _info("cursor: behind | " + _token("behind", "3.22.7", "3.22.12")),
-        _info("warp: feed_stale | " + _token("feed_stale", "0.9", "0.8")),
+    # What the web scripts really emit for a stale feed: a skipped item with
+    # a plain message (code=feed_stale) and no ACTION-REQUIRED token.
+    app = _build_item(item_id="web:warp", category=SourceType.WEB,
+                      status=ItemStatus.SKIPPED, current="0.9", target=None)
+    _sc(run_dir, Phase.CHECK, SourceType.WEB, [app], messages=[
+        Message(level=MessageLevel.WARN, code="feed_stale",
+                text="warp: feed_stale (vendor feed 0.8 < installed 0.9) - version not verified"
+                     " | ASCENDO-STATUS code=feed_stale"),
     ])
-    got = {a.slug: a for a in collect_action_required(run_dir)}
-    assert got["cursor"].reason == "behind" and got["cursor"].reason_text == _REASON_TEXT["behind"]
-    assert got["warp"].reason == "feed_stale"
+    assert collect_action_required(run_dir) == []

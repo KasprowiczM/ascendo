@@ -231,13 +231,13 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
                 ;;
             older)
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
-                json_add_message "warn" "$(_web_feed_stale_message "$SLUG" "$INSTALLED" "$CAND")"
+                json_add_message "warn" "$(_web_feed_stale_message "$SLUG" "$INSTALLED" "$CAND")" "feed_stale"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 continue
                 ;;
             *)
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
-                json_add_message "warn" "$(_web_unknown_version_message "$SLUG" "$INSTALLED" "$CAND")"
+                json_add_message "warn" "$(_web_unknown_version_message "$SLUG" "$INSTALLED" "$CAND")" "unknown_version"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 continue
                 ;;
