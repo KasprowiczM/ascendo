@@ -26,8 +26,10 @@
 #   6. otherwise, unless ASCENDO_SAFE_MODE=true or STAGE_WAIT=0: one hidden
 #      launch, then poll the installed version every 1 s up to
 #      ASCENDO_WEB_STAGE_WAIT; `updated` the moment it reaches R. `open`
-#      failing is launch_failed immediately (no wait, no quit).
-#   7. still behind and an artifact exists and ASCENDO_WEB_VENDOR_DIRECT!=0
+#      failing is launch_failed immediately (no wait, no quit). If the wait
+#      ends without the update, report `launched` (rc 0, apply => triggered):
+#      the app is running because Ascendo started it, so no install follows.
+#   7. (no launch happened) an artifact exists and ASCENDO_WEB_VENDOR_DIRECT!=0
 #                                             -> verified vendor-direct install
 #                                                (works in safe mode: an idle app
 #                                                is replaced without any GUI)
@@ -163,7 +165,7 @@ _squirrel_vendor_truth() {
     local slug="$1" cfg="$2"
     local app_path bundle_id I line R URL CK CS ART HOST POLICY rel state
     local direct_first=0 staged=0 direct_ok=0 bypass=0 wait elapsed rel2 I2 vrc
-    local launch_skipped="" lrc
+    local launch_skipped="" lrc launched=0
     _web_outcome_reset
 
     app_path=$(_squirrel_app_path "$cfg")
@@ -223,6 +225,7 @@ VENDOR_LINE
                 _web_outcome launch_failed "hidden launch of the app failed; its own updater could not run"
                 return 95
             fi
+            launched=1
             elapsed=0
             while :; do
                 I2=$(_web_installed_version "$app_path")
@@ -236,6 +239,19 @@ VENDOR_LINE
                 elapsed=$((elapsed + 1))
             done
         fi
+    fi
+
+    # Ascendo launched the app itself and its updater did nothing within the
+    # wait. The app is now running (because of us), so the verified install
+    # would only defer with a misleading "quit the app"; and we cannot quit it
+    # (Ascendo does not track launches). Report the truth: launched, unverified.
+    if [ "$launched" -eq 1 ]; then
+        if [ "$staged" -eq 1 ]; then
+            _web_outcome rollout_hold "rollout_hold: installed ${I}, vendor ${R} is a staged release; Ascendo launched the app hidden so its native updater can run, and the verified artifact is not used"
+        else
+            _web_outcome launched "installed ${I} < vendor ${R} after ${wait} s; Ascendo launched the app hidden so its own updater can run (unverified until the next check; the app was not replaced because it is now running)"
+        fi
+        return $([ "$staged" -eq 1 ] && echo 95 || echo 0)
     fi
 
     # (7)/(8) verified vendor-direct install.
@@ -256,7 +272,7 @@ VENDOR_LINE
             _web_outcome error_soft "error_soft: the vendor download/verification failed and ${_WEB_LAUNCH_NOTE}; installed ${I}, vendor ${R}"
             return 95
         fi
-        _web_outcome error_soft "error_soft: the vendor download/verification failed; installed ${I}, vendor ${R}"
+        _web_outcome error_soft "error_soft: the vendor download/verification failed; installed ${I}, vendor ${R}${launch_skipped:+ ($launch_skipped)}"
         return 95
     fi
 

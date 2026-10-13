@@ -565,22 +565,28 @@ _web_safe_mode() {
     [ "${ASCENDO_SAFE_MODE:-false}" = "true" ]
 }
 
+# _web_bounded_int <value> <default> <max>
+# Plain non-negative integer clamped to 0..max; anything else (empty, sign,
+# fraction, text) -> default. Leading zeros are decimal ("007" -> 7).
+_web_bounded_int() {
+    local w="$1" def="$2" max="$3"
+    case "$w" in
+        ''|*[!0-9]*) printf '%s' "$def"; return 0 ;;
+    esac
+    w="${w#"${w%%[!0]*}"}"
+    [ -n "$w" ] || w=0
+    if [ "${#w}" -gt 4 ] || [ "$w" -gt "$max" ]; then
+        printf '%s' "$max"
+        return 0
+    fi
+    printf '%s' "$w"
+}
+
 # _web_stage_wait
 # Native-updater wait in seconds: ASCENDO_WEB_STAGE_WAIT, default 90, clamped to
 # 0-600; anything that is not a plain non-negative integer -> 90.
 _web_stage_wait() {
-    local w="${ASCENDO_WEB_STAGE_WAIT:-90}"
-    case "$w" in
-        ''|*[!0-9]*) printf '90'; return 0 ;;
-    esac
-    w="${w#"${w%%[!0]*}"}"
-    [ -n "$w" ] || w=0
-    if [ "${#w}" -gt 4 ]; then
-        printf '600'
-        return 0
-    fi
-    [ "$w" -gt 600 ] && w=600
-    printf '%s' "$w"
+    _web_bounded_int "${ASCENDO_WEB_STAGE_WAIT:-90}" 90 600
 }
 
 # _web_sleep <seconds>  -- ASCENDO_WEB_SLEEP_BIN is the test seam (no real waits).

@@ -202,7 +202,11 @@ for k, v in fields.items():
         continue
     fi
 
-    if [ "$DRY_RUN" = "true" ]; then
+    # DRY_RUN: feed-backed apps are classified against the vendor feed in
+    # pass 3 (read-only probe, never a launch or install) so an app that is
+    # current / ahead of a stale feed is not reported as "planned". Every
+    # other handler keeps the blanket `planned` row.
+    if [ "$DRY_RUN" = "true" ] && ! _web_feed_backed "$HANDLER" "$CFG"; then
         json_add_item "web:${SLUG}" "$INSTALLED" "" "planned" "web" "$HANDLER"
         COUNT_PLANNED=$((COUNT_PLANNED + 1))
         continue
@@ -221,13 +225,12 @@ for k, v in fields.items():
 done < <(python3 "$REG_SHIM" "${_reg_args[@]}" --list-slugs 2>/dev/null)
 
 # ── Pass 2: parallel HTTP probes ──────────────────────────────────────
-if [ "$DRY_RUN" != "true" ]; then
-    _web_probe_parallel "$INDICES_FILE" "$RESULTS_DIR"
-fi
+# (dry run too: the probe is a read-only HTTP fetch and feed-backed apps need it)
+_web_probe_parallel "$INDICES_FILE" "$RESULTS_DIR"
 
 # ── Pass 3: sequential dispatch (reads probe results + emits items) ──
 i=0
-while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
+while [ "$i" -lt "$WORK_IDX" ]; do
     SLUG=$(cat "$RESULTS_DIR/${i}.slug" 2>/dev/null)
     HANDLER=$(cat "$RESULTS_DIR/${i}.handler" 2>/dev/null)
     INSTALLED=$(cat "$RESULTS_DIR/${i}.installed" 2>/dev/null)
@@ -275,6 +278,15 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
         json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
         json_add_message "info" "${SLUG}: probe_unavailable (vendor feed unreachable or unparseable; not treated as up to date)" "probe_unavailable"
         COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+        continue
+    fi
+
+    # Dry run: reaching here means the feed says an update is available (or
+    # the probe is empty for a non-squirrel handler). Report it; never launch.
+    if [ "$DRY_RUN" = "true" ]; then
+        json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "planned" "web" "$HANDLER"
+        json_add_message "info" "${SLUG}: Update available ${INSTALLED} -> ${CAND:-unknown} (dry run: nothing launched or installed)"
+        COUNT_PLANNED=$((COUNT_PLANNED + 1))
         continue
     fi
 
@@ -395,6 +407,13 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
             triggered)
                 json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "triggered" "web" "$HANDLER"
                 json_add_message "warn" "${SLUG}: ${_o_msg}" "error_soft"
+                COUNT_TRIGGERED=$((COUNT_TRIGGERED + 1))
+                ;;
+            launched)
+                # Ascendo launched the app hidden for its own updater; the
+                # update is NOT measured, so this is `triggered`, never success.
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "triggered" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: Ascendo launched the app hidden -- ${_o_msg}" "launched"
                 COUNT_TRIGGERED=$((COUNT_TRIGGERED + 1))
                 ;;
             current)

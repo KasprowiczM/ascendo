@@ -215,16 +215,29 @@ def test_apply_native_launch_cycle_observes_the_update(sb):
     assert calls(sb, "sleep.log") == [] and calls(sb, "curl.log") == []
 
 
-def test_apply_native_cycle_that_does_nothing_falls_through_to_direct(sb):
+def test_apply_native_cycle_that_does_nothing_reports_launched_and_never_installs(sb):
+    """M1: Ascendo launched the app hidden and its updater did nothing. The app is now
+    running because of us, so no vendor-direct install follows (it would only fail with
+    a misleading "quit the app"). The item is `triggered` and says so."""
     prime_claude(sb)
     stub_open(sb)
     stub_sleep(sb)
+    # A real lsappinfo: idle until `open` has been called, running afterwards.
+    script(sb.bin / "lsappinfo",
+           f'''if [ -f "{sb.log}/open.log" ]; then echo 'bundleID="com.apple.finder"'; echo 'bundleID="{BID}"';
+else echo 'bundleID="com.apple.finder"'; fi
+exit 0
+''')
     res, sc = run_apply(sb, registry(sb, direct_first=False), CLAUDE_BODY,
                         ASCENDO_WEB_ALLOW_GUI="1", ASCENDO_WEB_STAGE_WAIT="2")
-    assert item_of(sc)["status"] == "success", (sc, res.stderr)
+    item = item_of(sc)
+    assert item["status"] == "triggered", (sc, res.stderr)
+    assert "launched" in codes(sc) and "launched the app hidden" in texts(sc)
+    assert "needs_restart" not in codes(sc) and "reason=needs_restart" not in texts(sc)
     assert len(calls(sb, "open.log")) == 1
     assert calls(sb, "sleep.log") == ["1", "1"]
-    assert sb.payload() == "new"
+    assert calls(sb, "curl.log") == []          # no vendor download after the launch
+    assert sb.payload() == "old" and sc["status"] != "failed"
 
 
 def test_apply_direct_download_failure_safe_mode_is_skipped_not_failed(sb):
@@ -572,3 +585,154 @@ def test_sparkle_equal_and_stale_do_not_launch(tmp_path, installed, expect):
     assert item_of(sc)["status"] == expect, sc
     assert calls(sb, "open.log") == [] and sb.payload() == "old"
     assert calls(sb, "curl.log") and not [c for c in calls(sb, "curl.log") if "App.zip" in c]
+
+
+# ============================================================================
+# verify.sh (I2): real app path + measured verification of feed-backed items
+# ============================================================================
+
+def run_verify(sb: Sandbox, reg: Path, run_dir: Path, **extra):
+    """Run verify.sh against the apply sidecar produced by run_apply in `run_dir`."""
+    out = run_dir.parent
+    run_id = run_dir.name
+    stub = script(sb.bin / "sleep", f'echo "$*" >> "{sb.log}/verify_sleep.log"\nexit 0\n')
+    assert stub.exists()
+    env = sb.env(ASCENDO_WEB_REGISTRY_PATH=reg, ASCENDO_WEB_USER_REGISTRY_PATH="",
+                 PYTHONPATH=f"{REPO_ROOT}/core:{ADAPTER}", **extra)
+    res = subprocess.run(["bash", str(SCRIPTS / "verify.sh"), "--run-id", run_id, "--trigger", "cli",
+                          "--profile", "full", "--output-dir", str(out)],
+                         capture_output=True, text=True, env=env)
+    return res, json.loads((out / run_id / "verify__web.json").read_text())
+
+
+def _only_run_dir(sb: Sandbox) -> Path:
+    (d,) = [p for p in (sb.tmp / "out").iterdir() if p.is_dir()]
+    return d
+
+
+def test_verify_feed_backed_squirrel_success_is_measured_not_slept_not_escalated(sb):
+    """Ruling 35: an apply `success` for a feed-backed squirrel app verifies by measuring
+    the REAL bundle (registry app_path, not /Applications/web:<slug>.app), with no
+    30 s squirrel sleep and no escalation to failed."""
+    prime_claude(sb)
+    stub_open(sb)
+    reg = registry(sb, direct_first=True)
+    res, sc = run_apply(sb, reg, CLAUDE_BODY)
+    assert item_of(sc)["status"] == "success", (sc, res.stderr)
+    vres, vsc = run_verify(sb, reg, _only_run_dir(sb))
+    item = item_of(vsc)
+    assert item["status"] == "success", (vsc, vres.stderr)
+    assert item["current_version"] == "2.7032.0" and item["target_version"] == "2.7032.0"
+    assert "verified by measurement" in texts(vsc)
+    assert calls(sb, "verify_sleep.log") == [], "feed-backed squirrel verify must not sleep"
+    assert "failed" not in [i["status"] for i in vsc["items"]]
+
+
+def test_verify_feed_backed_success_but_bundle_still_old_is_failed(sb):
+    prime_claude(sb)
+    stub_open(sb)
+    reg = registry(sb, direct_first=True)
+    res, sc = run_apply(sb, reg, CLAUDE_BODY)
+    assert item_of(sc)["status"] == "success"
+    # Roll the bundle back after apply: the measurement must catch it.
+    make_app(sb.apps, ver="1.0", payload="rolled-back")
+    vres, vsc = run_verify(sb, reg, _only_run_dir(sb))
+    item = item_of(vsc)
+    assert item["status"] == "failed", vsc
+    assert "not the vendor's 2.7032.0" in texts(vsc)
+    assert calls(sb, "verify_sleep.log") == []
+
+
+def test_verify_feed_backed_triggered_stays_triggered_when_not_yet_applied(sb):
+    """The `launched` apply item (Ascendo started the app hidden): verify keeps it
+    `triggered` with a pending note. It is unverified, not a failure."""
+    prime_claude(sb)
+    stub_open(sb)
+    stub_sleep(sb)
+    reg = registry(sb, direct_first=False)
+    res, sc = run_apply(sb, reg, CLAUDE_BODY, ASCENDO_WEB_ALLOW_GUI="1", ASCENDO_WEB_STAGE_WAIT="1")
+    assert item_of(sc)["status"] == "triggered", (sc, res.stderr)
+    vres, vsc = run_verify(sb, reg, _only_run_dir(sb))
+    item = item_of(vsc)
+    assert item["status"] == "triggered", vsc
+    assert "triggered_pending" in texts(vsc) and "unverified" in texts(vsc)
+    assert calls(sb, "verify_sleep.log") == []
+    assert sc["status"] != "failed" and vsc["status"] != "failed"
+
+
+def test_verify_feed_backed_triggered_is_confirmed_when_the_version_arrives(sb):
+    prime_claude(sb)
+    stub_open(sb)
+    stub_sleep(sb)
+    reg = registry(sb, direct_first=False)
+    res, sc = run_apply(sb, reg, CLAUDE_BODY, ASCENDO_WEB_ALLOW_GUI="1", ASCENDO_WEB_STAGE_WAIT="1")
+    assert item_of(sc)["status"] == "triggered"
+    make_app(sb.apps, ver="2.7032.0", payload="updated-by-native-updater")   # the app updated itself
+    vres, vsc = run_verify(sb, reg, _only_run_dir(sb))
+    assert item_of(vsc)["status"] == "success", vsc
+    assert "verified by measurement" in texts(vsc)
+
+
+def test_verify_feedless_squirrel_resolves_the_real_path(sb):
+    """Legacy (feedless) squirrel keeps its async confirm/escalate semantics, but now on
+    the registry's real app path: a changed version is `triggered_confirmed`, not a
+    bogus-path 'failed'. ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE=0 skips the 30 s wait."""
+    make_app(sb.apps, ver="5.0", payload="updated")
+    reg = registry(sb, feed={})                            # squirrel, no [app.vendor_feed]
+    out = sb.tmp / "out"
+    run_dir = out / "rid-feedless"
+    run_dir.mkdir(parents=True)
+    (run_dir / "apply__web.json").write_text(json.dumps({"items": [{
+        "id": "web:vt", "name": "web:vt", "status": "triggered", "current_version": "1.0",
+        "source": {"type": "web", "feed": "squirrel"}}]}))
+    vres, vsc = run_verify(sb, reg, run_dir, ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE="0")
+    item = item_of(vsc)
+    assert item["status"] == "triggered" and "triggered_confirmed (1.0 -> 5.0)" in texts(vsc), vsc
+    # unchanged => the legacy W4/W13 escalation is preserved for feedless apps
+    make_app(sb.apps, ver="1.0", payload="old")
+    vres, vsc = run_verify(sb, reg, run_dir, ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE="0")
+    assert item_of(vsc)["status"] == "failed"
+
+
+# ============================================================================
+# apply.sh --dry-run for feed-backed items (never launches, classifies on the feed)
+# ============================================================================
+
+def run_apply_dry(sb: Sandbox, reg: Path, feed_body: str, **extra):
+    feeds = sb.tmp / "feeds"
+    feeds.mkdir(exist_ok=True)
+    (feeds / "vt.feed").write_text(feed_body)
+    stub_sleep(sb)
+    out = sb.tmp / "out"
+    env = sb.env(ASCENDO_WEB_REGISTRY_PATH=reg, ASCENDO_WEB_USER_REGISTRY_PATH="",
+                 ASCENDO_SUDO_WARM_DISABLE="1", ASCENDO_WEB_VENDOR_FEED_DIR=feeds,
+                 ASCENDO_WEB_SLEEP_BIN=sb.bin / "sleep_stub", ASCENDO_WEB_DOCKER_BIN=sb.tmp / "no-docker",
+                 PYTHONPATH=f"{REPO_ROOT}/core:{ADAPTER}", **extra)
+    run_id = str(uuid.uuid4())
+    res = subprocess.run(["bash", str(SCRIPTS / "apply.sh"), "--run-id", run_id, "--trigger", "cli",
+                          "--profile", "full", "--output-dir", str(out), "--dry-run"],
+                         capture_output=True, text=True, env=env)
+    return res, json.loads((out / run_id / "apply__web.json").read_text())
+
+
+def test_vendor_truth_dry_run_reports_update_available_without_launch(sb):
+    """Port of upstream test_vendor_truth_dry_run_reports_update_available_without_launch."""
+    prime_claude(sb)
+    stub_open(sb)
+    res, sc = run_apply_dry(sb, registry(sb), CLAUDE_BODY, ASCENDO_WEB_ALLOW_GUI="1")
+    item = item_of(sc)
+    assert item["status"] == "planned", (sc, res.stderr)
+    assert item["current_version"] == "1.0" and item["target_version"] == "2.7032.0"
+    assert "Update available 1.0 -> 2.7032.0" in texts(sc)
+    assert calls(sb, "open.log") == [] and calls(sb, "sleep.log") == []
+    assert not [c for c in calls(sb, "curl.log") if ".zip" in c]      # no artifact download
+    assert sb.payload() == "old" and sb.forbidden() == []
+
+
+@pytest.mark.parametrize("installed,expect", [("2.7032.0", "up_to_date"), ("3.0", "skipped")])
+def test_dry_run_equal_or_older_feed_is_not_planned_and_never_launches(sb, installed, expect):
+    make_app(sb.apps, ver=installed, payload="old")
+    stub_open(sb)
+    res, sc = run_apply_dry(sb, registry(sb), CLAUDE_BODY, ASCENDO_WEB_ALLOW_GUI="1")
+    assert item_of(sc)["status"] == expect, sc
+    assert calls(sb, "open.log") == [] and sb.payload() == "old"

@@ -34,11 +34,14 @@ PROTON_FEED = {"kind": "json", "url": "https://proton.me/download/mail/macos/ver
                "direct_first": True}
 WARP_FEED = {"kind": "json", "url": "https://releases.warp.dev/channel_versions.json",
              "arg": "warp_channels", "artifact": "-", "allowed_host": "-", "direct_first": False}
+RDM_FEED = {"kind": "kv", "url": "https://devolutions.net/productinfo.htm", "arg": "RDMMacbin",
+            "artifact": "dmg", "allowed_host": "cdn.devolutions.net", "direct_first": False}
 DOCKER_FEED = {"kind": "sparkle", "url": "https://desktop.docker.com/mac/main/arm64/appcast.xml", "arg": "-",
                "artifact": "dmg", "allowed_host": "desktop.docker.com", "direct_first": False}
 
 CLAUDE_BODY = (FIX / "claude_releases.json").read_text()        # 2.7032.0, zip
 WARP_BODY = (FIX / "warp_channels.json").read_text()
+RDM_BODY = (FIX / "productinfo.htm").read_text()                 # RDMMacbin 2026.3.0.5, dmg
 DOCKER_BODY = (FIX / "docker_attr.xml").read_text()              # newest 4.92.0, dmg
 CODEX_BODY = (
     '<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><item>'
@@ -233,14 +236,30 @@ def test_launch_cycle_polls_every_second_up_to_stage_wait(tmp_path: Path) -> Non
     r = _h(tmp_path).run("squirrel", "claude", CLAUDE_FEED, CLAUDE_BODY,
                          env={"ASCENDO_WEB_STAGE_WAIT": "3", "ASCENDO_WEB_VENDOR_DIRECT": "0"})
     assert r["actions"] == ["launch", "wait", "wait", "wait"]
-    assert r["rc"] == 95 and r["outcome"] == "behind"
+    # Ascendo launched it and nothing changed: launched (unverified), not behind.
+    assert r["rc"] == 0 and r["outcome"] == "launched"
 
 
-def test_launch_cycle_then_direct_when_native_updater_does_nothing(tmp_path: Path) -> None:
+def test_launch_cycle_that_does_nothing_never_falls_through_to_direct(tmp_path: Path) -> None:
+    """M1: after Ascendo's own hidden launch the app is running (because of us); a
+    vendor-direct install would only defer with a misleading "quit the app". Report
+    `launched` (apply => triggered) and say so; never `direct`, never `updated`."""
     r = _h(tmp_path).run("squirrel", "claude", CLAUDE_FEED, CLAUDE_BODY, newver="2.7032.0",
                          env={"ASCENDO_WEB_STAGE_WAIT": "2"})
-    assert r["actions"] == ["launch", "wait", "wait", "direct"]
-    assert r["rc"] == 0 and r["outcome"] == "updated"
+    assert r["actions"] == ["launch", "wait", "wait"]
+    assert r["rc"] == 0 and r["outcome"] == "launched"
+    assert "launched the app hidden" in r["msg"]
+
+
+def test_launch_then_running_probe_is_not_consulted_again_for_a_direct_install(tmp_path: Path) -> None:
+    """Same scenario with a running probe that flips to `true` once open was called
+    (what a real lsappinfo does): still launched, and no rc 4 'quit the app' report."""
+    flip = f'ascendo_app_running_state() {{ if [ -f "{tmp_path}/actions" ]; then echo true; else echo false; fi; }}'
+    r = _h(tmp_path).run("squirrel", "claude", CLAUDE_FEED, CLAUDE_BODY, newver="2.7032.0",
+                         env={"ASCENDO_WEB_STAGE_WAIT": "1"}, extra_bash=flip)
+    assert r["actions"] == ["launch", "wait"]
+    assert r["rc"] == 0 and r["outcome"] == "launched"
+    assert r["outcome"] != "needs_restart"
 
 
 def test_stage_wait_zero_skips_the_launch_cycle(tmp_path: Path) -> None:
@@ -286,7 +305,7 @@ def test_warp_verify_only_never_installs(tmp_path: Path) -> None:
     r = _h(tmp_path).run("squirrel", "warp", WARP_FEED, WARP_BODY, installed="0.1",
                          env={"ASCENDO_WEB_STAGE_WAIT": "1"})
     assert r["actions"] == ["launch", "wait"]
-    assert r["rc"] == 95 and r["outcome"] == "behind"
+    assert r["rc"] == 0 and r["outcome"] == "launched"     # nothing to install; never `direct`
 
 
 def test_vendor_direct_kill_switch_disables_only_the_direct_step(tmp_path: Path) -> None:
@@ -294,7 +313,44 @@ def test_vendor_direct_kill_switch_disables_only_the_direct_step(tmp_path: Path)
                          env={"ASCENDO_WEB_VENDOR_DIRECT": "0", "ASCENDO_WEB_STAGE_WAIT": "1"})
     # direct_first bypass is off, so the native cycle runs; no direct install.
     assert r["actions"] == ["launch", "wait"]
-    assert r["rc"] == 95 and r["outcome"] == "behind"
+    assert r["rc"] == 0 and r["outcome"] == "launched"
+
+
+def test_rdm_kv_feed_check_returns_the_RDMMacbin_version(tmp_path: Path) -> None:
+    """M6: the shipped rdm row (kind=kv, arg=RDMMacbin) end to end through squirrel_check."""
+    cfg = {"slug": "rdm", "handler": "squirrel", "vendor_feed": RDM_FEED}
+    r = _check(tmp_path, "squirrel_check", cfg, RDM_BODY)
+    assert r.returncode == 0 and r.stdout.strip() == "2026.3.0.5"
+
+
+def test_rdm_kv_feed_apply_installs_the_devolutions_dmg_from_the_pinned_host(tmp_path: Path) -> None:
+    r = _h(tmp_path).run("squirrel", "rdm", RDM_FEED, RDM_BODY, installed="2025.1.0", newver="2026.3.0.5",
+                         bundle_id="com.devolutions.remotedesktopmanager",
+                         env={"ASCENDO_SAFE_MODE": "true"})      # apply.sh's default: no launch
+    assert r["actions"] == ["direct"]
+    args = r["direct_args"].split()
+    assert args[:4] == ["ARGS", "rdm",
+                        "https://cdn.devolutions.net/download/Mac/Devolutions.RemoteDesktopManager.Mac.2026.3.0.5.dmg",
+                        "dmg"]
+    assert "cdn.devolutions.net" in args and "2026.3.0.5" in args
+    assert r["rc"] == 0 and r["outcome"] == "updated"
+
+
+def test_rdm_kv_feed_current_and_older_do_not_act(tmp_path: Path) -> None:
+    cur = _h(tmp_path).run("squirrel", "rdm", RDM_FEED, RDM_BODY, installed="2026.3.0.5")
+    assert cur["actions"] == [] and cur["outcome"] == "current"
+    old = _h(tmp_path).run("squirrel", "rdm", RDM_FEED, RDM_BODY, installed="2027.1.0")
+    assert old["actions"] == [] and old["outcome"] == "feed_stale"
+
+
+def test_safe_mode_soft_download_failure_names_the_skipped_launch(tmp_path: Path) -> None:
+    """M8: the error_soft message in safe mode says why the native updater was not tried,
+    exactly like the behind / rollout_hold messages do."""
+    r = _h(tmp_path).run("squirrel", "claude", CLAUDE_FEED, CLAUDE_BODY, direct_rc=1,
+                         env={"ASCENDO_SAFE_MODE": "true"})
+    assert r["actions"] == ["direct"]
+    assert r["rc"] == 95 and r["outcome"] == "error_soft"
+    assert "safe mode: the app's own updater was not launched" in r["msg"]
 
 
 def test_vendor_truth_behind_without_actions_reports_behind(tmp_path: Path) -> None:
@@ -449,17 +505,146 @@ def test_docker_installer_deferral_is_needs_restart(tmp_path: Path) -> None:
     assert r["actions"] == ["direct"] and r["rc"] == 4 and r["outcome"] == "needs_restart"
 
 
-def test_docker_failed_download_is_soft_and_never_falls_back_to_cli(tmp_path: Path) -> None:
-    fake = tmp_path / "bin"
-    fake.mkdir()
-    log = tmp_path / "docker.log"
+def _fake_docker(tmp: Path, *, update_rc: int = 0, start_brings_engine_up: bool = True,
+                 update_installs: bool = True, marker: Path | None = None) -> tuple[Path, Path]:
+    """A stateful fake `docker`: status reads a state file, start/stop toggle it, update logs.
+
+    Every call is appended to docker.log as its argv; `desktop update` optionally
+    prints a failure and exits update_rc, and (when it succeeds and update_installs)
+    drops the 'pending' flag the version stub uses to flip to the new version.
+    """
+    fake = tmp / "bin"
+    fake.mkdir(exist_ok=True)
+    log = tmp / "docker.log"
+    state = tmp / "engine.up"
+    pending = tmp / "update.pending"
     docker = fake / "docker"
-    docker.write_text(f'#!/bin/sh\necho "$*" >> "{log}"\nexit 1\n')   # status rc 1 = not running
+    docker.write_text(f'''#!/bin/sh
+echo "$*" >> "{log}"
+if [ "$2" = "status" ]; then [ -f "{state}" ] && exit 0 || exit 1; fi
+if [ "$2" = "start" ]; then {'touch "' + str(state) + '"' if start_brings_engine_up else ':'}; exit 0; fi
+if [ "$2" = "stop" ]; then rm -f "{state}"; exit 0; fi
+if [ "$2" = "update" ]; then
+  if [ {update_rc} -ne 0 ]; then echo "install error: validating application: validating signature: <APP>: No such file or directory"; exit {update_rc}; fi
+  {'touch "' + str(pending) + '"' if update_installs else ':'}
+  exit 0
+fi
+exit 0
+''')
     docker.chmod(0o755)
-    r = _docker(tmp_path, direct_rc=1, env={"ASCENDO_WEB_DOCKER_BIN": str(docker)})
+    return docker, log
+
+
+def _version_stub(tmp: Path, *, installed: str = "4.91.0", new: str = "4.92.0", polls_before: int = 1) -> str:
+    """_web_installed_version override: logs every read to events.log; reports the new
+    version only after `docker desktop update` ran AND `polls_before` reads have passed."""
+    return f'''
+_web_installed_version() {{
+  local v="{installed}" c=0
+  if [ -f "{tmp}/update.pending" ]; then
+    [ -f "{tmp}/pollcount" ] && c=$(cat "{tmp}/pollcount")
+    c=$((c + 1)); echo "$c" > "{tmp}/pollcount"
+    [ "$c" -gt {polls_before} ] && v="{new}"
+  fi
+  echo "app_version:$v" >> "{tmp}/events.log"
+  echo "$v"
+}}
+'''
+
+
+def test_docker_failed_download_in_safe_mode_is_soft_and_never_runs_the_cli(tmp_path: Path) -> None:
+    docker, log = _fake_docker(tmp_path)
+    r = _docker(tmp_path, direct_rc=1,
+                env={"ASCENDO_WEB_DOCKER_BIN": str(docker), "ASCENDO_SAFE_MODE": "true"})
     assert r["actions"] == ["direct"]
     assert r["rc"] == 95 and r["outcome"] == "error_soft"
-    assert "update" not in log.read_text().split() and "start" not in log.read_text().split()
+    assert "safe mode" in r["msg"]
+    calls = [l.split()[1] for l in log.read_text().splitlines()]
+    assert calls == ["status"]                         # only the read-only probe; no start/update/stop
+
+
+def test_docker_failed_download_falls_back_to_the_vendor_cli(tmp_path: Path) -> None:
+    """Spec G step 4: idle + feed newer + vendor DMG soft-failed + not safe mode =>
+    start -> update -q -> poll the bundle version -> stop. Success only when measured."""
+    docker, log = _fake_docker(tmp_path)
+    r = _docker(tmp_path, direct_rc=1, extra_bash=_version_stub(tmp_path),
+                env={"ASCENDO_WEB_DOCKER_BIN": str(docker)})
+    calls = [" ".join(l.split()[:2]) for l in log.read_text().splitlines()]
+    assert "desktop start" in calls and "desktop update" in calls
+    assert calls.index("desktop start") < calls.index("desktop update") < calls.index("desktop stop")
+    assert r["rc"] == 0 and r["outcome"] == "updated"
+    assert "docker desktop update" in r["msg"]
+
+
+def test_docker_kill_switch_uses_the_vendor_cli_without_a_direct_install(tmp_path: Path) -> None:
+    docker, log = _fake_docker(tmp_path)
+    r = _docker(tmp_path, extra_bash=_version_stub(tmp_path),
+                env={"ASCENDO_WEB_DOCKER_BIN": str(docker), "ASCENDO_WEB_VENDOR_DIRECT": "0"})
+    assert "direct" not in r["actions"]
+    assert r["rc"] == 0 and r["outcome"] == "updated"
+
+
+def test_docker_cli_update_without_a_measured_version_is_not_success(tmp_path: Path) -> None:
+    """`update -q` exits 0 but Docker.app never changes within the bound: behind, never success."""
+    docker, log = _fake_docker(tmp_path, update_installs=False)
+    r = _docker(tmp_path, extra_bash=_version_stub(tmp_path),
+                env={"ASCENDO_WEB_DOCKER_BIN": str(docker), "ASCENDO_WEB_VENDOR_DIRECT": "0",
+                     "ASCENDO_WEB_DOCKER_UPDATE_WAIT": "20"})
+    assert r["rc"] == 95 and r["outcome"] == "behind"
+    assert "did not change" in r["msg"]
+    # bounded poll: 20 s / 10 s steps = 2 sleeps (+ the start-poll sleeps), never unbounded
+    assert r["actions"].count("wait") <= 4
+    assert "desktop stop" in log.read_text()
+
+
+def test_docker_engine_that_never_starts_is_stopped_and_reported_behind(tmp_path: Path) -> None:
+    docker, log = _fake_docker(tmp_path, start_brings_engine_up=False)
+    r = _docker(tmp_path, env={"ASCENDO_WEB_DOCKER_BIN": str(docker), "ASCENDO_WEB_VENDOR_DIRECT": "0"})
+    assert r["rc"] == 95 and r["outcome"] == "behind"
+    assert "did not bring the engine up" in r["msg"]
+    text = log.read_text()
+    assert "desktop update" not in text and "desktop stop" in text
+    assert r["actions"].count("wait") == 24            # 120 s / 5 s, bounded
+
+
+def test_docker_failed_cli_update_does_not_poll(tmp_path: Path) -> None:
+    """Port of upstream test_docker_failed_cli_update_does_not_poll: exit!=0 from
+    `docker desktop update` means nothing will change: no version poll."""
+    docker, log = _fake_docker(tmp_path, update_rc=1)
+    r = _docker(tmp_path, extra_bash=_version_stub(tmp_path),
+                env={"ASCENDO_WEB_DOCKER_BIN": str(docker), "ASCENDO_WEB_VENDOR_DIRECT": "0"})
+    assert r["rc"] == 95 and r["outcome"] == "behind"
+    assert "installed 4.91.0 < vendor 4.92.0" in r["msg"]
+    assert "docker desktop update -q" in r["msg"] and "exit=1" in r["msg"]
+    assert "validating signature" in r["msg"]
+    events = (tmp_path / "events.log")
+    # exactly one read (the initial installed version); no poll after the failed update
+    assert events.read_text().strip().splitlines() == ["app_version:4.91.0"]
+    assert r["actions"].count("wait") == 1                            # only the engine-start wait
+    assert "desktop stop" in log.read_text()                          # our engine is stopped
+
+
+def test_docker_stop_is_called_after_version_polling_loop(tmp_path: Path) -> None:
+    """Port of upstream test_docker_stop_is_called_after_version_polling_loop: `docker
+    desktop stop` is the LAST event, after the version polls reach the new version."""
+    events = tmp_path / "events.log"
+    docker, log = _fake_docker(tmp_path)
+    # Make the fake docker also record its stop in the same events log.
+    text = docker.read_text().replace('if [ "$2" = "stop" ]; then',
+                                      f'if [ "$2" = "stop" ]; then echo docker_stop >> "{events}";')
+    docker.write_text(text)
+    r = _docker(tmp_path, extra_bash=_version_stub(tmp_path, polls_before=1),
+                env={"ASCENDO_WEB_DOCKER_BIN": str(docker), "ASCENDO_WEB_VENDOR_DIRECT": "0"})
+    assert r["rc"] == 0 and r["outcome"] == "updated"
+    lines = events.read_text().strip().splitlines()
+    assert lines[-1] == "docker_stop", lines
+    assert "app_version:4.92.0" in lines[:-1]
+
+
+def test_docker_without_a_cli_and_without_direct_reports_behind(tmp_path: Path) -> None:
+    r = _docker(tmp_path, env={"ASCENDO_WEB_VENDOR_DIRECT": "0"})
+    assert r["actions"] == [] and r["rc"] == 95 and r["outcome"] == "behind"
+    assert "docker CLI not found" in r["msg"]
 
 
 def test_docker_hard_install_failure_is_failed(tmp_path: Path) -> None:

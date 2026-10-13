@@ -6,8 +6,18 @@
 #   - sparkle/github_dmg/msupdate/docker: re-read installed version; success
 #     iff installed > pre-apply (or installed == target if known).
 #   - keystone: sleep 10s, then re-read (daemon applies async).
-#   - squirrel: sleep 30s, then re-read (Squirrel auto-update on relaunch).
+#   - squirrel (feedless): sleep 30s, then re-read (Squirrel auto-update on
+#     relaunch).
+#   - feed-backed squirrel / docker ([app.vendor_feed]): MEASURED, no sleep and
+#     no escalation. The apply item carries the vendor's target version; the
+#     installed bundle must have reached it. `success` stays success only on
+#     that measurement (else failed); `triggered` is confirmed to success when
+#     the version was reached, otherwise it stays `triggered` (the vendor's own
+#     updater may still be running -- unverified is not a failure).
 #   - builtin: no-op skipped (manual_verify_required).
+#
+# The installed bundle path is resolved from the registry (app_path /
+# display_name / bundle id), never reconstructed from the item id.
 #
 # When no apply sidecar exists in the run dir, emit empty verify (no-op).
 # =============================================================================
@@ -15,6 +25,7 @@ set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ADAPTER_LIB="$SCRIPT_DIR/../../lib"
+ADAPTER_CONFIG="$SCRIPT_DIR/../../config"
 
 . "$ADAPTER_LIB/ascendo_json.sh"
 . "$ADAPTER_LIB/ascendo_web.sh"
@@ -35,6 +46,13 @@ if [ -z "$RUN_ID" ] || [ -z "$TRIGGER" ] || [ -z "$PROFILE_NAME" ] || [ -z "$OUT
     printf 'verify.sh: missing required args\n' >&2
     exit 2
 fi
+
+REG_PATH="${ASCENDO_WEB_REGISTRY_PATH:-$ADAPTER_CONFIG/web_apps.toml}"
+USER_REG="${ASCENDO_WEB_USER_REGISTRY_PATH:-$HOME/.config/ascendo/web_apps.toml}"
+[ -f "$USER_REG" ] || USER_REG=""
+REG_SHIM="$ADAPTER_LIB/web_registry.py"
+_reg_args=(--shipped "$REG_PATH")
+[ -n "$USER_REG" ] && _reg_args+=(--user-override "$USER_REG")
 
 HOST_NAME="$(scutil --get LocalHostName 2>/dev/null || hostname -s 2>/dev/null || echo unknown)"
 HOST_OS="macos"
@@ -62,9 +80,66 @@ SLEEP_OVERRIDE="${ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE:-}"
 COUNT_OK=0
 COUNT_FAILED=0
 
-while IFS=$'\t' read -r ITEM_ID HANDLER APP_PATH PRE_VERSION; do
+# _verify_resolve <slug>  -> sets CFG, APP_PATH (the real installed bundle)
+_verify_resolve() {
+    local slug="$1" bundle_id="" display="" reg_path=""
+    CFG=""; APP_PATH=""
+    CFG=$(python3 "$REG_SHIM" "${_reg_args[@]}" --get-app "$slug" 2>/dev/null) || CFG=""
+    [ -n "$CFG" ] || return 0
+    eval "$(printf '%s' "$CFG" | python3 -c '
+import json, sys, shlex
+d = json.load(sys.stdin)
+for k, v in (("bundle_id", d.get("bundle_id", "")), ("display", d.get("display_name", "")),
+             ("reg_path", d.get("app_path") or "")):
+    print(f"{k}={shlex.quote(v)}")
+' 2>/dev/null)"
+    APP_PATH="$reg_path"
+    [ -z "$APP_PATH" ] && [ -n "$display" ] && APP_PATH="/Applications/${display}.app"
+    # Same fallback as apply.sh: the registry guess can miss a bundle that is
+    # installed under its shorter on-disk name.
+    if [ -z "$(_web_installed_version "$APP_PATH")" ] && [ -n "$bundle_id" ]; then
+        local resolved
+        resolved=$(_web_resolve_bundle_path "$bundle_id" "$APP_PATH")
+        [ -n "$resolved" ] && APP_PATH="$resolved"
+    fi
+    return 0
+}
+
+while IFS=$'\t' read -r ITEM_ID HANDLER PRE_VERSION TARGET ITEM_STATUS; do
     [ -z "$ITEM_ID" ] && continue
+    [ "$HANDLER" = "-" ] && HANDLER=""
+    [ "$PRE_VERSION" = "-" ] && PRE_VERSION=""
+    [ "$TARGET" = "-" ] && TARGET=""
     SLUG="${ITEM_ID#web:}"
+    _verify_resolve "$SLUG"
+
+    # Feed-backed squirrel / docker: measure against the vendor's version.
+    if { [ "$HANDLER" = "squirrel" ] || [ "$HANDLER" = "docker" ]; } && _web_feed_backed "$HANDLER" "$CFG"; then
+        POST=$(_web_installed_version "$APP_PATH")
+        reached=0
+        if [ -n "$POST" ]; then
+            if [ -n "$TARGET" ]; then
+                _rel=$(_web_version_cmp "$TARGET" "$POST")
+                { [ "$_rel" = "equal" ] || [ "$_rel" = "older" ]; } && reached=1
+            elif [ "$ITEM_STATUS" = "success" ]; then
+                reached=1
+            fi
+        fi
+        if [ "$reached" -eq 1 ]; then
+            json_add_item "$ITEM_ID" "$POST" "$TARGET" "success" "web" "$HANDLER"
+            json_add_message "info" "${SLUG}: verified by measurement (installed ${POST}${TARGET:+, vendor ${TARGET}})"
+            COUNT_OK=$((COUNT_OK + 1))
+        elif [ "$ITEM_STATUS" = "success" ]; then
+            json_add_item "$ITEM_ID" "${POST:-$PRE_VERSION}" "$TARGET" "failed" "web" "$HANDLER"
+            json_add_message "error" "${SLUG}: apply reported success but the installed version is ${POST:-unreadable}, not the vendor's ${TARGET:-?}"
+            COUNT_FAILED=$((COUNT_FAILED + 1))
+        else
+            json_add_item "$ITEM_ID" "${POST:-$PRE_VERSION}" "$TARGET" "triggered" "web" "$HANDLER"
+            json_add_message "info" "${SLUG}: triggered_pending (installed ${POST:-unreadable}, vendor ${TARGET:-?}; not yet applied, unverified)"
+            COUNT_OK=$((COUNT_OK + 1))
+        fi
+        continue
+    fi
 
     case "$HANDLER" in
         builtin)
@@ -90,7 +165,7 @@ while IFS=$'\t' read -r ITEM_ID HANDLER APP_PATH PRE_VERSION; do
 
     case "$HANDLER" in
         squirrel|keystone)
-            # Tier-B async — The apply phase already counts these as success/triggered.
+            # Tier-B async -- The apply phase already counts these as success/triggered.
             # Verify just confirms whether the vendor agent caught up yet.
             if [ -n "$POST" ] && [ "$POST" != "$PRE_VERSION" ]; then
                 json_add_item "$ITEM_ID" "$POST" "" "triggered" "web" "$HANDLER"
@@ -104,7 +179,7 @@ while IFS=$'\t' read -r ITEM_ID HANDLER APP_PATH PRE_VERSION; do
             fi
             ;;
         *)
-            # Tier-A handlers — success iff bytes were swapped
+            # Tier-A handlers -- success iff bytes were swapped
             if [ -n "$POST" ]; then
                 json_add_item "$ITEM_ID" "$POST" "" "success" "web" "$HANDLER"
                 COUNT_OK=$((COUNT_OK + 1))
@@ -119,18 +194,18 @@ done < <(python3 - "$APPLY_SIDECAR" <<'PY'
 import json, sys
 with open(sys.argv[1]) as fh:
     apply = json.load(fh)
+def f(v):
+    return v if v else "-"
 for item in apply.get("items", []):
     # Re-verify both 'success' (Tier-A) and 'triggered' (Tier-B) items.
     if item.get("status") not in ("success", "triggered"):
         continue
     src = item.get("source") or {}
-    handler = src.get("feed") or ""
-    item_id = item.get("id") or ""
-    pre_version = item.get("current_version") or ""
-    # We don't have app_path in the sidecar; reconstruct via /Applications/<DisplayName>.app
-    name = item.get("name") or ""
-    app_path = f"/Applications/{name}.app" if name else ""
-    print(f"{item_id}\t{handler}\t{app_path}\t{pre_version}")
+    print("\t".join([
+        f(item.get("id")), f(src.get("feed")),
+        f(item.get("current_version")), f(item.get("target_version")),
+        item.get("status") or "-",
+    ]))
 PY
 )
 
