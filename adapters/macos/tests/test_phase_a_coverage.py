@@ -41,7 +41,7 @@ def test_registry_loads(registry: WebRegistry) -> None:
         ("antigravity-ide", "com.google.antigravity-ide", "squirrel"),
         ("appcleaner", "net.freemacsoft.AppCleaner", "sparkle"),
         ("protonvpn", "ch.protonvpn.mac", "sparkle"),
-        ("protondrive", "ch.protonmail.drive", "sparkle"),
+        ("protondrive", "ch.protonmail.drive", "squirrel"),
         ("ipmiview", "com.supermicro.IPMIView", "builtin"),
     ],
 )

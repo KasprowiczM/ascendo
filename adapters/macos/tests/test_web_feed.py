@@ -161,3 +161,22 @@ def test_cli_cmp_three_way_table():
     for cand, inst, want in table:
         r = _cli("cmp", cand, inst)
         assert r.stdout.strip() == want, (cand, inst, r.stdout, r.stderr)
+
+
+def test_cli_vendor_field_and_cfg_field():
+    cfg = json.dumps({"slug": "codex", "bundle_id": "com.openai.codex", "app_path": None,
+                      "vendor_feed": {**CLAUDE_FEED, "direct_first": True}})
+    for name, want in (("kind", "json"), ("artifact", "zip"), ("direct_first", "true")):
+        r = _cli("vendor-field", name, env={"ASCENDO_WEB_CFG": cfg})
+        assert (r.returncode, r.stdout.strip()) == (0, want), (name, r.stdout, r.stderr)
+    off = json.dumps({"vendor_feed": {**CLAUDE_FEED, "direct_first": False}})
+    assert _cli("vendor-field", "direct_first", env={"ASCENDO_WEB_CFG": off}).stdout.strip() == "false"
+    for bad in (json.dumps({"slug": "x", "vendor_feed": None}), json.dumps({"slug": "x"}), "not json"):
+        r = _cli("vendor-field", "kind", env={"ASCENDO_WEB_CFG": bad})
+        assert (r.returncode, r.stdout) == (1, "")
+    assert _cli("vendor-field", "nosuchfield", env={"ASCENDO_WEB_CFG": cfg}).returncode == 1
+    r = _cli("cfg-field", "bundle_id", env={"ASCENDO_WEB_CFG": cfg})
+    assert (r.returncode, r.stdout.strip()) == (0, "com.openai.codex")
+    assert _cli("cfg-field", "app_path", env={"ASCENDO_WEB_CFG": cfg}).stdout == "\n"     # null => empty
+    assert _cli("cfg-field", "vendor_feed", env={"ASCENDO_WEB_CFG": cfg}).stdout == "\n"  # not a scalar
+    assert _cli("cfg-field", "missing", env={"ASCENDO_WEB_CFG": cfg}).stdout == "\n"

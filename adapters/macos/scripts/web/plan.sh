@@ -6,7 +6,8 @@
 #   - up_to_date items dropped
 #   - sparkle/github_dmg/squirrel + running -> skipped, deferred_app_in_use
 #   - builtin -> skipped, manual_required (always)
-#   - keystone/msupdate/docker non-defer -> planned regardless of running
+#   - keystone/msupdate -> planned regardless of running
+#   - feed-backed squirrel/docker -> planned only when the vendor feed is newer
 # =============================================================================
 set -o pipefail
 
@@ -182,6 +183,22 @@ while [ "$i" -lt "$WORK_IDX" ]; do
         continue
     fi
 
+    # Feed-backed squirrel / docker ([app.vendor_feed]): the vendor feed is the
+    # truth. Plan only when it is strictly newer; equal / older (feed_stale) /
+    # unknown / unreachable are reported by check and apply, never planned.
+    # Planned regardless of the app running: deferral is an apply-phase outcome.
+    case "$HANDLER" in
+        squirrel|docker)
+            if _web_feed_backed "$HANDLER" "$CFG"; then
+                [ -n "$LATEST" ] || continue
+                [ "$(_web_version_cmp "$LATEST" "$INSTALLED")" = "newer" ] || continue
+                json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "planned" "web" "$HANDLER"
+                COUNT_PLANNED=$((COUNT_PLANNED + 1))
+                continue
+            fi
+            ;;
+    esac
+
     IS_RUNNING=0
     _web_is_running "$BUNDLE_ID" && IS_RUNNING=1
 
@@ -210,7 +227,7 @@ while [ "$i" -lt "$WORK_IDX" ]; do
             if [ -z "$LATEST" ]; then
                 continue   # probe broken; surfaced in check, not plan
             fi
-            if _web_feed_backed "$HANDLER"; then
+            if _web_feed_backed "$HANDLER" "$CFG"; then
                 # Three-way: plan only when the feed is strictly newer.
                 # equal = up to date; older = feed_stale; unknown = cannot
                 # tell -- the last two are reported by check/apply, never
@@ -243,16 +260,12 @@ while [ "$i" -lt "$WORK_IDX" ]; do
             fi
             ;;
         docker)
-            if ! /usr/bin/command -v docker >/dev/null 2>&1; then
-                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
-                json_add_message "info" "${SLUG}: docker CLI not available on this host"
-                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
-            elif [ -n "$LATEST" ] && ! _version_gt "$LATEST" "$INSTALLED"; then
-                continue
-            else
-                json_add_item "web:${SLUG}" "$INSTALLED" "${LATEST:-}" "planned" "web" "$HANDLER"
-                COUNT_PLANNED=$((COUNT_PLANNED + 1))
-            fi
+            # Reached only without an [app.vendor_feed] (feed-backed docker is
+            # classified above). The docker CLI plugin version is NOT the app
+            # version, so there is nothing trustworthy to plan from.
+            json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+            json_add_message "info" "${SLUG}: no vendor feed configured for docker (not treated as up to date)"
+            COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
             ;;
     esac
 done

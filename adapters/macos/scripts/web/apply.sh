@@ -9,6 +9,12 @@
 #     deferred_app_state_unknown (both skipped, never quit).
 #   - Handler rc 4 (hardened installer: app became active / state unknown)
 #     => skipped + ASCENDO-ACTION-REQUIRED reason=needs_restart (soft).
+#   - Feed-backed squirrel / docker ([app.vendor_feed]) decide for themselves
+#     (vendor-truth algorithm) and report through ASCENDO_WEB_OUTCOME; see
+#     lib/ascendo_web.sh and lib/handlers/squirrel.sh. rc 3 stays `failed`.
+#   - Installer rc 1 (download / checksum / identity refusal) of sparkle /
+#     github_dmg / release_feed is SOFT: skipped + code error_soft, or one hidden
+#     launch (idle app, not safe mode) => triggered. Never `failed`.
 #   - Otherwise dispatch to <handler>_apply; capture stderr (last 12 lines)
 #     into sidecar messages on failure.
 #   - DRY_RUN emits status=planned without invoking handlers.
@@ -47,9 +53,12 @@ fi
 # ASCENDO_WEB_ALLOW_GUI=1. Effect:
 #   - Silent in-place handlers (keystone / sparkle / github_dmg /
 #     msupdate / docker) still update without a window.
-#   - Squirrel matches macOS_updates silent_launch: `open -gjF` even
-#     in safe mode (hidden, no Dock bounce). That IS the update channel
-#     for ChatGPT / Claude / Warp / Cursor / Proton Mail / …
+#   - FEEDLESS squirrel apps keep macOS_updates silent_launch: `open -gjF`
+#     even in safe mode (hidden, no Dock bounce) -- their only channel.
+#     Feed-backed squirrel apps (Claude / Codex / Cursor / Warp / Proton /
+#     OpenCode / Antigravity / RDM, [app.vendor_feed]) NEVER launch in safe
+#     mode: an idle app is replaced from the verified vendor artifact instead,
+#     a verify-only app (Warp) reports `behind`.
 #   - builtin / omaha / release_feed-without-download still return 95
 #     and land on the aggregated "needs manual update" list.
 # Override with ASCENDO_WEB_ALLOW_GUI=1 to restore foreground `open -a`.
@@ -229,13 +238,15 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
     CAND=$(_web_read_probe_result "$RESULTS_DIR" "$i")
     i=$((i + 1))
 
-    # Feed-backed handlers (sparkle): three-way relation of the vendor feed to
-    # the installed version (Spec E). Only `newer` proceeds; `equal` is
+    # Feed-backed handlers (sparkle; squirrel / docker with an [app.vendor_feed]):
+    # three-way relation of the vendor feed to the installed version (Spec E). Only `newer` proceeds; `equal` is
     # up_to_date; `older` is a stale feed (skipped, unverified, no target);
     # `unknown` is skipped -- never up_to_date. An empty probe falls through
     # to the generic probe_unavailable handling below.
+    FEED_BACKED=0
+    _web_feed_backed "$HANDLER" "$CFG" && FEED_BACKED=1
     FEED_REL=""
-    if _web_feed_backed "$HANDLER" && [ -n "$CAND" ] && [ "$CAND" != "__GH_RATE_LIMITED__" ]; then
+    if [ "$FEED_BACKED" = 1 ] && [ -n "$CAND" ] && [ "$CAND" != "__GH_RATE_LIMITED__" ]; then
         FEED_REL=$(_web_version_cmp "$CAND" "$INSTALLED")
         case "$FEED_REL" in
             newer) ;;
@@ -257,6 +268,14 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
                 continue
                 ;;
         esac
+    fi
+
+    # Feed-backed squirrel with no feed answer: skipped, never a blind launch.
+    if [ "$HANDLER" = "squirrel" ] && [ "$FEED_BACKED" = 1 ] && [ -z "$CAND" ]; then
+        json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+        json_add_message "info" "${SLUG}: probe_unavailable (vendor feed unreachable or unparseable; not treated as up to date)" "probe_unavailable"
+        COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+        continue
     fi
 
     case "$HANDLER" in
@@ -305,7 +324,13 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
     # safely replace its bundle. Sparkle/Squirrel/release_feed/github_dmg
     # all do bundle-swap copies; running app would either crash or roll
     # back the swap on next launch. Defer with a clear actionable reason.
-    case "$HANDLER" in
+    # Feed-backed squirrel / docker probe the running state themselves, BEFORE
+    # any launch or install (needs_restart); the generic gate is for the rest.
+    _defer_gate="$HANDLER"
+    if [ "$HANDLER" = "squirrel" ] && [ "$FEED_BACKED" = 1 ]; then
+        _defer_gate="vendor_truth"
+    fi
+    case "$_defer_gate" in
         sparkle|github_dmg|squirrel|release_feed)
             # Fail closed: only an explicit `false` proceeds. `unknown`
             # (lsappinfo missing/failing/empty) is treated like running.
@@ -330,6 +355,7 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
     # The installer replaces THIS bundle (resolved by bundle id above, which
     # can differ from the registry's app_path guess).
     export ASCENDO_WEB_INSTALLED_APP_PATH="$APP_PATH"
+    _web_outcome_reset
 
     case "$HANDLER" in
         sparkle)      sparkle_apply "$SLUG" "$CFG" 2> "$err_log" ;;
@@ -344,6 +370,81 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
         *)            false ;;
     esac
     rc=$?
+
+    # Feed-backed squirrel / docker: the handler ran the vendor-truth algorithm
+    # and left its verdict in ASCENDO_WEB_OUTCOME (rc 3 = install_error falls
+    # through to the generic failed path below).
+    if [ "$FEED_BACKED" = 1 ] && { [ "$HANDLER" = "squirrel" ] || [ "$HANDLER" = "docker" ]; } \
+           && [ -n "$ASCENDO_WEB_OUTCOME" ] && [ "$ASCENDO_WEB_OUTCOME" != "install_error" ]; then
+        _o_msg="$ASCENDO_WEB_OUTCOME_MSG"
+        case "$ASCENDO_WEB_OUTCOME" in
+            updated)
+                # success requires a post-action measurement.
+                _post_installed=$(_web_installed_version "$APP_PATH")
+                _o_rel=$(_web_version_cmp "$CAND" "$_post_installed")
+                if [ "$_o_rel" = "equal" ] || [ "$_o_rel" = "older" ]; then
+                    json_add_item "web:${SLUG}" "$_post_installed" "$CAND" "success" "web" "$HANDLER"
+                    json_add_message "info" "${SLUG}: ${_o_msg}"
+                    COUNT_SUCCESS=$((COUNT_SUCCESS + 1))
+                else
+                    json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "failed" "web" "$HANDLER"
+                    json_add_message "error" "${SLUG}: reported updated but the on-disk version is ${_post_installed:-unreadable}, not the vendor's ${CAND}"
+                    COUNT_FAILED=$((COUNT_FAILED + 1))
+                fi
+                ;;
+            triggered)
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "triggered" "web" "$HANDLER"
+                json_add_message "warn" "${SLUG}: ${_o_msg}" "error_soft"
+                COUNT_TRIGGERED=$((COUNT_TRIGGERED + 1))
+                ;;
+            current)
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "up_to_date" "web" "$HANDLER"
+                COUNT_UPTODATE=$((COUNT_UPTODATE + 1))
+                ;;
+            needs_restart)
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: skipped -- ${_o_msg} | $(ascendo_action_required_token needs_restart "$INSTALLED" "$CAND")" "needs_restart"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
+            rollout_hold)
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: ${_o_msg}" "rollout_hold"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
+            behind)
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: behind -- ${_o_msg} | $(ascendo_action_required_token behind "$INSTALLED" "$CAND")" "behind"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
+            error_soft)
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
+                json_add_message "warn" "${SLUG}: ${_o_msg} | $(ascendo_action_required_token download_error "$INSTALLED" "$CAND")" "error_soft"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
+            launch_failed)
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
+                json_add_message "warn" "${SLUG}: error_soft: ${_o_msg} | $(ascendo_action_required_token launch_failed "$INSTALLED" "$CAND")" "error_soft"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
+            feed_stale)
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "warn" "${_o_msg}" "feed_stale"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
+            unknown_version)
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "warn" "${_o_msg}" "unknown_version"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
+            *)
+                # probe_unavailable (and anything unforeseen): honest skip.
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "warn" "${SLUG}: ${ASCENDO_WEB_OUTCOME} (${_o_msg})" "$ASCENDO_WEB_OUTCOME"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
+        esac
+        continue
+    fi
 
     # Sesja 73 sentinel: exit 95 from a handler means "intentionally
     # skipped in safe-mode" (would have called ``open -a`` to surface
@@ -387,6 +488,39 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
         esac
     fi
 
+    # rc 1 from the hardened installer (download / checksum / identity refusal)
+    # is SOFT for sparkle / github_dmg / release_feed (never `failed`): one hidden
+    # launch so the app's own updater can run when that is allowed (idle app, not
+    # safe mode) => triggered (unverified); otherwise skipped with the reason.
+    # An app whose update is a CLI (apply_cli_argv) keeps its exit code as is.
+    if [ $rc -eq 1 ]; then
+        case "$HANDLER" in
+            sparkle|github_dmg|release_feed)
+                case "$CFG" in
+                    *'"apply_cli_argv":['*) ;;
+                    *)
+                        _soft_tail=""
+                        if [ -s "$err_log" ]; then
+                            _soft_tail=$(/usr/bin/tail -n 2 "$err_log" | /usr/bin/awk 'NF{print}' | /usr/bin/tr '\n' ' ' | /usr/bin/head -c 300)
+                        fi
+                        _soft_lrc=0
+                        _web_fallback_launch "$APP_PATH" "$BUNDLE_ID" || _soft_lrc=$?
+                        if [ "$_soft_lrc" -eq 0 ]; then
+                            json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "triggered" "web" "$HANDLER"
+                            json_add_message "warn" "${SLUG}: error_soft: the vendor download/verification failed (${_soft_tail:-no detail}); launched the app hidden so its own updater can run (unverified until the next check)" "error_soft"
+                            COUNT_TRIGGERED=$((COUNT_TRIGGERED + 1))
+                        else
+                            json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
+                            json_add_message "warn" "${SLUG}: error_soft: the vendor download/verification failed (${_soft_tail:-no detail}); ${_WEB_LAUNCH_NOTE} | $(ascendo_action_required_token download_error "$INSTALLED" "$CAND")" "error_soft"
+                            COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                        fi
+                        continue
+                        ;;
+                esac
+                ;;
+        esac
+    fi
+
     if [ $rc -eq 0 ]; then
         case "$HANDLER" in
             keystone|squirrel|builtin|omaha)
@@ -426,6 +560,7 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
         if [ -s "$err_log" ]; then
             tail_msg=$(/usr/bin/tail -n 12 "$err_log" | /usr/bin/awk 'NF{print}' | /usr/bin/head -c 1500)
         fi
+        tail_msg="${ASCENDO_WEB_OUTCOME_MSG:+${ASCENDO_WEB_OUTCOME_MSG} | }${tail_msg}"
         json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "failed" "web" "$HANDLER"
         json_add_message "error" "${SLUG}: handler exit ${rc}: ${tail_msg}"
         COUNT_FAILED=$((COUNT_FAILED + 1))

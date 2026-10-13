@@ -160,6 +160,7 @@ url = "https://persistent.oaistatic.com/codex-app-prod/appcast.xml"
 arg = "-"
 artifact = "zip"
 allowed_host = "persistent.oaistatic.com"
+direct_first = true
 
 # opencode moved to M5.7.1 vendor-probe section as github_dmg (disabled
 # pending repo verification — sst/opencode vs anomalyco/opencode).
@@ -186,8 +187,15 @@ arch = "universal"
 slug = "rdm"
 bundle_id = "com.devolutions.remotedesktopmanager"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Remote Desktop Manager"
-handler = "sparkle"
-notes = "macOS_updates channel: sparkle_appcast (SUFeedURL from the installed app). Appcast URL is read at apply/check time from Info.plist when unset here."
+handler = "squirrel"
+notes = "macOS_updates channel: silent_launch (open -gjF) with the Devolutions productinfo feed as vendor truth (the SUFeedURL appcast is stale / lacks shortVersionString for the newest items). Verified DMG from cdn.devolutions.net; never installed while the app runs."
+
+[app.vendor_feed]
+kind = "kv"
+url = "https://devolutions.net/productinfo.htm"
+arg = "RDMMacbin"
+artifact = "dmg"
+allowed_host = "cdn.devolutions.net"
 
 # ───────────────────────── Productivity / Multimedia ─────────────────────────
 
@@ -265,7 +273,7 @@ slug = "docker"
 bundle_id = "com.docker.docker"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Docker Desktop"
 handler = "docker"
-notes = "macOS_updates channel: docker desktop update --quiet (docker_cli). Not a second Sparkle DMG path."
+notes = "Vendor appcast is the truth (never `docker desktop version`, which is the CLI plugin version). An idle Docker is updated from the verified DMG; a running Docker (or a live engine) is never touched - an update restarts every container (needs_restart)."
 
 [app.vendor_feed]
 kind = "sparkle"
@@ -422,6 +430,7 @@ url = "https://proton.me/download/mail/macos/version.json"
 arg = "proton_releases"
 artifact = "dmg"
 allowed_host = "proton.me"
+direct_first = true
 
 # ─── Apps that still need mitmproxy on launch ──────────────────────────────
 # ChatGPT (com.openai.chat) — RESOLVED M5.7.3: Sparkle SUFeedURL is set
@@ -579,8 +588,16 @@ notes = "Real SUFeedURL extracted from installed Info.plist (M5.7.6). The legacy
 slug = "protondrive"
 bundle_id = "ch.protonmail.drive"  # verified on Mac.r12.home (2026-05-24)
 display_name = "Proton Drive"
-handler = "sparkle"
-notes = "macOS_updates channel: sparkle_appcast (SUFeedURL from the installed Proton Drive.app). Not a second proton.me JSON DMG install."
+handler = "squirrel"
+notes = "macOS_updates channel: silent_launch (open -gjF) with the proton.me release JSON as vendor truth; verified DMG direct-first when the release is not in a staged rollout."
+
+[app.vendor_feed]
+kind = "json"
+url = "https://proton.me/download/drive/macos/version.json"
+arg = "proton_releases"
+artifact = "dmg"
+allowed_host = "proton.me"
+direct_first = true
 
 # ─── IPMIView (Supermicro) — manual updates only ───────────────────────────
 [[app]]

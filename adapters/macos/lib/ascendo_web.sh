@@ -25,6 +25,11 @@
 #   _web_extract_sparkle_enclosure_url           (reads stdin)
 #   _web_version_cmp <candidate> <installed>     (newer|equal|older|unknown)
 #   _web_vendor_lookup <slug> <cfg_json>         (7-field vendor line)
+#   _web_vendor_check <slug> <cfg_json>          (feed version = the probe candidate)
+#   _web_cfg_has_vendor_feed / _web_cfg_vendor_field / _web_feed_backed
+#   _web_vendor_direct_enabled / _web_safe_mode / _web_stage_wait / _web_sleep
+#   _web_open_hidden / _web_vendor_direct_step / _web_fallback_launch
+#   _web_outcome_reset / _web_outcome <code> [message]   (handler -> apply.sh)
 #   _web_fetch_feed <https-url>
 #   _web_download <url> <dest>
 #   _web_verify_signature <app_path>
@@ -340,7 +345,8 @@ case "$handler" in
     docker)       latest=$(docker_check "$slug" "$cfg" 2>/dev/null || true) ;;
     release_feed) latest=$(release_feed_check "$slug" "$cfg" 2>/dev/null || true) ;;
     omaha)        latest=$(omaha_check "$slug" "$cfg" 2>/dev/null || true) ;;
-    squirrel|builtin) latest="" ;;
+    squirrel)     latest=$(squirrel_check "$slug" "$cfg" 2>/dev/null || true) ;;
+    builtin)      latest="" ;;
 esac
 printf '%s' "$latest" | tr -d '[:space:]' > "$RESULTS_DIR/${idx}.txt"
 PROBE_EOF
@@ -414,14 +420,37 @@ _web_version_cmp() {
     _web_feed_py cmp "$1" "$2" 2>/dev/null || printf 'unknown\n'
 }
 
-# _web_feed_backed <handler> <cfg_json>
+# _web_cfg_has_vendor_feed <cfg_json>
+# Exit 0 iff the app config carries an [app.vendor_feed] table.
+_web_cfg_has_vendor_feed() {
+    ASCENDO_WEB_CFG="$1" _web_feed_py vendor-cfg >/dev/null 2>&1
+}
+
+# _web_cfg_get <cfg_json> <key>
+# Echoes one top-level scalar of the app config (empty when absent / null).
+_web_cfg_get() {
+    ASCENDO_WEB_CFG="$1" _web_feed_py cfg-field "$2" 2>/dev/null
+}
+
+# _web_cfg_vendor_field <cfg_json> <field>
+# Echoes one [app.vendor_feed] field (booleans as true|false); rc 1 when the
+# app has no vendor_feed table or no such field.
+_web_cfg_vendor_field() {
+    ASCENDO_WEB_CFG="$1" _web_feed_py vendor-field "$2" 2>/dev/null
+}
+
+# _web_feed_backed <handler> [cfg_json]
 # Exit 0 when the handler's candidate comes from a vendor feed whose
 # relation to the installed version must be classified three-way
 # (newer/equal/older/unknown) instead of "skip vs proceed".
-# Today: sparkle only. squirrel/docker with [app.vendor_feed] join this in
-# the vendor-truth task once their *_check returns the feed version.
+# sparkle always; squirrel / docker only when the app config carries an
+# [app.vendor_feed] table (a feedless squirrel app stays a blind trigger).
 _web_feed_backed() {
-    [ "$1" = "sparkle" ]
+    case "$1" in
+        sparkle) return 0 ;;
+        squirrel|docker) [ -n "${2:-}" ] && _web_cfg_has_vendor_feed "$2" ;;
+        *) return 1 ;;
+    esac
 }
 
 # _web_feed_stale_message <slug> <installed> <vendor>
@@ -476,6 +505,155 @@ _web_vendor_lookup() {
     fi
     printf '%s' "$body" \
         | ASCENDO_WEB_VENDOR_FEED_JSON="$feed_json" _web_feed_py vendor --os-version "$(_web_host_os_version)"
+}
+
+# ============================================================
+# Vendor-truth building blocks (squirrel / docker handlers, Spec F + G)
+# ============================================================
+#
+# Handler -> apply.sh protocol. The feed-backed handlers (squirrel_apply,
+# docker_apply with an [app.vendor_feed]) run in the SAME shell as apply.sh, so
+# they report WHAT happened through two globals and WHETHER it is a failure
+# through the return code:
+#
+#   ASCENDO_WEB_OUTCOME      updated | triggered | current | feed_stale |
+#                            unknown_version | needs_restart | rollout_hold |
+#                            behind | error_soft | launch_failed |
+#                            install_error | probe_unavailable
+#   ASCENDO_WEB_OUTCOME_MSG  one human line (no secrets, no newlines)
+#   rc  0 updated/triggered/current/feed_stale/unknown_version
+#       4 needs_restart (app running / state unknown / installer deferred)
+#       95 not applied but not a failure (behind, rollout_hold, error_soft,
+#          launch_failed) -- apply.sh reports `skipped`
+#       3 hard install failure (install_error) -- apply.sh reports `failed`
+#       25 probe_unavailable (vendor feed unreachable / not configured)
+# A launch is NEVER followed by a quit: Ascendo does not track launches, so it
+# cannot know it owns the process (Global Constraint 4).
+
+ASCENDO_WEB_OUTCOME=""
+ASCENDO_WEB_OUTCOME_MSG=""
+
+_web_outcome_reset() {
+    ASCENDO_WEB_OUTCOME=""
+    ASCENDO_WEB_OUTCOME_MSG=""
+}
+
+# _web_outcome <code> [message]
+_web_outcome() {
+    ASCENDO_WEB_OUTCOME="$1"
+    ASCENDO_WEB_OUTCOME_MSG="${2:-}"
+}
+
+# _web_vendor_check <slug> <cfg_json>
+# The probe candidate of a feed-backed handler: the vendor feed's (normalised)
+# version. Empty (rc 0) when the app has no vendor_feed table or the feed is
+# unreachable / unparseable -- the phase scripts then report probe_unavailable.
+_web_vendor_check() {
+    local slug="$1" cfg="$2" line
+    _web_cfg_has_vendor_feed "$cfg" || return 0
+    line=$(_web_vendor_lookup "$slug" "$cfg" 2>/dev/null) || return 0
+    printf '%s\n' "${line%%|*}"
+}
+
+# ASCENDO_WEB_VENDOR_DIRECT=0 disables the vendor-direct install step only.
+_web_vendor_direct_enabled() {
+    [ "${ASCENDO_WEB_VENDOR_DIRECT:-1}" != "0" ]
+}
+
+# ASCENDO_SAFE_MODE=true never launches an app GUI (Global Constraint 4).
+_web_safe_mode() {
+    [ "${ASCENDO_SAFE_MODE:-false}" = "true" ]
+}
+
+# _web_stage_wait
+# Native-updater wait in seconds: ASCENDO_WEB_STAGE_WAIT, default 90, clamped to
+# 0-600; anything that is not a plain non-negative integer -> 90.
+_web_stage_wait() {
+    local w="${ASCENDO_WEB_STAGE_WAIT:-90}"
+    case "$w" in
+        ''|*[!0-9]*) printf '90'; return 0 ;;
+    esac
+    w="${w#"${w%%[!0]*}"}"
+    [ -n "$w" ] || w=0
+    if [ "${#w}" -gt 4 ]; then
+        printf '600'
+        return 0
+    fi
+    [ "$w" -gt 600 ] && w=600
+    printf '%s' "$w"
+}
+
+# _web_sleep <seconds>  -- ASCENDO_WEB_SLEEP_BIN is the test seam (no real waits).
+_web_sleep() {
+    "${ASCENDO_WEB_SLEEP_BIN:-/bin/sleep}" "$1"
+}
+
+# _web_open_hidden <app_path>
+# Hidden launch (`open -gjF`, no Dock bounce, no focus). Deliberately no
+# foreground `open -a` fallback: a vendor-truth launch must never raise a window.
+_web_open_hidden() {
+    local app="$1"
+    /usr/bin/env open -gjF "$app" 2>/dev/null \
+        || /usr/bin/env open -gj "$app" 2>/dev/null
+}
+
+# _web_vendor_direct_step <slug> <app_path> <installed> <R> <URL> <ART> <CK> <CS> <HOST>
+# Verified vendor-direct install of feed release R (Spec B installer). Sets the
+# outcome and returns the handler rc for every installer result EXCEPT the soft
+# refusal / download failure (rc 1), which returns 1 with NO outcome so the
+# caller can choose its own fallback.
+_web_vendor_direct_step() {
+    local slug="$1" app="$2" inst="$3" R="$4" url="$5" art="$6" ck="$7" cs="$8" host="$9"
+    local vrc=0 post rel
+    _web_vendor_install "$slug" "$url" "$art" "$ck" "$cs" "$host" "$R" "$app" || vrc=$?
+    case "$vrc" in
+        0)
+            post=$(_web_installed_version "$app")
+            rel=$(_web_version_cmp "$R" "$post")
+            case "$rel" in
+                equal|older)
+                    _web_outcome updated "installed ${post} from the verified vendor artifact"
+                    return 0 ;;
+                *)
+                    _web_outcome behind "installed ${inst} < vendor ${R}; after the vendor install the app reports ${post:-no version}"
+                    return 95 ;;
+            esac
+            ;;
+        4)
+            _web_outcome needs_restart "update ${inst} -> ${R} pending - quit the app (it is running or its state could not be determined) and re-run apply"
+            return 4 ;;
+        3)
+            _web_outcome install_error "vendor install of ${R} failed (swap/identity); the previous app was kept or restored"
+            return 3 ;;
+        *)
+            return 1 ;;
+    esac
+}
+
+# _web_fallback_launch <app_path> <bundle_id>
+# ONE hidden launch as the native-updater recovery path after a soft
+# vendor-direct failure. Never in safe mode, never unless the running probe
+# answers an explicit `false`, never followed by a wait or a quit.
+# rc 0 launched; 1 not allowed; 2 `open` failed. A short reason is left in
+# _WEB_LAUNCH_NOTE.
+_WEB_LAUNCH_NOTE=""
+_web_fallback_launch() {
+    local app="$1" bid="$2" state
+    _WEB_LAUNCH_NOTE=""
+    if _web_safe_mode; then
+        _WEB_LAUNCH_NOTE="native updater not launched (safe mode; set ASCENDO_WEB_ALLOW_GUI=1 to allow a hidden launch)"
+        return 1
+    fi
+    state="$(ascendo_app_running_state "$bid")"
+    if [ "$state" != "false" ]; then
+        _WEB_LAUNCH_NOTE="native updater not launched (the app is running or its state could not be determined)"
+        return 1
+    fi
+    if ! _web_open_hidden "$app"; then
+        _WEB_LAUNCH_NOTE="hidden launch failed"
+        return 2
+    fi
+    return 0
 }
 
 # ============================================================

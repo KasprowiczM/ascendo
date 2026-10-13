@@ -214,6 +214,7 @@ while [ "$i" -lt "$WORK_IDX" ]; do
     INSTALLED=$(cat "$RESULTS_DIR/${i}.installed" 2>/dev/null)
     LATEST=$(_web_read_probe_result "$RESULTS_DIR" "$i")
     LATEST=$(printf '%s' "$LATEST" | tr -d '[:space:]')
+    CFG=$(cat "$RESULTS_DIR/${i}.cfg.json" 2>/dev/null)
     # Increment i FIRST so any `continue` below doesn't infinite-loop.
     i=$((i + 1))
 
@@ -227,6 +228,18 @@ while [ "$i" -lt "$WORK_IDX" ]; do
     fi
 
     if [ -z "$LATEST" ]; then
+        # Feed-backed squirrel / docker: an empty probe means the vendor feed
+        # was unreachable or unparseable -- never "up to date".
+        case "$HANDLER" in
+            squirrel|docker)
+                if _web_feed_backed "$HANDLER" "$CFG"; then
+                    json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                    json_add_message "warn" "${SLUG}: probe_unavailable (vendor feed unreachable or unparseable; not treated as up to date)" "probe_unavailable"
+                    COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                    continue
+                fi
+                ;;
+        esac
         case "$HANDLER" in
             squirrel|keystone)
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
@@ -252,13 +265,14 @@ while [ "$i" -lt "$WORK_IDX" ]; do
         continue
     fi
 
-    # Feed-backed handlers (sparkle) classify the candidate three-way against
-    # the installed version (Spec E): newer -> planned, equal -> up_to_date,
-    # older -> feed_stale (skipped, NO target: a stale feed is unverified, not
-    # "current" and not a downgrade offer), unknown -> skipped (never
-    # up_to_date). github_dmg/release_feed keep the two-way
-    # _should_skip_upgrade below (brew/Spotify lag guard is intentional).
-    if _web_feed_backed "$HANDLER"; then
+    # Feed-backed handlers (sparkle; squirrel / docker with an [app.vendor_feed])
+    # classify the candidate three-way against the installed version (Spec E):
+    # newer -> planned, equal -> up_to_date, older -> feed_stale (skipped, NO
+    # target: a stale feed is unverified, not "current" and not a downgrade
+    # offer), unknown -> skipped (never up_to_date). github_dmg/release_feed keep
+    # the two-way _should_skip_upgrade below (brew/Spotify lag guard is
+    # intentional).
+    if _web_feed_backed "$HANDLER" "$CFG"; then
         REL=$(_web_version_cmp "$LATEST" "$INSTALLED")
         case "$REL" in
             newer)

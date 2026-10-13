@@ -71,25 +71,26 @@ def test_msupdate_apply_falls_back_to_manual_gui(tmp_path: Path) -> None:
     assert not log.exists() or "--install" not in log.read_text()
 
 
-def test_docker_check_parses_version(tmp_path: Path) -> None:
+def test_docker_check_never_reports_the_cli_plugin_version(tmp_path: Path) -> None:
+    """P0 (Task 11): `docker desktop version` is the CLI plugin version (v0.4.x), not
+    Docker.app's. Without a vendor feed the probe is empty; with one it is the feed's
+    (covered in test_web_vendor_truth_handlers.py)."""
     fake = tmp_path / "docker"
     fake.write_text(
         '#!/bin/sh\n'
         'if [ "$1" = "desktop" ] && [ "$2" = "version" ]; then\n'
-        '  echo "Docker Desktop 4.45.0"\n'
-        'elif [ "$1" = "desktop" ] && [ "$2" = "update" ]; then\n'
-        '  echo "Update applied"\n'
+        '  echo "Docker Desktop CLI plugin version: v0.4.4"\n'
         'fi\nexit 0\n',
     )
     fake.chmod(0o755)
     cfg = json.dumps({"slug": "docker"})
     snippet = f"docker_check 'docker' {json.dumps(cfg)!r}"
     r = _run(snippet, fake_path=tmp_path)
-    # Returns version or empty; we just assert no crash + non-error
     assert r.returncode == 0
+    assert r.stdout.strip() == ""
 
 
-def test_docker_apply_calls_docker_desktop_update(tmp_path: Path) -> None:
+def test_docker_apply_never_runs_a_blind_docker_desktop_update(tmp_path: Path) -> None:
     log = tmp_path / "args.log"
     fake = tmp_path / "docker"
     fake.write_text(f"#!/bin/sh\necho \"$@\" > {log}\nexit 0\n")
@@ -97,9 +98,8 @@ def test_docker_apply_calls_docker_desktop_update(tmp_path: Path) -> None:
     cfg = json.dumps({"slug": "docker"})
     snippet = f"docker_apply 'docker' {json.dumps(cfg)!r}"
     r = _run(snippet, fake_path=tmp_path)
-    assert r.returncode == 0
-    args = log.read_text().strip()
-    assert "desktop" in args and "update" in args
+    assert r.returncode == 25                      # no vendor feed => probe_unavailable
+    assert not log.exists(), "docker CLI must not be invoked without a vendor feed"
 
 
 def test_msupdate_spinner_noise_is_not_pending(tmp_path: Path) -> None:

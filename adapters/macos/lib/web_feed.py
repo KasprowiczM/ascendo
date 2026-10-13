@@ -19,10 +19,14 @@ CLI (used by ``lib/ascendo_web.sh``; all bounded, stdlib only)::
     web_feed.py sparkle --field version|url [--no-arch-filter] [--os-version V]   # XML on stdin
     web_feed.py vendor [--os-version V]   # body on stdin, cfg JSON in $ASCENDO_WEB_VENDOR_FEED_JSON
     web_feed.py vendor-cfg                # cfg JSON in $ASCENDO_WEB_CFG -> vendor_feed url + JSON
+    web_feed.py vendor-field NAME         # one [app.vendor_feed] field of $ASCENDO_WEB_CFG (bools: true|false)
+    web_feed.py cfg-field NAME            # one top-level scalar of $ASCENDO_WEB_CFG (empty when absent/null)
     web_feed.py cmp CANDIDATE INSTALLED
 
 Exit codes: sparkle 0 always (empty output = no candidate); vendor 0 = line
-printed, 1 = feed unreachable/unparseable, 2 = bad config; cmp 0.
+printed, 1 = feed unreachable/unparseable, 2 = bad config; vendor-cfg /
+vendor-field 0 = printed, 1 = no [app.vendor_feed] table (or no such field);
+cmp 0.
 """
 from __future__ import annotations
 
@@ -182,6 +186,40 @@ def _main_vendor_cfg(args: argparse.Namespace) -> int:
     return 0
 
 
+def _main_cfg_field(args: argparse.Namespace) -> int:
+    """Print one top-level scalar field of $ASCENDO_WEB_CFG (empty when absent / null)."""
+    raw = os.environ.get("ASCENDO_WEB_CFG", "")
+    try:
+        cfg = json.loads(raw)
+        if isinstance(cfg, str):
+            cfg = json.loads(cfg)
+    except Exception:
+        return 1
+    value = cfg.get(args.name) if isinstance(cfg, dict) else None
+    if value is None or isinstance(value, (dict, list)):
+        print("")
+    else:
+        print(("true" if value else "false") if isinstance(value, bool) else value)
+    return 0
+
+
+def _main_vendor_field(args: argparse.Namespace) -> int:
+    """Print one ``vendor_feed`` field of $ASCENDO_WEB_CFG (booleans as true/false)."""
+    raw = os.environ.get("ASCENDO_WEB_CFG", "")
+    try:
+        cfg = json.loads(raw)
+        if isinstance(cfg, str):
+            cfg = json.loads(cfg)
+    except Exception:
+        return 1
+    feed = cfg.get("vendor_feed") if isinstance(cfg, dict) else None
+    if not isinstance(feed, dict) or args.name not in feed:
+        return 1
+    value = feed[args.name]
+    print(("true" if value else "false") if isinstance(value, bool) else value)
+    return 0
+
+
 def _main_vendor(args: argparse.Namespace) -> int:
     raw = os.environ.get("ASCENDO_WEB_VENDOR_FEED_JSON", "")
     try:
@@ -215,6 +253,14 @@ def main(argv: list[str] | None = None) -> int:
 
     vc = sub.add_parser("vendor-cfg")
     vc.set_defaults(func=_main_vendor_cfg)
+
+    vf = sub.add_parser("vendor-field")
+    vf.add_argument("name")
+    vf.set_defaults(func=_main_vendor_field)
+
+    cf = sub.add_parser("cfg-field")
+    cf.add_argument("name")
+    cf.set_defaults(func=_main_cfg_field)
 
     cp = sub.add_parser("cmp")
     cp.add_argument("candidate")

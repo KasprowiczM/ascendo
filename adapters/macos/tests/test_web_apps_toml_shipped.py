@@ -107,8 +107,9 @@ def test_shipped_registry_brave_uses_sparkle_arm64_appcast() -> None:
 
 
 def test_shipped_registry_docker_uses_docker_cli_handler() -> None:
-    """Handler stays `docker` (Task 11 reworks it); it now carries the vendor
-    appcast as its version truth (the CLI-plugin version is not the app's)."""
+    """Handler stays `docker`; the vendor appcast is its version truth (the
+    CLI-plugin version is not the app's) and the idle app is installed from the
+    verified DMG (Task 11)."""
     reg = WebRegistry.load(SHIPPED, None)
     docker = reg.find("docker")
     assert docker is not None
@@ -215,8 +216,8 @@ _SISTER_WEB_HANDLERS = {
     "vscode": "release_feed",
     "ledger-live": "release_feed",
     "docker": "docker",
-    "rdm": "sparkle",
-    "protondrive": "sparkle",
+    "rdm": "squirrel",
+    "protondrive": "squirrel",
     "ms365": "msupdate",
     "ms-word": "msupdate",
     "ms-excel": "msupdate",
@@ -358,14 +359,16 @@ def test_rf_walk_json_files_dmg_picks_dmg_not_zip() -> None:
     assert res.stdout.strip() == "ledger-live-desktop-4.17.1-mac.dmg"
 
 
-def test_rdm_and_protondrive_sparkle_read_sufeedurl() -> None:
-    """Sister sparkle_appcast has no static feed URL in the registry."""
+def test_rdm_and_protondrive_are_squirrel_with_vendor_feed() -> None:
+    """Task 11: the sister channel is silent_launch with a vendor feed as truth; a
+    sparkle appcast (RDM's lacks shortVersionString on newer items) is no longer used."""
     reg = WebRegistry.load(SHIPPED, None)
     rdm = reg.find("rdm")
     drive = reg.find("protondrive")
     assert rdm is not None and drive is not None
-    assert rdm.handler == "sparkle" and rdm.appcast_url is None
-    assert drive.handler == "sparkle" and drive.appcast_url is None
+    for app in (rdm, drive):
+        assert app.handler == "squirrel" and app.appcast_url is None
+        assert app.vendor_feed is not None
 
 
 # Spec A item 4: exact vendor_feed rows (kind, url, arg, artifact, allowed_host).
@@ -388,6 +391,9 @@ _VENDOR_FEED_ROWS = {
                     "dmg", "proton.me"),
     "docker": ("sparkle", "https://desktop.docker.com/mac/main/arm64/appcast.xml", "-", "dmg",
                "desktop.docker.com"),
+    "rdm": ("kv", "https://devolutions.net/productinfo.htm", "RDMMacbin", "dmg", "cdn.devolutions.net"),
+    "protondrive": ("json", "https://proton.me/download/drive/macos/version.json", "proton_releases",
+                    "dmg", "proton.me"),
 }
 
 
@@ -401,20 +407,29 @@ def test_shipped_vendor_feed_rows_match_spec_exactly() -> None:
         assert (vf.kind, str(vf.url), vf.arg, vf.artifact, vf.allowed_host) == (kind, url, arg, artifact, host), slug
 
 
-def test_only_the_spec_a_slugs_carry_a_vendor_feed_in_task_9() -> None:
-    """rdm / protondrive feed rows (and their handler switches) belong to Task 11."""
+def test_only_the_spec_a_and_task_11_slugs_carry_a_vendor_feed() -> None:
     reg = WebRegistry.load(SHIPPED, None)
     carriers = {a.slug for a in reg.apps if a.vendor_feed is not None}
     assert carriers == set(_VENDOR_FEED_ROWS)
-    assert reg.find("rdm").handler == "sparkle" and reg.find("rdm").vendor_feed is None
-    assert reg.find("protondrive").handler == "sparkle" and reg.find("protondrive").vendor_feed is None
     assert reg.find("chatgpt").vendor_feed is None  # com.openai.chat is a different bundle
 
 
-def test_only_cursor_and_opencode_have_direct_first_for_now() -> None:
+# upstream v1.5.4 config/vendor_direct_first.txt: Cursor, OpenCode, ChatGPT / Codex,
+# Proton Mail, Proton Drive (slug codex = com.openai.codex).
+_DIRECT_FIRST = {"cursor", "opencode", "codex", "proton-mail", "protondrive"}
+
+
+def test_direct_first_slugs_match_the_v1_5_4_list() -> None:
     reg = WebRegistry.load(SHIPPED, None)
     direct = {a.slug for a in reg.apps if a.vendor_feed is not None and a.vendor_feed.direct_first}
-    assert direct == {"cursor", "opencode"}
+    assert direct == _DIRECT_FIRST
+
+
+def test_direct_first_apps_have_an_installable_artifact() -> None:
+    reg = WebRegistry.load(SHIPPED, None)
+    for slug in _DIRECT_FIRST:
+        vf = reg.find(slug).vendor_feed
+        assert vf.artifact != "-" and vf.allowed_host != "-", slug
 
 
 def test_handlers_with_vendor_feed_are_unchanged() -> None:
