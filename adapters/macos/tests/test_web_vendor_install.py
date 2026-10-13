@@ -16,6 +16,7 @@ import os
 import plistlib
 import shutil
 import subprocess
+import sys
 import tarfile
 import zipfile
 from pathlib import Path
@@ -27,7 +28,7 @@ LIB = ADAPTER / "lib"
 SCRIPTS = ADAPTER / "scripts" / "web"
 BID = "com.example.app"
 TEAM = "ABCDE12345"
-PYTHON3 = shutil.which("python3.14") or "/opt/homebrew/bin/python3.14"
+PYTHON3 = sys.executable  # whichever interpreter runs pytest (3.12 in CI)
 
 
 def make_app(parent: Path, name: str = "Example.app", *, bid: str = BID, ver: str = "1.0",
@@ -83,7 +84,7 @@ class Sandbox:
         (tmp / "tmp").mkdir()
         self.set_ls(*ls_states)
         (self.fx / "curl.map").write_text("")
-        for name in ("sudo", "brew", "osascript", "pkill", "killall", "kill"):
+        for name in ("sudo", "brew", "osascript", "pkill", "killall", "kill", "open"):
             script(self.bin / name, f'echo "{name} $*" >> "{self.log}/forbidden.log"\nexit 1\n')
         os.symlink(PYTHON3, self.bin / "python3")
         script(self.bin / "curl", self._curl_body())
@@ -120,6 +121,7 @@ case "$1" in
   verify) exit "${{FAKE_HDIUTIL_VERIFY_RC:-0}}" ;;
   attach)
     [ "${{FAKE_HDIUTIL_ATTACH_RC:-0}}" = 0 ] || exit "$FAKE_HDIUTIL_ATTACH_RC"
+    echo "attach-stdin-bytes=$(cat | wc -c | tr -d ' ')" >> "{self.log}/hdiutil.stdin"
     dmg="$2"; shift 2; mp=""
     while [ $# -gt 0 ]; do [ "$1" = -mountpoint ] && {{ mp="$2"; shift; }}; shift; done
     [ -n "$mp" ] || exit 5
@@ -219,16 +221,16 @@ exit 0
         env.update({k: str(v) for k, v in extra.items()})
         return env
 
-    def bash(self, snippet: str, **extra) -> subprocess.CompletedProcess:
+    def bash(self, snippet: str, stdin: str | None = None, **extra) -> subprocess.CompletedProcess:
         return subprocess.run(["bash", "-c", f'. "{LIB}/ascendo_web.sh"; {snippet}'],
-                              capture_output=True, text=True, env=self.env(**extra))
+                              capture_output=True, text=True, env=self.env(**extra), input=stdin)
 
     def install(self, url="https://dl.example.com/App.zip", artifact="zip", ck="-", cs="-",
-                host="dl.example.com", expected="", installed=None, **extra):
+                host="dl.example.com", expected="", installed=None, stdin=None, **extra):
         installed = installed or (self.apps / "Example.app")
         return self.bash(
             f'_web_vendor_install example "{url}" "{artifact}" "{ck}" "{cs}" "{host}" "{expected}" "{installed}"; '
-            'echo "rc=$?"', **extra)
+            'echo "rc=$?"', stdin=stdin, **extra)
 
     # ---- observations -----------------------------------------------------
     def rc(self, r) -> int:
@@ -543,8 +545,11 @@ def test_missing_or_unset_team_identifier_is_refused(sb, old_team, new_team):
     new = make_app(d, ver="2.0", payload="new", team=None, sig_team_text=new_team)
     sb.serve("/App.zip", zip_of(sb.fx / "App.zip", new))
     r = sb.install()
-    assert sb.rc(r) == 3, r.stderr
-    assert sb.payload() == "old" and sb.leftovers() == []
+    # Ruling 28: an app with no verifiable Team ID is refused SOFT (rc 1), reason
+    # identity_unverifiable -- not the hard swap failure (rc 3) of a real mismatch.
+    assert sb.rc(r) == 1, r.stderr
+    assert "identity_unverifiable" in r.stderr
+    assert sb.payload() == "old" and sb.leftovers() == [] and sb.read_log("mv.log") == []
 
 
 def test_signature_bundle_identifier_mismatch_is_refused(sb):
@@ -829,7 +834,8 @@ def test_direct_defer_is_soft_without_launch(sb):
     msgs = [m["text"] for m in sc["messages"] if "example" in m["text"]]
     assert any("ASCENDO-ACTION-REQUIRED reason=needs_restart cur=1.0 cand=2.0" in m for m in msgs), msgs
     assert sb.payload() == "old" and sb.leftovers() == []
-    assert sb.forbidden() == []
+    assert sb.forbidden() == [], "neither open nor any quit/kill/sudo was invoked"
+    assert not any("open" in ln for ln in sb.forbidden())
     assert sc["status"] != "failed"
 
 
@@ -862,3 +868,92 @@ def test_apply_warns_about_orphaned_staging_and_backup_dirs(sb):
     warns = [m["text"] for m in sc["messages"] if m["level"] == "warn" and "orphaned" in m["text"]]
     assert len(warns) == 2 and any(".ascendo_staging.AbC123" in w for w in warns)
     assert (sb.apps / ".ascendo_staging.AbC123").exists(), "report only: never delete another run's dirs"
+
+
+# ============================================================================
+# fix round 1
+# ============================================================================
+
+def test_nested_installed_path_is_updated_in_place_never_duplicated_at_the_root(sb):
+    """I1: <root>/Utilities/X.app is swapped as itself; nothing appears at <root>/X.app."""
+    nested = sb.apps / "Utilities"
+    nested.mkdir()
+    make_app(nested, ver="1.0", payload="old")
+    d = sb.fx / "new"
+    d.mkdir()
+    new = make_app(d, ver="2.0", payload="new")
+    sb.serve("/App.zip", zip_of(sb.fx / "App.zip", new))
+    r = sb.install(installed=nested / "Example.app", expected="2.0")
+    assert sb.rc(r) == 0, r.stderr
+    assert (nested / "Example.app" / "Contents" / "payload.txt").read_text() == "new"
+    assert not (sb.apps / "Example.app").exists(), "no duplicate bundle at the apps root"
+    assert sb.leftovers() == []
+    mvs = sb.read_log("mv.log")
+    assert mvs[0].split()[1] == str(nested / "Example.app") and mvs[1].split()[-1] == str(nested / "Example.app")
+
+
+def test_nested_installed_path_still_gets_the_identity_check(sb):
+    nested = sb.apps / "Utilities"
+    nested.mkdir()
+    make_app(nested, ver="1.0", payload="old")
+    d = sb.fx / "new"
+    d.mkdir()
+    new = make_app(d, ver="2.0", payload="new", team="ZZZZZ99999")
+    sb.serve("/App.zip", zip_of(sb.fx / "App.zip", new))
+    r = sb.install(installed=nested / "Example.app")
+    assert sb.rc(r) == 3 and "identity" in r.stderr.lower()
+    assert (nested / "Example.app" / "Contents" / "payload.txt").read_text() == "old"
+    assert not (sb.apps / "Example.app").exists() and sb.leftovers() == []
+
+
+def test_copy_verified_app_never_installs_fresh_when_the_destination_is_absent(sb):
+    d = sb.fx / "new"
+    d.mkdir()
+    new = make_app(d, ver="2.0", payload="new")
+    for dest in ("Example.app", str(sb.apps / "Utilities" / "Example.app")):
+        r = sb.bash(f'copy_verified_app "{new}" "{dest}"; echo "rc=$?"')
+        assert sb.rc(r) == 3, (dest, r.stderr)   # soft refusal, never rc 0
+        assert "identity_unverifiable" in r.stderr
+    assert sorted(p.name for p in sb.apps.iterdir()) == []
+    assert sb.read_log("mv.log") == [] and sb.read_log("ditto.log") == []
+
+
+def test_copy_verified_app_refuses_a_destination_outside_the_apps_root(sb):
+    d = sb.fx / "new"
+    d.mkdir()
+    new = make_app(d, ver="2.0")
+    outside = make_app(sb.fx, "Outside.app")
+    for dest in (str(outside), str(sb.apps / ".." / "Example.app")):
+        r = sb.bash(f'copy_verified_app "{new}" "{dest}"; echo "rc=$?"')
+        assert sb.rc(r) == 1, dest
+    assert sb.read_log("mv.log") == []
+
+
+def test_unreadable_installed_identity_is_refused_soft_before_anything_is_staged(sb):
+    prime(sb)
+    (sb.apps / "Example.app" / "Contents" / "_sig").unlink()   # codesign: "not signed at all"
+    r = sb.install()
+    assert sb.rc(r) == 1 and "identity_unverifiable" in r.stderr
+    assert sb.payload() == "old" and sb.leftovers() == [] and sb.read_log("mv.log") == []
+
+
+def test_sha512b64_is_hashed_in_chunks_not_slurped(sb):
+    f = sb.fx / "big.bin"
+    f.write_bytes(os.urandom(3 * 1024 * 1024 + 17))
+    good = base64.b64encode(hashlib.sha512(f.read_bytes()).digest()).decode()
+    ok = sb.bash(f'vendor_direct_verify_checksum "{f}" sha512b64 "{good}" && echo y || echo n')
+    bad = sb.bash(f'vendor_direct_verify_checksum "{f}" sha512b64 "{good[:-3]}AAA" && echo y || echo n')
+    assert (ok.stdout.strip(), bad.stdout.strip()) == ("y", "n")
+    code = "\n".join(ln for ln in (LIB / "ascendo_vendor_direct.sh").read_text().splitlines()
+                     if not ln.lstrip().startswith("#"))
+    assert ".read()" not in code, "whole-file read would hold up to 4 GiB in memory"
+
+
+def test_hdiutil_never_inherits_stdin_so_a_licence_dmg_cannot_prompt(sb):
+    prime(sb, archive="dmg")
+    r = sb.install(url="https://dl.example.com/App.dmg", artifact="dmg", stdin="y\ny\nagree\n")
+    assert sb.rc(r) == 0, r.stderr
+    assert sb.read_log("hdiutil.stdin") == ["attach-stdin-bytes=0"], "attach must run with </dev/null"
+    code = "\n".join(ln for ln in (LIB / "ascendo_vendor_direct.sh").read_text().splitlines()
+                     if not ln.lstrip().startswith("#"))
+    assert "yes |" not in code and "yes|" not in code, "licences are never auto-accepted"

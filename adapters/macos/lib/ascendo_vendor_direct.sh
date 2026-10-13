@@ -12,15 +12,17 @@
 #   _web_fetch_to_file <url> <dest> [timeout_s] [max_bytes]
 #   vendor_direct_install <installed_app> <url> <artifact> <ck> <cs> <host> [expected_version]
 #   _web_vendor_install <slug> <url> <artifact> <ck> <cs> <host> <expected_version> <installed_app>
-#   copy_verified_app <src_app> <dest_label>
+#   copy_verified_app <src_app> <installed_app_path|label>
 #
 # Return codes of vendor_direct_install / _web_vendor_install:
-#   0 installed        1 refused / download / verify failure (soft)
-#   2 dry-run          3 swap failure (hard: copy/identity/rollback)
+#   0 installed        1 refused / download / verify failure (soft), incl.
+#                      identity_unverifiable (installed or staged bundle has no
+#                      readable bundle id / Team ID, e.g. ad-hoc signed)
+#   2 dry-run          3 swap failure (hard: copy/identity mismatch/rollback)
 #   4 deferred         the app is running OR its running state could not be
 #                      determined (callers: item `skipped` + needs_restart,
 #                      never `failed`). Nothing was changed.
-# Return codes of copy_verified_app: 0 ok, 1 refused/failed, 2 deferred.
+# Return codes of copy_verified_app: 0 ok, 1 refused/failed, 2 deferred, 3 soft refusal.
 #
 # Safety contract (Global Constraint 4):
 #   * An app is replaced ONLY when `ascendo_app_running_state` answers an
@@ -164,6 +166,11 @@ _vd_replacement_is_idle() {
     [ "$(ascendo_app_running_state "$bid")" = "false" ]
 }
 
+# Compare the staged bundle with the installed one.
+#   0 identical bundle id AND Team ID
+#   3 unverifiable: an id or Team ID is empty / "not set" on either side
+#     (ad-hoc, unsigned) -- reason identity_unverifiable, a SOFT refusal
+#   1 mismatch (both readable, different) -- hard
 _vd_verify_replacement_identity() {
     local new_app="$1" old_app="$2" label="$3"
     local nb ob nt ot
@@ -172,8 +179,8 @@ _vd_verify_replacement_identity() {
     nt="$(_vd_team_id "$new_app")"
     ot="$(_vd_team_id "$old_app")"
     if [ -z "$nb" ] || [ -z "$ob" ] || [ -z "$nt" ] || [ -z "$ot" ]; then
-        _vd_say "Cannot verify bundle/team identity for $label; refusing replacement (old bundle=$ob team=$ot; new bundle=$nb team=$nt)"
-        return 1
+        _vd_say "identity_unverifiable: cannot verify bundle/team identity for $label; refusing replacement (old bundle=$ob team=$ot; new bundle=$nb team=$nt)"
+        return 3
     fi
     if [ "$nb" != "$ob" ] || [ "$nt" != "$ot" ]; then
         _vd_say "Signing identity mismatch for $label; refusing replacement (old bundle=$ob team=$ot; new bundle=$nb team=$nt)"
@@ -249,7 +256,15 @@ vendor_direct_verify_checksum() {
             actual="$(/usr/bin/shasum -a 512 "$file" 2>/dev/null | awk '{print $1}')"
             ;;
         sha512b64)
-            python3 -c "import base64, hashlib, sys; d = hashlib.sha512(open(sys.argv[1], 'rb').read()).digest(); sys.exit(0 if base64.b64encode(d).decode('ascii') == sys.argv[2] else 1)" "$file" "$val"
+            # Streamed in 1 MiB chunks: downloads can be up to 4 GiB.
+            python3 -c "
+import base64, hashlib, sys
+h = hashlib.sha512()
+with open(sys.argv[1], 'rb') as f:
+    for chunk in iter(lambda: f.read(1 << 20), b''):
+        h.update(chunk)
+sys.exit(0 if base64.b64encode(h.digest()).decode('ascii') == sys.argv[2] else 1)
+" "$file" "$val"
             return $?
             ;;
         *)
@@ -269,7 +284,7 @@ vendor_direct_verify_checksum() {
 _vd_detach_mount() {
     local mnt="$1"
     [ -n "$mnt" ] || return 1
-    if "$(_vd_tool hdiutil)" detach "$mnt" -quiet >/dev/null 2>&1; then
+    if "$(_vd_tool hdiutil)" detach "$mnt" -quiet >/dev/null 2>&1 </dev/null; then
         : > "${mnt}.detached" 2>/dev/null || true
         return 0
     fi
@@ -305,12 +320,15 @@ _vd_cleanup_work() {
 _vd_extract_dmg() {
     local dl="$1" xdir="$2" work="$3" mnt app ok=1 hd
     hd="$(_vd_tool hdiutil)"
-    if ! "$hd" verify "$dl" -quiet >/dev/null 2>&1; then
+    # stdin is /dev/null for every hdiutil call: a disk image with a licence
+    # agreement must fail fast (soft rc 1), never prompt and never be
+    # auto-accepted (no `yes |`).
+    if ! "$hd" verify "$dl" -quiet >/dev/null 2>&1 </dev/null; then
         _vd_say "ERROR: hdiutil verify failed for the downloaded disk image"
         return 1
     fi
     mnt="$(/usr/bin/mktemp -d "$work/mnt.XXXXXX")" || return 1
-    if ! "$hd" attach "$dl" -nobrowse -readonly -mountpoint "$mnt" -quiet >/dev/null 2>&1; then
+    if ! "$hd" attach "$dl" -nobrowse -readonly -mountpoint "$mnt" -quiet >/dev/null 2>&1 </dev/null; then
         _vd_say "ERROR: hdiutil attach failed for the downloaded disk image"
         /bin/rmdir "$mnt" 2>/dev/null || true
         return 1
@@ -367,26 +385,61 @@ _vd_sniff_artifact() {
 
 # ---- the atomic bundle swap -----------------------------------------------------
 
-# copy_verified_app <src_app> <dest_label>
-# Verified, atomic, rollback-protected replacement of $ROOT/<label>.
-#   0 ok   1 refused/failed (original intact unless a CRITICAL line says
-#          otherwise)   2 deferred (app running or state unknown)
+# copy_verified_app <src_app> <dest_app>
+# Verified, atomic, rollback-protected replacement of an INSTALLED bundle.
+# <dest_app> is the full path of the installed app (under the apps root, nested
+# folders such as <root>/Utilities/X.app are swapped in place), or a bare
+# "X.app" label meaning <root>/X.app. The destination must already exist with a
+# readable signed identity: this never installs fresh and never skips the
+# bundle-id/Team-ID check.
+#   0 ok
+#   1 refused/failed (original intact unless a CRITICAL line says otherwise)
+#   2 deferred (app running or state unknown)
+#   3 soft refusal: destination absent or identity unverifiable
 copy_verified_app() {
-    local src="$1" label="$2"
-    local root dest staging_root backup_root staging backup rejected had_existing=0
+    local src="$1" target="$2"
+    local root dest label staging_root backup_root staging backup rejected id_rc
 
     if _vd_dry_run; then
-        _vd_say "[DRY-RUN] skip copy: $label"
+        _vd_say "[DRY-RUN] skip copy: $target"
         return 0
     fi
-    case "$label" in
-        ''|*/*|.*)
-            _vd_say "ERROR: invalid destination label: $label"
+    root="$(_vd_apps_root)"
+    case "$target" in
+        */*) dest="$target" ;;
+        *)   dest="$root/$target" ;;
+    esac
+    case "$dest" in
+        */../*|*/..)
+            _vd_say "ERROR: refusing a destination with '..': $dest"
+            return 1
+            ;;
+        "$root"/?*) ;;
+        *)
+            _vd_say "ERROR: destination must be under $root: $dest"
             return 1
             ;;
     esac
-    root="$(_vd_apps_root)"
-    dest="$root/$label"
+    label="$(basename "$dest")"
+    case "$label" in
+        *.app) ;;
+        *)
+            _vd_say "ERROR: invalid destination: $dest"
+            return 1
+            ;;
+    esac
+    case "$label" in .*) _vd_say "ERROR: invalid destination: $dest"; return 1 ;; esac
+
+    # Never install fresh and never skip the identity check: the installed
+    # bundle must exist and have a readable bundle id + Team ID.
+    if [ ! -d "$dest" ]; then
+        _vd_say "identity_unverifiable: installed app not found at $dest; refusing to install a new copy"
+        return 3
+    fi
+    if [ -z "$(_vd_sig_bundle_id "$dest")" ] || [ -z "$(_vd_team_id "$dest")" ]; then
+        _vd_say "identity_unverifiable: cannot read the signed identity (bundle id / Team ID) of the installed $label; refusing replacement"
+        return 3
+    fi
 
     # Idle gate #1 -- before anything is staged. Only an explicit `false`
     # proceeds; running OR unknown defers, and nothing is ever quit.
@@ -426,12 +479,11 @@ copy_verified_app() {
         _vd_rm_rf "$staging_root" "$backup_root"
         return 1
     fi
-    if [ -e "$dest" ] || [ -L "$dest" ]; then
-        if ! _vd_verify_replacement_identity "$staging" "$dest" "$label"; then
-            _vd_rm_rf "$staging_root" "$backup_root"
-            return 1
-        fi
-        had_existing=1
+    id_rc=0
+    _vd_verify_replacement_identity "$staging" "$dest" "$label" || id_rc=$?
+    if [ "$id_rc" -ne 0 ]; then
+        _vd_rm_rf "$staging_root" "$backup_root"
+        return "$id_rc"
     fi
 
     # Idle gate #2 -- immediately before the swap: the user may have opened the
@@ -442,13 +494,13 @@ copy_verified_app() {
         return 2
     fi
 
-    if [ "$had_existing" -eq 1 ] && ! _vd_try "$(_vd_tool mv)" "$dest" "$backup"; then
+    if ! _vd_try "$(_vd_tool mv)" "$dest" "$backup"; then
         _vd_say "ERROR: could not move the existing $dest to the rollback backup $backup"
         _vd_rm_rf "$staging_root" "$backup_root"
         return 1
     fi
     if ! _vd_try "$(_vd_tool mv)" "$staging" "$dest"; then
-        if [ "$had_existing" -eq 1 ] && ! _vd_try "$(_vd_tool mv)" "$backup" "$dest"; then
+        if ! _vd_try "$(_vd_tool mv)" "$backup" "$dest"; then
             _vd_say "CRITICAL: install failed and rollback is at $backup. Restore with: mv \"$backup\" \"$dest\""
             _vd_rm_rf "$staging_root"
             return 1
@@ -468,7 +520,7 @@ copy_verified_app() {
                 return 1
             fi
         fi
-        if [ "$had_existing" -eq 1 ] && ! _vd_try "$(_vd_tool mv)" "$backup" "$dest"; then
+        if ! _vd_try "$(_vd_tool mv)" "$backup" "$dest"; then
             _vd_say "CRITICAL: the rejected app is at $rejected; rollback is at $backup. Restore with: mv \"$backup\" \"$dest\""
             return 1
         fi
@@ -558,10 +610,12 @@ EOF_FIND
     fi
 
     # 10. Verified atomic swap. 2 = the app was opened meanwhile => deferred.
-    copy_verified_app "$found" "$(basename "$installed")" || copy_rc=$?
+    # The swap target is the installed path itself (never <root>/<basename>).
+    copy_verified_app "$found" "$installed" || copy_rc=$?
     if [ "$copy_rc" -ne 0 ]; then
-        _vd_say "ERROR: copy_verified_app failed for $(basename "$installed") (code $copy_rc)"
-        [ "$copy_rc" -eq 2 ] && return 4
+        _vd_say "ERROR: copy_verified_app failed for $installed (code $copy_rc)"
+        [ "$copy_rc" -eq 2 ] && return 4   # deferred
+        [ "$copy_rc" -eq 3 ] && return 1   # identity_unverifiable: soft refusal
         return 3
     fi
     return 0

@@ -111,9 +111,20 @@ def test_plan_sparkle_only_plans_when_feed_is_newer(tmp_path: Path, installed, v
 
 # ----------------------------------------------------------------- apply.sh
 
+def _fake_lsappinfo(tmp: Path) -> Path:
+    """Hermetic LaunchServices stand-in: a session with only the Finder running
+    (state `false` for every app under test). The fail-closed probe must not
+    depend on the host's real lsappinfo."""
+    fake = tmp / "lsappinfo-fake"
+    fake.write_text("#!/bin/sh\necho 'bundleID=\"com.apple.finder\"'\n")
+    fake.chmod(0o755)
+    return fake
+
+
 def _run_apply(registry: Path, out: Path, env_extra: dict) -> tuple[subprocess.CompletedProcess, str]:
     run_id = str(uuid.uuid4())
     env = {**os.environ,
+           "ASCENDO_LSAPPINFO_BIN": str(_fake_lsappinfo(out.parent)),
            "ASCENDO_WEB_REGISTRY_PATH": str(registry), "ASCENDO_WEB_USER_REGISTRY_PATH": "",
            "ASCENDO_SUDO_WARM_DISABLE": "1",
            "PYTHONPATH": f"{REPO_ROOT}/core:{REPO_ROOT}/adapters/macos", **env_extra}
