@@ -215,7 +215,13 @@ _apply_one() {
     # bundle underneath a running app (and some casks' `uninstall quit:` stanza
     # makes Homebrew itself close it), so a cask whose app is running is
     # deferred: skipped + action-required, brew is NOT called.
-    if [ "$_feed" = "cask" ] && ascendo_brew_cask_app_running "$_id"; then
+    # Fail closed: only an explicit `false` proceeds. `unknown` (lsappinfo
+    # missing/failing/empty) is treated like running -- deferred, never forced.
+    local _run_state="false"
+    if [ "$_feed" = "cask" ]; then
+        _run_state="$(ascendo_brew_cask_running_state "$_id")"
+    fi
+    if [ "$_feed" = "cask" ] && [ "$_run_state" = "true" ]; then
         _stream_progress "$_pct" "skipping $_id (app is running)"
         _stream_emit ">>> skipping $_id (cask app is running -- quit it and re-run)"
         # Keep the candidate ($_target): apply outranks check in the inventory
@@ -224,6 +230,15 @@ _apply_one() {
         json_add_message "info" \
             "${_id}: skipped -- app in use (quit it and re-run apply to upgrade ${_current} -> ${_target}) | $(ascendo_action_required_token app_in_use "$_current" "$_target")" \
             "CASK_APP_RUNNING"
+        return 0
+    fi
+    if [ "$_feed" = "cask" ] && [ "$_run_state" != "false" ]; then
+        _stream_progress "$_pct" "skipping $_id (cannot determine whether its app is running)"
+        _stream_emit ">>> skipping $_id (cannot determine whether the cask app is running -- quit it and re-run)"
+        json_add_item "$_id" "$_current" "$_target" "skipped" "brew" "cask"
+        json_add_message "info" \
+            "${_id}: skipped -- could not determine whether its app is running (LaunchServices probe unavailable); not upgraded to avoid replacing an open app. Quit it and re-run apply to upgrade ${_current} -> ${_target} | $(ascendo_action_required_token app_in_use "$_current" "$_target")" \
+            "CASK_APP_RUNNING_UNKNOWN"
         return 0
     fi
 

@@ -7,19 +7,20 @@
 # no readarray). Helpers do NOT call `set -e` themselves -- they're sourced
 # and inherit shell options from their caller.
 #
-# Reserved exit codes (web-namespace):
-#   20 download failure
-#   21 hdiutil attach failed (couldn't determine mount point)
-#   22 mount contained no .app bundle
-#   23 spctl Gatekeeper assessment rejected the bundle
-#   24 cp -R into /Applications failed even with sudo -A escalation
+# Reserved exit codes (web-namespace, handler level):
+#   25-28, 32 probe / feed errors (see the handlers)
 #   29 generic web-handler failure (reserved; not used here)
+# Installer codes (_web_install_dmg / vendor_direct_install, replace the old
+# 20-24 download/attach/no-app/spctl/cp set):
+#   0 ok  1 refused or download/verify failure (soft)  2 dry-run
+#   3 swap failure (hard)  4 deferred: app running or running state unknown
 #
 # Public helpers (all `_web_*` to signal private-ish, package-internal):
 #   _web_ensure_cache_dir
 #   _web_installed_version <app_path>
 #   _version_gt <a> <b>
-#   _web_is_running <bundle_id>
+#   _web_is_running <bundle_id>                  (explicit-true wrapper; gates use
+#                                                 ascendo_app_running_state)
 #   _web_extract_sparkle_latest_version          (reads stdin)
 #   _web_extract_sparkle_enclosure_url           (reads stdin)
 #   _web_version_cmp <candidate> <installed>     (newer|equal|older|unknown)
@@ -27,12 +28,15 @@
 #   _web_fetch_feed <https-url>
 #   _web_download <url> <dest>
 #   _web_verify_signature <app_path>
-#   _web_install_dmg <slug> <dmg_url> <app_path>
+#   _web_install_dmg <slug> <archive_url> <app_path> [ck cs]
+#   (ascendo_vendor_direct.sh) _web_fetch_to_file, vendor_direct_install,
+#   _web_vendor_install, copy_verified_app
 #   _web_run_apply_cli <slug> <argv_json>
 # =============================================================================
 # shellcheck shell=bash
 
 [ -n "${_ASCENDO_PROC_LOADED:-}" ] || . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ascendo_proc.sh"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ascendo_vendor_direct.sh"
 
 # ============================================================
 # Cache directory
@@ -362,25 +366,13 @@ _web_read_probe_result() {
 # ============================================================
 
 # _web_is_running <bundle_id>
-# Exit 0 iff a running app with this bundle id is registered with
-# LaunchServices. Uses `lsappinfo` (the canonical macOS query tool for
-# running GUI apps) so we don't need to inspect ps output (which would
-# match any caller that happens to carry the bundle id as a literal in
-# its command line, e.g. the helper-test fixture).
+# Exit 0 iff the app is EXPLICITLY known to be running. Thin wrapper over the
+# shared tri-state probe (ascendo_proc.sh): use it for messages only. Any gate
+# that copies, swaps or upgrades a bundle must test
+# `[ "$(ascendo_app_running_state "$bid")" = false ]` instead -- `unknown`
+# (lsappinfo missing/failing/empty) is not idle and must defer (fail closed).
 _web_is_running() {
-    local bundle_id="$1"
-    if ! command -v lsappinfo >/dev/null 2>&1; then
-        return 1
-    fi
-    # Match `bundleID="<id>"` exactly (lsappinfo's per-app dump format) so
-    # we don't false-positive on substring overlaps.
-    local matches
-    matches=$(lsappinfo list 2>/dev/null \
-        | /usr/bin/grep -c "bundleID=\"$bundle_id\"")
-    if [ "${matches:-0}" -gt 0 ]; then
-        return 0
-    fi
-    return 1
+    [ "$(ascendo_app_running_state "$1")" = "true" ]
 }
 
 # ============================================================
@@ -506,20 +498,24 @@ _web_extract_sparkle_enclosure_url() {
 }
 
 # ============================================================
-# Download + verify + install (DMG)
+# Download + verify + install (zip / tar.gz / dmg)
 # ============================================================
+#
+# The pipeline lives in lib/ascendo_vendor_direct.sh (sourced at the top):
+# https + host allowlist, bounded fetch, checksum, verified read-only DMG
+# mount, bundle-id / Team-ID identity, atomic backup-swap with rollback, and
+# deferral (rc 4) for any app that is running or whose state is unknown.
 
 # _web_download <url> <dest>
-# Curl with progress streamed via _stream_emit when available (the helper
-# from ascendo_json.sh is loaded by Run Center context; bare scripts won't
-# have it, hence the command -v guard).
+# Bounded https fetch (<= 4 GiB, 1800 s). Progress line via _stream_emit when
+# the Run Center helper is loaded (bare scripts won't have it).
 _web_download() {
     local url="$1" dest="$2"
     _web_ensure_cache_dir || return 1
     if command -v _stream_emit >/dev/null 2>&1; then
-        _stream_emit info "downloading $url"
+        _stream_emit "downloading $url"
     fi
-    /usr/bin/curl -fsSL --max-time 300 -o "$dest" "$url"
+    _web_fetch_to_file "$url" "$dest" 1800 4294967296
 }
 
 # _web_verify_signature <app_path>
@@ -527,121 +523,32 @@ _web_download() {
 # stderr captured to caller for diagnostics.
 _web_verify_signature() {
     local app_path="$1"
-    /usr/sbin/spctl --assess --type execute --verbose "$app_path" 2>&1
+    "$(_vd_tool spctl)" --assess --type execute --verbose "$app_path" 2>&1
 }
 
-# _web_install_dmg <slug> <archive_url> <app_path>
-# Full pipeline: download -> mount/extract -> spctl -> remove-old + cp -R
-# -> xattr strip -> unmount. Re-tries cp -R with sudo -A on EACCES
-# (askpass-cached elevation, the same pattern used by mas + softwareupdate
-# apply scripts).
+# _web_install_dmg <slug> <archive_url> <app_path> [checksum_kind checksum]
+# Legacy entry for the sparkle / github_dmg / release_feed handlers: the
+# archive kind is sniffed (zip / tar.gz / dmg) and the download host is not
+# pinned (https only). Everything else -- checksum when given, exactly one
+# app with the INSTALLED app's bundle id, spctl on source and staging,
+# bundle-id + Team-ID equality, atomic swap with automatic rollback, no touch
+# of a running/unknown-state app -- is the shared hardened pipeline.
 #
-# Sesja 73: now ALSO handles .zip archives (Codex / opencode publish a
-# ZIP in their Sparkle appcast, not a DMG; previously hdiutil silently
-# failed with exit 21 and no diagnostic). Format detected via
-# ``/usr/bin/file -b`` so vendors who serve the archive with the wrong
-# extension still work.
+# The installed bundle comes from <app_path>, or (when that is empty or not on
+# disk) from ASCENDO_WEB_INSTALLED_APP_PATH, which scripts/web/apply.sh exports
+# per app after resolving the bundle by its CFBundleIdentifier.
+#
+# Return codes: 0 ok, 1 refused/download/verify failure (soft), 3 swap failure
+# (hard), 4 deferred (running / state unknown => the caller reports
+# needs_restart). See ascendo_vendor_direct.sh.
 _web_install_dmg() {
-    local slug="$1" url="$2" app_path="$3"
-    local archive="$ASCENDO_WEB_CACHE_DIR/${slug}.archive"
-    local mount_point=""
-    local extract_dir=""
-    local rc=0
-
-    _web_download "$url" "$archive" || return 20
-
-    local archive_type
-    archive_type=$(/usr/bin/file -b "$archive" 2>/dev/null)
-    local is_zip="false"
-    case "$archive_type" in
-        *"Zip archive"*|*"Java archive"*)
-            is_zip="true"
-            ;;
-    esac
-    case "$url" in
-        *.zip|*.ZIP) is_zip="true" ;;
-    esac
-
-    local src_app
-    if [ "$is_zip" = "true" ]; then
-        extract_dir="$ASCENDO_WEB_CACHE_DIR/${slug}.extract"
-        /bin/rm -rf "$extract_dir" 2>/dev/null || true
-        /bin/mkdir -p "$extract_dir"
-        # `ditto -x -k` is Apple's canonical ZIP extractor — preserves
-        # resource forks + extended attributes, unlike `unzip(1)`.
-        if ! /usr/bin/ditto -x -k "$archive" "$extract_dir" 2>/dev/null; then
-            printf 'ZIP extract failed for %s\n' "$slug" >&2
-            return 21
-        fi
-        # The ZIP may contain the .app at the top level or inside a single
-        # parent directory — search up to two levels deep.
-        src_app=$(/usr/bin/find "$extract_dir" -maxdepth 2 -name '*.app' -type d 2>/dev/null | /usr/bin/head -n 1)
-    else
-        # Pipe 'yes' to auto-accept any EULAs (e.g. Google Chrome DMG) which
-        # otherwise cause hdiutil to block indefinitely waiting for stdin.
-        mount_point=$(yes | /usr/bin/hdiutil attach -nobrowse -plist "$archive" 2>/dev/null \
-            | /usr/bin/grep -oE '/Volumes/[^<]+' \
-            | /usr/bin/head -n 1)
-        if [ -z "$mount_point" ]; then
-            printf 'hdiutil attach failed for %s (archive: %s)\n' "$slug" "$archive_type" >&2
-            return 21
-        fi
-        src_app=$(/bin/ls -d "$mount_point"/*.app 2>/dev/null | /usr/bin/head -n 1)
-    fi
-
-    if [ -z "$src_app" ]; then
-        [ -n "$mount_point" ] && /usr/bin/hdiutil detach -force "$mount_point" >/dev/null 2>&1 || true
-        [ -n "$extract_dir" ] && /bin/rm -rf "$extract_dir" 2>/dev/null || true
-        printf 'no .app bundle found inside archive for %s\n' "$slug" >&2
-        return 22
-    fi
-
-    if ! _web_verify_signature "$src_app" >/dev/null 2>&1; then
-        [ -n "$mount_point" ] && /usr/bin/hdiutil detach -force "$mount_point" >/dev/null 2>&1 || true
-        [ -n "$extract_dir" ] && /bin/rm -rf "$extract_dir" 2>/dev/null || true
-        printf 'spctl signature check rejected %s\n' "$slug" >&2
-        return 23
-    fi
-
-    if [ -z "$app_path" ]; then
-        app_path="/Applications/$(/usr/bin/basename "$src_app")"
-    fi
-
-    local target_dir
-    target_dir="$(dirname "$app_path")"
-
-    # Sesja 73: explicit remove-then-copy. Plain ``cp -R src dst/`` leaves
-    # stale files behind when the new bundle has fewer items than the old
-    # one, and worse: when a running app's bundle is locked the cp can
-    # report exit 0 while NOT actually replacing the binary (Ledger Live /
-    # Warp silent-refusal pattern). Removing first forces a real bundle
-    # swap and surfaces any permission / lock failure as a hard error.
-    if [ -e "$app_path" ]; then
-        if ! /bin/rm -rf "$app_path" 2>/dev/null; then
-            if ! _ascendo_sudo /bin/rm -rf "$app_path"; then
-                printf 'failed to remove existing bundle at %s (is the app running?)\n' "$app_path" >&2
-                rc=24
-            fi
+    local slug="$1" url="$2" app_path="${3:-}" ck="${4:--}" cs="${5:--}"
+    if [ -z "$app_path" ] || [ ! -d "$app_path" ]; then
+        if [ -n "${ASCENDO_WEB_INSTALLED_APP_PATH:-}" ]; then
+            app_path="$ASCENDO_WEB_INSTALLED_APP_PATH"
         fi
     fi
-    if [ $rc -eq 0 ]; then
-        if ! /bin/cp -R "$src_app" "$target_dir/" 2>/dev/null; then
-            # _ascendo_sudo (ascendo_json.sh) picks -A vs plain sudo by env so
-            # the TTY-PAM / Touch-ID-only flow works alongside the SPA-askpass
-            # flow. apply.sh has already called _ascendo_sudo_warm so creds
-            # are hot.
-            if ! _ascendo_sudo /bin/cp -R "$src_app" "$target_dir/"; then
-                printf 'cp -R failed for %s -> %s/\n' "$src_app" "$target_dir" >&2
-                rc=24
-            fi
-        fi
-    fi
-
-    /usr/bin/xattr -dr com.apple.quarantine "$app_path" 2>/dev/null || true
-
-    [ -n "$mount_point" ] && /usr/bin/hdiutil detach -force "$mount_point" >/dev/null 2>&1 || true
-    [ -n "$extract_dir" ] && /bin/rm -rf "$extract_dir" 2>/dev/null || true
-    return $rc
+    _web_vendor_install "$slug" "$url" auto "$ck" "$cs" "-" "" "$app_path"
 }
 
 # _web_run_apply_cli <slug> <argv_json>

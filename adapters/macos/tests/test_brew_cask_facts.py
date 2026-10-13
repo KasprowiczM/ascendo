@@ -41,7 +41,8 @@ class Sandbox:
 
     def __init__(self, tmp: Path, *, outdated=(), greedy_outdated=(), installed=(),
                  info=(), apps=(), running_apps=(), running_ids=(),
-                 outdated_rc=0, greedy_rc=0, greedy_stderr="", greedy_file=None, info_sleep=0):
+                 outdated_rc=0, greedy_rc=0, greedy_stderr="", greedy_file=None, info_sleep=0,
+                 lsappinfo_mode="ok"):
         self.tmp = tmp
         tmp.mkdir(parents=True, exist_ok=True)
         self.bin = tmp / "bin"
@@ -91,9 +92,14 @@ echo "pgrep $*" >> "{self.proc_log}"
 for n in {running}; do case "$*" in *"$n"*) exit 0 ;; esac; done
 exit 1
 ''')
-        ids = "\n".join(f'bundleID="{i}"' for i in running_ids)
+        # A real session always lists some apps; an EMPTY listing means "the
+        # probe could not answer" (unknown), so the idle default is a benign line.
+        ids = "\n".join(f'bundleID="{i}"' for i in ["com.apple.finder", *running_ids])
+        if lsappinfo_mode == "empty":
+            ids = ""
         self._script(self.bin / "lsappinfo", f'''
 echo "lsappinfo $*" >> "{self.proc_log}"
+[ "{lsappinfo_mode}" = fail ] && exit 1
 [ "$1" = "list" ] && cat <<'EOF_LS'
 {ids}
 EOF_LS
@@ -107,6 +113,9 @@ exit 0
         self.env["ASCENDO_BREW_GREEDY_FILE"] = str(greedy_file) if greedy_file else str(tmp / "no-greedy.txt")
         self.env.pop("ASCENDO_STREAM_LOG", None)
         self.env.pop("SUDO_ASKPASS", None)
+        self.env.pop("ASCENDO_LSAPPINFO_BIN", None)
+        if lsappinfo_mode == "missing":
+            self.env["ASCENDO_LSAPPINFO_BIN"] = str(tmp / "no-such-lsappinfo")
 
     @staticmethod
     def _script(path: Path, body: str) -> None:
@@ -226,6 +235,42 @@ def test_quit_bundle_id_running_defers_a_cask_without_app_targets(tmp_path):
                    running_ids=["com.example.someone.else"])
     _, sc2 = idle.run_phase("apply")
     assert by_id(sc2)["zzz-agent"]["status"] == "success"
+
+
+@pytest.mark.parametrize("mode", ["missing", "fail", "empty"])
+def test_cask_with_unprobeable_running_state_is_deferred_never_upgraded(tmp_path, mode):
+    """F2 / Ruling 26: lsappinfo missing, failing or empty => state `unknown` =>
+    the cask upgrade is deferred (skipped + app_in_use action-required), brew is
+    never asked to upgrade, and nothing is quit or killed."""
+    c = cask("zzz-agent", artifacts=[{"binary": ["agentctl"]},
+                                     {"uninstall": [{"quit": "com.example.zzzagent"}]}])
+    sb = Sandbox(tmp_path, outdated=[outdated_entry("zzz-agent")], info=[c], lsappinfo_mode=mode)
+    res, sc = sb.run_phase("apply")
+    assert res.returncode == 0, res.stderr
+    item = by_id(sc)["zzz-agent"]
+    assert item["status"] == "skipped"
+    assert (item["current_version"], item["target_version"]) == ("1.0", "2.0")  # candidate kept
+    assert sb.upgrades() == []
+    assert sb.killed() == []
+    msg = message(sc, "CASK_APP_RUNNING_UNKNOWN")
+    assert "could not determine" in msg["text"]
+    assert "ASCENDO-ACTION-REQUIRED reason=app_in_use cur=1.0 cand=2.0" in msg["text"]
+    assert not any(m.get("code") == "CASK_APP_RUNNING" for m in sc["messages"])
+
+
+def test_cask_running_state_is_tri_state(tmp_path):
+    c = cask("zzz-agent", artifacts=[{"binary": ["agentctl"]},
+                                     {"uninstall": [{"quit": "com.example.zzzagent"}]}])
+    facts = 'ascendo_brew_prepare_cask_facts "$TMP_OUTDATED" 2>/dev/null; '
+    for mode, kw, expect in (("ok", {"running_ids": ["com.example.zzzagent"]}, "true"),
+                             ("ok", {}, "false"),
+                             ("missing", {}, "unknown"),
+                             ("fail", {}, "unknown")):
+        sb = Sandbox(tmp_path / f"{mode}-{expect}", outdated=[outdated_entry("zzz-agent")], info=[c],
+                     lsappinfo_mode=mode, **kw)
+        res = sb.bash('TMP_OUTDATED="$(mktemp)"; brew outdated --cask --json=v2 > "$TMP_OUTDATED" 2>/dev/null; '
+                      + facts + 'ascendo_brew_cask_running_state zzz-agent')
+        assert res.stdout.strip() == expect, (mode, expect, res.stdout, res.stderr)
 
 
 def test_app_paths_come_from_facts_and_table_is_only_a_fallback(tmp_path):

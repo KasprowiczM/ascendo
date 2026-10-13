@@ -15,6 +15,12 @@
 # sub-table (url, version_path, optional download_path / arch_path /
 # expected_arch / http_timeout_s) drives this handler.
 
+# Network seam: ascendo_web.sh defines _web_curl (ASCENDO_WEB_CURL_BIN test
+# hook); define the same fallback when this file is sourced on its own.
+if ! command -v _web_curl >/dev/null 2>&1; then
+    _web_curl() { "${ASCENDO_WEB_CURL_BIN:-/usr/bin/curl}" "$@"; }
+fi
+
 # _rf_get <key>
 #
 # Reads JSON config from stdin; echoes the value at <key>.
@@ -271,7 +277,7 @@ release_feed_check() {
     fi
 
     local body http_rc
-    body=$(/usr/bin/curl -fsSL --max-time "$timeout" "$url" 2>/dev/null)
+    body=$(_web_curl -fsSL --max-time "$timeout" "$url" 2>/dev/null)
     http_rc=$?
     if [ "$http_rc" -ne 0 ] || [ -z "$body" ]; then
         echo ""
@@ -415,7 +421,7 @@ release_feed_apply() {
     fi
 
     local body
-    body=$(/usr/bin/curl -fsSL --max-time "$timeout" "$url" 2>/dev/null) || return 25
+    body=$(_web_curl -fsSL --max-time "$timeout" "$url" 2>/dev/null) || return 25
 
     local dmg_url
     if [ -n "$download_url" ]; then
@@ -451,12 +457,28 @@ print(urlunparse((u.scheme, u.netloc, safe_path, u.params, u.query, u.fragment))
         *) return 32 ;;
     esac
 
-    # Optional explicit app_path override; empty string => let
-    # _web_install_dmg pick "/Applications/<basename>.app".
+    # Optional explicit app_path override; empty => the installer uses the
+    # bundle apply.sh resolved by bundle id (ASCENDO_WEB_INSTALLED_APP_PATH).
     local app_path
     app_path=$(printf '%s' "$cfg" | _rf_get "app_path")
 
-    # Delegate to the shared DMG installer helper (from ascendo_web.sh,
-    # loaded by check.sh / apply.sh before sourcing handlers).
-    _web_install_dmg "$slug" "$dmg_url" "$app_path"
+    # Integrity from the SAME feed entry as the URL: Electron-builder lists
+    # one sha512 (base64) per files[] item, so a download_path of
+    # files[dmg].url is verified against files[dmg].sha512 -- never the
+    # top-level / zip digest (Ledger used to fail exactly that way). Without a
+    # digest in the feed the download is installed unverified-by-hash, which
+    # still goes through spctl + bundle-id/Team-ID identity checks.
+    local sha_kind="-" sha_val="-" _sha
+    if [ "$download_path" = "files[dmg].url" ]; then
+        _sha=$(_rf_walk_json "$body" "files[dmg].sha512" 2>/dev/null) || _sha=""
+        if [ -n "$_sha" ]; then
+            sha_kind="sha512b64"
+            sha_val="$_sha"
+        fi
+    fi
+
+    # Delegate to the shared hardened installer (ascendo_web.sh ->
+    # ascendo_vendor_direct.sh). rc 4 = app running/unknown => the caller
+    # (apply.sh) reports skipped + needs_restart.
+    _web_install_dmg "$slug" "$dmg_url" "$app_path" "$sha_kind" "$sha_val"
 }

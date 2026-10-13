@@ -22,6 +22,14 @@ def _make_fake_app(tmp_path: Path, name: str, version: str = "1.0.0") -> Path:
     return app
 
 
+def _fake_lsappinfo(tmp: Path) -> Path:
+    """Hermetic LaunchServices stand-in: a session with only the Finder running."""
+    fake = tmp / "lsappinfo-fake"
+    fake.write_text("#!/bin/sh\necho 'bundleID=\"com.apple.finder\"'\n")
+    fake.chmod(0o755)
+    return fake
+
+
 def _run_apply(registry: Path, output_dir: Path, *,
               env_extra: dict | None = None, filter_arg: str | None = None,
               dry_run: bool = False):
@@ -30,6 +38,7 @@ def _run_apply(registry: Path, output_dir: Path, *,
            "ASCENDO_WEB_REGISTRY_PATH": str(registry),
            "ASCENDO_WEB_USER_REGISTRY_PATH": "",
            "ASCENDO_SUDO_WARM_DISABLE": "1",
+           "ASCENDO_LSAPPINFO_BIN": str(_fake_lsappinfo(output_dir.parent)),
            "PYTHONPATH": f"{REPO_ROOT}/core:{REPO_ROOT}/adapters/macos"}
     if env_extra:
         env.update(env_extra)

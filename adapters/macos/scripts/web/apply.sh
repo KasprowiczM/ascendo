@@ -3,8 +3,12 @@
 # adapters/macos/scripts/web/apply.sh -- mutating apply phase
 # =============================================================================
 # For each enabled registry entry that's installed:
-#   - Defer-eligible handlers (sparkle/github_dmg/squirrel) check is_running
-#     and skip with reason=deferred_app_in_use if true.
+#   - Defer-eligible handlers (sparkle/github_dmg/squirrel/release_feed) probe
+#     the app with the tri-state ascendo_app_running_state and proceed ONLY on
+#     an explicit `false`: running => deferred_app_in_use, unknown =>
+#     deferred_app_state_unknown (both skipped, never quit).
+#   - Handler rc 4 (hardened installer: app became active / state unknown)
+#     => skipped + ASCENDO-ACTION-REQUIRED reason=needs_restart (soft).
 #   - Otherwise dispatch to <handler>_apply; capture stderr (last 12 lines)
 #     into sidecar messages on failure.
 #   - DRY_RUN emits status=planned without invoking handlers.
@@ -86,6 +90,17 @@ fi
 if [ "$DRY_RUN" = "false" ] && [ -z "${ASCENDO_SUDO_WARM_DISABLE:-}" ]; then
     _ascendo_sudo_warm 2>/dev/null || true
 fi
+
+# Report-only sweep: a previous run killed mid-swap can leave a staging or
+# rollback-backup directory next to the apps. Never delete another run's
+# directories -- a backup may be the only copy of the previous app version.
+_APPS_ROOT="${ASCENDO_WEB_APPS_ROOT:-/Applications}"
+_APPS_ROOT="${_APPS_ROOT%/}"
+for _orphan in "$_APPS_ROOT"/.ascendo_staging.* "$_APPS_ROOT"/.ascendo_backup.*; do
+    if [ -d "$_orphan" ]; then
+        json_add_message "warn" "orphaned staging/backup from a previous run: $_orphan (inspect it; a backup may hold the previous app version)" "ORPHANED_STAGING"
+    fi
+done
 
 in_filter() {
     [ -z "$FILTER" ] && return 0
@@ -292,9 +307,17 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
     # back the swap on next launch. Defer with a clear actionable reason.
     case "$HANDLER" in
         sparkle|github_dmg|squirrel|release_feed)
-            if _web_is_running "$BUNDLE_ID"; then
+            # Fail closed: only an explicit `false` proceeds. `unknown`
+            # (lsappinfo missing/failing/empty) is treated like running.
+            _run_state="$(ascendo_app_running_state "$BUNDLE_ID")"
+            if [ "$_run_state" = "true" ]; then
                 json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
                 json_add_message "info" "${SLUG}: deferred_app_in_use (quit ${DISPLAY_NAME:-$SLUG} and re-run apply to upgrade ${INSTALLED} → ${CAND:-latest})"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                continue
+            elif [ "$_run_state" != "false" ]; then
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: deferred_app_state_unknown (could not determine whether ${DISPLAY_NAME:-$SLUG} is running; not replaced. Quit it and re-run apply to upgrade ${INSTALLED} → ${CAND:-latest}) | $(ascendo_action_required_token app_in_use "$INSTALLED" "$CAND")"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 continue
             fi
@@ -304,6 +327,9 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
     # Dispatch handler apply, capturing stderr
     err_log="$OUTPUT_DIR/$RUN_ID/${SLUG}.apply.err"
     mkdir -p "$(dirname "$err_log")"
+    # The installer replaces THIS bundle (resolved by bundle id above, which
+    # can differ from the registry's app_path guess).
+    export ASCENDO_WEB_INSTALLED_APP_PATH="$APP_PATH"
 
     case "$HANDLER" in
         sparkle)      sparkle_apply "$SLUG" "$CFG" 2> "$err_log" ;;
@@ -344,6 +370,21 @@ while [ "$i" -lt "$WORK_IDX" ] && [ "$DRY_RUN" != "true" ]; do
         fi
         COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
         continue
+    fi
+
+    # rc 4 from the hardened installer (sparkle / github_dmg / release_feed):
+    # the app is running OR its running state could not be determined, so
+    # nothing was downloaded-over or replaced. Soft: skipped, never failed;
+    # needs_restart tells the operator to quit the app and re-run.
+    if [ $rc -eq 4 ]; then
+        case "$HANDLER" in
+            sparkle|github_dmg|release_feed)
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: skipped -- ${DISPLAY_NAME:-$SLUG} is running (or its running state could not be determined); not replaced. Quit it and re-run apply to install ${CAND:-the new version} | $(ascendo_action_required_token needs_restart "$INSTALLED" "$CAND")"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                continue
+                ;;
+        esac
     fi
 
     if [ $rc -eq 0 ]; then

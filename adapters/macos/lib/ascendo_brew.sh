@@ -33,10 +33,14 @@
 #                                             the cask's real artifact targets (string or {target:},
 #                                             pkg-cask uninstall.delete hints); table only when
 #                                             no facts are available
+#     ascendo_brew_cask_running_state <cask_token>
+#                                          -- true|false|unknown: any process runs from one of those
+#                                             bundles or a `quit:` bundle id is running; `unknown`
+#                                             when LaunchServices could not answer (read-only probe;
+#                                             NEVER quits or kills anything). Upgrade gates defer on
+#                                             anything but `false`.
 #     ascendo_brew_cask_app_running <cask_token>
-#                                          -- rc 0 when any process runs from one of those bundles
-#                                             or a `quit:` bundle id is running (read-only probe;
-#                                             NEVER quits or kills anything)
+#                                          -- rc 0 only when the state is an explicit `true`
 #     ascendo_brew_cask_running_state_known <token>
 #                                          -- rc 0 when facts (or the table) let us tell whether the
 #                                             app is running; else apply must not upgrade it
@@ -526,22 +530,26 @@ ascendo_brew_cask_running_state_known() {
     [ -n "$(ascendo_brew_cask_app_name "$1")" ]
 }
 
-# Exit 0 iff an app with this bundle id is running (LaunchServices).
+# Exit 0 iff an app with this bundle id is EXPLICITLY running (LaunchServices).
+# Thin wrapper over the shared tri-state probe (ascendo_proc.sh); gates that
+# decide whether to touch the app use ascendo_app_running_state / the cask
+# state below, where `unknown` defers (fail closed).
 ascendo_brew_bundle_running() {
-    local id="$1" n
-    command -v lsappinfo >/dev/null 2>&1 || return 1
-    n="$(lsappinfo list 2>/dev/null | /usr/bin/grep -c "bundleID=\"$id\"")"
-    [ "${n:-0}" -gt 0 ]
+    [ "$(ascendo_app_running_state "$1")" = "true" ]
 }
 
-# Exit 0 when a process is running from any .app bundle of the cask
-# (main binary or a helper under <bundle>/Contents/), or when a bundle id
-# from the cask's uninstall/zap `quit:` stanza is running. Read-only: this
-# never quits, signals or kills anything -- an app the user has open is
-# left alone (the caller defers the upgrade instead).
-ascendo_brew_cask_app_running() {
+# Prints true|false|unknown: is any app of the cask running? `true` when a
+# process runs from any .app bundle of the cask (main binary or a helper under
+# <bundle>/Contents/) or a bundle id from the cask's uninstall/zap `quit:`
+# stanza is running; `unknown` when no process matched and the LaunchServices
+# probe could not answer for one of those bundle ids (lsappinfo missing,
+# failing, or empty -- see ascendo_app_running_state); otherwise `false`.
+# Read-only: this never quits, signals or kills anything -- an app the user
+# has open is left alone (the caller defers the upgrade unless the state is an
+# explicit `false`).
+ascendo_brew_cask_running_state() {
     local token="$1"
-    local _path _esc _id _line
+    local _path _esc _id _line _st _unknown=0
     while IFS= read -r _path; do
         [ -n "$_path" ] || continue
         # Regex-escape the path for pgrep -f (extended regex). Inside a
@@ -550,6 +558,7 @@ ascendo_brew_cask_app_running() {
         # and `\` / `/` are listed as plain members -- do not "fix" this.
         _esc="$(printf '%s' "$_path" | sed 's/[][\.*^$+?(){}|\/]/\\&/g')"
         if pgrep -f "^${_esc}/Contents/" >/dev/null 2>&1; then
+            printf 'true\n'
             return 0
         fi
     done <<EOF_PATHS
@@ -559,14 +568,28 @@ EOF_PATHS
     if [ -n "$_line" ]; then
         while IFS= read -r _id; do
             [ -n "$_id" ] || continue
-            if ascendo_brew_bundle_running "$_id"; then
-                return 0
-            fi
+            _st="$(ascendo_app_running_state "$_id")"
+            case "$_st" in
+                true) printf 'true\n'; return 0 ;;
+                false) ;;
+                *) _unknown=1 ;;
+            esac
         done <<EOF_IDS
 $(_ascendo_brew_fact_field "$_line" 5 | tr ';' '\n')
 EOF_IDS
     fi
-    return 1
+    if [ "$_unknown" -eq 1 ]; then
+        printf 'unknown\n'
+    else
+        printf 'false\n'
+    fi
+    return 0
+}
+
+# Exit 0 only when the cask's app is EXPLICITLY running (message wrapper over
+# ascendo_brew_cask_running_state; upgrade gates use the state, not this).
+ascendo_brew_cask_app_running() {
+    [ "$(ascendo_brew_cask_running_state "$1")" = "true" ]
 }
 
 # Exit 0 when the cask declares app artifact(s) and none is on disk (the user

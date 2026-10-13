@@ -25,6 +25,18 @@
 #     * A 137 (SIGKILL) exit is reported as 124 only when the deadline had
 #       really been reached; an unrelated `kill -9` stays 137.
 #
+#   ascendo_app_running_state BUNDLE_ID
+#
+#     Tri-state "is this app running?" probe -- prints exactly one of
+#     true | false | unknown (always exit 0). Built on `lsappinfo list`.
+#     `unknown` = anything short of an explicit answer: lsappinfo missing,
+#     non-zero exit, timeout, empty listing (a real session always lists at
+#     least the Finder/Dock), or an invalid bundle id. Every gate that
+#     copies, swaps or upgrades an app bundle must proceed ONLY on `false`
+#     (fail closed): `unknown` is treated as "running" and the action is
+#     deferred. Never quit or kill an app on the strength of this probe.
+#     Test seam: ASCENDO_LSAPPINFO_BIN (path to an lsappinfo stand-in).
+#
 #   Env knobs: ASCENDO_KILL_AFTER (seconds, default 5),
 #              ASCENDO_RUN_KEEP_STDIN (1 = do not detach stdin),
 #              ASCENDO_FORCE_TIMEOUT_FALLBACK (1 = skip timeout/gtimeout;
@@ -128,4 +140,37 @@ os.execvp(sys.argv[1], sys.argv[1:])
     command_exit=0
     wait "$pid" || command_exit=$?
     return "$command_exit"
+}
+
+# Tri-state running probe (see header). Bundle ids are [A-Za-z0-9._-] only,
+# which also keeps them safe as a grep -F needle.
+ascendo_app_running_state() {
+    local id="${1:-}" bin out
+    case "$id" in
+        ''|*[!A-Za-z0-9._-]*) printf 'unknown\n'; return 0 ;;
+    esac
+    bin="${ASCENDO_LSAPPINFO_BIN:-}"
+    if [ -z "$bin" ]; then
+        bin="$(command -v lsappinfo 2>/dev/null)" || bin=""
+    fi
+    if [ -z "$bin" ] || [ ! -x "$bin" ]; then
+        printf 'unknown\n'
+        return 0
+    fi
+    if ! out="$(ascendo_run_with_timeout 10 "$bin" list 2>/dev/null)"; then
+        printf 'unknown\n'
+        return 0
+    fi
+    if [ -z "$out" ]; then
+        printf 'unknown\n'
+        return 0
+    fi
+    # Here-string, not a pipe: under `set -o pipefail` an early-exiting
+    # `grep -q` would SIGPIPE the writer of a large listing and read as false.
+    if /usr/bin/grep -Fq "bundleID=\"$id\"" <<<"$out"; then
+        printf 'true\n'
+    else
+        printf 'false\n'
+    fi
+    return 0
 }
