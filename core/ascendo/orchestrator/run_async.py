@@ -547,10 +547,15 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
 def _report_has_warnings(report: RunReport) -> bool:
     """True if any sidecar carries a soft-warning signal.
 
-    Signals: skipped / partial / triggered items, a needs-reboot flag, or a
-    warn/error-level message. Distinguishes a clean ``completed`` run from
+    Signals: skipped / partial / triggered items, a needs-reboot flag, a
+    warn/error-level message, or a ``SUDO_UNAVAILABLE`` code at any level (a
+    soft system deferral -- F3: it must be counted, never silent, and never a
+    failure). Distinguishes a clean ``completed`` run from
     ``completed_with_warnings`` (Phase 2.2). ``planned`` is NOT a warning —
     "N updates available" is normal check output, not a run problem.
+
+    A cancelled run never reaches this function (``terminal_state`` is
+    ``cancelled``); a user cancel is not a warning.
     """
     for sc in report.sidecars:
         if sc.needs_reboot:
@@ -560,8 +565,12 @@ def _report_has_warnings(report: RunReport) -> bool:
             return True
         for msg in (sc.messages or []):
             # MessageLevel is a str-Enum, so comparing to the literal works.
-            if msg.level in ("warn", "error"):
+            if msg.level in ("warn", "error") or msg.code == "SUDO_UNAVAILABLE":
                 return True
+        for item in (sc.items or []):
+            for msg in (item.messages or []):
+                if msg.code == "SUDO_UNAVAILABLE":
+                    return True
     return False
 
 

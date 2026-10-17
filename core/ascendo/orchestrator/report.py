@@ -23,9 +23,12 @@ The report has these sections, in order:
    builtin) that queued an async update
 9. ``Deferred`` — apps that were skipped because they were running, or
    for some other recoverable reason
-10. ``Failed`` — apps whose apply errored, with the error message captured
+10. ``Manufacturer warnings`` — apps whose vendor feed is *older* than the
+    installed version (``ASCENDO-STATUS code=feed_stale``): a warning, never
+    "pending", "failed" or action-required
+11. ``Failed`` — apps whose apply errored, with the error message captured
     from the sidecar
-11. ``Run notes`` — run stopped early / cancelled / managers skipped
+12. ``Run notes`` — run stopped early / cancelled / managers skipped
 
 Honesty rule: the report never claims "all updates applied successfully"
 or "Failed (0 apps)" when any phase sidecar of the run failed or when the
@@ -206,6 +209,47 @@ _REASON_TEXT = {
         "A newer version is published but could not be installed silently — "
         "open the app and use its own updater."
     ),
+    "rollout_hold": (
+        "The vendor is rolling this release out in stages and has not offered it "
+        "to this Mac yet — the app's own updater will pick it up; nothing to do."
+    ),
+    "error_soft": (
+        "The vendor download or its verification failed, so nothing was replaced "
+        "(the previous app is untouched) — re-run apply later or update from the app."
+    ),
+    "download_error": (
+        "The vendor download or its verification failed, so nothing was replaced "
+        "(the previous app is untouched) — re-run apply later or update from the app."
+    ),
+    "launch_failed": (
+        "Ascendo could not start the app to let its own updater run — open it "
+        "yourself and use its update menu."
+    ),
+    "launched": (
+        "Ascendo started the app hidden so its own updater could run; the update "
+        "is not confirmed until the next check."
+    ),
+    "unverified": (
+        "The update was triggered but its result could not be confirmed (the "
+        "installed version has not changed) — open the app and check its version."
+    ),
+    "identity_unverifiable": (
+        "Ascendo could not verify the app's signed identity (bundle id / Team ID), "
+        "so it refused to replace it — update it from the app itself."
+    ),
+    "app_facts_unavailable": (
+        "Ascendo could not read the app's details from Homebrew, so it cannot tell "
+        "whether the app is running and did not upgrade it — re-run apply or run "
+        "`brew upgrade --cask <name>` yourself."
+    ),
+    "unknown_version": (
+        "The installed and the published version cannot be compared, so the app "
+        "is not treated as up to date — check it manually."
+    ),
+    "sudo_unavailable": (
+        "Root access was not available (no cached sudo and no askpass) — this "
+        "system step is deferred. Authenticate interactively and re-run."
+    ),
     "cli_duplicate": (
         "A second copy of this CLI sits next to the working native install. "
         "Remove the one you do not use: `npm uninstall -g --prefix <prefix> "
@@ -225,6 +269,34 @@ _OPEN_HINT_TEXT = {
     "cli_duplicate": "Remove the duplicate copy (see the remedy in the run's npm messages)",
 }
 _DEFAULT_REASON_TEXT = "Open the app and check for updates manually."
+
+# Status vocabulary (macOS_updates internet_status) carried as
+# ``| ASCENDO-STATUS code=<code>`` in a message text (and in ``Message.code``).
+# Only the codes below are *understood*; anything else (unknown code, empty or
+# malformed token) is treated as "no code" so the generic diagnostic stays.
+STATUS_RE = re.compile(r"ASCENDO-STATUS code=(\S+)")
+
+STATUS_CODES = frozenset({
+    "current_verified", "current_vendor", "current_cask_only", "updated",
+    "update_available", "behind", "needs_restart", "rollout_hold", "feed_stale",
+    "unverified", "launched", "error_soft",
+})
+# A ``triggered`` item carrying one of these is fine (listed by name under
+# Trigger-only updates) and is NOT promoted to Action required.
+_BENIGN_TRIGGERED = frozenset({
+    "launched", "updated", "current_verified", "current_vendor",
+    "current_cask_only", "rollout_hold",
+})
+# Informational outcomes: a skipped item with one of these needs no action.
+_INFORMATIONAL_SKIPPED = frozenset({"rollout_hold"})
+# The only codes that promote a triggered/skipped item to Action required.
+_ATTENTION_CODES = frozenset({"unverified", "behind", "needs_restart"})
+
+_STALE_VERSIONS_RE = re.compile(
+    r"vendor feed (\S+) (?:is older than|<) installed (\S+)"
+)
+_STATUS_TOKEN_RE = re.compile(r"\s*\|?\s*ASCENDO-STATUS code=\S*")
+_SOFT_DEFERRAL_CATEGORIES = frozenset({"softwareupdate", "mas"})
 
 
 @dataclass(frozen=True)
@@ -316,10 +388,105 @@ def _token_messages(sc: Sidecar) -> list[str]:
     return texts
 
 
+def _status_code_of(text: str, code: str | None) -> str | None:
+    """The recognised status code of one message: the ``ASCENDO-STATUS`` token
+    in its text, else the machine ``code`` field. ``None`` for anything not in
+    :data:`STATUS_CODES` (unrecognised / malformed => the generic diagnostic stays)."""
+    m = STATUS_RE.search(text or "")
+    cand = m.group(1) if m else (code or "")
+    return cand if cand in STATUS_CODES else None
+
+
+def _status_codes(sc: Sidecar) -> dict[str, str]:
+    """``{item slug: status code}`` for one sidecar (item-level messages win
+    over the phase-level ones keyed ``"<slug>: ..."``)."""
+    out: dict[str, str] = {}
+    for m in sc.messages:
+        code = _status_code_of(m.text or "", m.code)
+        if code:
+            out[_slug_from_token_message(m.text or "")] = code
+    for it in sc.items:
+        for m in it.messages:
+            code = _status_code_of(m.text or "", m.code)
+            if code:
+                out[_item_key(sc.category.value, it)] = code
+    return out
+
+
+@dataclass(frozen=True)
+class ManufacturerWarning:
+    """An app whose vendor feed is older than the installed version."""
+
+    category: str
+    slug: str
+    name: str
+    installed: str
+    vendor: str
+
+
+def _manufacturer_warnings(apply_sidecars: list[Sidecar]) -> list[ManufacturerWarning]:
+    """Skipped apply items carrying ``code=feed_stale`` WITH both versions.
+
+    A stale feed without parseable versions is not a presentable warning, so it
+    returns nothing for that item and its generic diagnostic stays. Hard
+    failures (status failed/partial) are never downgraded to a warning."""
+    out: list[ManufacturerWarning] = []
+    for sc in apply_sidecars:
+        cat = sc.category.value
+        codes = _status_codes(sc)
+        for it in sc.items:
+            if it.status is not ItemStatus.SKIPPED:
+                continue
+            key = _item_key(cat, it)
+            if codes.get(key) != "feed_stale":
+                continue
+            installed = (it.current_version or "").strip()
+            if not installed:
+                continue
+            vendor = ""
+            texts = [(m.text or "") for m in it.messages]
+            texts += [(m.text or "") for m in sc.messages
+                      if _slug_from_token_message(m.text or "") == key]
+            for t in texts:
+                mv = _STALE_VERSIONS_RE.search(t)
+                if mv:
+                    vendor = mv.group(1)
+                    break
+            if not vendor:
+                continue
+            out.append(ManufacturerWarning(cat, key, _action_display_name(cat, key),
+                                           installed, vendor))
+    return sorted(out, key=lambda w: (w.name.lower(), w.category))
+
+
+def _is_soft_deferral(sc: Sidecar, it: Item) -> bool:
+    """A system step deferred for a recoverable reason (F3): any skipped
+    softwareupdate / mas item, or any skipped item whose messages carry the
+    ``SUDO_UNAVAILABLE`` code. Counts as a run warning (not failed)."""
+    if it.status is not ItemStatus.SKIPPED:
+        return False
+    if sc.category.value in _SOFT_DEFERRAL_CATEGORIES:
+        return True
+    key = _item_key(sc.category.value, it)
+    for m in it.messages:
+        if m.code == "SUDO_UNAVAILABLE" or "SUDO_UNAVAILABLE" in (m.text or ""):
+            return True
+    for m in sc.messages:
+        if (m.code == "SUDO_UNAVAILABLE" or "SUDO_UNAVAILABLE" in (m.text or "")) \
+                and _slug_from_token_message(m.text or "") in (key, it.name, it.id):
+            return True
+    return False
+
+
+def _soft_deferrals(apply_sidecars: list[Sidecar]) -> list[tuple[str, Item]]:
+    return [(sc.category.value, it) for sc in apply_sidecars for it in sc.items
+            if _is_soft_deferral(sc, it)]
+
+
 def _slug_from_token_message(text: str) -> str:
     """Item id of a token message: text before the first ``": "`` of the
     part preceding the token (falls back to the first ``:``)."""
-    head = text.split("ASCENDO-ACTION-REQUIRED", 1)[0].rstrip(" |")
+    head = re.split(r"ASCENDO-(?:ACTION-REQUIRED|STATUS)", text, maxsplit=1)[0].rstrip(" |")
     if ": " in head:
         head = head.split(": ", 1)[0]
     else:
@@ -327,14 +494,22 @@ def _slug_from_token_message(text: str) -> str:
     return head.strip() or "?"
 
 
-def _action_items(apply_sidecars: list[Sidecar]) -> list[ActionItem]:
+def _action_items(
+    apply_sidecars: list[Sidecar], verify_sidecars: list[Sidecar] | None = None,
+) -> list[ActionItem]:
     """Every item the user must act on, deduped by (category, slug).
 
     Pass 1 (any category): deterministic ``ASCENDO-ACTION-REQUIRED`` token
-    messages. Pass 2 (web only, unchanged behaviour): any non-silent web
-    item without a token still surfaces with a status-derived reason.
+    messages. Pass 2 (web only): any non-silent web item without a token still
+    surfaces with a status-derived reason -- EXCEPT the ones the status
+    vocabulary explains as fine: a stale vendor feed (Manufacturer warning),
+    a triggered item whose code is launched / updated / current_* /
+    rollout_hold, and an informational skip (rollout_hold). Items with no code,
+    an unrecognised code or a malformed token keep surfacing as before.
+    Pass 3: a ``triggered`` item whose VERIFY result is ``unverified``.
     """
     by_key: dict[tuple[str, str], ActionItem] = {}
+    stale_keys = {(w.category, w.slug) for w in _manufacturer_warnings(apply_sidecars)}
 
     # Pass 1 — precise, from the deterministic token messages.
     for sc in apply_sidecars:
@@ -356,16 +531,24 @@ def _action_items(apply_sidecars: list[Sidecar]) -> list[ActionItem]:
     for sc in apply_sidecars:
         if sc.category is not SourceType.WEB:
             continue
+        codes = _status_codes(sc)
         for it in sc.items:
             if it.status not in non_silent:
                 continue
             slug = _slug_of(it)
-            if ("web", slug) in by_key:
+            if ("web", slug) in by_key or ("web", slug) in stale_keys:
+                continue
+            code = codes.get(slug)
+            if it.status is ItemStatus.TRIGGERED and code in _BENIGN_TRIGGERED:
+                continue
+            if it.status is ItemStatus.SKIPPED and code in _INFORMATIONAL_SKIPPED:
                 continue
             item_text = " ".join(
                 (m.text or "") for m in it.messages
             ).lower()
-            if "in_use" in item_text or "in use" in item_text or "running" in item_text:
+            if code in _ATTENTION_CODES:
+                reason = code
+            elif "in_use" in item_text or "in use" in item_text or "running" in item_text:
                 reason = "app_in_use"
             else:
                 reason = _status_reason(it.status)
@@ -374,6 +557,20 @@ def _action_items(apply_sidecars: list[Sidecar]) -> list[ActionItem]:
                 (it.current_version or "").strip() or "?",
                 (it.target_version or it.resolved_version or "").strip() or "?",
             )
+
+    # Pass 3 -- the verify phase could not confirm a triggered update.
+    for sc in verify_sidecars or []:
+        category = sc.category.value
+        codes = _status_codes(sc)
+        for it in sc.items:
+            key = _item_key(category, it)
+            if it.status is ItemStatus.TRIGGERED and codes.get(key) == "unverified" \
+                    and (category, key) not in by_key:
+                by_key[(category, key)] = _make_action(
+                    category, key, "unverified",
+                    (it.current_version or "").strip() or "?",
+                    (it.target_version or it.resolved_version or "").strip() or "?",
+                )
 
     return sorted(by_key.values(), key=lambda a: (a.name.lower(), a.category))
 
@@ -391,6 +588,7 @@ def collect_action_required(run_dir: Path) -> list[ActionItem]:
         if not run_dir.is_dir():
             return []
         apply_sidecars: list[Sidecar] = []
+        verify_sidecars: list[Sidecar] = []
         for path in list_run_sidecars(run_dir):
             try:
                 sc = read_sidecar(path)
@@ -398,7 +596,9 @@ def collect_action_required(run_dir: Path) -> list[ActionItem]:
                 continue
             if sc.phase is Phase.APPLY:
                 apply_sidecars.append(sc)
-        return _action_items(apply_sidecars)
+            elif sc.phase is Phase.VERIFY:
+                verify_sidecars.append(sc)
+        return _action_items(apply_sidecars, verify_sidecars)
     except Exception:  # noqa: BLE001
         _log.exception("collect_action_required failed for %s", run_dir)
         return []
@@ -523,8 +723,17 @@ def _generate_apply_report_unsafe(
     n_failed = sum(len(b.failed) for b in buckets.values())
 
     # The consolidated "you must act on these" list (any category).
-    action_items = _action_items(apply_sidecars)
+    action_items = _action_items(apply_sidecars, verify_sidecars)
     action_keys = {(a.category, a.slug) for a in action_items}
+    # Manufacturer warnings (stale vendor feed) and soft system deferrals are
+    # warnings: counted, listed by name, never "failed" or "pending". A
+    # cancelled run is already a Problem; it gets no extra deferral warning.
+    mfr_warnings = _manufacturer_warnings(apply_sidecars)
+    mfr_keys = {(w.category, w.slug) for w in mfr_warnings}
+    status_by_cat = {sc.category.value: _status_codes(sc) for sc in apply_sidecars}
+    soft_deferrals = (
+        [] if _read_run_meta(run_dir).get("cancelled") else _soft_deferrals(apply_sidecars)
+    )
 
     # Honesty (Spec 1): problems from EVERY phase sidecar + unknown state.
     problems, warnings = _collect_problems(sidecars)
@@ -565,6 +774,21 @@ def _generate_apply_report_unsafe(
             f"Nothing to update — but {len(warnings)} "
             f"{_pluralize('cleanup step', len(warnings))} reported problems."
         )
+    elif mfr_warnings or soft_deferrals:
+        bits: list[str] = []
+        if mfr_warnings:
+            bits.append(
+                f"{len(mfr_warnings)} manufacturer "
+                f"{_pluralize('feed', len(mfr_warnings))} could not confirm the "
+                "installed version"
+            )
+        if soft_deferrals:
+            bits.append(
+                f"{len(soft_deferrals)} system {_pluralize('step', len(soft_deferrals))} "
+                f"{'was' if len(soft_deferrals) == 1 else 'were'} deferred"
+            )
+        lead = "Updates applied, but " if n_upgraded > 0 else "Nothing to update — but "
+        result_label = lead + " and ".join(bits) + "."
     elif n_upgraded > 0:
         result_label = "All updates applied successfully."
     else:
@@ -614,6 +838,14 @@ def _generate_apply_report_unsafe(
     if warnings:
         headline_bits.append(
             f"{len(warnings)} cleanup {_pluralize('warning', len(warnings))}"
+        )
+    if mfr_warnings:
+        headline_bits.append(
+            f"{len(mfr_warnings)} manufacturer {_pluralize('warning', len(mfr_warnings))}"
+        )
+    if soft_deferrals:
+        headline_bits.append(
+            f"{len(soft_deferrals)} system {_pluralize('step', len(soft_deferrals))} deferred"
         )
     if action_items:
         _all_web = all(a.category == "web" for a in action_items)
@@ -745,7 +977,7 @@ def _generate_apply_report_unsafe(
     for cat in _ordered_categories(buckets):
         b = buckets[cat]
         for item in sorted(b.deferred, key=_item_sort_key):
-            if (cat, _item_key(cat, item)) in action_keys:
+            if (cat, _item_key(cat, item)) in action_keys | mfr_keys:
                 continue
             deferred_rows.append((cat, item))
     if deferred_rows:
@@ -755,8 +987,23 @@ def _generate_apply_report_unsafe(
         )
         lines.append("")
         for cat, item in deferred_rows:
-            reason = _deferral_reason(item, buckets[cat].phase_messages)
+            reason = _deferral_reason(
+                item, buckets[cat].phase_messages,
+                code=status_by_cat.get(cat, {}).get(_item_key(cat, item)),
+            )
             lines.append(f"- **{_display_name(item)}** — {reason}")
+        lines.append("")
+
+    # ── Manufacturer warnings (stale vendor feed) ────────────────────────
+    if mfr_warnings:
+        lines.append(f"## Manufacturer warnings ({len(mfr_warnings)})")
+        lines.append("")
+        for w in mfr_warnings:
+            lines.append(
+                f"- **{w.name}** — vendor feed `{w.vendor}` is older than the "
+                f"installed `{w.installed}` ({_category_label(w.category)}). "
+                f"{_REASON_TEXT['feed_stale']}"
+            )
         lines.append("")
 
     # ── Failed ───────────────────────────────────────────────────────────
@@ -865,8 +1112,17 @@ def _render_upgrade(item: Item, *, fallback_target: str | None = None) -> str:
     return f"- **{name}**"
 
 
-def _deferral_reason(item: Item, phase_messages: list[Message]) -> str:
-    """Pick the best 1-line reason this item was deferred."""
+def _deferral_reason(
+    item: Item, phase_messages: list[Message], code: str | None = None,
+) -> str:
+    """Pick the best 1-line reason this item was deferred.
+
+    A recognised status ``code`` (rollout_hold, ...) gets its human text; an
+    unrecognised or missing one keeps the message-derived reason (the generic
+    diagnostic is never replaced by a guess).
+    """
+    if code in _REASON_TEXT and code not in ("feed_stale",):
+        return _REASON_TEXT[code]
     # First, look at item-level messages.
     for msg in item.messages:
         text = (msg.text or "").strip()
@@ -936,6 +1192,10 @@ def _normalise_reason(text: str) -> str:
     line = next((ln.strip() for ln in text.splitlines() if ln.strip()), text.strip())
     # The machine token is for the Action-required parser, not for humans.
     line = re.sub(r"\s*\|?\s*" + ACTION_RE.pattern, "", line).strip() or line
+    line = _STATUS_TOKEN_RE.sub("", line).strip() or line
+    low_line = line.lower()
+    if "sudo_unavailable" in low_line:
+        return _REASON_TEXT["sudo_unavailable"]
     low = line.lower()
     if "unknown arg:" in low:
         return "internal argument error (please report)"
