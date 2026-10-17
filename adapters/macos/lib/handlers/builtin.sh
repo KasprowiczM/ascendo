@@ -100,11 +100,9 @@ builtin_apply() {
         fi
         return 95
     fi
-    if command -v _web_open_tracked >/dev/null 2>&1; then
-        _web_open_tracked "$(/usr/bin/printf '%s' "$cfg" | _builtin_get bundle_id)" /usr/bin/env open -a "$app_path"
-    else
-        /usr/bin/env open -a "$app_path"
-    fi
+    # Deliberately NOT recorded in toolkit_launched.txt: the app is opened for
+    # the user to run Help -> Check for Updates, so verify must not quit it.
+    /usr/bin/env open -a "$app_path"
     if [ -n "$update_url" ]; then
         echo "Open the app's Help menu and run Check for Updates ($update_url)" >&2
     else

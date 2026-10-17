@@ -65,7 +65,8 @@ def test_classify_uses_three_way_and_flags_unparseable(rel_script):
     assert _classify(rel_script, "1.0.1", "1.0.0") == "up_to_date"
     assert _classify(rel_script, "2.0", "2.0") == "up_to_date"
     assert _classify(rel_script, "", "1.0") == "missing"
-    assert _classify(rel_script, "1.0", "") == "up_to_date"
+    # NB: an empty `latest` (failed probe) still reads up_to_date in classify(); that
+    # pre-existing GC5 gap is tracked in the task report, not enshrined here.
     assert _classify(rel_script, "dev-build", "nightly") == "unknown_version"
     assert _classify(rel_script, "1.0", "latest") == "unknown_version"
 
@@ -91,9 +92,13 @@ def _release_feed_registry(tmp_path: Path, installed: str, vendor: str):
     return reg, {"ASCENDO_WEB_CURL_BIN": str(curl), "ASCENDO_TEST_FEED": str(feed)}
 
 
-@pytest.mark.parametrize("phase", ["check", "plan"])
-def test_release_feed_unparseable_versions_are_skipped_unknown_version(tmp_path, phase):
-    reg, env = _release_feed_registry(tmp_path, "1.0", "latest")
+@pytest.mark.parametrize("inst,vendor", [("1.0", "latest"), ("nightly", "1.0"), ("1.0", "nightly")])
+@pytest.mark.parametrize("phase", ["check", "plan", "apply"])
+def test_release_feed_unparseable_versions_are_skipped_unknown_version(tmp_path, phase, inst, vendor):
+    """Both directions, and independent of string order / the prerelease heuristic
+    (`_should_skip_upgrade` must not turn garbage into up_to_date)."""
+    reg, env = _release_feed_registry(tmp_path, inst, vendor)
+    env = {**env, "ASCENDO_SUDO_WARM_DISABLE": "1"}
     out = tmp_path / "out"
     r, run_id = _run_phase(phase, reg, out, env_extra=env)
     assert r.returncode == 0, r.stderr
@@ -270,6 +275,7 @@ def test_verify_tier_b_unchanged_for_longer_than_stale_days_fails(sb):
     (item,) = sc["items"]
     assert item["status"] == "failed", sc
     assert "60 days" in _texts(sc)
+    assert "ASCENDO-ACTION-REQUIRED reason=unverified" in _texts(sc)    # stale => promoted by the report
 
 
 def test_verify_tier_b_stale_days_bound_is_configurable_and_default_45(sb):
@@ -338,8 +344,9 @@ exit 0
 ''')
 
 
-def _track_file(rd: Path, *bids: str) -> None:
-    (rd / "toolkit_launched.txt").write_text("".join(f"{b}\n" for b in bids))
+def _track_file(rd: Path, *bids: str, stamp: int = 1) -> None:
+    """Launch record: "<bundle id>\t<launch epoch>" per line (epoch 1 = long ago)."""
+    (rd / "toolkit_launched.txt").write_text("".join(f"{b}\t{stamp}\n" for b in bids))
 
 
 def test_verify_quits_only_the_apps_ascendo_launched(sb):
@@ -441,8 +448,9 @@ def _apply_launch(sb: Sandbox, ls_state: str):
 def test_apply_records_a_launch_only_when_the_app_was_explicitly_idle(sb):
     res, run_id, out, runs = _apply_launch(sb, "false")
     assert sb.read_log("open.log"), res.stderr
-    assert (out / run_id / "toolkit_launched.txt").read_text().split() == [BID]
-    assert (runs / run_id / "toolkit_launched.txt").read_text().split() == [BID]   # for verify's own tempdir
+    rec = (out / run_id / "toolkit_launched.txt").read_text().split()
+    assert rec[0] == BID and rec[1].isdigit()                  # bundle id + launch epoch
+    assert (runs / run_id / "toolkit_launched.txt").read_text().split() == rec   # for verify's own tempdir
 
 
 def test_apply_does_not_launch_or_record_when_running_or_unknown(sb):
@@ -451,3 +459,54 @@ def test_apply_does_not_launch_or_record_when_running_or_unknown(sb):
         assert sb.read_log("open.log") == [], state
         assert not (out / run_id / "toolkit_launched.txt").exists(), state
         assert not (runs / run_id / "toolkit_launched.txt").exists(), state
+
+
+# ---- settle window before any quit; builtin never recorded --------------------------
+
+def test_verify_does_not_quit_before_the_settle_window_elapses(sb):
+    make_app(sb.apps, ver="1.0")
+    rd = sb.tmp / "out" / "s1"
+    _apply_sidecar(rd)
+    _track_file(rd, BID, stamp=990)
+    _tracking_tools(sb)
+    res, sc, _ = _verify(sb, rd, ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE="0", ASCENDO_WEB_NOW_EPOCH="1000",
+                         ASCENDO_WEB_STAGE_WAIT="90")
+    assert sb.read_log("osascript.log") == []
+    assert "settle_pending" in _codes(sc)
+    assert sc["items"][0]["status"] == "triggered"                        # no false success
+
+
+def test_verify_quits_once_the_settle_window_has_elapsed(sb):
+    make_app(sb.apps, ver="1.0")
+    rd = sb.tmp / "out" / "s2"
+    _apply_sidecar(rd)
+    _track_file(rd, BID, stamp=900)
+    _tracking_tools(sb)
+    _verify(sb, rd, ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE="0", ASCENDO_WEB_NOW_EPOCH="1000", ASCENDO_WEB_STAGE_WAIT="90")
+    assert len(sb.read_log("osascript.log")) == 1
+
+
+def test_builtin_handler_launch_is_never_recorded_for_quit(sb):
+    """`builtin` opens the app FOR the user (Help -> Check for Updates)."""
+    make_app(sb.apps, ver="1.0")
+    sb.set_ls("false")
+    script(sb.bin / "open", f'echo "open $*" >> "{sb.log}/open.log"\nexit 0\n')
+    track = sb.tmp / "track.txt"
+    r = sb.bash(
+        f'. "{LIB}/handlers/builtin.sh"; builtin_apply vt \'{{"app_path":"{sb.apps}/Example.app",'
+        f'"bundle_id":"{BID}","display_name":"Example","handler":"builtin"}}\'',
+        ASCENDO_WEB_LAUNCH_TRACK_FILE=track, ASCENDO_SAFE_MODE="false")
+    assert sb.read_log("open.log"), r.stderr
+    assert not track.exists()
+
+
+def test_web_manager_exports_the_run_base_dir_as_ascendo_runs_dir(tmp_path):
+    from ascendo.orchestrator.stream_log import stream_log_context
+    from ascendo_macos.managers.web import WebManager
+    from ascendo.models.run import Phase
+
+    mgr = WebManager(scripts_dir=SCRIPTS, lib_dir=LIB)
+    base = tmp_path / "runs-x"
+    with stream_log_context(base / "rid-1" / "_stream.log"):
+        assert mgr._build_env(Phase.VERIFY)["ASCENDO_RUNS_DIR"] == str(base)
+    assert mgr._build_env(Phase.VERIFY).get("ASCENDO_RUNS_DIR") != str(base)   # unbound: not forced

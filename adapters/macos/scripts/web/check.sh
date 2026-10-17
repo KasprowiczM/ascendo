@@ -306,15 +306,17 @@ while [ "$i" -lt "$WORK_IDX" ]; do
     #      installed is stable — don't replace stable with beta
     #      (e.g. Firefox Developer Edition 151.0 stable installed,
     #      Mozilla product-details still on 151.0b10 beta)
-    if [ "$INSTALLED" = "$LATEST" ] || _should_skip_upgrade "$INSTALLED" "$LATEST"; then
-        json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "up_to_date" "web" "$HANDLER"
-        COUNT_UTD=$((COUNT_UTD + 1))
-    elif [ -n "$INSTALLED" ] && [ -n "$LATEST" ] \
+    # The three-way compare runs FIRST: an unparseable pair is neither planned
+    # nor current, whatever string order or the prerelease heuristic would say
+    # (_should_skip_upgrade only refines pairs that are comparable).
+    if [ "$INSTALLED" != "$LATEST" ] && [ -n "$INSTALLED" ] && [ -n "$LATEST" ] \
          && [ "$(_web_version_cmp "$LATEST" "$INSTALLED")" = "unknown" ]; then
-        # Three-way: an unparseable pair is neither planned nor current.
         json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
         json_add_message "warn" "$(_web_unknown_version_message "$SLUG" "$INSTALLED" "$LATEST")" "unknown_version"
         COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+    elif [ "$INSTALLED" = "$LATEST" ] || _should_skip_upgrade "$INSTALLED" "$LATEST"; then
+        json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "up_to_date" "web" "$HANDLER"
+        COUNT_UTD=$((COUNT_UTD + 1))
     else
         json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "planned" "web" "$HANDLER"
         COUNT_PLANNED=$((COUNT_PLANNED + 1))

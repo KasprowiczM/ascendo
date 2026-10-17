@@ -232,7 +232,7 @@ while IFS=$'\t' read -r ITEM_ID HANDLER PRE_VERSION TARGET ITEM_STATUS; do
                 COUNT_OK=$((COUNT_OK + 1))
             elif [ "$_days" -gt "$STALE_DAYS" ]; then
                 json_add_item "$ITEM_ID" "${POST:-$PRE_VERSION}" "$TARGET" "failed" "web" "$HANDLER"
-                json_add_message "error" "${SLUG}: action_required (version ${POST} unchanged for ${_days} days, more than ${STALE_DAYS}; the vendor agent is not updating it - open the app or check its updater)"
+                json_add_message "error" "${SLUG}: action_required (version ${POST} unchanged for ${_days} days, more than ${STALE_DAYS}; the vendor agent is not updating it - open the app or check its updater) | $(ascendo_action_required_token unverified "$POST" "${TARGET:-?}")"
                 COUNT_FAILED=$((COUNT_FAILED + 1))
             else
                 json_add_item "$ITEM_ID" "${POST:-$PRE_VERSION}" "$TARGET" "triggered" "web" "$HANDLER"
@@ -273,9 +273,16 @@ PY
 
 # ── Quit the apps ASCENDO launched (never one that was already running) ──────
 if [ -n "$LAUNCH_FILE" ] && [ -s "$LAUNCH_FILE" ] && [ "$DRY_RUN" != "true" ]; then
-    while IFS= read -r _bid || [ -n "$_bid" ]; do
+    _settle="$(_web_stage_wait)"
+    _now="${NOW_EPOCH:-$(/bin/date +%s)}"
+    while IFS=$'\t' read -r _bid _lt || [ -n "$_bid" ]; do
         case "$_bid" in ''|*[!A-Za-z0-9._-]*) continue ;; esac
+        case "$_lt" in ''|*[!0-9]*) _lt="$_now" ;; esac      # unreadable stamp: just launched
         [ "$(ascendo_app_running_state "$_bid")" = "true" ] || continue
+        if [ $((_now - _lt)) -lt "$_settle" ]; then
+            json_add_message "info" "${_bid}: left running - Ascendo launched it $((_now - _lt)) s ago and its settle window is ${_settle} s (no quit yet)" "settle_pending"
+            continue
+        fi
         _fr=0; _web_is_frontmost "$_bid" || _fr=$?
         if [ "$_fr" -ne 1 ]; then
             json_add_message "info" "${_bid}: left running (it is the frontmost app, or that could not be determined); Ascendo launched it for the update" "app_in_foreground"

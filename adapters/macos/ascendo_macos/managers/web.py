@@ -41,7 +41,7 @@ from ascendo.interfaces.package_manager import IPackageManager, ManagerError
 from ascendo.models.host import HostInfo, OperatingSystem
 from ascendo.models.package import SourceType
 from ascendo.models.run import Phase, RunInfo
-from ascendo.orchestrator.stream_log import child_env_with_stream_log
+from ascendo.orchestrator.stream_log import child_env_with_stream_log, current_stream_log_path
 from ascendo.models.sidecar import Sidecar
 from ascendo_macos.managers._proc import handle_phase_timeout, run_streaming
 from ascendo.orchestrator.sidecar_io import (
@@ -234,6 +234,13 @@ class WebManager(IPackageManager):
         """
         # os.environ + the per-run stream-log path for THIS worker thread.
         env = child_env_with_stream_log()
+        # Each phase script runs in its own temp --output-dir, so verify finds the
+        # apply sidecar / launch record in the canonical run dir. When this thread's
+        # run is bound to <base>/<run-id>/_stream.log the base dir is known: hand it
+        # to the scripts so apply and verify agree (and never fall back to ~/.ascendo).
+        stream = current_stream_log_path()
+        if stream is not None:
+            env["ASCENDO_RUNS_DIR"] = str(Path(stream).parent.parent)
         if (
             phase is Phase.APPLY
             and self._elevation is not None

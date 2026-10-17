@@ -230,8 +230,8 @@ _REASON_TEXT = {
         "is not confirmed until the next check."
     ),
     "unverified": (
-        "The update was triggered but its result could not be confirmed (the "
-        "installed version has not changed) — open the app and check its version."
+        "The update was triggered long ago but the installed version has never "
+        "changed — open the app and check for updates yourself."
     ),
     "identity_unverifiable": (
         "Ascendo could not verify the app's signed identity (bundle id / Team ID), "
@@ -283,14 +283,17 @@ STATUS_CODES = frozenset({
 })
 # A ``triggered`` item carrying one of these is fine (listed by name under
 # Trigger-only updates) and is NOT promoted to Action required.
+# A fresh `unverified` (the version has not changed *yet*) is the same: only
+# a STALE one -- unchanged longer than ASCENDO_WEB_STALE_DAYS -- is promoted,
+# and verify marks that one itself with an ACTION-REQUIRED token (Spec G).
 _BENIGN_TRIGGERED = frozenset({
-    "launched", "updated", "current_verified", "current_vendor",
+    "launched", "updated", "unverified", "current_verified", "current_vendor",
     "current_cask_only", "rollout_hold",
 })
 # Informational outcomes: a skipped item with one of these needs no action.
 _INFORMATIONAL_SKIPPED = frozenset({"rollout_hold"})
 # The only codes that promote a triggered/skipped item to Action required.
-_ATTENTION_CODES = frozenset({"unverified", "behind", "needs_restart"})
+_ATTENTION_CODES = frozenset({"behind", "needs_restart"})
 
 _STALE_VERSIONS_RE = re.compile(
     r"vendor feed (\S+) (?:is older than|<) installed (\S+)"
@@ -460,20 +463,25 @@ def _manufacturer_warnings(apply_sidecars: list[Sidecar]) -> list[ManufacturerWa
 
 
 def _is_soft_deferral(sc: Sidecar, it: Item) -> bool:
-    """A system step deferred for a recoverable reason (F3): any skipped
-    softwareupdate / mas item, or any skipped item whose messages carry the
-    ``SUDO_UNAVAILABLE`` code. Counts as a run warning (not failed)."""
+    """A system step deferred for lack of privileges or a restart (F3).
+
+    Counts: a skipped item whose messages carry ``SUDO_UNAVAILABLE`` (any
+    category), or a skipped softwareupdate / mas item carrying an
+    ``ASCENDO-ACTION-REQUIRED reason=needs_restart`` token. Policy skips (not
+    Recommended, major-upgrade block) and ``ipad_pending`` are NOT deferrals
+    (the latter is already an Action-required item)."""
     if it.status is not ItemStatus.SKIPPED:
         return False
-    if sc.category.value in _SOFT_DEFERRAL_CATEGORIES:
-        return True
     key = _item_key(sc.category.value, it)
-    for m in it.messages:
-        if m.code == "SUDO_UNAVAILABLE" or "SUDO_UNAVAILABLE" in (m.text or ""):
+    texts = [(m.code or "", m.text or "") for m in it.messages]
+    texts += [(m.code or "", m.text or "") for m in sc.messages
+              if _slug_from_token_message(m.text or "") in (key, it.name, it.id)]
+    for code, text in texts:
+        if code == "SUDO_UNAVAILABLE" or "SUDO_UNAVAILABLE" in text:
             return True
-    for m in sc.messages:
-        if (m.code == "SUDO_UNAVAILABLE" or "SUDO_UNAVAILABLE" in (m.text or "")) \
-                and _slug_from_token_message(m.text or "") in (key, it.name, it.id):
+        am = ACTION_RE.search(text)
+        if am and am.group(1) == "needs_restart" \
+                and sc.category.value in _SOFT_DEFERRAL_CATEGORIES:
             return True
     return False
 
@@ -506,7 +514,8 @@ def _action_items(
     a triggered item whose code is launched / updated / current_* /
     rollout_hold, and an informational skip (rollout_hold). Items with no code,
     an unrecognised code or a malformed token keep surfacing as before.
-    Pass 3: a ``triggered`` item whose VERIFY result is ``unverified``.
+    Pass 3: ``ASCENDO-ACTION-REQUIRED`` tokens of the VERIFY phase (a stale
+    ``unverified`` item, a ``behind`` one); a fresh unverified is not promoted.
     """
     by_key: dict[tuple[str, str], ActionItem] = {}
     stale_keys = {(w.category, w.slug) for w in _manufacturer_warnings(apply_sidecars)}
@@ -558,19 +567,18 @@ def _action_items(
                 (it.target_version or it.resolved_version or "").strip() or "?",
             )
 
-    # Pass 3 -- the verify phase could not confirm a triggered update.
+    # Pass 3 -- tokens the verify phase stamped (stale unverified, behind).
     for sc in verify_sidecars or []:
         category = sc.category.value
-        codes = _status_codes(sc)
-        for it in sc.items:
-            key = _item_key(category, it)
-            if it.status is ItemStatus.TRIGGERED and codes.get(key) == "unverified" \
-                    and (category, key) not in by_key:
-                by_key[(category, key)] = _make_action(
-                    category, key, "unverified",
-                    (it.current_version or "").strip() or "?",
-                    (it.target_version or it.resolved_version or "").strip() or "?",
-                )
+        for text in _token_messages(sc):
+            m = ACTION_RE.search(text)
+            if not m:
+                continue
+            slug = _slug_from_token_message(text)
+            if (category, slug) in by_key:
+                continue
+            by_key[(category, slug)] = _make_action(
+                category, slug, m.group(1), m.group(2), m.group(3))
 
     return sorted(by_key.values(), key=lambda a: (a.name.lower(), a.category))
 

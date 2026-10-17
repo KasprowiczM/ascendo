@@ -310,19 +310,19 @@ while [ "$i" -lt "$WORK_IDX" ]; do
             #     stable with beta.
             # Without this guard we'd attempt the DOWNGRADE, destroy user
             # data, and silently report "success".
-            if [ -z "$FEED_REL" ] && _should_skip_upgrade "$INSTALLED" "$CAND"; then
-                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "up_to_date" "web" "$HANDLER"
-                COUNT_UPTODATE=$((COUNT_UPTODATE + 1))
-                continue
-            fi
             # Three-way (Ruling 24): a pair that cannot be compared is
             # skipped, never planned and never "current".
             if [ -z "$FEED_REL" ] && [ -n "$INSTALLED" ] && [ -n "$CAND" ] \
-               && [ "$CAND" != "__GH_RATE_LIMITED__" ] \
+               && [ "$CAND" != "$INSTALLED" ] && [ "$CAND" != "__GH_RATE_LIMITED__" ] \
                && [ "$(_web_version_cmp "$CAND" "$INSTALLED")" = "unknown" ]; then
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
                 json_add_message "warn" "$(_web_unknown_version_message "$SLUG" "$INSTALLED" "$CAND")" "unknown_version"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                continue
+            fi
+            if [ -z "$FEED_REL" ] && _should_skip_upgrade "$INSTALLED" "$CAND"; then
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "up_to_date" "web" "$HANDLER"
+                COUNT_UPTODATE=$((COUNT_UPTODATE + 1))
                 continue
             fi
             # Empty probe (rate-limit / network blip / vendor 502) →

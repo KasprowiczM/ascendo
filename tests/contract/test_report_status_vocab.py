@@ -162,7 +162,7 @@ def test_warning_without_parseable_versions_preserves_diagnostic(run_dir):
 # Triggered promotion is narrowed
 # ---------------------------------------------------------------------------
 
-def test_triggered_launched_is_not_action_required_but_unverified_behind_needs_restart_are(run_dir):
+def test_triggered_launched_is_not_action_required_but_behind_needs_restart_are(run_dir):
     items = [
         _web("launchedapp", ItemStatus.TRIGGERED, cur="1.0", target="2.0"),
         _web("updatedapp", ItemStatus.TRIGGERED, cur="1.0"),
@@ -182,22 +182,35 @@ def test_triggered_launched_is_not_action_required_but_unverified_behind_needs_r
     _sc(run_dir, Phase.APPLY, WEB, items, messages=msgs)
     got = {a.slug: a.reason for a in collect_action_required(run_dir)}
     assert "launchedapp" not in got and "updatedapp" not in got
-    assert got["unverifiedapp"] == "unverified"
+    assert "unverifiedapp" not in got                  # fresh unverified: Trigger-only, not action-required
     assert got["behindapp"] == "behind" and got["restartapp"] == "needs_restart"
     assert "legacyapp" in got                                              # "nothing silently missing" stays
     md = generate_apply_report(run_dir)
     trig = _section(md, "Trigger-only")
-    assert "Launchedapp" in trig and "Updatedapp" in trig                   # still listed, by name
+    assert "Launchedapp" in trig and "Updatedapp" in trig and "Unverifiedapp" in trig
 
 
-def test_verify_unverified_triggered_item_is_promoted_by_name(run_dir):
+def test_fresh_unverified_verify_item_is_not_promoted_but_a_stale_one_is(run_dir):
     _sc(run_dir, Phase.APPLY, WEB, [_web("slack", ItemStatus.TRIGGERED, cur="4.0")],
         messages=[_info("slack: launched | ASCENDO-STATUS code=launched", "launched")])
     _sc(run_dir, Phase.VERIFY, WEB, [_web("slack", ItemStatus.TRIGGERED, cur="4.0")],
         messages=[_info("slack: unverified (unchanged) | ASCENDO-STATUS code=unverified", "unverified")])
+    assert collect_action_required(run_dir) == []
+    # the stale case is what verify.sh stamps with an ACTION-REQUIRED token (item failed)
+    _sc(run_dir, Phase.VERIFY, WEB, [_web("slack", ItemStatus.FAILED, cur="4.0")], messages=[
+        Message(level=MessageLevel.ERROR, text="slack: action_required (version 4.0 unchanged for 60 days) | "
+                + _tok("unverified", "4.0", "?"))])
     items = collect_action_required(run_dir)
     assert [(a.category, a.slug, a.reason) for a in items] == [("web", "slack", "unverified")]
     assert items[0].reason_text != _DEFAULT_REASON_TEXT
+
+
+def test_verify_behind_token_is_read_by_the_report(run_dir):
+    _sc(run_dir, Phase.APPLY, WEB, [_web("slack", ItemStatus.TRIGGERED, cur="4.0")])
+    _sc(run_dir, Phase.VERIFY, WEB, [_web("slack", ItemStatus.SKIPPED, cur="4.0", target="5.0")], messages=[
+        _info("slack: behind -- installed 4.0, vendor 5.0 | " + _tok("behind", "4.0", "5.0"), "behind")])
+    got = {a.slug: a.reason for a in collect_action_required(run_dir)}
+    assert got["slack"] in ("behind", "self_update")
 
 
 def test_rollout_hold_is_informational_not_action_required(run_dir):
@@ -281,3 +294,23 @@ def test_run_status_helpers_treat_sudo_unavailable_as_warning_and_cancel_as_not(
     assert _report_has_warnings(RunReport(run=run, host=host, sidecars=[quiet])) is True
     clean = _make_sidecar(run, host, phase=Phase.APPLY)
     assert _report_has_warnings(RunReport(run=run, host=host, sidecars=[clean])) is False
+
+
+def test_policy_skips_and_ipad_pending_are_not_soft_deferrals(run_dir):
+    su = _build_item(item_id="macOS 99.1", category=SourceType.SOFTWAREUPDATE, status=ItemStatus.SKIPPED,
+                     current="99.0", target="99.1")
+    _sc(run_dir, Phase.APPLY, SourceType.SOFTWAREUPDATE, [su], messages=[
+        _info("macOS 99.1: skipped - not marked Recommended")])
+    mas = _build_item(item_id="UniFi", category=SourceType.MAS, status=ItemStatus.SKIPPED, current="1", target="2")
+    _sc(run_dir, Phase.APPLY, SourceType.MAS, [mas], messages=[
+        _info("UniFi: iPad app - " + _tok("ipad_pending", "1", "2"))])
+    md = generate_apply_report(run_dir)
+    assert "system step" not in md
+
+
+def test_restart_deferral_of_a_system_step_is_a_soft_deferral(run_dir):
+    su = _build_item(item_id="macOS 99.1", category=SourceType.SOFTWAREUPDATE, status=ItemStatus.SKIPPED,
+                     current="99.0", target="99.1")
+    _sc(run_dir, Phase.APPLY, SourceType.SOFTWAREUPDATE, [su], messages=[
+        _info("macOS 99.1: needs a restart - " + _tok("needs_restart", "99.0", "99.1"))])
+    assert "1 system step deferred" in generate_apply_report(run_dir)

@@ -635,8 +635,12 @@ _web_sleep() {
 
 # _web_record_launch <bundle_id>
 # Remember that ASCENDO started this app (it was explicitly idle before), so the
-# verify phase can quit it again once the settle window is over. No-op without
-# ASCENDO_WEB_LAUNCH_TRACK_FILE or for a malformed id; ids are de-duplicated.
+# verify phase can quit it again once the settle window (ASCENDO_WEB_STAGE_WAIT)
+# is over. One line per app: "<bundle id><TAB><launch epoch>" (the epoch is what
+# the settle window is measured from). No-op without ASCENDO_WEB_LAUNCH_TRACK_FILE
+# or for a malformed id; ids are de-duplicated. The `builtin` handler never
+# records: it opens the app FOR the user (Help -> Check for Updates), so it must
+# stay open.
 # Callers must only record launches of apps whose running state was an explicit
 # `false` beforehand -- `unknown` counts as running and is never recorded.
 _web_record_launch() {
@@ -644,8 +648,8 @@ _web_record_launch() {
     [ -n "$f" ] || return 0
     case "$bid" in ''|*[!A-Za-z0-9._-]*) return 0 ;; esac
     mkdir -p "$(dirname "$f")" 2>/dev/null || return 0
-    /usr/bin/grep -Fqx -- "$bid" "$f" 2>/dev/null && return 0
-    printf '%s\n' "$bid" >> "$f"
+    /usr/bin/grep -q -- "^${bid}	" "$f" 2>/dev/null && return 0
+    printf '%s\t%s\n' "$bid" "${ASCENDO_WEB_NOW_EPOCH:-$(/bin/date +%s)}" >> "$f"
 }
 
 # _web_open_tracked <bundle_id> <command...>
