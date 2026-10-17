@@ -53,11 +53,13 @@ classify() {
     [ -z "$_installed" ] && { printf 'missing'; return; }
     [ -z "$_latest" ] && { printf 'up_to_date'; return; }
     [ "$_installed" = "$_latest" ] && { printf 'up_to_date'; return; }
-    # W11: Use Python version comparison instead of sort -V
-    if python3 -c "import sys; from ascendo.utils.version import version_gt; sys.exit(0 if version_gt(sys.argv[1], sys.argv[2]) else 1)" "$_installed" "$_latest" 2>/dev/null; then
-        printf 'up_to_date'; return
-    fi
-    printf 'planned'
+    # Three-way (core version_cmp3): unparseable input is `unknown_version`
+    # (skipped by the callers), never guessed as planned or up_to_date.
+    case "$(ascendo_version_rel "$_latest" "$_installed")" in
+        newer)       printf 'planned' ;;
+        equal|older) printf 'up_to_date' ;;
+        *)           printf 'unknown_version' ;;
+    esac
 }
 
 ascendo_pip_prime_installed_cache
@@ -90,6 +92,10 @@ while IFS='|' read -r DISPLAY PKG METHOD DESC; do
     # Only emit items that would CHANGE in apply (planned + missing).
     case "$STATUS" in
         planned|missing) json_add_item "$DISPLAY" "$INSTALLED" "$LATEST" "$STATUS" "pip" "$METHOD" ;;
+        unknown_version)
+            json_add_item "$DISPLAY" "$INSTALLED" "" "skipped" "pip" "$METHOD"
+            json_add_message "warn" "$DISPLAY: unknown_version (installed ${INSTALLED:-?} vs latest ${LATEST:-?} cannot be compared) - not treated as up to date" "unknown_version"
+            ;;
     esac
 done < <(ascendo_pip_manifest_lines)
 

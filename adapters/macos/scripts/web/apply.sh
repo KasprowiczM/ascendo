@@ -88,6 +88,13 @@ json_init "apply" "web" "$RUN_ID" "$TRIGGER" "$PROFILE_NAME" \
           "$HOST_USER" "$HOST_IS_ELEVATED"
 trap 'json_save_on_exit "$OUTPUT_DIR"' EXIT
 
+# Apps ASCENDO launches itself (explicitly idle beforehand) are recorded here so
+# the verify phase can quit them again; apps the user already had open are never
+# recorded. Copied to the canonical run dir at the end (each phase runs in its own
+# temporary --output-dir, so verify cannot see this one).
+export ASCENDO_WEB_LAUNCH_TRACK_FILE="$OUTPUT_DIR/$RUN_ID/toolkit_launched.txt"
+rm -f "$ASCENDO_WEB_LAUNCH_TRACK_FILE" 2>/dev/null
+
 _reg_args=(--shipped "$REG_PATH")
 [ -n "$USER_REG" ] && _reg_args+=(--user-override "$USER_REG")
 if ! python3 "$REG_SHIM" "${_reg_args[@]}" --validate >/dev/null 2>&1; then
@@ -285,7 +292,7 @@ while [ "$i" -lt "$WORK_IDX" ]; do
     # the probe is empty for a non-squirrel handler). Report it; never launch.
     if [ "$DRY_RUN" = "true" ]; then
         json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "planned" "web" "$HANDLER"
-        json_add_message "info" "${SLUG}: Update available ${INSTALLED} -> ${CAND:-unknown} (dry run: nothing launched or installed)"
+        json_add_message "info" "${SLUG}: Update available ${INSTALLED} -> ${CAND:-unknown} (dry run: nothing launched or installed) | $(ascendo_status_token update_available)" "update_available"
         COUNT_PLANNED=$((COUNT_PLANNED + 1))
         continue
     fi
@@ -306,6 +313,16 @@ while [ "$i" -lt "$WORK_IDX" ]; do
             if [ -z "$FEED_REL" ] && _should_skip_upgrade "$INSTALLED" "$CAND"; then
                 json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "up_to_date" "web" "$HANDLER"
                 COUNT_UPTODATE=$((COUNT_UPTODATE + 1))
+                continue
+            fi
+            # Three-way (Ruling 24): a pair that cannot be compared is
+            # skipped, never planned and never "current".
+            if [ -z "$FEED_REL" ] && [ -n "$INSTALLED" ] && [ -n "$CAND" ] \
+               && [ "$CAND" != "__GH_RATE_LIMITED__" ] \
+               && [ "$(_web_version_cmp "$CAND" "$INSTALLED")" = "unknown" ]; then
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "warn" "$(_web_unknown_version_message "$SLUG" "$INSTALLED" "$CAND")" "unknown_version"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 continue
             fi
             # Empty probe (rate-limit / network blip / vendor 502) →
@@ -396,7 +413,7 @@ while [ "$i" -lt "$WORK_IDX" ]; do
                 _o_rel=$(_web_version_cmp "$CAND" "$_post_installed")
                 if [ "$_o_rel" = "equal" ] || [ "$_o_rel" = "older" ]; then
                     json_add_item "web:${SLUG}" "$_post_installed" "$CAND" "success" "web" "$HANDLER"
-                    json_add_message "info" "${SLUG}: ${_o_msg}"
+                    json_add_message "info" "${SLUG}: ${_o_msg} | $(ascendo_status_token updated)" "updated"
                     COUNT_SUCCESS=$((COUNT_SUCCESS + 1))
                 else
                     json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "failed" "web" "$HANDLER"
@@ -406,14 +423,14 @@ while [ "$i" -lt "$WORK_IDX" ]; do
                 ;;
             triggered)
                 json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "triggered" "web" "$HANDLER"
-                json_add_message "warn" "${SLUG}: ${_o_msg}" "error_soft"
+                json_add_message "warn" "${SLUG}: ${_o_msg} | $(ascendo_status_token error_soft)" "error_soft"
                 COUNT_TRIGGERED=$((COUNT_TRIGGERED + 1))
                 ;;
             launched)
                 # Ascendo launched the app hidden for its own updater; the
                 # update is NOT measured, so this is `triggered`, never success.
                 json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "triggered" "web" "$HANDLER"
-                json_add_message "info" "${SLUG}: Ascendo launched the app hidden -- ${_o_msg}" "launched"
+                json_add_message "info" "${SLUG}: Ascendo launched the app hidden -- ${_o_msg} | $(ascendo_status_token launched)" "launched"
                 COUNT_TRIGGERED=$((COUNT_TRIGGERED + 1))
                 ;;
             current)
@@ -422,27 +439,27 @@ while [ "$i" -lt "$WORK_IDX" ]; do
                 ;;
             needs_restart)
                 json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
-                json_add_message "info" "${SLUG}: skipped -- ${_o_msg} | $(ascendo_action_required_token needs_restart "$INSTALLED" "$CAND")" "needs_restart"
+                json_add_message "info" "${SLUG}: skipped -- ${_o_msg} | $(ascendo_status_token needs_restart) | $(ascendo_action_required_token needs_restart "$INSTALLED" "$CAND")" "needs_restart"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 ;;
             rollout_hold)
                 json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
-                json_add_message "info" "${SLUG}: ${_o_msg}" "rollout_hold"
+                json_add_message "info" "${SLUG}: ${_o_msg} | $(ascendo_status_token rollout_hold)" "rollout_hold"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 ;;
             behind)
                 json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
-                json_add_message "info" "${SLUG}: behind -- ${_o_msg} | $(ascendo_action_required_token behind "$INSTALLED" "$CAND")" "behind"
+                json_add_message "info" "${SLUG}: behind -- ${_o_msg} | $(ascendo_status_token behind) | $(ascendo_action_required_token behind "$INSTALLED" "$CAND")" "behind"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 ;;
             error_soft)
                 json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
-                json_add_message "warn" "${SLUG}: ${_o_msg} | $(ascendo_action_required_token download_error "$INSTALLED" "$CAND")" "error_soft"
+                json_add_message "warn" "${SLUG}: ${_o_msg} | $(ascendo_status_token error_soft) | $(ascendo_action_required_token download_error "$INSTALLED" "$CAND")" "error_soft"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 ;;
             launch_failed)
                 json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
-                json_add_message "warn" "${SLUG}: error_soft: ${_o_msg} | $(ascendo_action_required_token launch_failed "$INSTALLED" "$CAND")" "error_soft"
+                json_add_message "warn" "${SLUG}: error_soft: ${_o_msg} | $(ascendo_status_token error_soft) | $(ascendo_action_required_token launch_failed "$INSTALLED" "$CAND")" "error_soft"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 ;;
             feed_stale)
@@ -500,7 +517,7 @@ while [ "$i" -lt "$WORK_IDX" ]; do
         case "$HANDLER" in
             sparkle|github_dmg|release_feed)
                 json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
-                json_add_message "info" "${SLUG}: skipped -- ${DISPLAY_NAME:-$SLUG} is running (or its running state could not be determined); not replaced. Quit it and re-run apply to install ${CAND:-the new version} | $(ascendo_action_required_token needs_restart "$INSTALLED" "$CAND")"
+                json_add_message "info" "${SLUG}: skipped -- ${DISPLAY_NAME:-$SLUG} is running (or its running state could not be determined); not replaced. Quit it and re-run apply to install ${CAND:-the new version} | $(ascendo_status_token needs_restart) | $(ascendo_action_required_token needs_restart "$INSTALLED" "$CAND")" "needs_restart"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 continue
                 ;;
@@ -526,11 +543,11 @@ while [ "$i" -lt "$WORK_IDX" ]; do
                         _web_fallback_launch "$APP_PATH" "$BUNDLE_ID" || _soft_lrc=$?
                         if [ "$_soft_lrc" -eq 0 ]; then
                             json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "triggered" "web" "$HANDLER"
-                            json_add_message "warn" "${SLUG}: error_soft: the vendor download/verification failed (${_soft_tail:-no detail}); launched the app hidden so its own updater can run (unverified until the next check)" "error_soft"
+                            json_add_message "warn" "${SLUG}: error_soft: the vendor download/verification failed (${_soft_tail:-no detail}); launched the app hidden so its own updater can run (unverified until the next check) | $(ascendo_status_token error_soft)" "error_soft"
                             COUNT_TRIGGERED=$((COUNT_TRIGGERED + 1))
                         else
                             json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
-                            json_add_message "warn" "${SLUG}: error_soft: the vendor download/verification failed (${_soft_tail:-no detail}); ${_WEB_LAUNCH_NOTE} | $(ascendo_action_required_token download_error "$INSTALLED" "$CAND")" "error_soft"
+                            json_add_message "warn" "${SLUG}: error_soft: the vendor download/verification failed (${_soft_tail:-no detail}); ${_WEB_LAUNCH_NOTE} | $(ascendo_status_token error_soft) | $(ascendo_action_required_token download_error "$INSTALLED" "$CAND")" "error_soft"
                             COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                         fi
                         continue
@@ -588,6 +605,14 @@ done
 
 # Clean up temp work artefacts (keep the sidecar)
 rm -rf "$RESULTS_DIR" "$INDICES_FILE" 2>/dev/null
+
+# Hand the launch record to the verify phase (it runs in its own temp dir).
+if [ -s "$ASCENDO_WEB_LAUNCH_TRACK_FILE" ] && [ "$DRY_RUN" != "true" ]; then
+    _canon="${ASCENDO_RUNS_DIR:-$HOME/.ascendo/runs}/$RUN_ID"
+    if mkdir -p "$_canon" 2>/dev/null; then
+        cp "$ASCENDO_WEB_LAUNCH_TRACK_FILE" "$_canon/toolkit_launched.txt" 2>/dev/null || true
+    fi
+fi
 
 # One aggregated, non-spammy line for registry entries whose app isn't
 # installed (was: N recurring skipped-rows + N warnings every run).

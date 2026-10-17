@@ -158,6 +158,35 @@ ascendo_action_required_token() {
     printf 'ASCENDO-ACTION-REQUIRED reason=%s cur=%s cand=%s' "$_reason" "$_cur" "$_cand"
 }
 
+# ascendo_status_token <code>
+#   Prints the machine-readable status token that core/ascendo/orchestrator/
+#   report.py (STATUS_RE) parses. Vocabulary (macOS_updates internet_status):
+#     current_verified current_vendor updated update_available behind
+#     needs_restart rollout_hold feed_stale unverified error_soft ...
+#   Contract: message = "<item id>: <human text> | ASCENDO-STATUS code=<code>"
+#   and the same <code> goes in json_add_message's third argument.
+ascendo_status_token() {
+    local _code
+    _code="$(printf '%s' "${1:-unknown}" | tr -s '[:space:]' '_')"
+    printf 'ASCENDO-STATUS code=%s' "$_code"
+}
+
+# ascendo_version_rel <candidate> <installed>
+#   Three-way compare through the core helper version_cmp3: prints
+#   newer|equal|older|unknown. Unparseable or empty input is `unknown`
+#   (never a string-order guess), so callers can report skipped +
+#   unknown_version instead of planning or "up-to-date"-ing on garbage.
+ascendo_version_rel() {
+    local _core
+    _core="$(cd "${ASCENDO_JSON_DIR}/../../../core" 2>/dev/null && pwd)"
+    PYTHONPATH="${_core:+$_core}${PYTHONPATH:+:$PYTHONPATH}" python3 -c '
+import sys
+from ascendo.utils.version import version_cmp3
+r = version_cmp3(sys.argv[1], sys.argv[2])
+print({1: "newer", 0: "equal", -1: "older"}.get(r, "unknown"))
+' "${1:-}" "${2:-}" 2>/dev/null || printf 'unknown\n'
+}
+
 # json_set_needs_reboot <true|false>
 json_set_needs_reboot() {
     _json_emit set-flag --bufdir "$JSON_BUFDIR" --key needs_reboot --value "$1"

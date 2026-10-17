@@ -72,11 +72,13 @@ classify() {
     [ -z "$_installed" ] && { printf 'missing'; return; }
     [ -z "$_latest" ] && { printf 'up_to_date'; return; }
     [ "$_installed" = "$_latest" ] && { printf 'up_to_date'; return; }
-    # W11: Use Python version comparison instead of sort -V
-    if python3 -c "import sys; from ascendo.utils.version import version_gt; sys.exit(0 if version_gt(sys.argv[1], sys.argv[2]) else 1)" "$_installed" "$_latest" 2>/dev/null; then
-        printf 'up_to_date'; return
-    fi
-    printf 'planned'
+    # Three-way (core version_cmp3): unparseable input is `unknown_version`
+    # (skipped by the callers), never guessed as planned or up_to_date.
+    case "$(ascendo_version_rel "$_latest" "$_installed")" in
+        newer)       printf 'planned' ;;
+        equal|older) printf 'up_to_date' ;;
+        *)           printf 'unknown_version' ;;
+    esac
 }
 
 # Prime the `pip list` cache once so per-package up_to_date guards
@@ -158,6 +160,11 @@ apply_pip() {
     _status="$(classify "$_installed" "$_latest")"
     if [ "$_status" = "up_to_date" ]; then
         json_add_item "$_display" "$_installed" "$_latest" "up_to_date" "pip" "pip"
+        return
+    fi
+    if [ "$_status" = "unknown_version" ]; then
+        json_add_item "$_display" "$_installed" "" "skipped" "pip" "pip"
+        json_add_message "warn" "$_display: unknown_version (installed ${_installed:-?} vs latest ${_latest:-?} cannot be compared) - not updated" "unknown_version"
         return
     fi
     _stream_emit ">>> pip install -U $_pkg ($_display)"

@@ -149,15 +149,23 @@ _squirrel_apply_legacy() {
     # Hidden launch matches macOS_updates silent_launch_app (`open -gjF`).
     # Safe mode still launches hidden for FEEDLESS apps -- that is their only
     # update channel. Feed-backed apps never launch in safe mode.
+    # apply.sh only reaches here for an app whose running state was an explicit
+    # `false`; a successful launch is remembered so verify can quit it again.
+    local _bid _lrc=0
+    _bid=$(/usr/bin/printf '%s' "$cfg" | _squirrel_get bundle_id)
     if [ -d "$app_path" ]; then
         /usr/bin/env open -gjF "$app_path" 2>/dev/null \
             || /usr/bin/env open -gj "$app_path" 2>/dev/null \
             || /usr/bin/env open -a "$app_path"
-        return $?
+        _lrc=$?
+    else
+        /usr/bin/env open -gjF -a "$app_path" 2>/dev/null \
+            || /usr/bin/env open -gj -a "$app_path" 2>/dev/null \
+            || /usr/bin/env open -a "$app_path"
+        _lrc=$?
     fi
-    /usr/bin/env open -gjF -a "$app_path" 2>/dev/null \
-        || /usr/bin/env open -gj -a "$app_path" 2>/dev/null \
-        || /usr/bin/env open -a "$app_path"
+    if [ "$_lrc" -eq 0 ] && command -v _web_record_launch >/dev/null 2>&1; then _web_record_launch "$_bid"; fi
+    return "$_lrc"
 }
 
 # _squirrel_vendor_truth <slug> <cfg>  -- the algorithm in the file header.
@@ -221,7 +229,7 @@ VENDOR_LINE
         if _web_safe_mode; then
             launch_skipped="safe mode: the app's own updater was not launched; set ASCENDO_WEB_ALLOW_GUI=1 to allow a hidden launch"
         elif [ "$wait" -gt 0 ]; then
-            if ! _web_open_hidden "$app_path"; then
+            if ! _web_open_hidden "$app_path" "$bundle_id"; then
                 _web_outcome launch_failed "hidden launch of the app failed; its own updater could not run"
                 return 95
             fi

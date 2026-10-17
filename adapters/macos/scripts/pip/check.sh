@@ -83,18 +83,20 @@ classify() {
     if [ -z "$_installed" ]; then printf 'missing'; return; fi
     if [ -z "$_latest" ];    then printf 'up_to_date'; return; fi
     if [ "$_installed" = "$_latest" ]; then printf 'up_to_date'; return; fi
-    local _lower
-    # W11: Use Python version comparison instead of sort -V
-    if python3 -c "import sys; from ascendo.utils.version import version_gt; sys.exit(0 if version_gt(sys.argv[1], sys.argv[2]) else 1)" "$_installed" "$_latest" 2>/dev/null; then
-        printf 'up_to_date'; return
-    fi
-    printf 'planned'
+    # Three-way (core version_cmp3): unparseable input is `unknown_version`
+    # (skipped by the callers), never guessed as planned or up_to_date.
+    case "$(ascendo_version_rel "$_latest" "$_installed")" in
+        newer)       printf 'planned' ;;
+        equal|older) printf 'up_to_date' ;;
+        *)           printf 'unknown_version' ;;
+    esac
 }
 
 # -- walk manifest -------------------------------------------------------------
 COUNT_PLANNED=0
 COUNT_UTD=0
 COUNT_MISSING=0
+COUNT_SKIPPED=0
 
 if [ -z "$PIP_BIN" ]; then
     json_add_message "warn" "pip not on PATH; reporting all manifest entries as missing"
@@ -162,10 +164,16 @@ while IFS='|' read -r DISPLAY PKG METHOD DESC; do
         planned)    COUNT_PLANNED=$((COUNT_PLANNED + 1)) ;;
         up_to_date) COUNT_UTD=$((COUNT_UTD + 1)) ;;
         missing)    COUNT_MISSING=$((COUNT_MISSING + 1)) ;;
+        unknown_version) COUNT_SKIPPED=$((COUNT_SKIPPED + 1)) ;;
     esac
 
-    json_add_item "$DISPLAY" "$INSTALLED" "$LATEST" "$STATUS" "pip" "$METHOD"
+    if [ "$STATUS" = "unknown_version" ]; then
+        json_add_item "$DISPLAY" "$INSTALLED" "" "skipped" "pip" "$METHOD"
+        json_add_message "warn" "$DISPLAY: unknown_version (installed ${INSTALLED:-?} vs latest ${LATEST:-?} cannot be compared) - not treated as up to date" "unknown_version"
+    else
+        json_add_item "$DISPLAY" "$INSTALLED" "$LATEST" "$STATUS" "pip" "$METHOD"
+    fi
 done < <(ascendo_pip_manifest_lines)
 
-json_add_message "info" "pip: ${COUNT_PLANNED} outdated, ${COUNT_UTD} up-to-date, ${COUNT_MISSING} missing"
+json_add_message "info" "pip: ${COUNT_PLANNED} outdated, ${COUNT_UTD} up-to-date, ${COUNT_MISSING} missing${COUNT_SKIPPED:+, ${COUNT_SKIPPED} skipped}"
 exit 0

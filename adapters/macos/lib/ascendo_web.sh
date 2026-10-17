@@ -381,6 +381,45 @@ _web_is_running() {
     [ "$(ascendo_app_running_state "$1")" = "true" ]
 }
 
+# _web_is_frontmost <bundle_id>
+# rc 0 = the app is the frontmost application, 1 = positively NOT frontmost,
+# 2 = cannot tell. Compares the app's ASN with `lsappinfo front`; the numeric
+# part of the ASN (ASN:0x0-0x...) is the only thing compared. Callers that
+# would quit an app treat 2 like 0 ("when in doubt, do not quit").
+_web_is_frontmost() {
+    local bin a b
+    bin="${ASCENDO_LSAPPINFO_BIN:-}"
+    if [ -z "$bin" ]; then bin="$(command -v lsappinfo 2>/dev/null)" || bin=""; fi
+    [ -n "$bin" ] && [ -x "$bin" ] || return 2
+    a="$(ascendo_run_with_timeout 10 "$bin" find "bundleid=$1" 2>/dev/null \
+        | /usr/bin/grep -oE 'ASN:0x[0-9a-fA-F]+-0x[0-9a-fA-F]+' | /usr/bin/head -n 1)"
+    b="$(ascendo_run_with_timeout 10 "$bin" front 2>/dev/null \
+        | /usr/bin/grep -oE 'ASN:0x[0-9a-fA-F]+-0x[0-9a-fA-F]+' | /usr/bin/head -n 1)"
+    [ -n "$a" ] && [ -n "$b" ] || return 2
+    [ "$a" = "$b" ] && return 0
+    return 1
+}
+
+# _web_quit_gracefully <bundle_id>
+# Ask the app to quit (AppleScript `quit`, never a signal) and wait for it to
+# be explicitly gone: rc 0 = not running (already, or after the request),
+# rc 1 = still running / state unknown when ASCENDO_WEB_QUIT_WAIT (default 60,
+# clamp 0-300) seconds are up. Only ever called for an app recorded in the run's
+# toolkit_launched.txt.
+_web_quit_gracefully() {
+    local bid="$1" wait elapsed=0
+    case "$bid" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+    [ "$(ascendo_app_running_state "$bid")" = "true" ] || return 0
+    ascendo_run_with_timeout 20 osascript -e "tell application id \"$bid\" to quit" >/dev/null 2>&1
+    wait="$(_web_bounded_int "${ASCENDO_WEB_QUIT_WAIT:-60}" 60 300)"
+    while :; do
+        [ "$(ascendo_app_running_state "$bid")" = "false" ] && return 0
+        [ "$elapsed" -ge "$wait" ] && return 1
+        _web_sleep 2
+        elapsed=$((elapsed + 2))
+    done
+}
+
 # ============================================================
 # Vendor truth: feeds, Sparkle parsing, three-way compare (Spec A/D/E)
 # ============================================================
@@ -455,7 +494,7 @@ _web_feed_backed() {
 
 # _web_feed_stale_message <slug> <installed> <vendor>
 _web_feed_stale_message() {
-    printf '%s: feed_stale (vendor feed %s < installed %s) - version not verified | ASCENDO-STATUS code=feed_stale' \
+    printf '%s: vendor feed %s is older than installed %s | ASCENDO-STATUS code=feed_stale' \
         "$1" "$3" "$2"
 }
 
@@ -594,13 +633,46 @@ _web_sleep() {
     "${ASCENDO_WEB_SLEEP_BIN:-/bin/sleep}" "$1"
 }
 
-# _web_open_hidden <app_path>
+# _web_record_launch <bundle_id>
+# Remember that ASCENDO started this app (it was explicitly idle before), so the
+# verify phase can quit it again once the settle window is over. No-op without
+# ASCENDO_WEB_LAUNCH_TRACK_FILE or for a malformed id; ids are de-duplicated.
+# Callers must only record launches of apps whose running state was an explicit
+# `false` beforehand -- `unknown` counts as running and is never recorded.
+_web_record_launch() {
+    local bid="${1:-}" f="${ASCENDO_WEB_LAUNCH_TRACK_FILE:-}"
+    [ -n "$f" ] || return 0
+    case "$bid" in ''|*[!A-Za-z0-9._-]*) return 0 ;; esac
+    mkdir -p "$(dirname "$f")" 2>/dev/null || return 0
+    /usr/bin/grep -Fqx -- "$bid" "$f" 2>/dev/null && return 0
+    printf '%s\n' "$bid" >> "$f"
+}
+
+# _web_open_tracked <bundle_id> <command...>
+# Run a launching command (`/usr/bin/env open ...`); if it succeeds AND the app
+# was explicitly idle just before, record the launch. Returns the command's rc.
+_web_open_tracked() {
+    local bid="$1" was rc=0
+    shift
+    was="$(ascendo_app_running_state "$bid")"
+    "$@" || rc=$?
+    [ "$rc" -eq 0 ] && [ "$was" = "false" ] && _web_record_launch "$bid"
+    return "$rc"
+}
+
+# _web_open_hidden <app_path> [bundle_id]
 # Hidden launch (`open -gjF`, no Dock bounce, no focus). Deliberately no
 # foreground `open -a` fallback: a vendor-truth launch must never raise a window.
+# With a bundle id the caller asserts the app was explicitly idle (it just
+# probed it) and a successful launch is recorded for the verify-phase quit.
 _web_open_hidden() {
-    local app="$1"
-    /usr/bin/env open -gjF "$app" 2>/dev/null \
-        || /usr/bin/env open -gj "$app" 2>/dev/null
+    local app="$1" bid="${2:-}"
+    if /usr/bin/env open -gjF "$app" 2>/dev/null \
+        || /usr/bin/env open -gj "$app" 2>/dev/null; then
+        [ -n "$bid" ] && _web_record_launch "$bid"
+        return 0
+    fi
+    return 1
 }
 
 # _web_vendor_direct_step <slug> <app_path> <installed> <R> <URL> <ART> <CK> <CS> <HOST>
@@ -655,7 +727,7 @@ _web_fallback_launch() {
         _WEB_LAUNCH_NOTE="native updater not launched (the app is running or its state could not be determined)"
         return 1
     fi
-    if ! _web_open_hidden "$app"; then
+    if ! _web_open_hidden "$app" "$bid"; then
         _WEB_LAUNCH_NOTE="hidden launch failed"
         return 2
     fi

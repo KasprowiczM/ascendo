@@ -327,6 +327,12 @@ notes = "macOS_updates channel: Mozilla product-details + official DMG at downlo
 [app.release_feed]
 url = "https://product-details.mozilla.org/1.0/firefox_versions.json"
 version_path = "FIREFOX_DEVEDITION"
+# Compare the stripped base: a feed beta of a NEW major (157.0b1) is a real
+# update for an installed 156.0 (the _is_prerelease guard used to skip it
+# forever); a beta of the installed base (156.0b3) is current. Fail-loud on a
+# non-match (rc 28), never a guess.
+version_regex = "^([0-9]+(?:\\.[0-9]+)*)(?:b[0-9]+)?$"
+version_replace = "\\1"
 download_url = "https://download.mozilla.org/?product=firefox-devedition-latest&os=osx&lang=pl"
 http_timeout_s = 8
 

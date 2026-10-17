@@ -160,6 +160,25 @@ print(json.dumps(out))
     WORK_IDX=$((WORK_IDX + 1))
 done < <(bash "$ADAPTER_LIB/web_discovery.sh" --emit-json 2>/dev/null)
 
+# _plan_gate <slug> <handler> <latest> <installed>
+# Three-way gate for the non-feed handlers (Ruling 24). rc 0 = the candidate is
+# strictly newer (plan it). rc 1 = nothing to plan: equal / older stay silent
+# here (check reports them); an unparseable pair is NOT silent -- it is emitted
+# as a skipped item with code unknown_version (never planned, never "current").
+_plan_gate() {
+    local _s="$1" _h="$2" _l="$3" _i="$4" _rel
+    _rel=$(_web_version_cmp "$_l" "$_i")
+    case "$_rel" in
+        newer) return 0 ;;
+        unknown)
+            json_add_item "web:${_s}" "$_i" "" "skipped" "web" "$_h"
+            json_add_message "warn" "$(_web_unknown_version_message "$_s" "$_i" "$_l")" "unknown_version"
+            COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+            return 1 ;;
+        *) return 1 ;;
+    esac
+}
+
 # ── Pass 2: parallel HTTP probes (8-way concurrency by default) ──────
 _web_probe_parallel "$INDICES_FILE" "$RESULTS_DIR"
 
@@ -212,8 +231,8 @@ while [ "$i" -lt "$WORK_IDX" ]; do
                 # Keystone/Omaha apply triggers vendor daemon (async).
                 # Omaha gives us a real candidate from the check probe;
                 # if it equals INSTALLED we drop the row from the plan.
-                if [ -n "$LATEST" ] && ! _version_gt "$LATEST" "$INSTALLED"; then
-                    continue
+                if [ -n "$LATEST" ]; then
+                    _plan_gate "$SLUG" "$HANDLER" "$LATEST" "$INSTALLED" || continue
                 fi
                 json_add_item "web:${SLUG}" "$INSTALLED" "${LATEST:-}" "planned" "web" "$HANDLER"
                 COUNT_PLANNED=$((COUNT_PLANNED + 1))
@@ -233,8 +252,8 @@ while [ "$i" -lt "$WORK_IDX" ]; do
                 # tell -- the last two are reported by check/apply, never
                 # planned (and never reported as current here).
                 [ "$(_web_version_cmp "$LATEST" "$INSTALLED")" = "newer" ] || continue
-            elif ! _version_gt "$LATEST" "$INSTALLED"; then
-                continue   # up-to-date
+            else
+                _plan_gate "$SLUG" "$HANDLER" "$LATEST" "$INSTALLED" || continue
             fi
             # An outdated item is PLANNED regardless of whether the app
             # is currently running. "plan" = what apply will attempt;
@@ -252,7 +271,7 @@ while [ "$i" -lt "$WORK_IDX" ]; do
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
                 json_add_message "info" "${SLUG}: msupdate not available on this host"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
-            elif [ -n "$LATEST" ] && ! _version_gt "$LATEST" "$INSTALLED"; then
+            elif [ -n "$LATEST" ] && ! _plan_gate "$SLUG" "$HANDLER" "$LATEST" "$INSTALLED"; then
                 continue
             else
                 json_add_item "web:${SLUG}" "$INSTALLED" "${LATEST:-}" "planned" "web" "$HANDLER"

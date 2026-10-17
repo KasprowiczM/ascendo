@@ -91,11 +91,13 @@ classify() {
     if [ -z "$_installed" ]; then printf 'missing'; return; fi
     if [ -z "$_latest" ];    then printf 'up_to_date'; return; fi
     if [ "$_installed" = "$_latest" ]; then printf 'up_to_date'; return; fi
-    # W11: Use Python version comparison instead of sort -V
-    if python3 -c "import sys; from ascendo.utils.version import version_gt; sys.exit(0 if version_gt(sys.argv[1], sys.argv[2]) else 1)" "$_installed" "$_latest" 2>/dev/null; then
-        printf 'up_to_date'; return
-    fi
-    printf 'planned'
+    # Three-way (core version_cmp3): unparseable input is `unknown_version`
+    # (skipped by the callers), never guessed as planned or up_to_date.
+    case "$(ascendo_version_rel "$_latest" "$_installed")" in
+        newer)       printf 'planned' ;;
+        equal|older) printf 'up_to_date' ;;
+        *)           printf 'unknown_version' ;;
+    esac
 }
 
 # Prime the `npm ls -g` cache once so per-package lookups in apply_npm
@@ -165,6 +167,11 @@ apply_native_node() {
     _status="$(classify "$_installed" "$_latest")"
     if [ "$_status" = "up_to_date" ]; then
         json_add_item "$_display" "$_installed" "$_latest" "up_to_date" "npm" "native-node"
+        return
+    fi
+    if [ "$_status" = "unknown_version" ]; then
+        json_add_item "$_display" "$_installed" "" "skipped" "npm" "native-node"
+        json_add_message "warn" "$_display: unknown_version (installed ${_installed:-?} vs latest ${_latest:-?} cannot be compared) - not updated" "unknown_version"
         return
     fi
     _stream_emit ">>> bootstrapping native-node ($_display)"
@@ -243,6 +250,11 @@ apply_native_bun() {
     _status="$(classify "$_installed" "$_latest")"
     if [ "$_status" = "up_to_date" ]; then
         json_add_item "$_display" "$_installed" "$_latest" "up_to_date" "npm" "native-bun"
+        return
+    fi
+    if [ "$_status" = "unknown_version" ]; then
+        json_add_item "$_display" "$_installed" "" "skipped" "npm" "native-bun"
+        json_add_message "warn" "$_display: unknown_version (installed ${_installed:-?} vs latest ${_latest:-?} cannot be compared) - not updated" "unknown_version"
         return
     fi
     _tmp_log="$(mktemp -t ascendo-bun.XXXXXX 2>/dev/null || mktemp /tmp/ascendo-bun.XXXXXX)"
@@ -335,6 +347,11 @@ apply_npm() {
     _status="$(classify "$_installed" "$_latest")"
     if [ "$_status" = "up_to_date" ]; then
         json_add_item "$_display" "$_installed" "$_latest" "up_to_date" "npm" "npm"
+        return
+    fi
+    if [ "$_status" = "unknown_version" ]; then
+        json_add_item "$_display" "$_installed" "" "skipped" "npm" "npm"
+        json_add_message "warn" "$_display: unknown_version (installed ${_installed:-?} vs latest ${_latest:-?} cannot be compared) - not updated" "unknown_version"
         return
     fi
     _stream_emit ">>> npm install -g $_pkg ($_display)"

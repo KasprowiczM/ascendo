@@ -16,6 +16,20 @@
 #     updater may still be running -- unverified is not a failure).
 #   - builtin: no-op skipped (manual_verify_required).
 #
+# Tier-B (feedless squirrel / keystone) classification, after the settle:
+#   version changed                         -> success   (code updated)
+#   unchanged, a newer candidate is known   -> skipped   (code behind, action-required)
+#   unchanged, no candidate                 -> triggered (code unverified) -- NOT failed
+#   ...and unchanged for > ASCENDO_WEB_STALE_DAYS (default 45) -> failed
+# "Unchanged for N days" comes from ~/.ascendo/state/web_version_seen.tsv
+# (ASCENDO_WEB_SEEN_FILE), updated on every run (lib/web_seen.py).
+#
+# The settle sleep (squirrel 30 s / keystone 10 s) only happens when something
+# is triggered or ASCENDO launched an app itself (toolkit_launched.txt);
+# otherwise 0 s. Apps listed in toolkit_launched.txt -- launched by Ascendo
+# while explicitly idle -- are then quit gracefully (never an app that was
+# already running, never the frontmost app).
+#
 # The installed bundle path is resolved from the registry (app_path /
 # display_name / bundle id), never reconstructed from the item id.
 #
@@ -67,11 +81,45 @@ json_init "verify" "web" "$RUN_ID" "$TRIGGER" "$PROFILE_NAME" \
           "$HOST_USER" "$HOST_IS_ELEVATED"
 trap 'json_save_on_exit "$OUTPUT_DIR"' EXIT
 
-APPLY_SIDECAR="$OUTPUT_DIR/$RUN_ID/apply__web.json"
-if [ ! -f "$APPLY_SIDECAR" ]; then
-    json_add_message "info" "no apply sidecar at $APPLY_SIDECAR; verify is no-op"
+# Each phase runs in its own temporary --output-dir, so the apply sidecar (and
+# the launch record) normally live in the canonical run dir, not in ours. Look
+# in this order (the Windows Find-AscendoSiblingSidecar contract):
+#   <output-dir>/<run-id>/, $ASCENDO_RUNS_DIR/<run-id>/, ~/.ascendo/runs/<run-id>/
+_verify_find() {
+    local name="$1" d
+    for d in "$OUTPUT_DIR/$RUN_ID" \
+             "${ASCENDO_RUNS_DIR:+${ASCENDO_RUNS_DIR%/}/$RUN_ID}" \
+             "$HOME/.ascendo/runs/$RUN_ID"; do
+        [ -n "$d" ] && [ -f "$d/$name" ] && { printf '%s' "$d/$name"; return 0; }
+    done
+    return 1
+}
+
+APPLY_SIDECAR="$(_verify_find apply__web.json)" || APPLY_SIDECAR=""
+if [ -z "$APPLY_SIDECAR" ]; then
+    json_add_message "info" "no apply sidecar for run $RUN_ID (looked in $OUTPUT_DIR/$RUN_ID, \$ASCENDO_RUNS_DIR, ~/.ascendo/runs); verify is no-op"
     exit 0
 fi
+json_add_message "info" "web verify: using apply sidecar $APPLY_SIDECAR"
+LAUNCH_FILE="$(_verify_find toolkit_launched.txt)" || LAUNCH_FILE=""
+
+SEEN_FILE="${ASCENDO_WEB_SEEN_FILE:-${ASCENDO_STATE_DIR:-$HOME/.ascendo/state}/web_version_seen.tsv}"
+STALE_DAYS="$(_web_bounded_int "${ASCENDO_WEB_STALE_DAYS:-45}" 45 3650)"
+NOW_EPOCH="${ASCENDO_WEB_NOW_EPOCH:-}"
+
+# The settle wait is only worth it when an app was launched by us or an item is
+# still triggered (the vendor agent may be mid-update).
+NEED_SETTLE=0
+if [ -n "$LAUNCH_FILE" ] && [ -s "$LAUNCH_FILE" ]; then NEED_SETTLE=1; fi
+if python3 - "$APPLY_SIDECAR" <<'PY_SETTLE'
+import json, sys
+try:
+    items = json.load(open(sys.argv[1])).get("items", [])
+except Exception:
+    items = []
+sys.exit(0 if any(i.get("status") == "triggered" for i in items) else 1)
+PY_SETTLE
+then NEED_SETTLE=1; fi
 
 # Test hook: ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE forces sleeps to 0
 SLEEP_OVERRIDE="${ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE:-}"
@@ -127,7 +175,7 @@ while IFS=$'\t' read -r ITEM_ID HANDLER PRE_VERSION TARGET ITEM_STATUS; do
         fi
         if [ "$reached" -eq 1 ]; then
             json_add_item "$ITEM_ID" "$POST" "$TARGET" "success" "web" "$HANDLER"
-            json_add_message "info" "${SLUG}: verified by measurement (installed ${POST}${TARGET:+, vendor ${TARGET}})"
+            json_add_message "info" "${SLUG}: verified by measurement (installed ${POST}${TARGET:+, vendor ${TARGET}}) | $(ascendo_status_token updated)" "updated"
             COUNT_OK=$((COUNT_OK + 1))
         elif [ "$ITEM_STATUS" = "success" ]; then
             json_add_item "$ITEM_ID" "${POST:-$PRE_VERSION}" "$TARGET" "failed" "web" "$HANDLER"
@@ -135,7 +183,7 @@ while IFS=$'\t' read -r ITEM_ID HANDLER PRE_VERSION TARGET ITEM_STATUS; do
             COUNT_FAILED=$((COUNT_FAILED + 1))
         else
             json_add_item "$ITEM_ID" "${POST:-$PRE_VERSION}" "$TARGET" "triggered" "web" "$HANDLER"
-            json_add_message "info" "${SLUG}: triggered_pending (installed ${POST:-unreadable}, vendor ${TARGET:-?}; not yet applied, unverified)"
+            json_add_message "info" "${SLUG}: triggered_pending (installed ${POST:-unreadable}, vendor ${TARGET:-?}; not yet applied, unverified) | $(ascendo_status_token unverified)" "unverified"
             COUNT_OK=$((COUNT_OK + 1))
         fi
         continue
@@ -159,23 +207,37 @@ while IFS=$'\t' read -r ITEM_ID HANDLER PRE_VERSION TARGET ITEM_STATUS; do
             ;;
     esac
 
+    [ "$NEED_SETTLE" -eq 1 ] || sleep_for=0
     [ "$sleep_for" -gt 0 ] && sleep "$sleep_for"
 
     POST=$(_web_installed_version "$APP_PATH")
 
     case "$HANDLER" in
         squirrel|keystone)
-            # Tier-B async -- The apply phase already counts these as success/triggered.
-            # Verify just confirms whether the vendor agent caught up yet.
+            # Tier-B async. The vendor agent may not have caught up, which is
+            # unverified -- not a failure -- until it has been unchanged for
+            # longer than the stale bound.
+            _days=0
+            if [ -n "$POST" ]; then
+                _days=$(python3 "$ADAPTER_LIB/web_seen.py" touch "$SEEN_FILE" "$SLUG" "$POST" ${NOW_EPOCH:+"$NOW_EPOCH"} 2>/dev/null) || _days=0
+                case "$_days" in ''|*[!0-9]*) _days=0 ;; esac
+            fi
             if [ -n "$POST" ] && [ "$POST" != "$PRE_VERSION" ]; then
-                json_add_item "$ITEM_ID" "$POST" "" "triggered" "web" "$HANDLER"
-                json_add_message "info" "${SLUG}: triggered_confirmed (${PRE_VERSION} -> ${POST})"
+                json_add_item "$ITEM_ID" "$POST" "$TARGET" "success" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: updated (${PRE_VERSION} -> ${POST}) | $(ascendo_status_token updated)" "updated"
                 COUNT_OK=$((COUNT_OK + 1))
-            else
-                # W4/W13: Escalate to failed so it doesn't hide behind 'triggered_pending' forever.
-                json_add_item "$ITEM_ID" "${POST:-$PRE_VERSION}" "" "failed" "web" "$HANDLER"
-                json_add_message "error" "${SLUG}: action_required (vendor agent did not apply update within timeout; relaunch app or check daemon)"
+            elif [ -n "$POST" ] && [ -n "$TARGET" ] && [ "$(_web_version_cmp "$TARGET" "$POST")" = "newer" ]; then
+                json_add_item "$ITEM_ID" "$POST" "$TARGET" "skipped" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: behind -- installed ${POST}, vendor ${TARGET}; the app's own updater did not apply it | $(ascendo_status_token behind) | $(ascendo_action_required_token behind "$POST" "$TARGET")" "behind"
+                COUNT_OK=$((COUNT_OK + 1))
+            elif [ "$_days" -gt "$STALE_DAYS" ]; then
+                json_add_item "$ITEM_ID" "${POST:-$PRE_VERSION}" "$TARGET" "failed" "web" "$HANDLER"
+                json_add_message "error" "${SLUG}: action_required (version ${POST} unchanged for ${_days} days, more than ${STALE_DAYS}; the vendor agent is not updating it - open the app or check its updater)"
                 COUNT_FAILED=$((COUNT_FAILED + 1))
+            else
+                json_add_item "$ITEM_ID" "${POST:-$PRE_VERSION}" "$TARGET" "triggered" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: unverified (version ${POST:-unreadable} unchanged after the update trigger; the vendor agent may still be working) | $(ascendo_status_token unverified)" "unverified"
+                COUNT_OK=$((COUNT_OK + 1))
             fi
             ;;
         *)
@@ -208,6 +270,24 @@ for item in apply.get("items", []):
     ]))
 PY
 )
+
+# ── Quit the apps ASCENDO launched (never one that was already running) ──────
+if [ -n "$LAUNCH_FILE" ] && [ -s "$LAUNCH_FILE" ] && [ "$DRY_RUN" != "true" ]; then
+    while IFS= read -r _bid || [ -n "$_bid" ]; do
+        case "$_bid" in ''|*[!A-Za-z0-9._-]*) continue ;; esac
+        [ "$(ascendo_app_running_state "$_bid")" = "true" ] || continue
+        _fr=0; _web_is_frontmost "$_bid" || _fr=$?
+        if [ "$_fr" -ne 1 ]; then
+            json_add_message "info" "${_bid}: left running (it is the frontmost app, or that could not be determined); Ascendo launched it for the update" "app_in_foreground"
+            continue
+        fi
+        if _web_quit_gracefully "$_bid"; then
+            json_add_message "info" "${_bid}: quit again after the update window (Ascendo had launched it)" "launched_app_quit"
+        else
+            json_add_message "warn" "${_bid}: still running after a quit request (Ascendo had launched it); quit it yourself" "app_still_running"
+        fi
+    done < "$LAUNCH_FILE"
+fi
 
 json_add_message "info" "web verify: ${COUNT_OK} ok, ${COUNT_FAILED} failed"
 exit 0

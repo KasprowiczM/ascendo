@@ -375,6 +375,10 @@ omaha_apply() {
         echo "Omaha in-process updater — launch the app at your convenience to pick up the new version" >&2
         return 95
     fi
-    /usr/bin/env open -a "$app_path" 2>/dev/null
+    if command -v _web_open_tracked >/dev/null 2>&1; then
+        _web_open_tracked "$(printf '%s' "$cfg" | _omaha_get bundle_id)" /usr/bin/env open -a "$app_path" 2>/dev/null
+    else
+        /usr/bin/env open -a "$app_path" 2>/dev/null
+    fi
     return 0
 }

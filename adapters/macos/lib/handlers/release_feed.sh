@@ -416,7 +416,11 @@ release_feed_apply() {
             echo "no direct download URL — launch the app and use its built-in updater to install the new version" >&2
             return 95
         fi
-        /usr/bin/env open -a "$app_path"
+        if command -v _web_open_tracked >/dev/null 2>&1; then
+            _web_open_tracked "$(printf '%s' "$cfg" | _rf_get "bundle_id")" /usr/bin/env open -a "$app_path"
+        else
+            /usr/bin/env open -a "$app_path"
+        fi
         return 0
     fi
 

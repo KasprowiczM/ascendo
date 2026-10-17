@@ -656,7 +656,9 @@ def test_verify_feed_backed_triggered_stays_triggered_when_not_yet_applied(sb):
     item = item_of(vsc)
     assert item["status"] == "triggered", vsc
     assert "triggered_pending" in texts(vsc) and "unverified" in texts(vsc)
-    assert calls(sb, "verify_sleep.log") == []
+    assert "unverified" in codes(vsc) and "ASCENDO-STATUS code=unverified" in texts(vsc)
+    # no settle wait (the sub-second polling of the running-state probe is not one)
+    assert [c for c in calls(sb, "verify_sleep.log") if float(c) >= 1] == []
     assert sc["status"] != "failed" and vsc["status"] != "failed"
 
 
@@ -674,9 +676,10 @@ def test_verify_feed_backed_triggered_is_confirmed_when_the_version_arrives(sb):
 
 
 def test_verify_feedless_squirrel_resolves_the_real_path(sb):
-    """Legacy (feedless) squirrel keeps its async confirm/escalate semantics, but now on
-    the registry's real app path: a changed version is `triggered_confirmed`, not a
-    bogus-path 'failed'. ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE=0 skips the 30 s wait."""
+    """Legacy (feedless) squirrel keeps its async semantics, on the registry's real app
+    path: a changed version is `success` (code updated), an unchanged one `triggered`
+    (code unverified) -- never a bogus-path 'failed'. ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE=0
+    skips the 30 s wait."""
     make_app(sb.apps, ver="5.0", payload="updated")
     reg = registry(sb, feed={})                            # squirrel, no [app.vendor_feed]
     out = sb.tmp / "out"
@@ -687,11 +690,13 @@ def test_verify_feedless_squirrel_resolves_the_real_path(sb):
         "source": {"type": "web", "feed": "squirrel"}}]}))
     vres, vsc = run_verify(sb, reg, run_dir, ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE="0")
     item = item_of(vsc)
-    assert item["status"] == "triggered" and "triggered_confirmed (1.0 -> 5.0)" in texts(vsc), vsc
-    # unchanged => the legacy W4/W13 escalation is preserved for feedless apps
+    assert item["status"] == "success" and "updated (1.0 -> 5.0)" in texts(vsc), vsc
+    assert "updated" in codes(vsc)
+    # unchanged => unverified (Task 12): not failed until it has been unchanged for the stale bound
     make_app(sb.apps, ver="1.0", payload="old")
-    vres, vsc = run_verify(sb, reg, run_dir, ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE="0")
-    assert item_of(vsc)["status"] == "failed"
+    vres, vsc = run_verify(sb, reg, run_dir, ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE="0",
+                           ASCENDO_WEB_SEEN_FILE=sb.tmp / "seen.tsv")
+    assert item_of(vsc)["status"] == "triggered" and "unverified" in codes(vsc), vsc
 
 
 # ============================================================================

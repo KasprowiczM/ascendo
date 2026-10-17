@@ -28,3 +28,14 @@ def _isolate_ipad_scan(tmp_path_factory, monkeypatch):
     """
     empty = tmp_path_factory.mktemp("no_ipad_apps")
     monkeypatch.setenv("ASCENDO_APP_DIRS", str(empty))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_web_state(tmp_path_factory, monkeypatch):
+    """The web phases hand state to each other through the canonical run dir
+    ($ASCENDO_RUNS_DIR, else ~/.ascendo/runs) and the version-seen file. Point
+    every test at throw-away locations so no test ever writes into the real
+    ~/.ascendo (tests that care set these themselves)."""
+    base = tmp_path_factory.mktemp("web_state")
+    monkeypatch.setenv("ASCENDO_RUNS_DIR", str(base / "runs"))
+    monkeypatch.setenv("ASCENDO_WEB_SEEN_FILE", str(base / "seen.tsv"))

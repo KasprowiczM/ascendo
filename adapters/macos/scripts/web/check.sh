@@ -309,6 +309,12 @@ while [ "$i" -lt "$WORK_IDX" ]; do
     if [ "$INSTALLED" = "$LATEST" ] || _should_skip_upgrade "$INSTALLED" "$LATEST"; then
         json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "up_to_date" "web" "$HANDLER"
         COUNT_UTD=$((COUNT_UTD + 1))
+    elif [ -n "$INSTALLED" ] && [ -n "$LATEST" ] \
+         && [ "$(_web_version_cmp "$LATEST" "$INSTALLED")" = "unknown" ]; then
+        # Three-way: an unparseable pair is neither planned nor current.
+        json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+        json_add_message "warn" "$(_web_unknown_version_message "$SLUG" "$INSTALLED" "$LATEST")" "unknown_version"
+        COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
     else
         json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "planned" "web" "$HANDLER"
         COUNT_PLANNED=$((COUNT_PLANNED + 1))
