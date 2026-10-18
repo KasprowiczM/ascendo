@@ -371,8 +371,10 @@ _DISC_FIRST_FAIL=""
 _SEEN_BIDS="|"
 _old_ifs="$IFS"
 IFS=':'
+set -f   # no pathname expansion of a root containing * or ?
 # shellcheck disable=SC2086  # word splitting on ':' is the point
 set -- $APPS_ROOTS
+set +f
 IFS="$_old_ifs"
 for APPS_ROOT in "$@"; do
     [ -n "$APPS_ROOT" ] || continue
@@ -383,34 +385,34 @@ for APPS_ROOT in "$@"; do
     fi
     _DISC_ROOTS_OK=$((_DISC_ROOTS_OK + 1))
     for app_dir in *.app; do
-    [ -d "$app_dir" ] || continue
-    plist="$app_dir/Contents/Info.plist"
-    [ -f "$plist" ] || continue
+        [ -d "$app_dir" ] || continue
+        plist="$app_dir/Contents/Info.plist"
+        [ -f "$plist" ] || continue
 
-    abs_path="$APPS_ROOT/$app_dir"
-    _is_excluded "$abs_path" && continue
+        abs_path="$APPS_ROOT/$app_dir"
+        _is_excluded "$abs_path" && continue
 
-    bid=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$plist" 2>/dev/null || true)
-    [ -z "$bid" ] && continue
-    # The same bundle in two roots is one app (first root wins).
-    case "$_SEEN_BIDS" in *"|$bid|"*) continue ;; esac
-    _SEEN_BIDS="$_SEEN_BIDS$bid|"
-    ver=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$plist" 2>/dev/null || true)
-    name=$(/usr/libexec/PlistBuddy -c "Print :CFBundleName" "$plist" 2>/dev/null || true)
-    [ -z "$name" ] && name="${app_dir%.app}"
+        bid=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$plist" 2>/dev/null || true)
+        [ -z "$bid" ] && continue
+        # The same bundle in two roots is one app (first root wins).
+        case "$_SEEN_BIDS" in *"|$bid|"*) continue ;; esac
+        _SEEN_BIDS="$_SEEN_BIDS$bid|"
+        ver=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$plist" 2>/dev/null || true)
+        name=$(/usr/libexec/PlistBuddy -c "Print :CFBundleName" "$plist" 2>/dev/null || true)
+        [ -z "$name" ] && name="${app_dir%.app}"
 
-    owned=$(_owned_by "$bid" "$abs_path")
-    if [ -n "$owned" ] && [ "$INCLUDE_OWNED" != "1" ]; then
-        continue
-    fi
+        owned=$(_owned_by "$bid" "$abs_path")
+        if [ -n "$owned" ] && [ "$INCLUDE_OWNED" != "1" ]; then
+            continue
+        fi
 
-    cls=$(_classify "$abs_path")
-    # Parse three TAB-separated fields: <handler>\t<source>\t<extracted>
-    handler=$(printf '%s' "$cls" | awk -F'\t' '{print $1}')
-    source_field=$(printf '%s' "$cls" | awk -F'\t' '{print $2}')
-    extracted=$(printf '%s' "$cls" | awk -F'\t' '{print $3}')
+        cls=$(_classify "$abs_path")
+        # Parse three TAB-separated fields: <handler>\t<source>\t<extracted>
+        handler=$(printf '%s' "$cls" | awk -F'\t' '{print $1}')
+        source_field=$(printf '%s' "$cls" | awk -F'\t' '{print $2}')
+        extracted=$(printf '%s' "$cls" | awk -F'\t' '{print $3}')
 
-    python3 - "$bid" "$abs_path" "$ver" "$name" "$handler" "$source_field" "$owned" "$extracted" <<'PY'
+        python3 - "$bid" "$abs_path" "$ver" "$name" "$handler" "$source_field" "$owned" "$extracted" <<'PY'
 import json, sys, signal
 signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 bid, path, ver, name, handler, src, owned, extracted = sys.argv[1:9]
@@ -434,7 +436,7 @@ try:
 except BrokenPipeError:
     pass
 PY
-    _DISC_COUNT=$((_DISC_COUNT + 1))
+        _DISC_COUNT=$((_DISC_COUNT + 1))
     done
 done
 

@@ -107,12 +107,6 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
 _SCHEMA_VERSION = 2
 
 
-# Metadata blob the post-run flush stamps on the rows it writes (json.dumps with
-# sort_keys, exactly as bulk_upsert serialises it) so reconcile can tell them
-# apart from live-scan rows.
-RUN_ORIGIN_METADATA = '{"origin": "run"}'
-
-
 def _utcnow() -> str:
     """Return a stable UTC ISO8601 timestamp (no microseconds)."""
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -626,8 +620,8 @@ class InventoryDB:
         empty — a zero-item result is almost always a discovery failure,
         not reality. Returns the count of rows evicted.
 
-        ``only_run_written=True`` restricts the diff to rows whose metadata is
-        :data:`RUN_ORIGIN_METADATA` -- i.e. rows the post-run flush wrote from
+        ``only_run_written=True`` restricts the diff to rows whose metadata has
+        ``origin == "run"`` -- i.e. rows the post-run flush wrote from
         a manager's own sidecar. That keeps the comparison inside one identity
         space: rows a live scan wrote (display names from the OS inventory)
         are governed by the next live scan, not by a manager's check sidecar.
@@ -639,10 +633,11 @@ class InventoryDB:
             return 0
         with self._connect() as conn:
             # Fetch current names for this category.
-            origin_sql = " AND metadata = ?" if only_run_written else ""
-            origin_args: tuple[Any, ...] = (
-                (RUN_ORIGIN_METADATA,) if only_run_written else ()
+            origin_sql = (
+                " AND json_extract(metadata, '$.origin') = 'run'"
+                if only_run_written else ""
             )
+            origin_args: tuple[Any, ...] = ()
             cursor = conn.execute(
                 "SELECT DISTINCT name FROM inventory_items"
                 f" WHERE category = ?{origin_sql}",

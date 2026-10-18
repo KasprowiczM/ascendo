@@ -31,7 +31,12 @@ def _app(root: Path, name: str, bundle_id: str, version: str = "1.0") -> Path:
 
 
 def _env(tmp: Path, **extra: str) -> dict:
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("ASCENDO_", "MAC_UPDATE_"))}
+    # Drop inherited ASCENDO_*/MAC_UPDATE_* but KEEP the tripwire seams (conftest).
+    keep = ("ASCENDO_WEB_MDFIND_BIN", "ASCENDO_WEB_SP_BIN", "ASCENDO_WEB_SP_CACHE",
+            "ASCENDO_WEB_UPDATER_BIN", "ASCENDO_WEB_UPDATER_ALLOW_PREFIX",
+            "ASCENDO_MSUPDATE_BIN", "ASCENDO_MAU_PREFS_FILE", "ASCENDO_APP_DIRS_UNUSED")
+    env = {k: v for k, v in os.environ.items()
+           if k in keep or not k.startswith(("ASCENDO_", "MAC_UPDATE_"))}
     env.update({"HOME": str(tmp / "home"), "ASCENDO_WEB_BREW_CASKS": "",
                 "ASCENDO_WEB_MAS_BUNDLE_IDS": "", "ASCENDO_WEB_APPLE_BUNDLES": ""})
     env.update(extra)
@@ -133,8 +138,13 @@ def test_absent_registry_app_dji_assistant_is_silent_in_check_plan_apply(tmp_pat
     # with other apps would resolve real installed apps by absolute path/mdfind.
     shipped = (REPO_ROOT / "adapters" / "macos" / "config" / "web_apps.toml").read_text()
     assert 'slug = "dji-assistant"' in shipped          # the fixture really is registered
+    assert 'bundle_id = "DJI.Assistant"' in shipped and 'display_name = "DJI Assistant 2"' in shipped
     block = shipped[shipped.index('slug = "dji-assistant"'):]
     reg = tmp_path / "dji_only.toml"
+    # Neutral display name / bundle id: the registry's "/Applications/<display>.app"
+    # guess must not match a real DJI Assistant on the host running the test.
+    block = block.replace('display_name = "DJI Assistant 2"', 'display_name = "Absent Fixture App"')
+    block = block.replace('bundle_id = "DJI.Assistant"', 'bundle_id = "zzz.absent.fixture"')
     reg.write_text('schema = "ascendo-web-apps/v1"\n[[app]]\n' + block)
     for phase, extra in (("check", ()), ("plan", ()), ("apply", ()), ("apply", ("--dry-run",))):
         res, sc = _phase(phase, tmp_path, empty, *extra, registry=reg)
@@ -155,3 +165,21 @@ def test_present_dji_assistant_is_reported(tmp_path):
                    + shipped[shipped.index('slug = "dji-assistant"'):])
     _, sc = _phase("check", tmp_path, root, registry=reg)
     assert any(i["id"] == "web:dji-assistant" for i in sc["items"])
+
+
+def test_shipped_registry_nondry_apply_with_empty_apps_root_hits_only_tripwires(tmp_path, tripwire):
+    """Ruling 44 regression: the incident run (shipped registry, non-dry apply,
+    empty apps root) resolved REAL apps by absolute path. With the suite-wide
+    tripwire every updater / installer / launcher it reaches is a logged fake."""
+    from .conftest import TRIPWIRE_TOOLS, tripwire_hits
+
+    (tmp_path / "home").mkdir()
+    empty = tmp_path / "Applications"
+    empty.mkdir()
+    res, sc = _phase("apply", tmp_path, empty, registry=REPO_ROOT / "adapters" / "macos"
+                     / "config" / "web_apps.toml")
+    assert res.returncode == 0, res.stderr
+    assert sc["category"] == "web"
+    assert set(tripwire_hits(tripwire)) <= set(TRIPWIRE_TOOLS)
+    for it in sc["items"]:
+        assert it["status"] != "success", it    # nothing real can have been installed

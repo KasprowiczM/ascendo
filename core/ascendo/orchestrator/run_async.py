@@ -403,6 +403,9 @@ def _reconcilable_seen(sc: Any) -> set[str] | None:
             return None
         if item_id in orphans or name in orphans:
             continue
+        st = getattr(item, "status", None)
+        if (st.value if hasattr(st, "value") else str(st)) == "missing":
+            continue   # npm/pip manifest CLI that is not installed
         seen.add(name)
     return seen
 

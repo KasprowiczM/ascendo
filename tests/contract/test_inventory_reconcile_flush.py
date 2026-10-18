@@ -165,32 +165,65 @@ def test_category_outside_the_opt_in_set_is_not_reconciled(db, run, tmp_path):
 
 # -- spa_real: completeness, not row count -------------------------------------
 
-def test_trusted_complete_scan_beats_a_larger_stale_bucket(tmp_path):
+class _A:
+    def detect_host(self):
+        return None
+
+    def package_managers(self, host):
+        class _M:
+            category = "web"
+        return [_M()]
+
+
+def _stale(n=5):
+    return [{"name": f"Helper{i}", "installed": "1", "status": "ok", "source": "web"}
+            for i in range(n)]
+
+
+def _seed(tmp_path, complete):
     from ascendo.dashboard.routes.spa_real import _seed_buckets_from_sidecars
+    return _seed_buckets_from_sidecars({"web": _stale()}, _A(), tmp_path / "runs", complete)
 
-    runs = tmp_path / "runs" / "rid"
+
+def _good_scan(tmp_path):
+    runs = tmp_path / "runs" / "good"
     runs.mkdir(parents=True)
-    _sidecar(runs, "check", "web", [_item("web:one", "web")])
-    stale = [{"name": f"Helper{i}", "installed": "1", "status": "ok", "source": "web"}
-             for i in range(5)]
+    _sidecar(runs, "check", "web", [_item("web:one", "web"), _item("web:two", "web")])
+    return runs
 
-    class _A:
-        def detect_host(self):
-            return None
 
-        def package_managers(self, host):
-            class _M:
-                category = "web"
-            return [_M()]
+def test_trusted_complete_scan_beats_a_larger_stale_bucket(tmp_path):
+    _good_scan(tmp_path)
+    assert len(_seed(tmp_path, {})["web"]) == 5           # legacy rule: bigger bucket wins
+    out = _seed(tmp_path, {"web": 2})                      # scan_meta says 2 -> sidecar matches
+    assert sorted(i["name"] for i in out["web"]) == ["web:one", "web:two"]
 
-    kept = _seed_buckets_from_sidecars({"web": list(stale)}, _A(), tmp_path / "runs")
-    assert len(kept["web"]) == 5                      # legacy rule: bigger bucket wins
-    replaced = _seed_buckets_from_sidecars({"web": list(stale)}, _A(), tmp_path / "runs",
-                                           frozenset({"web"}))
-    assert [i["name"] for i in replaced["web"]] == ["web:one"]
-    # never wipe on an empty sidecar, even for a "complete" category
-    (runs / "check__web.json").unlink()
-    _sidecar(runs, "check", "web", [])
-    still = _seed_buckets_from_sidecars({"web": list(stale)}, _A(), tmp_path / "runs",
-                                        frozenset({"web"}))
-    assert len(still["web"]) == 5
+
+@pytest.mark.parametrize("kind", ["failed", "partial", "error-msg", "probe-marker", "filtered",
+                                  "empty"])
+def test_later_untrusted_check_never_shrinks_a_bucket_after_a_good_scan(tmp_path, kind):
+    import os
+    import time
+    _good_scan(tmp_path)
+    later = tmp_path / "runs" / "later"
+    later.mkdir()
+    one = [_item("web:one", "web")]
+    if kind == "failed":
+        _sidecar(later, "check", "web", one, status="failed")
+    elif kind == "partial":
+        _sidecar(later, "check", "web", one, status="partial")
+    elif kind == "error-msg":
+        _sidecar(later, "check", "web", one,
+                 messages=[{"level": "error", "text": "boom"}])
+    elif kind == "probe-marker":
+        _sidecar(later, "check", "web", [_item("web:list-probe", "web", current=None,
+                                               status="skipped"), *one, _item("web:two", "web")])
+    elif kind == "filtered":
+        _sidecar(later, "check", "web", one)               # 1 item vs recorded 2
+    else:
+        _sidecar(later, "check", "web", [])
+    t = time.time() + 5
+    for f in later.iterdir():
+        os.utime(f, (t, t))
+    os.utime(later, (t, t))
+    assert len(_seed(tmp_path, {"web": 2})["web"]) == 5    # existing bucket kept

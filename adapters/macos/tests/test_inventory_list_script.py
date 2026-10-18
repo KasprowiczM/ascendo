@@ -99,6 +99,8 @@ def _run(script: Path, sp: Path, mas: Path | None, brew: Path | None,
     # points ASCENDO_APP_DIRS at an empty dir; the canned fixture lives under
     # the standard roots, so name them explicitly.
     env["ASCENDO_APP_DIRS"] = "/Applications:/System/Applications"
+    env["ASCENDO_ROSETTA_PRESENT"] = "1"     # no real pgrep probe
+    env["ASCENDO_HOST_ARCH"] = "arm64"
     if mas is not None:
         env["MAS_BIN"] = str(mas)
     else:

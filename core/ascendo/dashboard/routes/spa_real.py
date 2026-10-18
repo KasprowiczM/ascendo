@@ -37,7 +37,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
@@ -307,6 +307,36 @@ def _items_from_check_sidecar(runs_dir: Path, category: str) -> list[dict[str, A
     return items
 
 
+def _latest_check_trusted_count(runs_dir: Path, category: str) -> int | None:
+    """Seen-count of the newest non-empty check sidecar for ``category`` when it
+    is a trusted complete scan (see ``run_async._reconcilable_seen``), else None."""
+    from ascendo.orchestrator.run_async import _reconcilable_seen
+    from ascendo.orchestrator.sidecar_io import read_sidecar
+
+    if not isinstance(runs_dir, Path) or not runs_dir.is_dir():
+        return None
+    newest: tuple[float, Path] | None = None
+    try:
+        for run_dir in runs_dir.iterdir():
+            if not run_dir.is_dir():
+                continue
+            for sc_path in (run_dir / f"check__{category}.json",
+                            run_dir / category / f"check__{category}.json"):
+                if sc_path.is_file():
+                    mt = sc_path.stat().st_mtime
+                    if newest is None or mt > newest[0]:
+                        newest = (mt, sc_path)
+    except OSError:
+        return None
+    if newest is None:
+        return None
+    try:
+        seen = _reconcilable_seen(read_sidecar(newest[1]))
+    except Exception:  # noqa: BLE001
+        return None
+    return len(seen) if seen else None
+
+
 def _adapter_category_ids(adapter: IAdapter) -> list[str]:
     """Every package-manager category the adapter declares.
 
@@ -330,18 +360,19 @@ def _seed_buckets_from_sidecars(
     buckets: dict[str, list[dict[str, Any]]],
     adapter: IAdapter,
     runs_dir: Path | None,
-    complete_categories: frozenset[str] = frozenset(),
+    complete_categories: Mapping[str, int] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Replace each bucket with the check sidecar's item list when the
     sidecar has strictly more entries than inventory found for that
-    category -- or ALWAYS (when non-empty) for a category in
-    ``complete_categories``.
+        category -- or when the latest check sidecar IS the recorded trusted
+    complete scan.
 
-    ``complete_categories`` are those with a recorded trusted, complete scan
-    (``inventory_db.set_scan_complete``, written only by a full successful
-    check). For them the sidecar is authoritative even when it lists FEWER
-    rows: otherwise a stale, larger OS-inventory bucket (e.g. 82 web "apps")
-    would outlive a trusted scan that says fewer. Completeness, not row count.
+    ``complete_categories`` maps a category to the item count of its recorded
+    trusted complete scan (``inventory_db.set_scan_complete``). The sidecar may
+    shrink a bucket only if it is itself trusted (status success, no error, no
+    probe marker) AND matches that recorded count; a later failed / partial /
+    filtered / probe-marker check never wipes rows (Spec 8: no wipe on an
+    untrusted scan). Completeness, not row count -- but never untrusted.
 
     Why: the OS-level inventory (system_profiler on macOS, dpkg on
     Linux, ARP on Windows) only sees apps that match the
@@ -365,7 +396,11 @@ def _seed_buckets_from_sidecars(
         if not items:
             continue
         existing = buckets.get(cat_id) or []
-        if cat_id in complete_categories or len(items) > len(existing):
+        forced = (
+            cat_id in (complete_categories or {})
+            and _latest_check_trusted_count(runs_dir, cat_id) == complete_categories[cat_id]
+        )
+        if forced or len(items) > len(existing):
             buckets[cat_id] = items
     return buckets
 
@@ -649,7 +684,7 @@ def _build_buckets_live(
     adapter: IAdapter,
     cache: InventoryCache,
     runs_dir: Path | None,
-    complete_categories: frozenset[str] = frozenset(),
+    complete_categories: Mapping[str, int] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Compute the buckets via the live scan + check-sidecar overlay.
 
@@ -685,17 +720,20 @@ def _build_buckets_live(
     return buckets
 
 
-def _complete_categories(db: Any, adapter: IAdapter) -> frozenset[str]:
-    """Adapter categories with a recorded trusted-complete scan (``scan_meta``)."""
+def _complete_categories(db: Any, adapter: IAdapter) -> dict[str, int]:
+    """``{category: item_count}`` of adapter categories with a recorded
+    trusted-complete scan (``scan_meta``)."""
+    out: dict[str, int] = {}
     if db is None:
-        return frozenset()
+        return out
     try:
-        return frozenset(
-            c for c in _adapter_category_ids(adapter) if db.get_scan_meta(c)
-        )
+        for c in _adapter_category_ids(adapter):
+            meta = db.get_scan_meta(c)
+            if meta:
+                out[c] = int(meta.get("item_count") or 0)
     except Exception:  # noqa: BLE001
         _log.exception("inventory_db: scan_meta read failed (non-fatal)")
-        return frozenset()
+    return out
 
 
 def _flatten_buckets_for_db(

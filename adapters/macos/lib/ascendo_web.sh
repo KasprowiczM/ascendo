@@ -92,6 +92,7 @@ _web_installed_version() {
 #      disabled for a path, /Library/Application Support nested apps).
 #   3. Caller-supplied fallback path (the legacy /Applications/<display>.app
 #      guess) — last resort, only if it actually exists.
+# Test seams: ASCENDO_WEB_MDFIND_BIN, ASCENDO_WEB_SP_BIN, ASCENDO_WEB_SP_CACHE.
 _web_resolve_bundle_path() {
     local bundle_id="$1" fallback="$2" path=""
     if [ -z "$bundle_id" ]; then
@@ -99,11 +100,11 @@ _web_resolve_bundle_path() {
         return 0
     fi
     # 1. mdfind — filter to .app bundles, skip test artifacts under /tmp.
-    path=$(/usr/bin/mdfind -onlyin /Applications \
+    path=$("${ASCENDO_WEB_MDFIND_BIN:-/usr/bin/mdfind}" -onlyin /Applications \
                 "kMDItemCFBundleIdentifier == '${bundle_id}'" 2>/dev/null \
            | /usr/bin/grep -E '\.app$' | /usr/bin/head -n 1)
     if [ -z "$path" ]; then
-        path=$(/usr/bin/mdfind \
+        path=$("${ASCENDO_WEB_MDFIND_BIN:-/usr/bin/mdfind}" \
                     "kMDItemCFBundleIdentifier == '${bundle_id}'" 2>/dev/null \
                | /usr/bin/grep -E '\.app$' | /usr/bin/grep -v '^/tmp/' \
                | /usr/bin/head -n 1)
@@ -117,7 +118,7 @@ _web_resolve_bundle_path() {
     # bundles that Spotlight has missed on this host.
     if [ -z "${ASCENDO_WEB_SP_CACHE:-}" ] || [ ! -f "$ASCENDO_WEB_SP_CACHE" ]; then
         ASCENDO_WEB_SP_CACHE="${TMPDIR:-/tmp}/ascendo-web-sp-$$.json"
-        /usr/sbin/system_profiler -json -detailLevel mini \
+        "${ASCENDO_WEB_SP_BIN:-/usr/sbin/system_profiler}" -json -detailLevel mini \
             SPApplicationsDataType > "$ASCENDO_WEB_SP_CACHE" 2>/dev/null || true
         export ASCENDO_WEB_SP_CACHE
     fi

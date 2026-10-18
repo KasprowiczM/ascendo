@@ -5,6 +5,7 @@ sidecar lands at the expected path with the right shape.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -24,8 +25,9 @@ def test_script_exists_and_executable() -> None:
 
 
 @pytest.mark.skipif(
-    sys.platform != "darwin" or shutil.which("brew") is None or shutil.which("jq") is None,
-    reason="real brew + jq on macOS required",
+    sys.platform != "darwin" or shutil.which("brew") is None or shutil.which("jq") is None
+    or os.environ.get("ASCENDO_ALLOW_REAL_BREW") != "1",
+    reason="real brew + jq on macOS required; opt in with ASCENDO_ALLOW_REAL_BREW=1 (suite tripwire fakes brew)",
 )
 def test_check_emits_valid_sidecar(tmp_path: Path) -> None:
     run_id = str(uuid.uuid4())
@@ -67,8 +69,9 @@ def test_check_emits_valid_sidecar(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(
-    sys.platform != "darwin" or shutil.which("brew") is None or shutil.which("jq") is None,
-    reason="real brew + jq on macOS required",
+    sys.platform != "darwin" or shutil.which("brew") is None or shutil.which("jq") is None
+    or os.environ.get("ASCENDO_ALLOW_REAL_BREW") != "1",
+    reason="real brew + jq on macOS required; opt in with ASCENDO_ALLOW_REAL_BREW=1 (suite tripwire fakes brew)",
 )
 @pytest.mark.parametrize("phase", ["plan", "verify", "cleanup"])
 def test_phase_emits_valid_sidecar(tmp_path: Path, phase: str) -> None:
@@ -103,8 +106,9 @@ def test_phase_emits_valid_sidecar(tmp_path: Path, phase: str) -> None:
 
 
 @pytest.mark.skipif(
-    sys.platform != "darwin" or shutil.which("brew") is None or shutil.which("jq") is None,
-    reason="real brew + jq on macOS required",
+    sys.platform != "darwin" or shutil.which("brew") is None or shutil.which("jq") is None
+    or os.environ.get("ASCENDO_ALLOW_REAL_BREW") != "1",
+    reason="real brew + jq on macOS required; opt in with ASCENDO_ALLOW_REAL_BREW=1 (suite tripwire fakes brew)",
 )
 def test_apply_dry_run_emits_planned_items(tmp_path: Path) -> None:
     """apply.sh with --dry-run emits status=planned, no real upgrade."""

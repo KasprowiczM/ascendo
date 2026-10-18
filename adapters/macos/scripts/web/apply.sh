@@ -133,10 +133,8 @@ COUNT_FAILED=0
 COUNT_SKIPPED=0
 COUNT_PLANNED=0
 COUNT_UPTODATE=0
-# Registry entries whose app isn't installed on this Mac. Collected and
-# reported ONCE at the end (not as N recurring skipped-items + warnings
-# every run — the operator uninstalled these and doesn't want to be
-# told about each, every run). run_async eviction removes their DB rows.
+# Registry entries whose app isn't installed on this Mac are SILENT: no item, no
+# message (v1.5.4 parity); check and plan behave the same.
 
 # Sesja 47 perf fix: parallel probe phase, then sequential dispatch.
 # The probe step (HTTP) parallelizes safely; the actual install step

@@ -15,7 +15,9 @@ _msupdate_bin() {
         echo msupdate
         return 0
     fi
-    local fallback="/Library/Application Support/Microsoft/MAU2.0/Microsoft AutoUpdate.app/Contents/MacOS/msupdate"
+    # Test seam: ASCENDO_MSUPDATE_BIN replaces the hard-coded absolute fallback
+    # (a PATH `msupdate` still wins, so tests can install their own fake).
+    local fallback="${ASCENDO_MSUPDATE_BIN-/Library/Application Support/Microsoft/MAU2.0/Microsoft AutoUpdate.app/Contents/MacOS/msupdate}"
     if [ -x "$fallback" ]; then
         echo "$fallback"
         return 0

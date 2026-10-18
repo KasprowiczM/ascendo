@@ -216,6 +216,17 @@ _cu_wake_once() {
     while IFS= read -r line; do [ -n "$line" ] && bins+=("$line"); done < <(_cu_cfg "$cfg" updater_bin)
     while IFS= read -r line; do [ -n "$line" ] && args+=("$line"); done < <(_cu_cfg "$cfg" wake_args)
     legacy=$(_cu_cfg "$cfg" legacy_agent)
+    # Test seam (tripwire): when ASCENDO_WEB_UPDATER_BIN is set, every configured
+    # updater binary / legacy agent that is NOT under ASCENDO_WEB_UPDATER_ALLOW_PREFIX
+    # is replaced by that tripwire path, so no test can wake a real updater.
+    if [ "${ASCENDO_WEB_UPDATER_BIN+set}" = "set" ]; then
+        local _i _allow="${ASCENDO_WEB_UPDATER_ALLOW_PREFIX:-}"
+        for _i in "${!bins[@]}"; do
+            case "${bins[$_i]}" in "$_allow"*) [ -n "$_allow" ] && continue ;; esac
+            bins[$_i]="$ASCENDO_WEB_UPDATER_BIN"
+        done
+        case "$legacy" in "$_allow"*) [ -n "$_allow" ] || legacy="" ;; *) legacy="" ;; esac
+    fi
     _CU_USER_INIT=0; _CU_SYS_INIT=0
     [ -n "${logs[0]:-}" ] && _CU_USER_INIT=$(_cu_size "${logs[0]}")
     [ -n "${logs[1]:-}" ] && _CU_SYS_INIT=$(_cu_size "${logs[1]}")
