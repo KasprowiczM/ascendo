@@ -39,3 +39,25 @@ def _isolate_web_state(tmp_path_factory, monkeypatch):
     base = tmp_path_factory.mktemp("web_state")
     monkeypatch.setenv("ASCENDO_RUNS_DIR", str(base / "runs"))
     monkeypatch.setenv("ASCENDO_WEB_SEEN_FILE", str(base / "seen.tsv"))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_mau_state(tmp_path_factory, monkeypatch):
+    """Microsoft AutoUpdate: never read/write the real com.microsoft.autoupdate2
+    domain, never run pgrep, never reach the Teams-cask oracle over the network.
+    Tests that exercise those paths set the knobs themselves."""
+    base = tmp_path_factory.mktemp("mau_state")
+    prefs = base / "prefs.plist"
+    prefs.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0"><dict/></plist>\n'
+    )
+    monkeypatch.setenv("ASCENDO_MAU_PREFS_FILE", str(prefs))
+    monkeypatch.setenv("ASCENDO_MSUPDATE_TEAMS_CASK_URL", "")
+    monkeypatch.setenv("ASCENDO_MAU_MOCK_ACTIVE_PROCESSES", "")
+    for name in ("ASCENDO_MAU_SCOPED_INSTALL", "ASCENDO_MAU_MUTATE_PREFS",
+                 "ASCENDO_MSUPDATE_LIST_FILE", "ASCENDO_MSUPDATE_CHECK_TIMEOUT",
+                 "ASCENDO_MSUPDATE_INSTALL_WAIT"):
+        monkeypatch.delenv(name, raising=False)

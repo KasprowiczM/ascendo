@@ -204,6 +204,7 @@ if [ "$WORK_IDX" -eq 0 ]; then
 fi
 
 # ── Pass 2: parallel HTTP probes ──────────────────────────────────────
+msupdate_prepare_listing "$RESULTS_DIR"
 _web_probe_parallel "$INDICES_FILE" "$RESULTS_DIR"
 
 # ── Pass 3: read results + emit sidecar items (sequential) ────────────
@@ -225,6 +226,18 @@ while [ "$i" -lt "$WORK_IDX" ]; do
         json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
         json_add_message "warn" "${SLUG}: GitHub API rate-limited (60/hr unauthenticated). Set GITHUB_TOKEN or wait ~1h."
         COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+        continue
+    fi
+
+    # Microsoft AutoUpdate sentinels: unknown / quarantined / regressed => skipped.
+    if [ "$HANDLER" = "msupdate" ] && _web_mau_sentinel_item "$SLUG" "$INSTALLED" "$HANDLER" "$LATEST" "$NOTE"; then
+        COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+        continue
+    fi
+    # msupdate offers an update whose version is unparseable: planned, not unknown.
+    if [ "$HANDLER" = "msupdate" ] && [ "$LATEST" = "pending" ]; then
+        json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "planned" "web" "$HANDLER"
+        COUNT_PLANNED=$((COUNT_PLANNED + 1))
         continue
     fi
 
@@ -330,7 +343,7 @@ while [ "$i" -lt "$WORK_IDX" ]; do
         COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
     elif [ "$INSTALLED" = "$LATEST" ] || _should_skip_upgrade "$INSTALLED" "$LATEST"; then
         json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "up_to_date" "web" "$HANDLER"
-        [ "$HANDLER" = "chromium_updater" ] && _web_emit_probe_note "$SLUG" "$NOTE"
+        case "$HANDLER" in chromium_updater|msupdate) _web_emit_probe_note "$SLUG" "$NOTE" ;; esac
         COUNT_UTD=$((COUNT_UTD + 1))
     else
         json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "planned" "web" "$HANDLER"

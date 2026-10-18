@@ -382,6 +382,30 @@ _web_emit_probe_note() {
     json_add_message "info" "${slug}: ${text} | $(ascendo_status_token "$code")" "$code"
 }
 
+# _web_mau_sentinel_item <slug> <installed> <handler> <latest> <note>
+# Microsoft AutoUpdate honesty (Spec B/F): the msupdate probe answers with a
+# sentinel when it cannot prove currency. rc 0 = sentinel handled (a skipped
+# item + error_soft message were emitted; the caller counts it and continues);
+# rc 1 = not a sentinel, nothing emitted.
+#   __MAU_UNKNOWN__      listing failed / interrupted / unparseable
+#   __MAU_QUARANTINED__  MAU DeferralDays hold (an empty list is not "current")
+#   __MAU_REGRESSED__    MAU offers a version <= installed (upstream regression)
+_web_mau_sentinel_item() {
+    local slug="$1" installed="$2" handler="$3" latest="$4" note="$5" text
+    case "$latest" in
+        __MAU_UNKNOWN__|__MAU_QUARANTINED__|__MAU_REGRESSED__) ;;
+        *) return 1 ;;
+    esac
+    if [ -n "$note" ]; then
+        text=${note#*$'\t'}
+    else
+        text="${slug}: ${latest#__MAU_} — status unknown, NOT current"
+    fi
+    json_add_item "web:${slug}" "$installed" "" "skipped" "web" "$handler"
+    json_add_message "warn" "${text} | $(ascendo_status_token error_soft)" "error_soft"
+    return 0
+}
+
 # _web_read_probe_result <results_dir> <idx>
 # Echo the probed candidate version (or empty) for work-item idx.
 _web_read_probe_result() {

@@ -233,6 +233,7 @@ done < <(python3 "$REG_SHIM" "${_reg_args[@]}" --list-slugs 2>/dev/null)
 
 # ── Pass 2: parallel HTTP probes ──────────────────────────────────────
 # (dry run too: the probe is a read-only HTTP fetch and feed-backed apps need it)
+msupdate_prepare_listing "$RESULTS_DIR"
 _web_probe_parallel "$INDICES_FILE" "$RESULTS_DIR"
 
 # ── Pass 3: sequential dispatch (reads probe results + emits items) ──
@@ -248,6 +249,13 @@ while [ "$i" -lt "$WORK_IDX" ]; do
     CAND=$(_web_read_probe_result "$RESULTS_DIR" "$i")
     NOTE=$(_web_read_probe_note "$RESULTS_DIR" "$i")
     i=$((i + 1))
+
+    # Microsoft AutoUpdate sentinels: unknown / quarantined / regressed => skipped
+    # (never current, never actionable).
+    if [ "$HANDLER" = "msupdate" ] && _web_mau_sentinel_item "$SLUG" "$INSTALLED" "$HANDLER" "$CAND" "$NOTE"; then
+        COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+        continue
+    fi
 
     # Feed-backed handlers (sparkle; squirrel / docker with an [app.vendor_feed]):
     # three-way relation of the vendor feed to the installed version (Spec E). Only `newer` proceeds; `equal` is
@@ -333,6 +341,7 @@ while [ "$i" -lt "$WORK_IDX" ]; do
             # skipped, never planned and never "current".
             if [ -z "$FEED_REL" ] && [ -n "$INSTALLED" ] && [ -n "$CAND" ] \
                && [ "$CAND" != "$INSTALLED" ] && [ "$CAND" != "__GH_RATE_LIMITED__" ] \
+               && ! { [ "$HANDLER" = "msupdate" ] && [ "$CAND" = "pending" ]; } \
                && [ "$(_web_version_cmp "$CAND" "$INSTALLED")" = "unknown" ]; then
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
                 json_add_message "warn" "$(_web_unknown_version_message "$SLUG" "$INSTALLED" "$CAND")" "unknown_version"

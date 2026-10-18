@@ -180,6 +180,7 @@ _plan_gate() {
 }
 
 # ── Pass 2: parallel HTTP probes (8-way concurrency by default) ──────
+msupdate_prepare_listing "$RESULTS_DIR"
 _web_probe_parallel "$INDICES_FILE" "$RESULTS_DIR"
 
 # ── Pass 3: sequential per-handler emit using probe results ──────────
@@ -192,7 +193,13 @@ while [ "$i" -lt "$WORK_IDX" ]; do
     DISPLAY_NAME=$(cat "$RESULTS_DIR/${i}.display_name" 2>/dev/null)
     CFG=$(cat "$RESULTS_DIR/${i}.cfg.json" 2>/dev/null)
     LATEST=$(_web_read_probe_result "$RESULTS_DIR" "$i")
+    NOTE=$(_web_read_probe_note "$RESULTS_DIR" "$i")
     i=$((i + 1))
+
+    if [ "$HANDLER" = "msupdate" ] && _web_mau_sentinel_item "$SLUG" "$INSTALLED" "$HANDLER" "$LATEST" "$NOTE"; then
+        COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+        continue
+    fi
 
     # chromium_updater: a non-empty probe means PROVEN current (updater history /
     # public version) -- nothing to plan. Without proof apply will wake the updater
@@ -281,7 +288,7 @@ while [ "$i" -lt "$WORK_IDX" ]; do
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
                 json_add_message "info" "${SLUG}: msupdate not available on this host"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
-            elif [ -n "$LATEST" ] && ! _plan_gate "$SLUG" "$HANDLER" "$LATEST" "$INSTALLED"; then
+            elif [ -n "$LATEST" ] && [ "$LATEST" != "pending" ] && ! _plan_gate "$SLUG" "$HANDLER" "$LATEST" "$INSTALLED"; then
                 continue
             else
                 json_add_item "web:${SLUG}" "$INSTALLED" "${LATEST:-}" "planned" "web" "$HANDLER"
