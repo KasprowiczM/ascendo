@@ -333,8 +333,8 @@ class MacOSInventory(IInventory):
     ) -> list[Package]:
         """Convert a sidecar's ``items[]`` into :class:`Package` instances.
 
-        Items with synthetic IDs (``__phase_error__`` etc.) are silently
-        dropped — they are diagnostic markers, not packages.
+        Items with synthetic IDs (``__phase_error__`` etc.) and ``failed``
+        items are silently dropped — they are diagnostic markers, not packages.
 
         The categories filter (if given) is applied post-hoc using
         ``item.source.type.value``.
@@ -365,6 +365,10 @@ class MacOSInventory(IInventory):
             if item.id.startswith("__") and item.id.endswith("__"):
                 # Diagnostic synthetic items emitted by the script's catch
                 # block (e.g. __phase_error__).
+                continue
+            if item.status is ItemStatus.FAILED:
+                # A failed item is a diagnostic about the scan, never an
+                # installed package (e.g. a bogus system-profiler-error row).
                 continue
             if cat_filter is not None and item.source.type.value not in cat_filter:
                 continue

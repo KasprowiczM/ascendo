@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # adapters/macos/lib/web_discovery.sh
 #
-# Walks $ASCENDO_WEB_APPS_ROOT (default /Applications), reads each .app's
-# Info.plist, and emits a JSON line per bundle to stdout.
+# Walks the TOP LEVEL of each root in $ASCENDO_WEB_APPS_ROOT (colon list,
+# default /Applications:$HOME/Applications; missing roots are skipped), reads
+# each .app's Info.plist, and emits a JSON line per bundle to stdout. Apps named
+# in config/inventory_exclusions.txt (override: ASCENDO_INVENTORY_EXCLUSIONS;
+# Ascendo itself, ...) are skipped, as are iPad/iOS-on-Mac wrappers
+# (Wrapper/iTunesMetadata.plist -> owned by the App Store / mas, never web).
+# With the default roots, apps below $ASCENDO_HOME or this repo are skipped.
 #
 # Each line:
 #   {
@@ -42,7 +47,16 @@
 #                                   classify a bundle as "ineligible".
 set -o pipefail
 
-APPS_ROOT="${ASCENDO_WEB_APPS_ROOT:-/Applications}"
+if [ -n "${ASCENDO_WEB_APPS_ROOT:-}" ]; then
+    APPS_ROOTS="$ASCENDO_WEB_APPS_ROOT"
+    ROOTS_EXPLICIT=1
+else
+    APPS_ROOTS="/Applications:$HOME/Applications"
+    ROOTS_EXPLICIT=0
+fi
+_DISC_DIR="$(cd "$(dirname "$0")" && pwd)"
+EXCLUSIONS_FILE="${ASCENDO_INVENTORY_EXCLUSIONS:-$_DISC_DIR/../config/inventory_exclusions.txt}"
+REPO_ROOT="$(cd "$_DISC_DIR/../../.." 2>/dev/null && pwd)"
 INCLUDE_OWNED="${ASCENDO_WEB_INCLUDE_OWNED:-0}"
 DEEP_OWNERSHIP="${ASCENDO_WEB_DEEP_OWNERSHIP:-0}"
 
@@ -55,6 +69,26 @@ case "${1:-}" in
     --emit-json) ;;
     *) usage ;;
 esac
+
+# _is_excluded <abs_app_path> -> rc 0 when the app must not be tracked.
+_is_excluded() {
+    local _p="$1" _b _pat
+    _b="${_p##*/}"; _b="${_b%.app}"
+    if [ -f "$EXCLUSIONS_FILE" ]; then
+        while IFS= read -r _pat || [ -n "$_pat" ]; do
+            case "$_pat" in ''|'#'*) continue ;; esac
+            # shellcheck disable=SC2254  # the pattern is a glob on purpose
+            case "$_b" in $_pat) return 0 ;; esac
+        done < "$EXCLUSIONS_FILE"
+    fi
+    if [ "$ROOTS_EXPLICIT" -eq 0 ]; then
+        if [ -n "${ASCENDO_HOME:-}" ]; then
+            case "$_p" in "${ASCENDO_HOME%/}"/*) return 0 ;; esac
+        fi
+        [ -n "$REPO_ROOT" ] && case "$_p" in "$REPO_ROOT"/*) return 0 ;; esac
+    fi
+    return 1
+}
 
 # -- Ownership signals -------------------------------------------------------
 
@@ -247,7 +281,8 @@ _owned_by() {
     # _MASReceipt is the definitive marker for App Store-installed apps.
     # `mas list` returns numeric track IDs not bundle IDs, so checking
     # the receipt directly closes the gap.
-    if [ -n "$app_dir" ] && [ -d "$app_dir/Contents/_MASReceipt" ]; then
+    if [ -n "$app_dir" ] && { [ -d "$app_dir/Contents/_MASReceipt" ] \
+         || [ -f "$app_dir/Wrapper/iTunesMetadata.plist" ]; }; then
         printf 'mas'; return
     fi
 
@@ -326,27 +361,44 @@ _classify() {
 # -- Walk --------------------------------------------------------------------
 
 # W10 (audit): a crashed discovery must be distinguishable from "0 web apps".
-# If we can't even enter the apps root, emit an explicit DISCOVERY_FAILED
-# sentinel + non-zero exit so check.sh reports a real failure instead of a
-# misleading "everything is up to date".
-if ! cd "$APPS_ROOT" 2>/dev/null; then
-    printf 'DISCOVERY_FAILED\tcd-failed:%s\n' "$APPS_ROOT"
-    exit 3
-fi
-
+# If we can't even enter ANY apps root (missing roots are skipped: most Macs
+# have no ~/Applications), emit an explicit DISCOVERY_FAILED sentinel +
+# non-zero exit so check.sh reports a real failure instead of a misleading
+# "everything is up to date".
 _DISC_COUNT=0
-for app_dir in *.app; do
+_DISC_ROOTS_OK=0
+_DISC_FIRST_FAIL=""
+_SEEN_BIDS="|"
+_old_ifs="$IFS"
+IFS=':'
+# shellcheck disable=SC2086  # word splitting on ':' is the point
+set -- $APPS_ROOTS
+IFS="$_old_ifs"
+for APPS_ROOT in "$@"; do
+    [ -n "$APPS_ROOT" ] || continue
+    APPS_ROOT="${APPS_ROOT%/}"
+    if ! cd "$APPS_ROOT" 2>/dev/null; then
+        [ -n "$_DISC_FIRST_FAIL" ] || _DISC_FIRST_FAIL="$APPS_ROOT"
+        continue
+    fi
+    _DISC_ROOTS_OK=$((_DISC_ROOTS_OK + 1))
+    for app_dir in *.app; do
     [ -d "$app_dir" ] || continue
     plist="$app_dir/Contents/Info.plist"
     [ -f "$plist" ] || continue
 
+    abs_path="$APPS_ROOT/$app_dir"
+    _is_excluded "$abs_path" && continue
+
     bid=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$plist" 2>/dev/null || true)
     [ -z "$bid" ] && continue
+    # The same bundle in two roots is one app (first root wins).
+    case "$_SEEN_BIDS" in *"|$bid|"*) continue ;; esac
+    _SEEN_BIDS="$_SEEN_BIDS$bid|"
     ver=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$plist" 2>/dev/null || true)
     name=$(/usr/libexec/PlistBuddy -c "Print :CFBundleName" "$plist" 2>/dev/null || true)
     [ -z "$name" ] && name="${app_dir%.app}"
 
-    abs_path="$APPS_ROOT/$app_dir"
     owned=$(_owned_by "$bid" "$abs_path")
     if [ -n "$owned" ] && [ "$INCLUDE_OWNED" != "1" ]; then
         continue
@@ -383,7 +435,13 @@ except BrokenPipeError:
     pass
 PY
     _DISC_COUNT=$((_DISC_COUNT + 1))
+    done
 done
+
+if [ "$_DISC_ROOTS_OK" -eq 0 ]; then
+    printf 'DISCOVERY_FAILED\tcd-failed:%s\n' "${_DISC_FIRST_FAIL:-$APPS_ROOTS}"
+    exit 3
+fi
 
 # W10: trailing success sentinel. check.sh treats "no DISCOVERY_OK and no app
 # lines" as a discovery FAILURE (crash/truncation), not as "0 web apps".

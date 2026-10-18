@@ -262,6 +262,12 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         status = "partial"
     elif failed > 0:
         status = "failed"
+    elif args.exit_code in (20, 30) and total == 0:
+        # Contract exit 20/30 = the phase failed (known / unknown state) and it
+        # emitted no item at all (e.g. a failed scan reports only an error
+        # message, never a bogus failed "package"): that is a failure, not a
+        # zero-item success.
+        status = "failed"
     elif total > 0 and skipped == total:
         status = "skipped"
     elif args.exit_code == 10 and total == 0:

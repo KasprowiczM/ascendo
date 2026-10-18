@@ -111,6 +111,7 @@ fi
 # rollback-backup directory next to the apps. Never delete another run's
 # directories -- a backup may be the only copy of the previous app version.
 _APPS_ROOT="${ASCENDO_WEB_APPS_ROOT:-/Applications}"
+_APPS_ROOT="${_APPS_ROOT%%:*}"   # ASCENDO_WEB_APPS_ROOT may be a colon list; the first root hosts staging
 _APPS_ROOT="${_APPS_ROOT%/}"
 for _orphan in "$_APPS_ROOT"/.ascendo_staging.* "$_APPS_ROOT"/.ascendo_backup.*; do
     if [ -d "$_orphan" ]; then
@@ -136,8 +137,6 @@ COUNT_UPTODATE=0
 # reported ONCE at the end (not as N recurring skipped-items + warnings
 # every run — the operator uninstalled these and doesn't want to be
 # told about each, every run). run_async eviction removes their DB rows.
-NOT_INSTALLED_SLUGS=""
-NOT_INSTALLED_COUNT=0
 
 # Sesja 47 perf fix: parallel probe phase, then sequential dispatch.
 # The probe step (HTTP) parallelizes safely; the actual install step
@@ -191,21 +190,13 @@ for k, v in fields.items():
             INSTALLED=$(_web_installed_version "$APP_PATH")
         fi
     fi
-    # App not resolvable on disk (uninstalled, moved out of
-    # /Applications, registry-only entry). Sesja-71f learned a bare
-    # silent `continue` hides real "plan said 7, apply did 1" drift, so
-    # we still record it — but AGGREGATED into one end-of-run line
-    # instead of a per-app skipped-item + info-warning every single run
-    # (the operator-reported "web apply keeps warning about apps I no
-    # longer have"). No sidecar item is emitted; run_async's eviction
-    # drops the stale inventory.db row so the SPA stops painting it.
+    # App not resolvable on disk (uninstalled, moved out of the app dirs,
+    # registry-only entry): silent. No item, no message (the old aggregated
+    # "N registry app(s) not installed" line was dropped in v1.5.4 parity);
+    # run_async's eviction handles a stale inventory.db row.
     if [ -z "$INSTALLED" ]; then
-        if [ -z "$NOT_INSTALLED_SLUGS" ]; then
-            NOT_INSTALLED_SLUGS="$SLUG"
-        else
-            NOT_INSTALLED_SLUGS="${NOT_INSTALLED_SLUGS}, ${SLUG}"
-        fi
-        NOT_INSTALLED_COUNT=$((NOT_INSTALLED_COUNT + 1))
+        # v1.5.4 parity (DJI Assistant): an absent registry app is SILENT --
+        # no item, no message, no slug listing (check/plan behave the same).
         continue
     fi
 
@@ -696,11 +687,6 @@ if [ -s "$ASCENDO_WEB_LAUNCH_TRACK_FILE" ] && [ "$DRY_RUN" != "true" ]; then
     fi
 fi
 
-# One aggregated, non-spammy line for registry entries whose app isn't
-# installed (was: N recurring skipped-rows + N warnings every run).
-if [ "$NOT_INSTALLED_COUNT" -gt 0 ]; then
-    json_add_message "info" "${NOT_INSTALLED_COUNT} registry app(s) not installed on this Mac (skipped, not an error): ${NOT_INSTALLED_SLUGS}. Remove from web_apps.toml if you don't use them."
-fi
 if [ "$DRY_RUN" = "true" ]; then
     json_add_message "info" "web apply (dry-run): ${COUNT_PLANNED} planned, ${COUNT_SKIPPED} skipped"
 else

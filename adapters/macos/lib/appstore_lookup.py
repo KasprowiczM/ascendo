@@ -19,6 +19,8 @@ field such as the version is empty)::
 
     appstore_lookup.py scan [--dirs A:B]
         -> name US itemId US version US path        (dedup by itemId)
+    appstore_lookup.py identity APP_PATH
+        -> name US itemId US version   (exit 1 when APP_PATH is not an iPad wrapper)
     appstore_lookup.py pending --scan-file F --lookup-file G
         -> name US itemId US installed US store US path   (store strictly newer)
         exit 2 when G is not a valid iTunes Lookup response (unknown, NOT "none")
@@ -117,6 +119,25 @@ def scan_ipad_apps(roots: Optional[Iterable[str]] = None) -> List[Dict[str, str]
     return found
 
 
+def app_identity(app_path: str) -> Optional[Dict[str, str]]:
+    """Identity of ONE iPad wrapper bundle (``name``, ``itemId``, ``version``)
+    from its ``Wrapper/iTunesMetadata.plist``; ``None`` when absent/unreadable.
+    Shared by the inventory scan so there is a single iPad-identity reader."""
+    meta_path = os.path.join(app_path, "Wrapper", "iTunesMetadata.plist")
+    try:
+        with open(meta_path, "rb") as fh:
+            meta = read_itunes_metadata(fh.read())
+    except OSError:
+        return None
+    if not meta:
+        return None
+    base = os.path.basename(app_path.rstrip("/"))
+    if base.endswith(".app"):
+        base = base[:-4]
+    return {"name": meta["itemName"] or base, "itemId": meta["itemId"],
+            "version": meta["bundleShortVersionString"]}
+
+
 def lookup_is_valid(json_obj: Any) -> bool:
     """True when the payload is an iTunes Lookup response (dict with a
     ``results`` list). An empty list is valid: the store knows none of the ids."""
@@ -182,6 +203,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     p_scan = sub.add_parser("scan")
     p_scan.add_argument("--dirs", default=None, help="colon-separated roots")
+    p_ident = sub.add_parser("identity")
+    p_ident.add_argument("app_path")
     p_pending = sub.add_parser("pending")
     p_pending.add_argument("--scan-file", required=True)
     p_pending.add_argument("--lookup-file", required=True)
@@ -191,6 +214,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         roots = [p for p in args.dirs.split(":") if p] if args.dirs else None
         for app in scan_ipad_apps(roots):
             _emit([app["name"], app["itemId"], app["version"], app["path"]])
+        return 0
+
+    if args.cmd == "identity":
+        ident = app_identity(args.app_path)
+        if ident is None:
+            return 1
+        _emit([ident["name"], ident["itemId"], ident["version"]])
         return 0
 
     installed: List[Dict[str, Any]] = []

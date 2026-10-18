@@ -21,6 +21,10 @@
 #       Roots: /Applications and ~/Applications; ASCENDO_APP_DIRS (colon list)
 #       overrides them. rc 0 (an empty result is a valid answer).
 #
+#   ascendo_ios_app_identity <app_path>
+#       stdout: name <US> itemId <US> version for ONE wrapper bundle (the inventory
+#       scan's identity reader); rc 1 when the bundle has no readable metadata.
+#
 #   ascendo_ios_store_country
 #       stdout: lowercase two-letter App Store country from `mas config --json`
 #       (`.store`), or nothing (also ASCENDO_APPSTORE_COUNTRY overrides). Empty
@@ -60,6 +64,11 @@ ascendo_app_store_managed() {
 
 ascendo_ios_apps_scan() {
     python3 "$_ASCENDO_IOS_PY" scan
+}
+
+ascendo_ios_app_identity() {
+    [ -n "${1:-}" ] || return 1
+    python3 "$_ASCENDO_IOS_PY" identity "$1"
 }
 
 ascendo_ios_store_country() {

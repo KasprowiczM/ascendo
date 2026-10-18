@@ -242,7 +242,7 @@ _msupdate_installed_short() {
 
 # _msupdate_app_path <cfg_json> -> bundle path (registry app_path, else display name)
 _msupdate_app_path() {
-    local root="${ASCENDO_WEB_APPS_ROOT:-/Applications}"
+    local root="${ASCENDO_WEB_APPS_ROOT:-/Applications}"; root="${root%%:*}"
     /usr/bin/printf '%s' "$1" | ROOT="$root" /usr/bin/python3 -c '
 import json,os,sys
 try: d=json.load(sys.stdin)
@@ -326,7 +326,8 @@ _msupdate_run_dir() {
 }
 
 _msupdate_teams_pin_release() {
-    local app_path="${1:-${ASCENDO_WEB_APPS_ROOT:-/Applications}/Microsoft Teams.app}"
+    local _root="${ASCENDO_WEB_APPS_ROOT:-/Applications}"
+    local app_path="${1:-${_root%%:*}/Microsoft Teams.app}"
     local key="OptionalUpdatesDeferrals.DeferralVersions.TEAMS21"
     local tmp work check pin installed rel dir backup
     _MSU_PIN_NOTE=""

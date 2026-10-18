@@ -95,6 +95,10 @@ def _run(script: Path, sp: Path, mas: Path | None, brew: Path | None,
          output_dir: Path, run_id: str, *extra: str):
     env = dict(os.environ)
     env["SP_BIN"] = str(sp)
+    # Task 15: only top-level apps of the app dirs are listed. The conftest
+    # points ASCENDO_APP_DIRS at an empty dir; the canned fixture lives under
+    # the standard roots, so name them explicitly.
+    env["ASCENDO_APP_DIRS"] = "/Applications:/System/Applications"
     if mas is not None:
         env["MAS_BIN"] = str(mas)
     else:
@@ -121,9 +125,9 @@ def test_emits_one_item_per_app(tmp_path):
     res = _run(SCRIPT, sp, mas, brew, out, rid)
     assert res.returncode == 0, res.stderr
     sc = _parse(out / rid / "check__inventory.json")
-    # 16 valid apps; the empty-path entry is skipped.
-    # (13 baseline + 3 system service bundles for the path-classification test)
-    assert len(sc.items) == 16
+    # 13 top-level apps; the empty-path entry and the 3 nested system service
+    # bundles (/System/Library/*, /Library/Apple/*) are out of scope.
+    assert len(sc.items) == 13
     assert sc.status.value == "success"
 
 
@@ -147,9 +151,7 @@ def test_classification_distribution(tmp_path):
         st = item.source.type.value
         by_source[st] = by_source.get(st, 0) + 1
     # SYSTEM: Safari + Mail + Calculator + Notes (under /System/Applications/)
-    #         AddressBookManager + AirPlayUIAgent (under /System/Library/CoreServices/)
-    #         Apple Mobile Sync (under /Library/Apple/...)
-    assert by_source.get("system", 0) == 7
+    assert by_source.get("system", 0) == 4
     # MAS: Amphetamine, iMovie, KeePassium (rule 2 via _name match)
     assert by_source.get("mas", 0) == 3
     # BREW: Inkscape, MacWhisper, BlackHole 2ch (cask token match)
@@ -193,15 +195,9 @@ def test_no_brew_falls_through_to_web(tmp_path):
     assert by_source.get("web", 0) == 6
 
 
-def test_system_library_coreservices_classifies_as_system(tmp_path):
-    """Apps under /System/Library/* must classify as `system`, not `web`.
-
-    Pre-fix, only /System/Applications/* matched Rule 1. macOS service
-    bundles (AddressBookManager, AirPlayUIAgent, AccessibilityUIServer,
-    etc.) live under /System/Library/CoreServices/ — they were falling
-    through to Rule 5 default and polluting the `web` category with
-    hundreds of system bundles the operator can't update anyway.
-    """
+def test_system_library_service_bundles_are_out_of_scope(tmp_path):
+    """Service bundles under /System/Library/* and /Library/Apple/* are nested
+    helpers, not apps: they are no longer listed at all (Task 15, Spec 4)."""
     sp = _make_fake_sp(tmp_path)
     mas = _make_fake_mas(tmp_path)
     brew = _make_fake_brew(tmp_path)
@@ -210,21 +206,8 @@ def test_system_library_coreservices_classifies_as_system(tmp_path):
     res = _run(SCRIPT, sp, mas, brew, out, rid)
     assert res.returncode == 0, res.stderr
     sc = _parse(out / rid / "check__inventory.json")
-    # AddressBookManager lives under /System/Library/CoreServices/
-    abm = next(i for i in sc.items if i.id == "AddressBookManager")
-    assert abm.source.type.value == "system", (
-        f"AddressBookManager under {abm.source.feed} should be classified "
-        f"as `system` (Rule 1 system-path catch); got {abm.source.type.value}"
-    )
-    # AirPlayUIAgent lives under /System/Library/CoreServices/
-    airplay = next(i for i in sc.items if i.id == "AirPlayUIAgent")
-    assert airplay.source.type.value == "system"
-    # Apple Mobile Sync lives under /Library/Apple/...
-    ams = next(i for i in sc.items if i.id == "Apple Mobile Sync")
-    assert ams.source.type.value == "system", (
-        f"/Library/Apple/* bundles should classify as `system`; "
-        f"AMS came back as {ams.source.type.value}"
-    )
+    ids = {i.id for i in sc.items}
+    assert not ids & {"AddressBookManager", "AirPlayUIAgent", "Apple Mobile Sync"}
 
 
 def test_per_item_metadata(tmp_path):
@@ -259,3 +242,4 @@ def test_system_profiler_failure_exits_30(tmp_path):
     sc = _parse(out / rid / "check__inventory.json")
     assert sc.status.value == "failed"
     assert any(m.level.value == "error" for m in sc.messages)
+    assert sc.items == []   # no bogus "inventory:system-profiler-error" package

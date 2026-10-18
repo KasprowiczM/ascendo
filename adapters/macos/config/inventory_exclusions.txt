@@ -1,0 +1,17 @@
+# adapters/macos/config/inventory_exclusions.txt
+#
+# Apps the inventory scan (scripts/inventory/list.sh) and web discovery
+# (lib/web_discovery.sh) never list or update.
+#
+# Format: one entry per line, matched against the bundle name WITHOUT ".app"
+# (shell glob allowed, case-sensitive). '#' starts a comment; blank lines are
+# ignored. Override the file with ASCENDO_INVENTORY_EXCLUSIONS=/path/to/file.
+#
+# Only TOP-LEVEL apps of the scanned dirs are considered at all
+# (ASCENDO_APP_DIRS, default /Applications:$HOME/Applications:/System/Applications),
+# so nested helpers (Xcode.app/Contents/Applications/*, updater helpers under
+# ~/Library or /Library, in-progress installer dirs, /Library/Printers) never
+# reach this list. This file covers top-level apps that must not be tracked.
+
+# Ascendo itself -- updated with `git pull`, never by its own run.
+Ascendo

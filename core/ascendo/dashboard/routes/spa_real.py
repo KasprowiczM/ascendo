@@ -330,10 +330,18 @@ def _seed_buckets_from_sidecars(
     buckets: dict[str, list[dict[str, Any]]],
     adapter: IAdapter,
     runs_dir: Path | None,
+    complete_categories: frozenset[str] = frozenset(),
 ) -> dict[str, list[dict[str, Any]]]:
     """Replace each bucket with the check sidecar's item list when the
     sidecar has strictly more entries than inventory found for that
-    category.
+    category -- or ALWAYS (when non-empty) for a category in
+    ``complete_categories``.
+
+    ``complete_categories`` are those with a recorded trusted, complete scan
+    (``inventory_db.set_scan_complete``, written only by a full successful
+    check). For them the sidecar is authoritative even when it lists FEWER
+    rows: otherwise a stale, larger OS-inventory bucket (e.g. 82 web "apps")
+    would outlive a trusted scan that says fewer. Completeness, not row count.
 
     Why: the OS-level inventory (system_profiler on macOS, dpkg on
     Linux, ARP on Windows) only sees apps that match the
@@ -357,7 +365,7 @@ def _seed_buckets_from_sidecars(
         if not items:
             continue
         existing = buckets.get(cat_id) or []
-        if len(items) > len(existing):
+        if cat_id in complete_categories or len(items) > len(existing):
             buckets[cat_id] = items
     return buckets
 
@@ -641,6 +649,7 @@ def _build_buckets_live(
     adapter: IAdapter,
     cache: InventoryCache,
     runs_dir: Path | None,
+    complete_categories: frozenset[str] = frozenset(),
 ) -> dict[str, list[dict[str, Any]]]:
     """Compute the buckets via the live scan + check-sidecar overlay.
 
@@ -661,7 +670,9 @@ def _build_buckets_live(
     """
     packages = cache.get(lambda: _load_packages(adapter))
     buckets = _bucket(packages)
-    buckets = _seed_buckets_from_sidecars(buckets, adapter, runs_dir)
+    buckets = _seed_buckets_from_sidecars(
+        buckets, adapter, runs_dir, complete_categories
+    )
 
     # Step 4: per-item overlay. Without this, the build-inventory CLI
     # writes installed=None / candidate=None for every winget+msstore
@@ -672,6 +683,19 @@ def _build_buckets_live(
     for cat in list(buckets.keys()):
         buckets[cat] = _enrich_items(buckets[cat], cat, runs_dir, excluded=set())
     return buckets
+
+
+def _complete_categories(db: Any, adapter: IAdapter) -> frozenset[str]:
+    """Adapter categories with a recorded trusted-complete scan (``scan_meta``)."""
+    if db is None:
+        return frozenset()
+    try:
+        return frozenset(
+            c for c in _adapter_category_ids(adapter) if db.get_scan_meta(c)
+        )
+    except Exception:  # noqa: BLE001
+        _log.exception("inventory_db: scan_meta read failed (non-fatal)")
+        return frozenset()
 
 
 def _flatten_buckets_for_db(
@@ -814,7 +838,9 @@ def _resolve_buckets(
         except Exception:  # noqa: BLE001
             _log.exception("inventory_db: read-side failure; falling back to live scan")
 
-    buckets = _build_buckets_live(adapter, cache, runs_dir)
+    buckets = _build_buckets_live(
+        adapter, cache, runs_dir, _complete_categories(db, adapter)
+    )
 
     # Best-effort populate. Failure here must never block the request —
     # the SPA still gets the live buckets.
@@ -959,7 +985,9 @@ async def inventory_refresh_real(request: Request) -> dict[str, Any]:
     if adapter is not None and db is not None:
         runs_dir = getattr(request.app.state, "runs_dir", None)
         try:
-            buckets = _build_buckets_live(adapter, cache, runs_dir)
+            buckets = _build_buckets_live(
+                adapter, cache, runs_dir, _complete_categories(db, adapter)
+            )
             rows = _flatten_buckets_for_db(buckets)
             item_count = _replace_buckets_in_db(db, buckets, rows)
             db.set_meta(_adapter_id(adapter), item_count=item_count)
@@ -987,7 +1015,9 @@ async def inventory_db_refresh(request: Request) -> dict[str, Any]:
     cache = _get_inventory_cache(request)
     cache.invalidate()
     runs_dir = getattr(request.app.state, "runs_dir", None)
-    buckets = _build_buckets_live(adapter, cache, runs_dir)
+    buckets = _build_buckets_live(
+        adapter, cache, runs_dir, _complete_categories(db, adapter)
+    )
     rows = _flatten_buckets_for_db(buckets)
     item_count = 0
     if db is not None:

@@ -95,6 +95,13 @@ class MacOSAdapter(IAdapter):
     (cross-cutting threat-model work for source signature verification).
     """
 
+    # Categories whose manager check sidecars are authoritative for the
+    # inventory DB: a full, trusted check reconciles them (Task 15 / Spec 8).
+    # Opt-in per adapter -- shared core never reconciles other adapters.
+    inventory_reconcile_categories: ClassVar[frozenset[str]] = frozenset(
+        {"brew", "mas", "npm", "pip", "web"}
+    )
+
     SCRIPTS_DIR: ClassVar[Path] = _resolve_resource_dir(
         "ASCENDO_MACOS_SCRIPTS_DIR", "scripts"
     )

@@ -273,3 +273,27 @@ def test_sanitised_timeout_env_falls_back(tmp_path):
     assert res.returncode == 0, res.stderr
     assert _items(_parse(out / rid / "apply__mas.json")) == {ONEPASSWORD: "success", KEKA: "success"}
 
+
+
+def test_unparseable_native_queue_never_runs_bare_upgrade(tmp_path):
+    """F5 (v1.5.4): when the queue text is garbage and no id can be extracted,
+    apply must NOT fall back to a bare `mas upgrade` (which would update
+    everything, including apps the user excluded). It reports nothing to
+    upgrade / unknown and exits soft; the fake sudo never sees a `mas upgrade`."""
+    fakes = mas_env(tmp_path, outdated_text="<<< not a queue >>>\nthis is not parseable\n")
+    out, rid = tmp_path / "out", str(uuid.uuid4())
+    res = _run_apply(fakes, out, rid)
+    assert res.returncode in (0, 10), res.stderr
+    for log in ("calls.log", "sudo.log"):
+        for line in _log(fakes, log).splitlines():
+            args = line.split("ARGS=", 1)[-1].strip() if "ARGS=" in line else line
+            assert not args.endswith("upgrade") and "upgrade" not in args.split(), (log, line)
+    sc = _parse(out / rid / "apply__mas.json")
+    assert "success" not in set(_items(sc).values())
+
+    # control: the same assertion DOES see an upgrade for a parseable queue
+    (tmp_path / "ok").mkdir()
+    fakes2 = mas_env(tmp_path / "ok")
+    res2 = _run_apply(fakes2, tmp_path / "out2", str(uuid.uuid4()))
+    assert res2.returncode == 0, res2.stderr
+    assert "upgrade" in _log(fakes2, "sudo.log")

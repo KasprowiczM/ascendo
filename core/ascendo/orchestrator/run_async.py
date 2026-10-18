@@ -354,7 +354,66 @@ def _normalize_item_id(item_id_raw: Any, name: str) -> str:
 
 
 
-def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
+_MAS_ID_FEED_PREFIX = "mas-id:"
+_RECONCILE_PSEUDO_SUFFIXES = ("-probe", ":lookup")
+
+
+def _is_pseudo_item(item_id: str) -> bool:
+    """Marker items ("mas:list-probe", "ipad:lookup", "__x__") are diagnostics
+    about a scan, not packages -- and their presence means the scan is NOT a
+    complete picture of what is installed."""
+    iid = (item_id or "").lower()
+    return (iid.startswith("__") and iid.endswith("__")) or any(
+        iid.endswith(sfx) for sfx in _RECONCILE_PSEUDO_SUFFIXES
+    )
+
+
+def _orphan_ids(sc: Any) -> set[str]:
+    """Ids a check sidecar flags ``CASK_ORPHAN`` (cask record whose app was
+    deleted by hand). Their item is ``skipped`` but they are NOT installed."""
+    out: set[str] = set()
+    for msg in getattr(sc, "messages", None) or []:
+        if getattr(msg, "code", None) == "CASK_ORPHAN":
+            head = (getattr(msg, "text", "") or "").split(": ", 1)[0]
+            if head:
+                out.add(head)
+    return out
+
+
+def _reconcilable_seen(sc: Any) -> set[str] | None:
+    """Names a check sidecar proves installed, or ``None`` when the scan can't
+    be trusted as complete (failed/partial status, an error message, a
+    probe-marker item). ``None`` => never reconcile / never mark complete."""
+    status = getattr(sc, "status", None)
+    status_v = status.value if hasattr(status, "value") else str(status)
+    if status_v != "success":
+        return None
+    for msg in getattr(sc, "messages", None) or []:
+        level = getattr(msg, "level", None)
+        if (level.value if hasattr(level, "value") else str(level)) == "error":
+            return None
+    orphans = _orphan_ids(sc)
+    seen: set[str] = set()
+    for item in sc.items or []:
+        item_id = str(getattr(item, "id", "") or "")
+        name = str(getattr(item, "name", None) or item_id)
+        if not name:
+            continue
+        if _is_pseudo_item(item_id):
+            return None
+        if item_id in orphans or name in orphans:
+            continue
+        seen.add(name)
+    return seen
+
+
+def _flush_run_to_inventory_db(
+    run_dir: Path,
+    inventory_db: Any,
+    *,
+    reconcile_categories: Iterable[str] | None = None,
+    full_scan: bool = False,
+) -> int:
     """Walk the just-finished run's sidecars + bulk-upsert their items.
 
     Resolves duplicates across phases by phase priority: verify > apply >
@@ -371,6 +430,17 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
     Failures are swallowed (best-effort): a flaky disk should not poison
     the run state. Returns the count of rows flushed (0 on failure or
     when no sidecars exist yet).
+
+    Drift-free reconcile (Task 15 / Spec 8): for each category in
+    ``reconcile_categories`` (opt-in per adapter) a ``full_scan`` run whose
+    check sidecar is a trusted, complete, non-empty scan evicts the rows a
+    previous RUN wrote for packages that are no longer reported, then records
+    the scan watermark. A failed/partial/empty/filtered scan never deletes.
+
+    Identity: the key is the item's display name -- the same key the check
+    sidecar and the OS inventory use. mas apply/verify report numeric App Store
+    ids; those are mapped to the display name via the check item's
+    ``mas-id:<id>`` source feed so one app is one row.
     """
     if inventory_db is None or not run_dir.is_dir():
         return 0
@@ -389,11 +459,24 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
     # (Sesja 73).
     uninstalled: set[tuple[str, str, str]] = set()
 
+    loaded: list[tuple[Path, Any]] = []
     for sidecar_path in list_run_sidecars(run_dir):
         try:
-            sc = read_sidecar(sidecar_path)
+            loaded.append((sidecar_path, read_sidecar(sidecar_path)))
         except Exception:  # noqa: BLE001 -- corrupt sidecars shouldn't block the flush
             continue
+
+    # mas: numeric App Store id -> display name (see Identity above).
+    mas_names: dict[str, str] = {}
+    for _p, _sc in loaded:
+        for _it in (_sc.items or []):
+            feed = getattr(getattr(_it, "source", None), "feed", None) or ""
+            if feed.startswith(_MAS_ID_FEED_PREFIX):
+                mas_names[feed[len(_MAS_ID_FEED_PREFIX):]] = str(
+                    getattr(_it, "name", None) or getattr(_it, "id", "")
+                )
+
+    for sidecar_path, sc in loaded:
         category = (
             sc.category.value if hasattr(sc.category, "value") else str(sc.category)
         )
@@ -415,6 +498,9 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
             name = getattr(item, "name", None) or item_id_raw
             if not name:
                 continue
+            if category == "mas" and str(name) in mas_names:
+                name = mas_names[str(name)]
+                item_id_raw = name
 
             current = getattr(item, "current_version", None)
             target = getattr(item, "target_version", None)
@@ -492,6 +578,8 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
                 "status": status,
                 "source_type": category,
                 "vendor": getattr(item, "vendor", None),
+                # Marks the row as written by a run (see InventoryDB.reconcile).
+                "metadata": {"origin": "run"},
             }
             existing = best.get(key)
             if existing is None or priority >= existing[0]:
@@ -541,7 +629,41 @@ def _flush_run_to_inventory_db(run_dir: Path, inventory_db: Any) -> int:
                     item_id,
                 )
 
+    if full_scan and reconcile_categories:
+        _reconcile_from_checks(loaded, inventory_db, frozenset(reconcile_categories))
+
     return flushed
+
+
+def _reconcile_from_checks(
+    loaded: list[tuple[Path, Any]],
+    inventory_db: Any,
+    categories: frozenset[str],
+) -> None:
+    """Reconcile + record the scan watermark per trusted complete check.
+
+    Never-wipe guard: an empty ``seen`` set (a failed scan looks like "0
+    installed") is skipped outright -- rows are kept and the watermark is NOT
+    advanced, so the category stays "unknown" instead of "empty".
+    """
+    for _p, sc in loaded:
+        if _phase_of(sc) != "check":
+            continue
+        cat = sc.category.value if hasattr(sc.category, "value") else str(sc.category)
+        if cat not in categories:
+            continue
+        seen = _reconcilable_seen(sc)
+        if not seen:
+            _log.info(
+                "inventory reconcile: %s check is not a trusted complete scan "
+                "(%s); rows kept", cat, "empty" if seen is not None else "uncertain",
+            )
+            continue
+        try:
+            inventory_db.reconcile(cat, seen_names=seen, only_run_written=True)
+            inventory_db.set_scan_complete(cat, item_count=len(seen))
+        except Exception:  # noqa: BLE001 -- reconcile is best-effort
+            _log.exception("inventory reconcile failed for %s", cat)
 
 
 def _report_has_warnings(report: RunReport) -> bool:
@@ -722,7 +844,16 @@ async def start_run_async(
                 # the up-to-date installed/candidate columns without a fresh
                 # OS-level scan.
                 try:
-                    _flush_run_to_inventory_db(run_dir, inventory_db)
+                    _flush_run_to_inventory_db(
+                        run_dir,
+                        inventory_db,
+                        reconcile_categories=getattr(
+                            adapter, "inventory_reconcile_categories", None
+                        ),
+                        # A filtered run's check emits only a subset; reconciling
+                        # against it would delete everything else.
+                        full_scan=item_filter is None,
+                    )
                 except Exception:  # noqa: BLE001
                     _log.exception("post-run inventory flush failed")
             # Also persist per-app version-transition history so the

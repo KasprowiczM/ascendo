@@ -112,6 +112,10 @@ printf '%s' "$OUTDATED_JSON" | jq -r '.[] | [.id, .name, .current_version, .targ
 while IFS="$(printf '\t')" read -r _id _name _cur _tgt; do
     [ -n "$_id" ] || continue
     if in_filter "$_id" "$_name"; then
+        # Item identity = display name (the key the OS inventory uses and the
+        # key the inventory DB reconciles on). The numeric App Store id rides
+        # in source.feed ("mas-id:<id>") so apply/verify items, which only know
+        # the numeric id, map back to this same row.
         # Use display name as id when present so the dashboard's
         # check-overlay can match against system_profiler-derived
         # inventory items keyed by display name (e.g. "OneDrive").
@@ -119,7 +123,7 @@ while IFS="$(printf '\t')" read -r _id _name _cur _tgt; do
         # because the overlay key (numeric id 823766827) never matches
         # the inventory key (display name OneDrive).
         if [ -n "$_name" ]; then
-            json_add_item "$_name" "$_cur" "$_tgt" "planned" "mas"
+            json_add_item "$_name" "$_cur" "$_tgt" "planned" "mas" "mas-id:$_id"
         else
             json_add_item "$_id" "$_cur" "$_tgt" "planned" "mas"
         fi
@@ -145,7 +149,7 @@ while IFS="$(printf '\t')" read -r _id _name _ver; do
     # Use display name as id (see comment above for the same issue in the
     # planned-loop above). Falls back to numeric id when name is empty.
     if [ -n "$_name" ]; then
-        json_add_item "$_name" "$_ver" "$_ver" "up_to_date" "mas"
+        json_add_item "$_name" "$_ver" "$_ver" "up_to_date" "mas" "mas-id:$_id"
     else
         json_add_item "$_id" "$_ver" "$_ver" "up_to_date" "mas"
     fi

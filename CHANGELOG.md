@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — macOS inventory scan cleanup + drift-free reconcile (parity Task 15)
+
+- Inventory (`inventory/list.sh`) and web discovery list only real top-level
+  apps of `ASCENDO_APP_DIRS` / `ASCENDO_WEB_APPS_ROOT` (colon lists; default
+  `/Applications:$HOME/Applications` [+ `/System/Applications` for inventory]).
+  Nested helpers, updater/installer dirs, Ascendo itself and anything in
+  `adapters/macos/config/inventory_exclusions.txt` are no longer listed.
+- iPad / iOS-on-Mac apps (`ios_app_store` or `Wrapper/iTunesMetadata.plist`) are
+  filed under `mas`, never `web`; Intel-only apps without Rosetta get an
+  `INTEL_ONLY` warning; a failed `system_profiler` no longer yields a bogus
+  `inventory:system-profiler-error` package.
+- The post-run inventory flush reconciles `brew/mas/npm/pip/web` (macOS adapter
+  opt-in) after a full, trusted, non-empty check: gone packages leave the DB;
+  failed/partial/empty/filtered scans never delete. `mas` identity is the
+  display name (numeric apply/verify ids map back via `mas-id:<id>`).
+- `web apply` no longer lists registry apps that are not installed (silent, as
+  in check/plan).
+
 ## [1.0.1] — 2026-06-17 — in-app self-update (macOS + Windows + Ubuntu)
 
 ### Added — App self-update (macOS + Windows + Ubuntu)
