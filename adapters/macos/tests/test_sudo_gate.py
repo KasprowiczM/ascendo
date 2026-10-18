@@ -177,6 +177,15 @@ def test_mas_cold_cache_defers_softly_without_sudo(tmp_path):
     assert "SUDO_UNAVAILABLE" in _msgs(sc)
     assert any(m.code == "SUDO_UNAVAILABLE" for m in sc.messages)
     assert _mas_sudo(fakes) == [] and _mas_upgrades(fakes) == []
+    # I2: the deferral reaches REPORT.md as a listed soft deferral (slug matches the item id)
+    sys.path.insert(0, str(ADAPTER_ROOT.parent.parent / "core"))
+    try:
+        from ascendo.orchestrator.report import _soft_deferrals, generate_apply_report
+    finally:
+        sys.path.pop(0)
+    assert {it.id for _c, it in _soft_deferrals([sc])} == {i.id for i in sc.items}
+    md = generate_apply_report(tmp_path / "out" / str(sc.run.id))
+    assert "deferred" in md.lower() and "authenticate interactively" in md.lower(), md
 
 
 def test_mas_no_sudo_policy_skips_even_with_hot_cache(tmp_path):
@@ -272,3 +281,57 @@ def test_gate_codes(tmp_path):
 def test_sudo_prefix_is_dash_n_only_after_the_gate_opted_in(tmp_path):
     out, _ = _lib(tmp_path, 'echo "[$(_ascendo_sudo_prefix)]"; export ASCENDO_SUDO_NONINTERACTIVE=1; echo "[$(_ascendo_sudo_prefix)]"')
     assert out.splitlines()[:2] == ["[sudo]", "[sudo -n]"]
+
+
+# -- web (I1): root paths honour ASCENDO_NO_SUDO ---------------------------------
+
+def _web_unattended(tmp_path, *, trigger, env_extra=None):
+    import json
+
+    from .test_web_phase_vendor_truth import (  # noqa: PLC0415
+        CLAUDE_BODY, SCRIPTS, Sandbox, prime_claude, registry, stub_open, stub_sleep,
+    )
+    sb = Sandbox(tmp_path)
+    prime_claude(sb)
+    stub_open(sb)
+    stub_sleep(sb)
+    reg = registry(sb, direct_first=True)
+    feeds = sb.tmp / "feeds"
+    feeds.mkdir()
+    (feeds / "vt.feed").write_text(CLAUDE_BODY)
+    # fake sudo from the Sandbox: logs to forbidden.log and exits 1 (a COLD cache)
+    sb.apps.chmod(0o555)          # plain install fails -> the root fallback is reached
+    out = sb.tmp / "out"
+    env = sb.env(ASCENDO_WEB_REGISTRY_PATH=reg, ASCENDO_WEB_USER_REGISTRY_PATH="",
+                 ASCENDO_SUDO_WARM_DISABLE="", ASCENDO_WEB_VENDOR_FEED_DIR=feeds,
+                 ASCENDO_WEB_SLEEP_BIN=sb.bin / "sleep_stub",
+                 ASCENDO_WEB_DOCKER_BIN=sb.tmp / "no-docker",
+                 PYTHONPATH=f"{ADAPTER_ROOT.parent.parent}/core:{ADAPTER_ROOT}", **(env_extra or {}))
+    rid = str(uuid.uuid4())
+    try:
+        res = subprocess.run(
+            ["bash", str(SCRIPTS / "apply.sh"), "--run-id", rid, "--trigger", trigger,
+             "--profile", "full", "--output-dir", str(out)],
+            capture_output=True, text=True, env=env, check=False)
+    finally:
+        sb.apps.chmod(0o755)
+    return res, json.loads((out / rid / "apply__web.json").read_text()), sb
+
+
+def test_web_scheduler_trigger_cold_sudo_defers_root_install_without_sudo(tmp_path):
+    res, sc, sb = _web_unattended(tmp_path, trigger="scheduler")
+    assert res.returncode == 0, res.stderr
+    (item,) = sc["items"]
+    assert item["status"] == "skipped", sc
+    assert any(m.get("code") == "SUDO_UNAVAILABLE_UNATTENDED" for m in sc["messages"]), sc["messages"]
+    # the ONLY sudo call allowed is the unattended `sudo -n -v` cache probe
+    sudo_calls = [l for l in sb.forbidden() if l.startswith("sudo ")]
+    assert set(sudo_calls) <= {"sudo -n -v"}, sudo_calls
+
+
+def test_web_no_sudo_policy_never_calls_sudo(tmp_path):
+    res, sc, sb = _web_unattended(tmp_path, trigger="cli", env_extra={"ASCENDO_NO_SUDO": "1"})
+    assert res.returncode == 0, res.stderr
+    (item,) = sc["items"]
+    assert item["status"] == "skipped", sc
+    assert [l for l in sb.forbidden() if l.startswith("sudo ")] == []

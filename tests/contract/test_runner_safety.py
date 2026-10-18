@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -114,7 +115,7 @@ def test_apply_refused_while_another_process_holds_the_lock(host, run, tmp_path,
     holder = subprocess.Popen(["sleep", "30"])
     try:
         lock = tmp_path / "held.lock"
-        lock.write_text(f"pid={holder.pid}\nstarted=x\nstarted_unix=0\nrun_id=other\n")
+        lock.write_text(f"pid={holder.pid}\nstarted=x\nstarted_unix={time.time()}\nrun_id=other\n")
         monkeypatch.setenv("ASCENDO_RUN_LOCK_FILE", str(lock))
         mgr = FakeManager(SourceType.BREW)
         with pytest.raises(RunLockError):

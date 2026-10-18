@@ -3,9 +3,20 @@
 A Touch-ID / password-primed sudo timestamp lapses after ~5 minutes, while a
 full run (a long ``mas``/``softwareupdate`` pass) can take hours. This daemon
 thread refreshes it with ``sudo -n -v`` -- *never* ``sudo -v``, which would
-prompt -- every ``ASCENDO_SUDO_KEEPALIVE_INTERVAL`` seconds (default 50) and
-exits on the first non-zero rc (the cache is gone; the apply scripts' own gate
-then defers softly), on ``stop()``, or when the context manager exits.
+prompt -- every ``ASCENDO_SUDO_KEEPALIVE_INTERVAL`` seconds (default 50).
+
+Failures are ignored until the FIRST success: the cache is normally primed
+later, by the apply script's warm-up (check/plan/brew run first), so an early
+``sudo -n -v`` failing just means "not primed yet". After a success, a failure
+means the cache lapsed or was revoked and the thread exits (the apply scripts'
+own gate then defers softly). It also exits on ``stop()`` / context exit.
+
+Known limitation: sudo's default ticket is per-tty, and for a TTY-less process
+(dashboard / scheduler) it is keyed on the *parent pid*. This thread's ticket
+(parent = the Python process) is therefore not necessarily the one the bash
+warm-up created (parent = the apply script), so on the dashboard path a refresh
+may not extend the script's ticket. The apply gate (`sudo -n true`) is what
+guarantees safety; the keep-alive is best-effort.
 
 Not used for scheduled/unattended runs, dry runs, read-only runs, or when an
 askpass helper / dashboard password is wired (``sudo -A`` needs no keep-alive).
@@ -46,6 +57,7 @@ class SudoKeepAlive:
         self._thread: threading.Thread | None = None
 
     def _loop(self) -> None:
+        primed = False
         while not self._stop.wait(self.interval):
             try:
                 rc = subprocess.run(
@@ -55,8 +67,10 @@ class SudoKeepAlive:
                 ).returncode
             except (OSError, subprocess.SubprocessError):
                 return          # no sudo / hung sudo: nothing to keep alive
-            if rc != 0:
-                return          # cache lapsed; never escalate to a prompt
+            if rc == 0:
+                primed = True
+            elif primed:
+                return          # was hot, now lapsed; never escalate to a prompt
 
     def start(self) -> None:
         if self._thread is not None:

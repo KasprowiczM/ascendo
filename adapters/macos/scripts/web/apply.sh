@@ -533,6 +533,15 @@ while [ "$i" -lt "$WORK_IDX" ]; do
                 json_add_message "warn" "${SLUG}: error_soft: ${_o_msg} | $(ascendo_status_token error_soft) | $(ascendo_action_required_token launch_failed "$INSTALLED" "$CAND")" "error_soft"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 ;;
+            sudo_unavailable)
+                # Root-only step with root work switched off (ASCENDO_NO_SUDO /
+                # unattended warm-up): a soft deferral, never a failure.
+                _sud_code="SUDO_UNAVAILABLE"
+                _ascendo_sudo_unattended && _sud_code="SUDO_UNAVAILABLE_UNATTENDED"
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "skipped" "web" "$HANDLER"
+                json_add_message "warn" "web:${SLUG}: skipped -- needs administrator; skipped in unattended run -- open Ascendo and run apply (${_sud_code}) | ${_o_msg}" "$_sud_code"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
             feed_stale)
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
                 json_add_message "warn" "${_o_msg}" "feed_stale"

@@ -104,12 +104,19 @@ _vd_try() {
     if "$@" 2>/dev/null; then
         return 0
     fi
+    if [ "${ASCENDO_NO_SUDO:-0}" = "1" ]; then
+        # Root work is switched off (policy / unattended run): remember that the
+        # privilege step was refused so the caller reports a soft deferral.
+        _VD_SUDO_REFUSED=1
+        return 1
+    fi
     if command -v _ascendo_sudo >/dev/null 2>&1; then
         _ascendo_sudo "$@" 2>/dev/null
         return $?
     fi
     return 1
 }
+_VD_SUDO_REFUSED=0
 
 _vd_rm_rf() {
     local p

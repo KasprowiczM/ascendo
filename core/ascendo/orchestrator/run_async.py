@@ -47,6 +47,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from ..models.run import Phase, PhaseStatus, RunInfo
+from .report import _SOFT_DEFERRAL_CODES
 from .runner import RunReport, run_phases
 
 # Convention: per-run streaming log, written to by bash apply scripts via
@@ -667,10 +668,6 @@ def _reconcile_from_checks(
             inventory_db.set_scan_complete(cat, item_count=len(seen))
         except Exception:  # noqa: BLE001 -- reconcile is best-effort
             _log.exception("inventory reconcile failed for %s", cat)
-
-
-# Soft system deferrals (F3): a run warning, never a failure.
-_SOFT_DEFERRAL_CODES = ("SUDO_UNAVAILABLE", "SYSTEM_UPDATE_DEFERRED")
 
 
 def _report_has_warnings(report: RunReport) -> bool:

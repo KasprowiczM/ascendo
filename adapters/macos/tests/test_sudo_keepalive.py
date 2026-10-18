@@ -56,13 +56,8 @@ def _wait(pred, timeout=3.0):
     return False
 
 
-def _adapter_no_password():
-    a = MacOSAdapter()
-    return a
-
-
 def test_keepalive_refreshes_with_sudo_n_v_only_and_stops_on_exit(fake_sudo):
-    adapter = _adapter_no_password()
+    adapter = MacOSAdapter()
     with adapter.run_scope(_run(), adapter.detect_host(), phases=(Phase.CHECK, Phase.APPLY)):
         assert _wait(lambda: len(fake_sudo()) >= 3)
     n = len(fake_sudo())
@@ -73,7 +68,7 @@ def test_keepalive_refreshes_with_sudo_n_v_only_and_stops_on_exit(fake_sudo):
 
 
 def test_keepalive_stops_on_exception(fake_sudo):
-    adapter = _adapter_no_password()
+    adapter = MacOSAdapter()
     with pytest.raises(RuntimeError):
         with adapter.run_scope(_run(), adapter.detect_host(), phases=(Phase.APPLY,)):
             _wait(lambda: fake_sudo())
@@ -84,13 +79,34 @@ def test_keepalive_stops_on_exception(fake_sudo):
     assert len(fake_sudo()) == n
 
 
-def test_keepalive_stops_at_first_nonzero_rc(fake_sudo):
-    fake_sudo.set_rc(1)
-    adapter = _adapter_no_password()
-    with adapter.run_scope(_run(), adapter.detect_host(), phases=(Phase.APPLY,)):
-        assert _wait(lambda: len(fake_sudo()) >= 1)
-        time.sleep(0.4)
-    assert len(fake_sudo()) == 1                    # gave up after the first failure
+def test_keepalive_ignores_failures_until_first_success_then_stops_on_failure(tmp_path, monkeypatch):
+    """rc sequence 1,1,0,0,1: alive through the 2 'not primed yet' failures and the
+    successes; exits only on the failure AFTER a success. Never `sudo -v`."""
+    log = tmp_path / "seq.log"
+    cnt = tmp_path / "cnt"
+    cnt.write_text("0")
+    p = tmp_path / "fakebin" / "sudo"
+    p.parent.mkdir()
+    p.write_text(
+        "#!/bin/sh\n"
+        f'printf "%s\\n" "$*" >> "{log}"\n'
+        f'n=$(cat "{cnt}"); n=$((n+1)); echo $n > "{cnt}"\n'
+        'case $n in 1|2) exit 1;; 3|4) exit 0;; *) exit 1;; esac\n')
+    p.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{p.parent}{os.pathsep}{os.environ['PATH']}")
+    ka = SudoKeepAlive(interval=0.1)
+    ka.start()
+    try:
+        thread = ka._thread
+        assert _wait(lambda: int(cnt.read_text()) >= 2)
+        assert thread.is_alive()                          # 2 failures before any success: still alive
+        assert _wait(lambda: int(cnt.read_text()) >= 4)
+        assert _wait(lambda: not thread.is_alive())       # 5th call fails after successes -> exit
+        assert int(cnt.read_text()) == 5
+        assert set(log.read_text().splitlines()) == {"-n -v"}
+
+    finally:
+        ka.stop()
 
 
 @pytest.mark.parametrize("kwargs,phases", [
@@ -99,7 +115,7 @@ def test_keepalive_stops_at_first_nonzero_rc(fake_sudo):
     ({}, (Phase.CHECK, Phase.PLAN, Phase.VERIFY)),         # read-only
 ])
 def test_keepalive_not_started(fake_sudo, kwargs, phases):
-    adapter = _adapter_no_password()
+    adapter = MacOSAdapter()
     with adapter.run_scope(_run(**kwargs), adapter.detect_host(), phases=phases):
         time.sleep(0.3)
     assert fake_sudo() == []
@@ -110,7 +126,7 @@ def test_keepalive_not_started_when_askpass_wired(fake_sudo, tmp_path, monkeypat
     ask.write_text("#!/bin/sh\necho pw\n")
     ask.chmod(0o755)
     monkeypatch.setenv("SUDO_ASKPASS", str(ask))
-    adapter = _adapter_no_password()
+    adapter = MacOSAdapter()
     with adapter.run_scope(_run(), adapter.detect_host(), phases=(Phase.APPLY,)):
         time.sleep(0.3)
     assert fake_sudo() == []

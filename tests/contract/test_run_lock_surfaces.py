@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,7 +20,7 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="POSIX-only lock
 def held_lock(tmp_path, monkeypatch):
     holder = subprocess.Popen(["sleep", "30"])
     lock = tmp_path / "held.lock"
-    lock.write_text(f"pid={holder.pid}\nstarted=x\nstarted_unix=0\nrun_id=other\n")
+    lock.write_text(f"pid={holder.pid}\nstarted=x\nstarted_unix={time.time()}\nrun_id=other\n")
     monkeypatch.setenv("ASCENDO_RUN_LOCK_FILE", str(lock))
     yield holder
     holder.kill()
@@ -50,9 +51,6 @@ def test_cli_exits_11_on_lock_contention(tmp_path, held_lock, monkeypatch):
     from typer.testing import CliRunner
 
     from ascendo import cli
-    from ascendo.cli import run_cmd
-
-    import ascendo.adapter_factory as af
 
     class _Reg:
         def discover(self): ...

@@ -12,16 +12,25 @@ Port of macOS_updates ``lib/python/run_lock.py`` with Ascendo differences:
 * liveness is probed with ``os.kill(pid, 0)`` which is only safe on POSIX
   (on Windows it would *terminate* the process), so the feature is a no-op on
   ``win32`` -- Windows and Ubuntu behaviour is unchanged;
-* a lock whose owner is dead is stolen; an unparseable lock file is stolen
-  only once it is older than ``STALE_AFTER_SECONDS``.
+* a lock is STALE (stolen) when its owner is dead, when it was written before
+  the machine booted (a lock left behind by the very reboot a deferred
+  ``softwareupdate -R`` can trigger, whose pid may have been reused), or when
+  the live pid's process started AFTER the lock was written (pid reuse). An
+  unparseable lock file is stolen only once it is older than
+  ``STALE_AFTER_SECONDS``;
+* stealing is serialised with an ``flock`` on ``run.lock.guard`` and re-checks
+  the owner inside the guard, so two racing processes can never delete each
+  other's freshly created lock.
 
-The lock file lives next to the runs directory (``~/.ascendo/run.lock``);
-``ASCENDO_RUN_LOCK_FILE`` overrides the location (tests).
+The lock file is ``~/.ascendo/run.lock`` regardless of ``--runs-dir`` (CLI,
+dashboard and scheduled runs must exclude each other); ``ASCENDO_RUN_LOCK_FILE``
+overrides the location (tests).
 """
 from __future__ import annotations
 
 import errno
 import os
+import subprocess
 import sys
 import time
 from collections.abc import Iterator
@@ -38,12 +47,77 @@ class RunLockError(RuntimeError):
     """Another Ascendo run holds the lock (CLI exit 11, HTTP 409)."""
 
 
-def default_lock_path(runs_dir: Path) -> Path:
-    """``$ASCENDO_RUN_LOCK_FILE`` or ``<runs_dir>/../run.lock``."""
+def default_lock_path(runs_dir: Path | None = None) -> Path:
+    """``$ASCENDO_RUN_LOCK_FILE`` or ``~/.ascendo/run.lock`` (``runs_dir`` is
+    accepted for call-site compatibility and deliberately ignored)."""
+    del runs_dir
     override = os.environ.get(LOCK_ENV_VAR)
     if override:
         return Path(override)
-    return Path(runs_dir).parent / LOCK_FILENAME
+    return Path.home() / ".ascendo" / LOCK_FILENAME
+
+
+# Process-start comparisons tolerate this much clock/rounding skew (seconds).
+_START_TOLERANCE = 5.0
+
+
+def _boot_time() -> float | None:
+    """Epoch seconds of the last boot (read-only), or ``None`` if unknown.
+    Test seam."""
+    try:
+        if sys.platform == "darwin":
+            out = subprocess.run(
+                ["sysctl", "-n", "kern.boottime"], capture_output=True, text=True,
+                timeout=5, check=False).stdout
+            marker = "sec ="
+            if marker in out:
+                return float(out.split(marker, 1)[1].split(",", 1)[0].strip())
+        else:
+            with open("/proc/stat", encoding="utf-8") as fh:
+                for line in fh:
+                    if line.startswith("btime "):
+                        return float(line.split()[1])
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+    return None
+
+
+def _pid_start_time(pid: int) -> float | None:
+    """Epoch start time of ``pid`` via ``ps -o lstart=`` (read-only), or
+    ``None``. Test seam."""
+    try:
+        env = dict(os.environ, LC_ALL="C", LANG="C")
+        out = subprocess.run(
+            ["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True,
+            timeout=5, check=False, env=env).stdout.strip()
+        if out:
+            return time.mktime(time.strptime(" ".join(out.split()), "%a %b %d %H:%M:%S %Y"))
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+    return None
+
+
+def _started_unix(payload: dict) -> float | None:
+    try:
+        value = float(payload.get("started_unix", ""))
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _is_stale(payload: dict) -> bool:
+    """True when the lock's owner can no longer be running that run."""
+    pid = payload.get("pid")
+    if not pid or not _pid_alive(pid):
+        return bool(pid)            # dead owner is stale; no owner is handled by the caller
+    started = _started_unix(payload)
+    if started is None:
+        return False
+    boot = _boot_time()
+    if boot is not None and started < boot:
+        return True                 # written before the last boot: the pid is a stranger
+    pid_start = _pid_start_time(pid)
+    return pid_start is not None and pid_start > started + _START_TOLERANCE
 
 
 def _pid_alive(pid: int) -> bool:
@@ -106,7 +180,7 @@ def held_by_other(path: Path, *, run_id: str = "") -> dict | None:
         return None
     payload = _read(Path(path))
     pid = payload.get("pid")
-    if not pid or not _pid_alive(pid):
+    if not pid or not _pid_alive(pid) or _is_stale(payload):
         return None
     if pid == os.getpid() and payload.get("run_id") == run_id:
         return None
@@ -121,9 +195,9 @@ def acquire(path: Path, *, run_id: str) -> Path:
         return path
     payload = _read(path)
     pid = payload.get("pid")
-    if pid == os.getpid() and payload.get("run_id") == run_id:
+    if pid == os.getpid() and payload.get("run_id") == run_id and not _is_stale(payload):
         return path
-    if pid and _pid_alive(pid):
+    if pid and not _is_stale(payload):
         raise RunLockError(
             f"another Ascendo run is in progress (pid {pid}, run {payload.get('run_id', '?')}, "
             f"since {payload.get('started', '?')}); wait for it to finish"
@@ -136,10 +210,31 @@ def acquire(path: Path, *, run_id: str) -> Path:
             age = STALE_AFTER_SECONDS + 1
         if age <= STALE_AFTER_SECONDS:
             raise RunLockError(f"run lock file exists at {path} with no readable owner")
-    path.unlink(missing_ok=True)
-    if not _try_create(path, run_id):
-        raise RunLockError(f"run lock file exists at {path}")
+    _steal(path, payload, run_id)
     return path
+
+
+def _steal(path: Path, seen: dict, run_id: str) -> None:
+    """Replace a stale lock. Serialised by an flock guard; the owner is
+    re-read inside the guard so a lock another process just (re)created is
+    never deleted."""
+    import fcntl  # noqa: PLC0415 -- POSIX only; the whole feature is gated on win32
+
+    guard = path.with_name(path.name + ".guard")
+    fd = os.open(str(guard), os.O_CREAT | os.O_WRONLY, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        current = _read(path)
+        if current != seen:
+            # Someone else already replaced it: re-evaluate from scratch.
+            if _try_create(path, run_id):
+                return
+            raise RunLockError(f"another Ascendo run is in progress (lock at {path})")
+        path.unlink(missing_ok=True)
+        if not _try_create(path, run_id):
+            raise RunLockError(f"run lock file exists at {path}")
+    finally:
+        os.close(fd)        # releases the flock
 
 
 def release(path: Path, *, run_id: str) -> None:

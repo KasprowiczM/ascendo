@@ -466,7 +466,7 @@ def _manufacturer_warnings(apply_sidecars: list[Sidecar]) -> list[ManufacturerWa
 # (SUDO_UNAVAILABLE / SUDO_UNAVAILABLE_UNATTENDED) or the restart-capable
 # step held back because an earlier apply failed (SYSTEM_UPDATE_DEFERRED).
 _SOFT_DEFERRAL_CODES: tuple[str, ...] = (
-    "SUDO_UNAVAILABLE", "SYSTEM_UPDATE_DEFERRED",
+    "SUDO_UNAVAILABLE", "SUDO_UNAVAILABLE_UNATTENDED", "SYSTEM_UPDATE_DEFERRED",
 )
 
 

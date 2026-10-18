@@ -331,6 +331,11 @@ _stream_item() {
 # Apply scripts MUST `_ascendo_sudo_warm` before calling this so the
 # credentials are pre-cached; this helper assumes the timestamp is hot.
 _ascendo_sudo() {
+    # ASCENDO_NO_SUDO=1 (policy, or exported by an unattended warm-up): refuse
+    # without ever invoking sudo. Callers map rc 77 to a soft deferral.
+    if [ "${ASCENDO_NO_SUDO:-0}" = "1" ]; then
+        return 77
+    fi
     # NB: bare `sudo`, not `/usr/bin/sudo`, so test fixtures can shadow
     # via PATH (the existing fake_sudo pattern in test_apply_*_script.py).
     if [ -n "${SUDO_ASKPASS:-}" ] && [ -x "${SUDO_ASKPASS}" ]; then
@@ -352,7 +357,9 @@ _ascendo_sudo() {
 #   (which must not be given a shell function). Word-split it unquoted:
 #       ascendo_run_with_timeout 1800 $(_ascendo_sudo_prefix) env X=1 cmd ...
 _ascendo_sudo_prefix() {
-    if [ -n "${SUDO_ASKPASS:-}" ] && [ -x "${SUDO_ASKPASS}" ]; then
+    if [ "${ASCENDO_NO_SUDO:-0}" = "1" ]; then
+        printf 'false'     # refuses: the wrapped command never runs
+    elif [ -n "${SUDO_ASKPASS:-}" ] && [ -x "${SUDO_ASKPASS}" ]; then
         printf 'sudo -A'
     elif [ "${ASCENDO_SUDO_NONINTERACTIVE:-0}" = "1" ]; then
         printf 'sudo -n'

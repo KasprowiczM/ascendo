@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -46,11 +47,13 @@ def test_same_pid_different_run_id_is_refused(tmp_path):
     run_lock.release(path, run_id="r1")
 
 
-def test_live_foreign_pid_refused(tmp_path):
+def test_live_foreign_pid_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(run_lock, "_boot_time", lambda: None)
+    monkeypatch.setattr(run_lock, "_pid_start_time", lambda pid: None)
     holder = subprocess.Popen(["sleep", "30"])
     try:
         path = _lock(tmp_path)
-        path.write_text(f"pid={holder.pid}\nstarted=x\nstarted_unix=0\nrun_id=other\n")
+        path.write_text(f"pid={holder.pid}\nstarted=x\nstarted_unix={time.time()}\nrun_id=other\n")
         with pytest.raises(RunLockError) as ei:
             run_lock.acquire(path, run_id="r1")
         assert str(holder.pid) in str(ei.value)
@@ -69,7 +72,7 @@ def test_dead_pid_is_stolen(tmp_path):
 
 def test_release_does_not_remove_foreign_lock(tmp_path):
     path = _lock(tmp_path)
-    path.write_text("pid=1\nstarted=x\nstarted_unix=0\nrun_id=other\n")
+    path.write_text(f"pid=1\nstarted=x\nstarted_unix={time.time()}\nrun_id=other\n")
     run_lock.release(path, run_id="r1")
     assert path.exists()
 
@@ -104,4 +107,75 @@ def test_default_lock_path_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("ASCENDO_RUN_LOCK_FILE", str(tmp_path / "x.lock"))
     assert run_lock.default_lock_path(tmp_path / "runs") == tmp_path / "x.lock"
     monkeypatch.delenv("ASCENDO_RUN_LOCK_FILE")
-    assert run_lock.default_lock_path(tmp_path / "runs") == tmp_path / "run.lock"
+    # fixed ascendo-home path, independent of --runs-dir
+    expect = Path.home() / ".ascendo" / "run.lock"
+    assert run_lock.default_lock_path(tmp_path / "runs") == expect
+    assert run_lock.default_lock_path(tmp_path / "elsewhere" / "runs") == expect
+
+
+def _hold(tmp_path, started_unix):
+    holder = subprocess.Popen(["sleep", "30"])
+    path = _lock(tmp_path)
+    path.write_text(f"pid={holder.pid}\nstarted=x\nstarted_unix={started_unix}\nrun_id=old\n")
+    return holder, path
+
+
+def test_live_pid_with_pre_boot_started_unix_is_stale_and_stolen(tmp_path, monkeypatch):
+    """A lock left by a reboot whose pid was reused by a live process."""
+    started = time.time() - 1000
+    holder, path = _hold(tmp_path, started)
+    try:
+        monkeypatch.setattr(run_lock, "_boot_time", lambda: started + 500)      # booted after the lock
+        monkeypatch.setattr(run_lock, "_pid_start_time", lambda pid: None)
+        assert run_lock.held_by_other(path, run_id="r1") is None
+        run_lock.acquire(path, run_id="r1")
+        assert f"pid={os.getpid()}" in path.read_text()
+        run_lock.release(path, run_id="r1")
+    finally:
+        holder.kill()
+        holder.wait()
+
+
+def test_live_pid_started_after_the_lock_was_written_is_stale(tmp_path, monkeypatch):
+    started = time.time() - 1000
+    holder, path = _hold(tmp_path, started)
+    try:
+        monkeypatch.setattr(run_lock, "_boot_time", lambda: started - 10_000)
+        monkeypatch.setattr(run_lock, "_pid_start_time", lambda pid: started + 600)   # pid reused later
+        run_lock.acquire(path, run_id="r1")
+        run_lock.release(path, run_id="r1")
+    finally:
+        holder.kill()
+        holder.wait()
+
+
+def test_live_pid_started_before_the_lock_after_boot_is_still_held(tmp_path, monkeypatch):
+    started = time.time() - 1000
+    holder, path = _hold(tmp_path, started)
+    try:
+        monkeypatch.setattr(run_lock, "_boot_time", lambda: started - 10_000)
+        monkeypatch.setattr(run_lock, "_pid_start_time", lambda pid: started - 5)
+        with pytest.raises(RunLockError):
+            run_lock.acquire(path, run_id="r1")
+    finally:
+        holder.kill()
+        holder.wait()
+
+
+def test_real_boot_time_and_pid_start_seams_are_sane():
+    boot = run_lock._boot_time()
+    assert boot is None or 0 < boot <= time.time()
+    start = run_lock._pid_start_time(os.getpid())
+    assert start is None or abs(start - time.time()) < 10 * 24 * 3600
+
+
+def test_steal_does_not_delete_a_lock_replaced_by_another_process(tmp_path):
+    """m1: the owner changed between our read and the guarded unlink."""
+    path = _lock(tmp_path)
+    path.write_text("pid=999999\nstarted=x\nstarted_unix=1\nrun_id=old\n")
+    stale_seen = run_lock._read(path)
+    # another process steals first and creates ITS lock
+    path.write_text(f"pid={os.getppid()}\nstarted=x\nstarted_unix={time.time()}\nrun_id=winner\n")
+    with pytest.raises(RunLockError):
+        run_lock._steal(path, stale_seen, "loser")
+    assert "run_id=winner" in path.read_text()      # the winner's lock survived

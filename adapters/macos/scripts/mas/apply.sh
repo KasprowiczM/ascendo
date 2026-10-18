@@ -200,7 +200,7 @@ if ! _ascendo_sudo_gate; then
     for _p in $TARGET_PAIRS; do
         IFS='|' read -r _id _cur _tgt <<< "$_p"
         json_add_item "$_id" "$_cur" "$_tgt" "skipped" "mas"
-        json_add_message "warn" "mas:$_id: skipped -- ${ASCENDO_SUDO_GATE_TEXT} (${ASCENDO_SUDO_GATE_CODE})" "SUDO_UNAVAILABLE"
+        json_add_message "warn" "$_id: skipped -- ${ASCENDO_SUDO_GATE_TEXT} (${ASCENDO_SUDO_GATE_CODE})" "SUDO_UNAVAILABLE"
     done
     exit 0
 fi
