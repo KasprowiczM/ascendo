@@ -64,7 +64,7 @@ def _isolate_mau_state(tmp_path_factory, monkeypatch):
 
 
 TRIPWIRE_TOOLS = ("brew", "mas", "msupdate", "softwareupdate", "osascript", "open",
-                  "mdfind", "docker", "GoogleUpdater", "CometUpdater")
+                  "mdfind", "docker", "GoogleUpdater", "CometUpdater", "sudo")
 
 
 @pytest.fixture(autouse=True)
@@ -72,7 +72,7 @@ def tripwire(tmp_path_factory, monkeypatch):
     """Suite-wide tripwire (Ruling 44): no test may reach a REAL updater/installer.
 
     A bin dir of fake brew / mas / msupdate / softwareupdate / osascript / open /
-    mdfind / docker / GoogleUpdater / CometUpdater goes FIRST on PATH; each logs its
+    mdfind / docker / GoogleUpdater / CometUpdater / sudo goes FIRST on PATH; each logs its
     argv to ``$TRIPWIRE_LOG`` and exits 97. The env seams for absolute-path tools
     (updater binaries, msupdate, docker, softwareupdate, mdfind, system_profiler)
     default to tripwire paths. Tests that install their own fakes keep working:

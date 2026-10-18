@@ -669,6 +669,10 @@ def _reconcile_from_checks(
             _log.exception("inventory reconcile failed for %s", cat)
 
 
+# Soft system deferrals (F3): a run warning, never a failure.
+_SOFT_DEFERRAL_CODES = ("SUDO_UNAVAILABLE", "SYSTEM_UPDATE_DEFERRED")
+
+
 def _report_has_warnings(report: RunReport) -> bool:
     """True if any sidecar carries a soft-warning signal.
 
@@ -690,11 +694,11 @@ def _report_has_warnings(report: RunReport) -> bool:
             return True
         for msg in (sc.messages or []):
             # MessageLevel is a str-Enum, so comparing to the literal works.
-            if msg.level in ("warn", "error") or msg.code == "SUDO_UNAVAILABLE":
+            if msg.level in ("warn", "error") or msg.code in _SOFT_DEFERRAL_CODES:
                 return True
         for item in (sc.items or []):
             for msg in (item.messages or []):
-                if msg.code == "SUDO_UNAVAILABLE":
+                if msg.code in _SOFT_DEFERRAL_CODES:
                     return True
     return False
 
@@ -776,6 +780,51 @@ async def start_run_async(
         # won't see log_line events -- non-fatal.
         pass
 
+    def _flush_bookkeeping() -> None:
+        """Inventory-DB + update-history flush of the sidecars written so far.
+
+        Runs after the run AND, for a restart-capable step (macOS
+        ``softwareupdate -R``), right BEFORE it -- the machine may reboot and
+        kill this process, so everything known by then must already be on disk.
+        Idempotent: both flushes upsert by (category, name[, run_id]).
+        """
+        # E11: skip inventory flush on cancel — partial sidecars
+        # from a cancelled run are unreliable and should not update
+        # the inventory DB. Completed/failed runs still flush.
+        if state.status != RunStatus.CANCELLED:
+            # Best-effort: flush the just-finished run's sidecars into the
+            # inventory DB so the next /inventory or /apps/detect call sees
+            # the up-to-date installed/candidate columns without a fresh
+            # OS-level scan.
+            try:
+                _flush_run_to_inventory_db(
+                    run_dir,
+                    inventory_db,
+                    reconcile_categories=getattr(
+                        adapter, "inventory_reconcile_categories", None
+                    ),
+                    # A filtered run's check emits only a subset; reconciling
+                    # against it would delete everything else.
+                    full_scan=item_filter is None,
+                )
+            except Exception:  # noqa: BLE001
+                _log.exception("post-run inventory flush failed")
+        # Also persist per-app version-transition history so the
+        # Apps view can render "this app was upgraded N times…".
+        # apply phase records the transition; verify backfills the
+        # to_version for triggered items once the vendor agent
+        # reconciles.
+        try:
+            from ..dashboard.inventory_db import (  # noqa: PLC0415
+                backfill_triggered_history,
+                flush_apply_history,
+            )
+
+            flush_apply_history(run_dir, str(run.id), inventory_db)
+            backfill_triggered_history(run_dir, str(run.id), inventory_db)
+        except Exception:  # noqa: BLE001
+            _log.exception("post-run update_history flush failed")
+
     def _worker() -> None:
         state.status = RunStatus.RUNNING
         state.lifecycle = "preparing"
@@ -810,6 +859,7 @@ async def start_run_async(
                     item_filter=item_filter,
                     should_cancel=lambda: state.cancel_event.is_set(),
                     on_phase=_on_phase,
+                    pre_final_apply=_flush_bookkeeping,
                 )
             state.report = report
             # E11: if cooperative cancel was signalled during run_phases,
@@ -838,42 +888,7 @@ async def start_run_async(
             # bookkeeping, not part of the run's wall-clock.
             state.finished_at = datetime.now(timezone.utc)
             state.lifecycle = "finalizing"
-            # E11: skip inventory flush on cancel — partial sidecars
-            # from a cancelled run are unreliable and should not update
-            # the inventory DB. Completed/failed runs still flush.
-            if state.status != RunStatus.CANCELLED:
-                # Best-effort: flush the just-finished run's sidecars into the
-                # inventory DB so the next /inventory or /apps/detect call sees
-                # the up-to-date installed/candidate columns without a fresh
-                # OS-level scan.
-                try:
-                    _flush_run_to_inventory_db(
-                        run_dir,
-                        inventory_db,
-                        reconcile_categories=getattr(
-                            adapter, "inventory_reconcile_categories", None
-                        ),
-                        # A filtered run's check emits only a subset; reconciling
-                        # against it would delete everything else.
-                        full_scan=item_filter is None,
-                    )
-                except Exception:  # noqa: BLE001
-                    _log.exception("post-run inventory flush failed")
-            # Also persist per-app version-transition history so the
-            # Apps view can render "this app was upgraded N times…".
-            # apply phase records the transition; verify backfills the
-            # to_version for triggered items once the vendor agent
-            # reconciles.
-            try:
-                from ..dashboard.inventory_db import (  # noqa: PLC0415
-                    backfill_triggered_history,
-                    flush_apply_history,
-                )
-
-                flush_apply_history(run_dir, str(run.id), inventory_db)
-                backfill_triggered_history(run_dir, str(run.id), inventory_db)
-            except Exception:  # noqa: BLE001
-                _log.exception("post-run update_history flush failed")
+            _flush_bookkeeping()
             # I1 (review): converge the live lifecycle sub-state to the
             # terminal descriptor — otherwise GET /runs/{id}/status reports a
             # permanent "finalizing" for a finished run (non-SSE clients poll

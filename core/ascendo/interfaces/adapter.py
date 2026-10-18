@@ -136,6 +136,15 @@ class IAdapter(ABC):
         service surface (e.g. the Windows AscendoDashboard service)."""
         return None
 
+    def run_scope(self, run, host, *, phases=()):  # -> ContextManager[None]
+        """Context manager wrapped around a whole ``run_phases`` invocation.
+
+        Adapters override it for per-run setup/teardown that must survive every
+        exit path (e.g. the macOS sudo keep-alive). ``phases`` are the phases the
+        run will execute. Default: no-op."""
+        from contextlib import nullcontext  # noqa: PLC0415
+        return nullcontext()
+
     # ── Lifecycle ────────────────────────────────────────────────────
 
     @abstractmethod

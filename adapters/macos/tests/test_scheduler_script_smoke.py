@@ -185,6 +185,10 @@ def test_install_writes_plist_and_sidecar(tmp_path):
     assert "<string>dev.ascendo.weekly-backup</string>" in body
     assert "<string>--profile</string>" in body
     assert "<string>safe</string>" in body
+    # unattended: trigger + a launchd-safe PATH
+    assert "<string>--trigger</string>" in body and "<string>scheduler</string>" in body
+    assert "<key>EnvironmentVariables</key>" in body
+    assert "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" in body
     assert "<key>Hour</key>" in body and "<integer>3</integer>" in body
     assert "<key>Minute</key>" in body and "<integer>0</integer>" in body
     assert "<key>Weekday</key>" in body and "<integer>0</integer>" in body

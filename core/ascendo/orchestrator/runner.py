@@ -37,6 +37,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
@@ -46,10 +47,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..interfaces.adapter import IAdapter
 from ..interfaces.package_manager import IPackageManager, ManagerError
 from ..models.host import HostInfo
-from ..models.package import SourceType
-from ..models.result import Message, MessageLevel, Summary
+from ..models.package import ItemSource, SourceType
+from ..models.result import Item, ItemStatus, Message, MessageLevel, Summary
 from ..models.run import Phase, PhaseStatus, RunInfo
 from ..models.sidecar import Sidecar, SidecarSchema, ToolInfo
+from .run_lock import default_lock_path, run_lock
 from .run_logger import attach_run_log
 from .sidecar_io import SidecarWriteError, write_sidecar
 
@@ -150,6 +152,7 @@ def run_phases(
     item_filter: Iterable[str] | Mapping[str, Iterable[str]] | None = None,
     should_cancel: Callable[[], bool] | None = None,
     on_phase: Callable[[str, int, int], None] | None = None,
+    pre_final_apply: Callable[[], None] | None = None,
 ) -> RunReport:
     """Run the requested phases for every available package manager.
 
@@ -177,8 +180,17 @@ def run_phases(
             mutating phases the same way (code ``EXCLUSIONS_NEED_CHECK``)
             while the non-mutating phases run.
 
+        pre_final_apply: Called right before the ``apply`` of a
+            ``defer_until_end`` manager (macOS ``softwareupdate -R``, which may
+            restart the machine) so the caller can persist the report /
+            inventory first. Not called when that step is skipped.
+
     Returns:
         A :class:`RunReport` with every produced sidecar.
+
+    Raises:
+        RunLockError: a mutating run (apply/cleanup, not dry-run) started while
+            another Ascendo process holds the cross-process run lock (POSIX).
 
     Notes:
         Per-manager :class:`ManagerError` is swallowed and recorded as a
@@ -195,12 +207,21 @@ def run_phases(
     # and prune to ASCENDO_RUN_LOG_KEEP (default 30) on exit. Mirrors the
     # Ascendo `logs/update_all_<ts>.log` rotation. Cheap (~1 MiB
     # per run worst-case); large operator wins for offline post-mortem.
-    with attach_run_log(str(run.id), base_dir):
+    mutating = bool(set(ordered) & _MUTATING_PHASES) and not run.dry_run
+    scope_factory = getattr(adapter, "run_scope", None)
+    scope = (
+        scope_factory(run, host, phases=tuple(ordered))
+        if scope_factory is not None else nullcontext()
+    )
+    with attach_run_log(str(run.id), base_dir), \
+            run_lock(default_lock_path(base_dir), str(run.id), enabled=mutating), \
+            scope:
         return _run_phases_inner(
             adapter=adapter, run=run, host=host, ordered=ordered,
             categories=categories, base_dir=base_dir,
             stop_on_failure=stop_on_failure, item_filter=item_filter,
             should_cancel=should_cancel, on_phase=on_phase,
+            pre_final_apply=pre_final_apply,
         )
 
 
@@ -216,9 +237,12 @@ def _run_phases_inner(
     item_filter,
     should_cancel,
     on_phase=None,
+    pre_final_apply=None,
 ):
     available_managers = adapter.package_managers(host)
     selected = _select_managers(available_managers, categories, host)
+    # Restart-capable managers: their APPLY runs after everything else.
+    deferred = [m for m in selected if getattr(m, "defer_until_end", False)]
 
     sidecars: list[Sidecar] = []
     skipped: list[tuple[str, str]] = []
@@ -242,7 +266,58 @@ def _run_phases_inner(
         except Exception:  # noqa: BLE001 — a flaky predicate must never crash a run
             return False
 
+    def _run_one(mgr, phase):
+        """One (phase, manager) slot: exclusion handling + the real call."""
+        mgr_filter = _filter_for(item_filter, mgr)
+        if isinstance(mgr_filter, _NeedsCheck):
+            if phase in _MUTATING_PHASES:
+                # Exclusions exist but we cannot build the inclusion list
+                # yet: fail SAFE (skip), never run unfiltered.
+                sidecar = _skip_sidecar(
+                    mgr, phase, run, host, base_dir=base_dir,
+                    code="EXCLUSIONS_NEED_CHECK",
+                    text=(
+                        f"EXCLUSIONS_NEED_CHECK: {mgr.category.value} has excluded "
+                        f"items but no check data yet - {phase.value} skipped; run "
+                        "check first so excluded items can be honoured"
+                    ),
+                )
+                excluded_skips.append((
+                    mgr.category.value,
+                    "exclusions need a check first (run check so excluded items can be honoured)",
+                ))
+                return sidecar
+            mgr_filter = None   # non-mutating phases run as before
+        if (
+            mgr_filter is not None
+            and not mgr_filter
+            and phase in _MUTATING_PHASES
+        ):
+            # Every item of this category is excluded: nothing to do.
+            # Never fall through to "no filter" (that would update the
+            # excluded apps).
+            sidecar = _skip_sidecar(
+                mgr, phase, run, host, base_dir=base_dir,
+                code="ALL_EXCLUDED",
+                text=(
+                    f"ALL_EXCLUDED: every {mgr.category.value} item is excluded "
+                    f"from updates - {phase.value} skipped"
+                ),
+            )
+            excluded_skips.append((mgr.category.value, "all items excluded"))
+        else:
+            sidecar = _safe_run_phase(
+                mgr,
+                phase,
+                run,
+                host,
+                base_dir=base_dir,
+                item_filter=mgr_filter,
+            )
+        return sidecar
+
     cancelled = False
+    apply_reached = False
     for idx, phase in enumerate(ordered):
         # Cooperative cancel is checked at phase + manager boundaries (NOT
         # mid-subprocess): a Stop click takes effect before the next
@@ -272,59 +347,17 @@ def _run_phases_inner(
                 aborted = phase
                 cancelled = True
                 break
-            mgr_filter = _filter_for(item_filter, mgr)
-            if isinstance(mgr_filter, _NeedsCheck):
-                if phase in _MUTATING_PHASES:
-                    # Exclusions exist but we cannot build the inclusion list
-                    # yet: fail SAFE (skip), never run unfiltered.
-                    sidecar = _skip_sidecar(
-                        mgr, phase, run, host, base_dir=base_dir,
-                        code="EXCLUSIONS_NEED_CHECK",
-                        text=(
-                            f"EXCLUSIONS_NEED_CHECK: {mgr.category.value} has excluded "
-                            f"items but no check data yet - {phase.value} skipped; run "
-                            "check first so excluded items can be honoured"
-                        ),
-                    )
-                    excluded_skips.append((
-                        mgr.category.value,
-                        "exclusions need a check first (run check so excluded items can be honoured)",
-                    ))
-                    phase_results.append(sidecar)
-                    sidecars.append(sidecar)
-                    continue
-                mgr_filter = None   # non-mutating phases run as before
-            if (
-                mgr_filter is not None
-                and not mgr_filter
-                and phase in _MUTATING_PHASES
-            ):
-                # Every item of this category is excluded: nothing to do.
-                # Never fall through to "no filter" (that would update the
-                # excluded apps).
-                sidecar = _skip_sidecar(
-                    mgr, phase, run, host, base_dir=base_dir,
-                    code="ALL_EXCLUDED",
-                    text=(
-                        f"ALL_EXCLUDED: every {mgr.category.value} item is excluded "
-                        f"from updates - {phase.value} skipped"
-                    ),
-                )
-                excluded_skips.append((mgr.category.value, "all items excluded"))
-            else:
-                sidecar = _safe_run_phase(
-                    mgr,
-                    phase,
-                    run,
-                    host,
-                    base_dir=base_dir,
-                    item_filter=mgr_filter,
-                )
+            if phase is Phase.APPLY and mgr in deferred:
+                continue   # runs after every other step (restart-safe)
+            sidecar = _run_one(mgr, phase)
             phase_results.append(sidecar)
             sidecars.append(sidecar)
 
         if cancelled:
             break
+
+        if phase is Phase.APPLY:
+            apply_reached = True
 
         if phase == Phase.CHECK:
             try:
@@ -343,6 +376,64 @@ def _run_phases_inner(
             aborted = phase
             break
 
+    def _finalize(rep, *, cancelled):
+        """run_meta.json + REPORT.md (idempotent; safe to call twice)."""
+        # Durable run-level metadata for REPORT.md ("Run stopped after phase X",
+        # "Skipped: <category> (<reason>)"). Best-effort, never fatal.
+        _write_run_meta(
+            base_dir / str(run.id),
+            report=rep,
+            cancelled=cancelled,
+            extra_skipped=_dedupe_pairs(excluded_skips),
+        )
+        # Best-effort: write a human-readable REPORT.md when an apply phase
+        # ran. Non-fatal -- generator swallows its own errors.
+        if Phase.APPLY in set(ordered):
+            try:
+                from .report import generate_apply_report  # noqa: PLC0415
+
+                generate_apply_report(base_dir / str(run.id), host=host)
+            except Exception:  # noqa: BLE001
+                _log.exception("post-run report generation failed for %s", run.id)
+
+    # -- restart-capable (deferred) APPLY ------------------------------------
+    # Only a HARD failure of an earlier mutating step may stop the restart:
+    # a half-applied brew/mas/npm/web transaction followed by a reboot is the
+    # one outcome to avoid. pip and soft deferrals never block.
+    if deferred and apply_reached and not cancelled and not _cancelled():
+        blocking = sorted({
+            sc.category.value for sc in sidecars
+            if sc.phase is Phase.APPLY
+            and sc.category.value in _BLOCKING_CATEGORIES
+            and sc.status in (PhaseStatus.FAILED, PhaseStatus.PARTIAL)
+        })
+        if blocking:
+            cats = ", ".join(blocking)
+            for mgr in deferred:
+                sidecars.append(_skip_sidecar(
+                    mgr, Phase.APPLY, run, host, base_dir=base_dir,
+                    code="SYSTEM_UPDATE_DEFERRED",
+                    text=(
+                        f"macOS update deferred: {cats} apply failed; "
+                        "nothing was restarted - fix and re-run."
+                    ),
+                    deferred_item=True,
+                ))
+        else:
+            # Persist the report / inventory BEFORE the step that may reboot.
+            interim = RunReport(
+                run=run, host=host, sidecars=list(sidecars),
+                skipped_managers=skipped, aborted_after_phase=aborted,
+            )
+            _finalize(interim, cancelled=False)
+            if pre_final_apply is not None:
+                try:
+                    pre_final_apply()
+                except Exception:  # noqa: BLE001 - bookkeeping must not block the run
+                    _log.exception("pre_final_apply hook raised for run %s", run.id)
+            for mgr in deferred:
+                sidecars.append(_run_one(mgr, Phase.APPLY))
+
     report = RunReport(
         run=run,
         host=host,
@@ -351,25 +442,7 @@ def _run_phases_inner(
         aborted_after_phase=aborted,
     )
 
-    # Durable run-level metadata for REPORT.md ("Run stopped after phase X",
-    # "Skipped: <category> (<reason>)"). Best-effort, never fatal.
-    _write_run_meta(
-        base_dir / str(run.id),
-        report=report,
-        cancelled=cancelled,
-        extra_skipped=_dedupe_pairs(excluded_skips),
-    )
-
-    # Best-effort: write a human-readable REPORT.md when an apply phase
-    # ran. Non-fatal — generator swallows its own errors.
-    if Phase.APPLY in set(ordered):
-        try:
-            from .report import generate_apply_report  # noqa: PLC0415
-
-            run_dir = base_dir / str(run.id)
-            generate_apply_report(run_dir, host=host)
-        except Exception:  # noqa: BLE001
-            _log.exception("post-run report generation failed for %s", run.id)
+    _finalize(report, cancelled=cancelled)
 
     return report
 
@@ -378,6 +451,11 @@ def _run_phases_inner(
 
 # Phases that mutate the system (an all-excluded category must not run them).
 _MUTATING_PHASES: frozenset[Phase] = frozenset({Phase.APPLY, Phase.CLEANUP})
+
+# An apply that fails hard in one of these categories postpones the
+# restart-capable step (macOS_updates matrix: App Store, CLI/npm, brew and the
+# "internet" apps block; pip / soft problems never do).
+_BLOCKING_CATEGORIES: frozenset[str] = frozenset({"brew", "mas", "npm", "web"})
 
 RUN_META_FILENAME = "run_meta.json"
 
@@ -472,14 +550,36 @@ def _skip_sidecar(
     base_dir: Path,
     code: str,
     text: str,
+    deferred_item: bool = False,
 ) -> Sidecar:
-    """Persist an item-less ``skipped`` sidecar carrying one coded message."""
+    """Persist a ``skipped`` sidecar carrying one coded message.
+
+    Item-less by default. ``deferred_item=True`` adds one ``skipped`` item
+    carrying the same coded message so the REPORT.md "Deferred" section and the
+    run's warning count see the soft deferral (F3).
+    """
+    message = Message(level=MessageLevel.INFO, text=text, code=code)
     sidecar = _synthesize_sidecar(
         mgr, phase, run, host,
         status=PhaseStatus.SKIPPED,
-        message=Message(level=MessageLevel.INFO, text=text, code=code),
+        message=message,
         exit_code=0,
     )
+    if deferred_item:
+        item = Item(
+            id=f"{mgr.category.value}:system-update",
+            name="macOS system update" if mgr.category is SourceType.SOFTWAREUPDATE
+            else mgr.display_name,
+            category=mgr.category,
+            source=ItemSource(type=mgr.category),
+            status=ItemStatus.SKIPPED,
+            exit_code=0,
+            messages=[message],
+        )
+        sidecar = sidecar.model_copy(update={
+            "items": [item],
+            "summary": Summary(total=1, skipped=1, exit_code=0),
+        })
     write_sidecar(sidecar, base_dir=base_dir)
     return sidecar
 

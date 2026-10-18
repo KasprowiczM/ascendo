@@ -312,7 +312,9 @@ _stream_item() {
 # Usage:
 #     _ascendo_sudo_warm   # before the first `sudo -A …` in apply.sh
 #
-# Returns 0 always (best-effort). Apply scripts MUST still handle the
+# Returns 0 (best-effort), except in an UNATTENDED run with a cold cache: rc 1
+# and ASCENDO_NO_SUDO=1 exported. Apply scripts then run _ascendo_sudo_gate.
+# Apply scripts MUST still handle the
 # possibility that sudo will fail — this only improves the credential-
 # entry UX, doesn't guarantee elevation.
 # _ascendo_sudo <argv...>
@@ -333,6 +335,11 @@ _ascendo_sudo() {
     # via PATH (the existing fake_sudo pattern in test_apply_*_script.py).
     if [ -n "${SUDO_ASKPASS:-}" ] && [ -x "${SUDO_ASKPASS}" ]; then
         sudo -A "$@"
+    elif [ "${ASCENDO_SUDO_NONINTERACTIVE:-0}" = "1" ]; then
+        # The apply gate (_ascendo_sudo_gate) proved the timestamp is hot:
+        # `-n` makes a lapsed cache FAIL instead of prompting on a TTY (or
+        # stalling in a background pgroup).
+        sudo -n "$@"
     else
         sudo "$@"
     fi
@@ -347,12 +354,70 @@ _ascendo_sudo() {
 _ascendo_sudo_prefix() {
     if [ -n "${SUDO_ASKPASS:-}" ] && [ -x "${SUDO_ASKPASS}" ]; then
         printf 'sudo -A'
+    elif [ "${ASCENDO_SUDO_NONINTERACTIVE:-0}" = "1" ]; then
+        printf 'sudo -n'
     else
         printf 'sudo'
     fi
 }
 
+# _ascendo_sudo_unattended -- 0 for a scheduled / explicitly unattended run
+#   (TRIGGER=scheduler or ASCENDO_UNATTENDED=1): there is nobody to approve a
+#   Touch ID sheet or type a password, so sudo may only be used if the cache
+#   is already hot.
+_ascendo_sudo_unattended() {
+    [ "${TRIGGER:-}" = "scheduler" ] || [ "${ASCENDO_UNATTENDED:-0}" = "1" ]
+}
+
+# _ascendo_sudo_gate -- post-warm authorization gate for root-only apply steps.
+#   Returns 0 when root work may proceed. Returns 1 (a SOFT deferral, never a
+#   failure) and sets ASCENDO_SUDO_GATE_CODE / ASCENDO_SUDO_GATE_TEXT when:
+#     * ASCENDO_NO_SUDO=1 (policy: skip ALL root work, even with a hot cache --
+#       also exported by _ascendo_sudo_warm in unattended mode), or
+#     * no askpass helper is wired AND `sudo -n true` fails (cold cache).
+#   The criterion is the cache/askpass state AFTER the warm-up, NOT "no tty":
+#   the TTY-less Touch-ID flow (`sudo -v </dev/null`, Sesja 81) leaves a hot
+#   cache and must keep working. Assumption (validated with fakes): `sudo -n`
+#   honours the timestamp the TTY-less `sudo -v </dev/null` just created for
+#   this script's children (same ppid/session ticket).
+ASCENDO_SUDO_GATE_CODE=""
+ASCENDO_SUDO_GATE_TEXT=""
+_ascendo_sudo_gate() {
+    ASCENDO_SUDO_GATE_CODE=""
+    ASCENDO_SUDO_GATE_TEXT=""
+    if [ "${ASCENDO_NO_SUDO:-0}" = "1" ]; then
+        if _ascendo_sudo_unattended; then
+            ASCENDO_SUDO_GATE_CODE="SUDO_UNAVAILABLE_UNATTENDED"
+            ASCENDO_SUDO_GATE_TEXT="needs administrator; skipped in unattended run -- open Ascendo and run apply"
+        else
+            ASCENDO_SUDO_GATE_CODE="SUDO_UNAVAILABLE"
+            ASCENDO_SUDO_GATE_TEXT="ASCENDO_NO_SUDO=1: root-only steps are skipped -- unset it and re-run to install"
+        fi
+        return 1
+    fi
+    if [ -n "${SUDO_ASKPASS:-}" ] && [ -x "${SUDO_ASKPASS}" ]; then
+        return 0
+    fi
+    if sudo -n true </dev/null >/dev/null 2>&1; then
+        return 0
+    fi
+    ASCENDO_SUDO_GATE_CODE="SUDO_UNAVAILABLE"
+    ASCENDO_SUDO_GATE_TEXT="administrator authorization is not available -- authenticate interactively and re-run"
+    return 1
+}
+
 _ascendo_sudo_warm() {
+    # Unattended (scheduled) run: never prompt. Use sudo only if the cache is
+    # already hot; otherwise switch ALL root work off for this process tree and
+    # tell the caller (rc 1) so it can defer softly. Placed before the
+    # test-fixture opt-out: it is non-interactive by construction (`sudo -n`).
+    if _ascendo_sudo_unattended; then
+        if sudo -n -v </dev/null 2>/dev/null; then
+            return 0
+        fi
+        export ASCENDO_NO_SUDO=1
+        return 1
+    fi
     # Test-fixture opt-out: pytest exports PYTEST_CURRENT_TEST for every
     # test it runs; ASCENDO_SUDO_WARM_DISABLE is the explicit operator
     # escape hatch.

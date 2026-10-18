@@ -16,7 +16,8 @@ from fastapi import APIRouter, HTTPException, Request
 
 from ...interfaces.package_manager import ManagerError
 from ...models.run import Phase, RunInfo, Trigger
-from ...orchestrator import DEFAULT_PHASE_ORDER, RunReport, run_phases
+from ...orchestrator import DEFAULT_PHASE_ORDER, RunLockError, RunReport, run_phases
+from ...orchestrator.run_lock import default_lock_path, held_by_other
 from ...orchestrator.runner import NEEDS_CHECK
 
 # Profile -> default phase set. Profiles are the user-facing knob; phases
@@ -351,6 +352,10 @@ async def create_run(req: RunRequest, request: Request) -> RunResponse:
     except ValueError as exc:
         # Bad input (e.g. empty phases list).
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RunLockError as exc:
+        # Another Ascendo process (CLI / scheduled run / another dashboard)
+        # is applying right now.
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ManagerError as exc:
         # Should not happen — ManagerError is swallowed by _safe_run_phase.
         raise HTTPException(status_code=500, detail=f"manager error: {exc}") from exc
@@ -668,6 +673,20 @@ async def create_run_async(req: RunRequest, request: Request) -> dict:
                 f"Wait for it to finish or stop it via POST /runs/active/stop."
             ),
         )
+
+    if (
+        any(p in ("apply", "cleanup") for p in new_phases)
+        and not run_info.dry_run
+    ):
+        owner = held_by_other(default_lock_path(runs_dir), run_id=str(run_info.id))
+        if owner is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"another Ascendo run is in progress (pid {owner.get('pid')}, "
+                    f"run {owner.get('run_id', '?')}). Wait for it to finish."
+                ),
+            )
 
     state = await start_run_async(
         registry=registry,

@@ -9,6 +9,14 @@
 # /Users/mk/Dev_Env/Ascendo/update_system.sh ("WAŻNE: flaga -R …
 # jest wymagana"; "BŁĄD: sudo reboot to surowy restart jądra").
 #
+# Unattended / cold-cache safety (Task 16): after the sudo warm-up a gate
+# (_ascendo_sudo_gate) defers EVERY label softly -- `skipped` + SUDO_UNAVAILABLE,
+# exit 0, no install command run -- when ASCENDO_NO_SUDO=1 (even with a hot
+# cache) or no askpass helper is wired and `sudo -n true` fails. With the gate
+# open and no askpass, installs use `sudo -n` (a lapsed cache fails, never
+# prompts). The orchestrator also runs this apply LAST, and skips it when
+# brew/mas/npm/web apply failed (SYSTEM_UPDATE_DEFERRED).
+#
 # Strategy A (sudo -A always): if no SUDO_ASKPASS helper is set, sudo -A
 # fails fast — CLI users must `sudo -v` to prime credentials before
 # invoking apply, OR set SUDO_ASKPASS=/path/to/helper. The dashboard flow
@@ -336,7 +344,32 @@ fi
 # rationale: native macOS auth dialog presents Touch ID first when
 # pam_tid is configured, password fallback otherwise. After this
 # returns, the `sudo` invocations below use the warmed timestamp.
-_ascendo_sudo_warm
+_ascendo_sudo_warm || true   # rc 1 = unattended + cold cache (sets ASCENDO_NO_SUDO)
+
+# Post-warm authorization gate (F1). Root work proceeds only when
+# ASCENDO_NO_SUDO is unset AND an askpass helper is wired or `sudo -n true`
+# succeeds. Otherwise every eligible label is deferred SOFTLY: `skipped` with a
+# SUDO_UNAVAILABLE reason, exit 0, and no sudo install command is ever
+# invoked (a Touch-ID sheet mid-run, or a hard `failed` per label, is worse).
+if ! _ascendo_sudo_gate; then
+    for _list in "$NR_TODO" "$RS_TODO"; do
+        [ -n "$_list" ] || continue
+        while IFS="$US" read -r _label _ver; do
+            [ -n "$_label" ] || continue
+            _res_add "$_label" "$_ver" "$_ver" "skipped"
+            _msg_add "warn" "${_label}: skipped -- ${ASCENDO_SUDO_GATE_TEXT} (${ASCENDO_SUDO_GATE_CODE})"
+        done <<< "$_list"
+    done
+    NR_TODO=""
+    RS_TODO=""
+    NEEDS_REBOOT=0
+    _su_flush
+    json_save "$OUTPUT_DIR"
+    exit 0
+fi
+# From here on every sudo call is non-interactive (`sudo -n` unless an askpass
+# helper is wired): a lapsed cache must fail the install, never prompt.
+export ASCENDO_SUDO_NONINTERACTIVE=1
 
 mkdir -p "$OUTPUT_DIR/$RUN_ID" 2>/dev/null || true
 _log_path="$OUTPUT_DIR/$RUN_ID/apply__softwareupdate.log"

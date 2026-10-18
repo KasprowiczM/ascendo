@@ -462,6 +462,14 @@ def _manufacturer_warnings(apply_sidecars: list[Sidecar]) -> list[ManufacturerWa
     return sorted(out, key=lambda w: (w.name.lower(), w.category))
 
 
+# Codes that mark a system step deferred (not failed): lack of privileges
+# (SUDO_UNAVAILABLE / SUDO_UNAVAILABLE_UNATTENDED) or the restart-capable
+# step held back because an earlier apply failed (SYSTEM_UPDATE_DEFERRED).
+_SOFT_DEFERRAL_CODES: tuple[str, ...] = (
+    "SUDO_UNAVAILABLE", "SYSTEM_UPDATE_DEFERRED",
+)
+
+
 def _is_soft_deferral(sc: Sidecar, it: Item) -> bool:
     """A system step deferred for lack of privileges or a restart (F3).
 
@@ -477,7 +485,7 @@ def _is_soft_deferral(sc: Sidecar, it: Item) -> bool:
     texts += [(m.code or "", m.text or "") for m in sc.messages
               if _slug_from_token_message(m.text or "") in (key, it.name, it.id)]
     for code, text in texts:
-        if code == "SUDO_UNAVAILABLE" or "SUDO_UNAVAILABLE" in text:
+        if code in _SOFT_DEFERRAL_CODES or any(c in text for c in _SOFT_DEFERRAL_CODES):
             return True
         am = ACTION_RE.search(text)
         if am and am.group(1) == "needs_restart" \

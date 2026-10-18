@@ -102,8 +102,18 @@ sys.exit(1)
 '''
 
 _FAKE_SUDO = r'''#!/usr/bin/env bash
-echo "$@" >> "$FAKE_MAS_STATE/sudo.log"
-if [ "$1" = '-A' ]; then shift; fi
+# Authorization probes (the apply gate's `sudo -n true`): never logged;
+# FAKE_SUDO_COLD=1 simulates a lapsed / never-warmed timestamp cache.
+if [ "$1" = '-n' ] && { [ "$2" = 'true' ] || [ "$2" = '-v' ]; }; then
+  [ -n "${FAKE_SUDO_COLD:-}" ] && exit 1
+  exit 0
+fi
+printf '%s\n' "$*" >> "$FAKE_MAS_STATE/sudo.log"
+# FAKE_SUDO_STRICT=1: a real sudo would PROMPT here (no -A / -n).
+if [ -n "${FAKE_SUDO_STRICT:-}" ] && [ "$1" != '-A' ] && [ "$1" != '-n' ]; then
+  echo 'sudo: a password is required' >&2; exit 1
+fi
+if [ "$1" = '-A' ] || [ "$1" = '-n' ]; then shift; fi
 # real sudo's env_reset drops MAS_NO_AUTO_INDEX; only `sudo env X=1 cmd` delivers it
 exec env -u MAS_NO_AUTO_INDEX FAKE_SUDO_ACTIVE=1 "$@"
 '''

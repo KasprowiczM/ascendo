@@ -93,6 +93,12 @@ def test_category_is_softwareupdate():
     assert m.category == SourceType.SOFTWAREUPDATE
 
 
+def test_apply_is_deferred_until_end():
+    """Restart-capable: the orchestrator runs this APPLY last (Spec 5)."""
+    assert SoftwareUpdateManager.defer_until_end is True
+    assert _make_manager().defer_until_end is True
+
+
 def test_display_name_mentions_softwareupdate():
     m = _make_manager()
     assert "softwareupdate" in m.display_name.lower()

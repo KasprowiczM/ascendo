@@ -36,6 +36,12 @@ class IPackageManager(ABC):
     managers may run concurrently; per-instance mutation is forbidden.
     """
 
+    #: Restart-capable managers (macOS ``softwareupdate -R``) set this True: the
+    #: orchestrator postpones their ``apply`` until every other manager has
+    #: finished (and the report/inventory are written), and skips it when a
+    #: blocking category failed. Default ``False`` keeps Windows/Ubuntu as-is.
+    defer_until_end: bool = False
+
     # ── Identity ─────────────────────────────────────────────────────
 
     @property

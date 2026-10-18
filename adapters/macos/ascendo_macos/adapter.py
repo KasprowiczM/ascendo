@@ -9,6 +9,7 @@ import platform
 import shutil
 import socket
 import subprocess
+from contextlib import nullcontext
 from pathlib import Path
 from typing import ClassVar
 
@@ -34,6 +35,7 @@ from .managers.softwareupdate import SoftwareUpdateManager
 from .managers.scheduler import LaunchdScheduler
 from .managers.web import WebManager
 from .snapshot import TimeMachineSnapshot
+from .sudo_keepalive import SudoKeepAlive
 
 _log = logging.getLogger(__name__)
 
@@ -139,6 +141,26 @@ class MacOSAdapter(IAdapter):
             | AdapterCapability.SNAPSHOTS
             | AdapterCapability.SCHEDULING  # M5.5 (launchd)
         )
+
+    # ── Per-run scope ─────────────────────────────────────────────────────
+
+    def run_scope(self, run, host, *, phases=()):
+        """One sudo keep-alive for an interactive run that will apply.
+
+        Not started for read-only / dry / scheduled (unattended) runs, nor when
+        an askpass helper or a dashboard-registered password already covers
+        ``sudo -A``. Stopped on every exit path (normal, cancel, exception)."""
+        from ascendo.models.run import Phase, Trigger  # noqa: PLC0415
+
+        if (
+            Phase.APPLY not in set(phases)
+            or run.dry_run
+            or run.trigger is Trigger.SCHEDULER
+            or os.environ.get("SUDO_ASKPASS")
+            or self.elevation().has_password_registered()
+        ):
+            return nullcontext()
+        return SudoKeepAlive()
 
     # ── Sub-interface accessors ───────────────────────────────────────────
 

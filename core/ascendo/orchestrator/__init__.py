@@ -28,6 +28,7 @@ Future M2 additions (not yet present):
 from __future__ import annotations
 
 from .report import REPORT_FILENAME, generate_apply_report
+from .run_lock import RunLockError
 from .run_async import RunRegistry, RunState, RunStatus, start_run_async
 from .runner import DEFAULT_PHASE_ORDER, RunReport, run_phases
 from .sidecar_io import (
@@ -48,6 +49,7 @@ __all__ = [
     "REPORT_FILENAME",
     "RecoveryStub",
     "RunRegistry",
+    "RunLockError",
     "RunReport",
     "RunState",
     "RunStatus",

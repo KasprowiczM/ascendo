@@ -29,6 +29,10 @@ def run(
     item_filter: str | None = typer.Option(None, "--items"),
     no_stop_on_failure: bool = typer.Option(False, "--no-stop-on-failure"),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
+    trigger: str = typer.Option(
+        "cli", "--trigger",
+        help="What started this run: cli (default) or scheduler (unattended: never prompts for sudo).",
+    ),
 ) -> None:
     """Drive the detected OS adapter through the requested phases."""
     from . import AdapterRegistry, NoAdapterAvailableError, run_phases, select_adapter
@@ -40,6 +44,16 @@ def run(
     categories = _resolve_categories(category)
     items = [s.strip() for s in item_filter.split(",") if s.strip()] if item_filter else None
 
+    try:
+        trigger_enum = Trigger(trigger.strip().lower())
+    except ValueError:
+        typer.secho(
+            f"error: unknown --trigger {trigger!r} (use one of: "
+            f"{', '.join(t.value for t in Trigger)})",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(2) from None
+
     registry = AdapterRegistry()
     registry.discover()
     try:
@@ -50,16 +64,23 @@ def run(
 
     host = adapter.detect_host()
     run_info = RunInfo(
-        id=uuid4(), trigger=Trigger.CLI, profile=profile, dry_run=dry_run,
+        id=uuid4(), trigger=trigger_enum, profile=profile, dry_run=dry_run,
         started_at=datetime.now(UTC), invocation=" ".join(sys.argv),
     )
     typer.echo(f"ascendo run {run_info.id}  adapter={adapter.name}  host={host.hostname}  profile={profile}{' [dry-run]' if dry_run else ''}")
 
-    report = run_phases(
-        adapter, run_info, host,
-        phases=phases, categories=categories, base_dir=base_dir,
-        stop_on_failure=not no_stop_on_failure, item_filter=items,
-    )
+    from ..orchestrator.run_lock import RunLockError  # noqa: PLC0415
+
+    try:
+        report = run_phases(
+            adapter, run_info, host,
+            phases=phases, categories=categories, base_dir=base_dir,
+            stop_on_failure=not no_stop_on_failure, item_filter=items,
+        )
+    except RunLockError as exc:
+        # Contract exit code 11 = lock contention (docs/agents/contract.md).
+        typer.secho(f"error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(11) from None
 
     for sc in report.sidecars:
         typer.echo(f"  {sc.phase.value:<8s} {sc.category.value:<14s} {sc.status.value:<10s} items={sc.summary.total} failed={sc.summary.failed} success={sc.summary.success}")

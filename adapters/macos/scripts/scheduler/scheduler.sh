@@ -311,6 +311,19 @@ case "$ACTION" in
             DISABLED_BLOCK=""
         fi
 
+        # Resolve the ascendo CLI to an absolute path at install time (launchd
+        # has a minimal PATH); fall back to /usr/bin/env lookup at run time.
+        _ASC_BIN="$(command -v ascendo 2>/dev/null || true)"
+        if [ -n "$_ASC_BIN" ] && [ -x "$_ASC_BIN" ]; then
+            ASC_ARGS="        <string>${_ASC_BIN}</string>"
+        else
+            ASC_ARGS="        <string>/usr/bin/env</string>
+        <string>ascendo</string>"
+        fi
+        # Scheduled runs are UNATTENDED (--trigger scheduler): the apply scripts
+        # then never prompt for sudo and defer root-only steps softly.
+        AGENT_PATH="${HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
         cat > "$PLIST" <<PLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -320,12 +333,18 @@ case "$ACTION" in
     <string>${LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/env</string>
-        <string>ascendo</string>
+${ASC_ARGS}
         <string>run</string>
+        <string>--trigger</string>
+        <string>scheduler</string>
         <string>--profile</string>
         <string>${PROFILE}</string>
     </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>${AGENT_PATH}</string>
+    </dict>
 ${INTERVAL_BLOCK}
     <key>RunAtLoad</key>
     <false/>

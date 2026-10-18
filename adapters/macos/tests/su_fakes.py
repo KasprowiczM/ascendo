@@ -126,8 +126,18 @@ def su_env(tmp_path: Path, fixture: str = "incremental-updates.txt", *,
     _write_exec(
         bindir / "sudo",
         "#!/usr/bin/env bash\n"
-        f"echo \"$@\" >> {sudo_log}\n"
-        "if [ \"$1\" = '-A' ]; then shift; fi\n"
+        # Authorization probes (the apply gate's `sudo -n true`): never logged;
+        # FAKE_SUDO_COLD=1 simulates a lapsed / never-warmed timestamp cache.
+        "if [ \"$1\" = '-n' ] && { [ \"$2\" = 'true' ] || [ \"$2\" = '-v' ]; }; then\n"
+        "  [ -n \"${FAKE_SUDO_COLD:-}\" ] && exit 1\n"
+        "  exit 0\n"
+        "fi\n"
+        f"printf '%s\\n' \"$*\" >> {sudo_log}\n"
+        # FAKE_SUDO_STRICT=1: a real sudo would PROMPT here (no -A / -n).
+        "if [ -n \"${FAKE_SUDO_STRICT:-}\" ] && [ \"$1\" != '-A' ] && [ \"$1\" != '-n' ]; then\n"
+        "  echo 'sudo: a password is required' >&2; exit 1\n"
+        "fi\n"
+        "if [ \"$1\" = '-A' ] || [ \"$1\" = '-n' ]; then shift; fi\n"
         "\"$@\"\n",
     )
     _write_exec(

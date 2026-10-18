@@ -67,6 +67,10 @@ class SoftwareUpdateManager(IPackageManager):
                      Apply may reboot mid-run.
     """
 
+    #: ``softwareupdate -R`` can restart the Mac: the orchestrator runs this
+    #: manager's APPLY last, and not at all when brew/mas/npm/web apply failed.
+    defer_until_end: ClassVar[bool] = True
+
     SCRIPT_BY_PHASE: ClassVar[dict[Phase, str]] = {
         Phase.CHECK: "softwareupdate/check.sh",
         Phase.PLAN: "softwareupdate/plan.sh",

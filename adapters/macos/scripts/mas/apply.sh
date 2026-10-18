@@ -8,6 +8,13 @@
 # (`sudo env MAS_NO_AUTO_INDEX=1 mas upgrade ...`) because sudo's env_reset
 # would otherwise strip it and the noisy Spotlight-indexing stderr returns.
 #
+# Unattended / cold-cache safety (Task 16): after the sudo warm-up a gate
+# (_ascendo_sudo_gate) defers every targeted app SOFTLY -- `skipped` +
+# SUDO_UNAVAILABLE, exit 0, no sudo command, no user-session retry -- when
+# ASCENDO_NO_SUDO=1 (even with a hot cache) or no askpass helper is wired and
+# `sudo -n true` fails. With the gate open and no askpass, `sudo -n` is used so
+# a lapsed cache FAILS instead of prompting (never inside the timeout wrapper).
+#
 # Honesty (a run only says "success" for what it MEASURED):
 #   * `mas outdated` failing/timing out is UNKNOWN: one `skipped` item with a
 #     reason, no sudo, never "nothing to upgrade".
@@ -160,7 +167,7 @@ fi
 # preferred when pam_tid is configured) BEFORE falling back to the
 # dashboard's askpass cache. After this returns, the sudo calls below use the
 # warmed timestamp and don't re-prompt. Best-effort.
-_ascendo_sudo_warm
+_ascendo_sudo_warm || true   # rc 1 = unattended + cold cache (sets ASCENDO_NO_SUDO)
 
 # Collect target ids + version pairs as space-separated strings (Bash 3.2-safe;
 # no declare -A). IDs are numeric-only so spaces are safe delimiters.
@@ -184,6 +191,21 @@ if [ -z "$TARGET_IDS" ]; then
     json_add_message "info" "nothing to upgrade"
     exit 0
 fi
+
+# Post-warm authorization gate (F1): `mas upgrade` always needs root
+# (CVE-2025-43411). Without ASCENDO_NO_SUDO unset AND (askpass wired OR a hot
+# `sudo -n true`) every targeted app is deferred SOFTLY -- `skipped`, exit 0,
+# no sudo command invoked, no user-session retry (that stays opt-in).
+if ! _ascendo_sudo_gate; then
+    for _p in $TARGET_PAIRS; do
+        IFS='|' read -r _id _cur _tgt <<< "$_p"
+        json_add_item "$_id" "$_cur" "$_tgt" "skipped" "mas"
+        json_add_message "warn" "mas:$_id: skipped -- ${ASCENDO_SUDO_GATE_TEXT} (${ASCENDO_SUDO_GATE_CODE})" "SUDO_UNAVAILABLE"
+    done
+    exit 0
+fi
+# From here on every sudo call is non-interactive (see _ascendo_sudo_prefix).
+export ASCENDO_SUDO_NONINTERACTIVE=1
 
 # Total count for live-stream progress accounting.
 TOTAL_ITEMS=0

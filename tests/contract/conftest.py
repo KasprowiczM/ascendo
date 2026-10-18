@@ -71,3 +71,10 @@ def tmp_run_dir(tmp_path: Path) -> Path:
     run_dir = tmp_path / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     return run_dir
+
+
+@pytest.fixture(autouse=True)
+def _isolate_run_lock(tmp_path_factory, monkeypatch):
+    """Never touch the real ~/.ascendo/run.lock from a contract test."""
+    monkeypatch.setenv("ASCENDO_RUN_LOCK_FILE",
+                       str(tmp_path_factory.mktemp("runlock") / "run.lock"))
