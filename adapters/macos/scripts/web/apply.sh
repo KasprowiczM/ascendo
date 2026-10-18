@@ -233,7 +233,7 @@ done < <(python3 "$REG_SHIM" "${_reg_args[@]}" --list-slugs 2>/dev/null)
 
 # ── Pass 2: parallel HTTP probes ──────────────────────────────────────
 # (dry run too: the probe is a read-only HTTP fetch and feed-backed apps need it)
-msupdate_prepare_listing "$RESULTS_DIR"
+if [ "$DRY_RUN" = "true" ]; then msupdate_prepare_listing "$RESULTS_DIR" 0; else msupdate_prepare_listing "$RESULTS_DIR" 1; fi
 _web_probe_parallel "$INDICES_FILE" "$RESULTS_DIR"
 
 # ── Pass 3: sequential dispatch (reads probe results + emits items) ──

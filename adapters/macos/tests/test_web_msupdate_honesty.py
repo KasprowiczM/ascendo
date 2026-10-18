@@ -185,7 +185,7 @@ def test_equal_short_version_is_a_legitimate_update(tmp_path: Path) -> None:
     _bundle(tmp_path, "Microsoft Word", "16.111.1")
     fake = _fake_msupdate(tmp_path / "bin", f"cat <<'EOF'\n{LIST_WORD}EOF\n")
     r = _check(tmp_path, "MSWD2019", "Microsoft Word", _env(tmp_path, fake=fake))
-    assert r.stdout.strip() == "16.111.1"
+    assert r.stdout.strip() == "pending"  # surfaced as available, not the installed version
 
 
 # ---- Spec F1: TEAMS21 pin -------------------------------------------------
@@ -204,7 +204,7 @@ def _teams_env(tmp: Path, pin: str, extra: dict | None = None) -> tuple[dict, Pa
 
 def test_stale_pin_released_only_when_opted_in_with_backup(tmp_path: Path) -> None:
     env, prefs = _teams_env(tmp_path, "25000.100", {"ASCENDO_MAU_MUTATE_PREFS": "1"})
-    r = _sh("_msupdate_teams_pin_release \"$ASCENDO_WEB_APPS_ROOT/Microsoft Teams.app\"; "
+    r = _sh("_MSU_PIN_MUTATE_ALLOWED=1 _msupdate_teams_pin_release \"$ASCENDO_WEB_APPS_ROOT/Microsoft Teams.app\"; "
             "printf '%s' \"$_MSU_PIN_NOTE\"", env)
     assert "mau_pin_released" in r.stdout, r.stderr
     assert "DeferralVersions" not in prefs.read_text() or "TEAMS21" not in prefs.read_text()
@@ -216,7 +216,7 @@ def test_stale_pin_released_only_when_opted_in_with_backup(tmp_path: Path) -> No
 def test_pin_untouched_by_default_but_diagnosed(tmp_path: Path) -> None:
     env, prefs = _teams_env(tmp_path, "25000.100")
     before = prefs.read_bytes()
-    r = _sh("_msupdate_teams_pin_release \"$ASCENDO_WEB_APPS_ROOT/Microsoft Teams.app\"; "
+    r = _sh("_MSU_PIN_MUTATE_ALLOWED=1 _msupdate_teams_pin_release \"$ASCENDO_WEB_APPS_ROOT/Microsoft Teams.app\"; "
             "printf '%s' \"$_MSU_PIN_NOTE\"", env)
     assert "mau_pin_stale" in r.stdout
     assert prefs.read_bytes() == before
@@ -225,7 +225,7 @@ def test_pin_untouched_by_default_but_diagnosed(tmp_path: Path) -> None:
 def test_pin_equal_to_installed_is_skipped_even_when_opted_in(tmp_path: Path) -> None:
     env, prefs = _teams_env(tmp_path, "25306.805.4102.7211", {"ASCENDO_MAU_MUTATE_PREFS": "1"})
     before = prefs.read_bytes()
-    r = _sh("_msupdate_teams_pin_release \"$ASCENDO_WEB_APPS_ROOT/Microsoft Teams.app\"; "
+    r = _sh("_MSU_PIN_MUTATE_ALLOWED=1 _msupdate_teams_pin_release \"$ASCENDO_WEB_APPS_ROOT/Microsoft Teams.app\"; "
             "printf '%s' \"$_MSU_PIN_NOTE\"", env)
     assert r.stdout == ""
     assert prefs.read_bytes() == before
@@ -235,7 +235,7 @@ def test_pin_recreated_is_not_claimed_released(tmp_path: Path) -> None:
     env, prefs = _teams_env(tmp_path, "25000.100", {"ASCENDO_MAU_MUTATE_PREFS": "1"})
     # a hostile prefs writer: every import restores the pin
     snippet = ('_msupdate_prefs_import() { cp "$ASCENDO_MAU_PREFS_FILE" /dev/null; return 0; }\n'
-               '_msupdate_teams_pin_release "$ASCENDO_WEB_APPS_ROOT/Microsoft Teams.app"; '
+               '_MSU_PIN_MUTATE_ALLOWED=1; _msupdate_teams_pin_release "$ASCENDO_WEB_APPS_ROOT/Microsoft Teams.app"; '
                "printf '%s' \"$_MSU_PIN_NOTE\"")
     r = _sh(snippet, env)
     assert "mau_pin_recreated" in r.stdout
@@ -340,3 +340,71 @@ def test_scoped_install_never_for_teams(tmp_path: Path) -> None:
             _env(tmp_path, {"ASCENDO_MAU_SCOPED_INSTALL": "1"}, fake))
     assert r.returncode == 95
     assert not log.exists() or "--install" not in log.read_text()
+
+
+# ---- Fix round 1 ------------------------------------------------------------
+def _teams_phase(tmp: Path, pin: str):
+    _make_fake_app(tmp, "Microsoft Teams", "25306.805.4102.7211", bundle_id="com.microsoft.teams2")
+    prefs = _prefs(tmp / "p.plist", {"OptionalUpdatesDeferrals":
+                                     {"DeferralVersions": {"TEAMS21": pin}}})
+    fake = _fake_msupdate(tmp / "bin", f"cat <<'EOF'\n{LIST_NONE}EOF\n")
+    reg = tmp / "registry.toml"
+    reg.write_text('schema = "ascendo-web-apps/v2"\n[[app]]\nslug = "ms-teams"\n'
+                   'bundle_id = "com.microsoft.teams2"\ndisplay_name = "Microsoft Teams"\n'
+                   'handler = "msupdate"\n[app.msupdate]\napp_id = "TEAMS21"\n')
+    env = {"PATH": f"{fake}:{os.environ['PATH']}", "ASCENDO_MAU_PREFS_FILE": str(prefs),
+           "ASCENDO_MAU_MUTATE_PREFS": "1"}
+    return reg, prefs, env
+
+
+def test_pin_mutation_never_in_check_plan_or_dry_run_apply(tmp_path: Path) -> None:
+    reg, prefs, env = _teams_phase(tmp_path, "25000.100")
+    before = prefs.read_bytes()
+    for phase, extra in (("check", None), ("plan", None), ("apply", ["--dry-run"])):
+        out = tmp_path / f"out_{phase}"
+        r, rid = _run_phase(phase, reg, out, env_extra=env, extra_args=extra)
+        assert r.returncode == 0, r.stderr
+        assert prefs.read_bytes() == before, phase
+        assert not list(out.rglob("*pre-pin-release*")), phase
+
+
+def test_pin_mutation_happens_in_real_apply(tmp_path: Path) -> None:
+    reg, prefs, env = _teams_phase(tmp_path, "25000.100")
+    out = tmp_path / "out"
+    r, rid = _run_phase("apply", reg, out, env_extra=env)
+    assert r.returncode == 0, r.stderr
+    assert "TEAMS21" not in prefs.read_text() or b"25000.100" not in prefs.read_bytes()
+    assert (out / rid / "com.microsoft.autoupdate2.pre-pin-release.plist").exists()
+
+
+def test_standalone_check_does_not_mutate_pin(tmp_path: Path) -> None:
+    env, prefs = _teams_env(tmp_path, "25000.100", {"ASCENDO_MAU_MUTATE_PREFS": "1"})
+    del env["ASCENDO_MSUPDATE_LIST_FILE"]
+    before = prefs.read_bytes()
+    _check(tmp_path, "TEAMS21", "Microsoft Teams", env)
+    assert prefs.read_bytes() == before
+
+
+def test_build_only_update_is_planned_not_up_to_date(tmp_path: Path) -> None:
+    fake = _fake_msupdate(tmp_path / "bin", f"cat <<'EOF'\n{LIST_WORD}EOF\n")
+    _make_fake_app(tmp_path, "Microsoft Word", "16.111.1", bundle_id="com.fixture.word")
+    reg = tmp_path / "registry.toml"
+    reg.write_text('schema = "ascendo-web-apps/v2"\n[[app]]\nslug = "ms-word"\n'
+                   'bundle_id = "com.fixture.word"\ndisplay_name = "Microsoft Word"\n'
+                   'handler = "msupdate"\n[app.msupdate]\napp_id = "MSWD2019"\n')
+    env = {"PATH": f"{fake}:{os.environ['PATH']}"}
+    for phase in ("check", "plan"):
+        out = tmp_path / f"o_{phase}"
+        r, rid = _run_phase(phase, reg, out, env_extra=env)
+        items = _read_sidecar(out, rid, phase)["items"]
+        assert items and items[0]["status"] == "planned", (phase, items)
+
+
+def test_deferral_days_zero_is_not_a_quarantine(tmp_path: Path) -> None:
+    _bundle(tmp_path, "Microsoft Word", "16.100.0")
+    prefs = _prefs(tmp_path / "p.plist",
+                   {"OptionalUpdatesDeferrals": {"DeferralDays": {"MSWD2019": 0}}})
+    fake = _fake_msupdate(tmp_path / "bin", f"cat <<'EOF'\n{LIST_NONE}EOF\n")
+    r = _check(tmp_path, "MSWD2019", "Microsoft Word",
+               _env(tmp_path, {"ASCENDO_MAU_PREFS_FILE": str(prefs)}, fake))
+    assert "__MAU" not in r.stdout

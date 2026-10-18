@@ -262,6 +262,9 @@ _msupdate_deferral_days_for() {
         val="$(plutil -extract "OptionalUpdatesDeferrals.DeferralDays.$id" raw -o - "$tmp" 2>/dev/null || true)"
     fi
     rm -f "$tmp"
+    # Only an integer > 0 is a quarantine (0 = no deferral).
+    case "$val" in ''|*[!0-9]*) val="" ;; esac
+    [ -n "$val" ] && [ "$val" -gt 0 ] || val=""
     printf '%s' "$val"
     return 0
 }
@@ -336,7 +339,9 @@ _msupdate_teams_pin_release() {
     if [ -z "$installed" ] || [ "$pin" = "$installed" ]; then rm -f "$tmp"; return 0; fi
     rel="$(_web_version_cmp "$installed" "$pin")"
     if [ "$rel" != "newer" ]; then rm -f "$tmp"; return 0; fi
-    if [ "${ASCENDO_MAU_MUTATE_PREFS:-0}" != "1" ]; then
+    # Ruling 42: mutation needs BOTH the opt-in env and a real apply phase
+    # (_MSU_PIN_MUTATE_ALLOWED=1); check/plan/dry-run only ever diagnose.
+    if [ "${ASCENDO_MAU_MUTATE_PREFS:-0}" != "1" ] || [ "${_MSU_PIN_MUTATE_ALLOWED:-0}" != "1" ]; then
         _MSU_PIN_NOTE="mau_pin_stale"$'\t'"TEAMS21 DeferralVersions pin ${pin} is older than installed ${installed} and caps what MAU offers; set ASCENDO_MAU_MUTATE_PREFS=1 to release it (read-only diagnosis only)"
         rm -f "$tmp"
         return 0
@@ -366,10 +371,13 @@ _msupdate_teams_pin_release() {
 
 # msupdate_prepare_listing <results_dir>
 # Phase-script entry (before the parallel probe): when any listed app uses the
-# msupdate handler, release the stale Teams pin (opt-in), then run ONE listing
+# msupdate handler, release the stale Teams pin (opt-in AND only when the 2nd
+# argument is 1, i.e. a real non-dry-run apply), then run ONE listing
 # and publish it to $OUTPUT_DIR/$RUN_ID/_msupdate_list.{txt,rc}.
 msupdate_prepare_listing() {
-    local rdir="$1" f any=0 bin dir
+    local rdir="$1" mutate_ok="${2:-0}" f any=0 bin dir
+    _MSU_PIN_MUTATE_ALLOWED=0
+    [ "$mutate_ok" = "1" ] && _MSU_PIN_MUTATE_ALLOWED=1
     for f in "$rdir"/*.handler; do
         [ -f "$f" ] || continue
         if [ "$(cat "$f" 2>/dev/null)" = "msupdate" ]; then any=1; break; fi
@@ -389,6 +397,7 @@ msupdate_prepare_listing() {
     _msupdate_run_listing "$bin"
     printf '%s\n' "$_MSU_LIST_OUT" > "$ASCENDO_MSUPDATE_LIST_FILE"
     printf '%s\n' "$_MSU_LIST_RC" > "$dir/_msupdate_list.rc"
+    _MSU_PIN_MUTATE_ALLOWED=0
     return 0
 }
 
@@ -449,6 +458,13 @@ msupdate_check() {
                && [ "$(_web_version_cmp "$installed_short" "$offered")" = "newer" ]; then
                 _msupdate_note error_soft "${slug}: MAU offers ${offered} ≤ installed ${installed_short} (upstream package regression, channel=$(_msupdate_current_channel)); not actionable"
                 echo "__MAU_REGRESSED__"
+                return 0
+            fi
+            # Offered short == installed short is a legitimate build-only update:
+            # surface it as available (`pending`), never as the installed version.
+            if [ -n "$offered" ] && [ "$offered" = "$installed_short" ]; then
+                _msupdate_note update_available "${slug}: MAU offers a newer build of ${offered} (installed short version is the same)"
+                echo "pending"
                 return 0
             fi
             echo "${offered:-pending}"
@@ -589,8 +605,9 @@ msupdate_apply() {
     app_id=$(_msupdate_app_id "$cfg")
     app_path="$(_msupdate_app_path "$cfg")"
 
-    # Opt-in pin release (read-only diagnosis by default).
-    _msupdate_teams_pin_release "$app_path" || true
+    # Opt-in pin release (read-only diagnosis by default). msupdate_apply only
+    # runs in a real (non-dry-run) apply, so mutation is allowed here.
+    _MSU_PIN_MUTATE_ALLOWED=1 _msupdate_teams_pin_release "$app_path" || true
 
     # Microsoft documents TEAMS21 as not installable via msupdate --apps.
     if [ "$app_id" = "TEAMS21" ]; then
