@@ -118,7 +118,7 @@ class WebManager(IPackageManager):
         except Exception:   # noqa: BLE001 — health_check surfaces details
             return False
         for h in ("sparkle", "github_dmg", "keystone", "squirrel",
-                  "builtin", "msupdate", "docker"):
+                  "builtin", "msupdate", "docker", "chromium_updater"):
             if not (self._lib_dir / "handlers" / f"{h}.sh").is_file():
                 return False
         return True

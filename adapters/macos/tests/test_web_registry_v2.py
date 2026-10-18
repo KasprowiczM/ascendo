@@ -378,3 +378,108 @@ def test_vendor_feed_rejects_bad_host_characters(tmp_path: Path) -> None:
     bad = _JSON_FEED.replace('allowed_host = "downloads.claude.ai"', 'allowed_host = "a b/c"')
     with pytest.raises(Exception):
         WebRegistry.load(_write(tmp_path, _app_with_feed("squirrel", bad)), None)
+
+
+# ------------------------------------------------------------ chromium_updater
+
+_CU_APP = '''
+schema = "ascendo-web-apps/v2"
+
+[[app]]
+slug = "chrome"
+bundle_id = "com.google.Chrome"
+display_name = "Google Chrome"
+handler = "chromium_updater"
+{extra}
+'''
+
+
+def test_chromium_updater_defaults(tmp_path: Path) -> None:
+    reg = WebRegistry.load(_write(tmp_path, _CU_APP.format(extra='''
+[app.chromium_updater]
+appid = "com.google.chrome"
+version_history_url = "https://versionhistory.googleapis.com/v1/chrome/platforms/mac_arm64/channels/stable/versions/all/releases?filter=endtime=none"
+''')), None)
+    cu = reg.apps[0].chromium_updater
+    assert cu is not None and cu.appid == "com.google.chrome"
+    assert cu.updater_bin is None and cu.updater_log is None
+    assert cu.wake_args == ["--wake-all"]
+    assert cu.history_max_age_h == 6
+    assert cu.wait_s == 45
+    assert str(cu.version_history_url).startswith("https://versionhistory.googleapis.com/")
+
+
+def test_chromium_updater_requires_subtable(tmp_path: Path) -> None:
+    with pytest.raises(Exception, match="chromium_updater"):
+        WebRegistry.load(_write(tmp_path, _CU_APP.format(extra="")), None)
+
+
+def test_chromium_updater_wait_clamped_by_schema(tmp_path: Path) -> None:
+    with pytest.raises(Exception):
+        WebRegistry.load(_write(tmp_path, _CU_APP.format(extra='''
+[app.chromium_updater]
+appid = "com.google.chrome"
+wait_s = 500
+''')), None)
+
+
+def test_chromium_updater_rejects_http_version_history(tmp_path: Path) -> None:
+    with pytest.raises(Exception):
+        WebRegistry.load(_write(tmp_path, _CU_APP.format(extra='''
+[app.chromium_updater]
+appid = "com.google.chrome"
+version_history_url = "http://example.com/vh"
+''')), None)
+
+
+def test_chromium_updater_rejects_unknown_field(tmp_path: Path) -> None:
+    with pytest.raises(Exception):
+        WebRegistry.load(_write(tmp_path, _CU_APP.format(extra='''
+[app.chromium_updater]
+appid = "com.google.chrome"
+bogus = 1
+''')), None)
+
+
+def test_chromium_updater_subtable_rejected_on_other_handlers(tmp_path: Path) -> None:
+    body = '''
+schema = "ascendo-web-apps/v2"
+
+[[app]]
+slug = "x"
+bundle_id = "com.x.X"
+display_name = "X"
+handler = "builtin"
+
+[app.chromium_updater]
+appid = "com.x"
+'''
+    with pytest.raises(Exception, match="chromium_updater"):
+        WebRegistry.load(_write(tmp_path, body), None)
+
+
+def test_keystone_remains_valid_for_user_overrides(tmp_path: Path) -> None:
+    body = '''
+schema = "ascendo-web-apps/v2"
+
+[[app]]
+slug = "chrome"
+bundle_id = "com.google.Chrome"
+display_name = "Google Chrome"
+handler = "keystone"
+ksadmin_product_id = "com.google.Chrome"
+'''
+    reg = WebRegistry.load(_write(tmp_path, body), None)
+    assert reg.apps[0].handler == "keystone"
+
+
+def test_vendor_feed_rejected_on_chromium_updater(tmp_path: Path) -> None:
+    with pytest.raises(Exception, match="vendor_feed"):
+        WebRegistry.load(_write(tmp_path, _CU_APP.format(extra='''
+[app.chromium_updater]
+appid = "com.google.chrome"
+
+[app.vendor_feed]
+kind = "yml"
+url = "https://example.com/latest.yml"
+''')), None)

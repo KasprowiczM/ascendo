@@ -17,7 +17,7 @@ ADAPTER_CONFIG="$SCRIPT_DIR/../../config"
 
 . "$ADAPTER_LIB/ascendo_json.sh"
 . "$ADAPTER_LIB/ascendo_web.sh"
-for _h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed omaha; do
+for _h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed omaha chromium_updater; do
     . "$ADAPTER_LIB/handlers/${_h}.sh"
 done
 
@@ -193,6 +193,16 @@ while [ "$i" -lt "$WORK_IDX" ]; do
     CFG=$(cat "$RESULTS_DIR/${i}.cfg.json" 2>/dev/null)
     LATEST=$(_web_read_probe_result "$RESULTS_DIR" "$i")
     i=$((i + 1))
+
+    # chromium_updater: a non-empty probe means PROVEN current (updater history /
+    # public version) -- nothing to plan. Without proof apply will wake the updater
+    # (never launches the app), so it is planned, with no target version.
+    if [ "$HANDLER" = "chromium_updater" ]; then
+        [ -n "$LATEST" ] && continue
+        json_add_item "web:${SLUG}" "$INSTALLED" "" "planned" "web" "$HANDLER"
+        COUNT_PLANNED=$((COUNT_PLANNED + 1))
+        continue
+    fi
 
     # GH rate-limit sentinel: skip with explanation, don't plan.
     if [ "$LATEST" = "__GH_RATE_LIMITED__" ]; then

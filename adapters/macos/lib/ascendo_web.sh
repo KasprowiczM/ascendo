@@ -331,12 +331,15 @@ if [ ! -f "$cfg_file" ] || [ -z "$handler" ]; then
 fi
 # shellcheck source=/dev/null
 . "$ADAPTER_LIB/ascendo_web.sh"
-for h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed omaha; do
+for h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed omaha chromium_updater; do
     # shellcheck source=/dev/null
     . "$ADAPTER_LIB/handlers/${h}.sh"
 done
 cfg=$(cat "$cfg_file")
 latest=""
+# Handlers may leave an explanation for the phase script ("<code>\t<text>") here.
+rm -f "$RESULTS_DIR/${idx}.note" 2>/dev/null
+export ASCENDO_WEB_PROBE_NOTE_FILE="$RESULTS_DIR/${idx}.note"
 case "$handler" in
     sparkle)      latest=$(sparkle_check "$slug" "$cfg" 2>/dev/null || true) ;;
     github_dmg)   latest=$(github_dmg_check "$slug" "$cfg" 2>/dev/null || true) ;;
@@ -345,6 +348,7 @@ case "$handler" in
     docker)       latest=$(docker_check "$slug" "$cfg" 2>/dev/null || true) ;;
     release_feed) latest=$(release_feed_check "$slug" "$cfg" 2>/dev/null || true) ;;
     omaha)        latest=$(omaha_check "$slug" "$cfg" 2>/dev/null || true) ;;
+    chromium_updater) latest=$(chromium_updater_check "$slug" "$cfg" 2>/dev/null || true) ;;
     squirrel)     latest=$(squirrel_check "$slug" "$cfg" 2>/dev/null || true) ;;
     builtin)      latest="" ;;
 esac
@@ -357,6 +361,25 @@ PROBE_EOF
     /usr/bin/xargs -P "$parallelism" -I{} \
         bash "$probe_script" "$adapter_lib" "$results_dir" "{}" \
         < "$indices_file" 2>/dev/null
+}
+
+# _web_read_probe_note <results_dir> <idx>
+# Echoes the handler's probe note ("<code>\t<text>") or nothing.
+_web_read_probe_note() {
+    local f="$1/${2}.note"
+    [ -f "$f" ] && /usr/bin/head -n 1 "$f" || true
+}
+
+# _web_emit_probe_note <slug> <note>
+# Emits the note as an info message with the machine-readable status code
+# (current_vendor / current_verified, ...). No-op for an empty note.
+_web_emit_probe_note() {
+    local slug="$1" note="$2" code text
+    [ -n "$note" ] || return 0
+    code=${note%%$'\t'*}
+    text=${note#*$'\t'}
+    [ -n "$code" ] && [ "$code" != "$note" ] || return 0
+    json_add_message "info" "${slug}: ${text} | $(ascendo_status_token "$code")" "$code"
 }
 
 # _web_read_probe_result <results_dir> <idx>

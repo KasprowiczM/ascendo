@@ -22,17 +22,22 @@ schema = "ascendo-web-apps/v2"
 slug = "chrome"
 bundle_id = "com.google.Chrome"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Google Chrome"
-handler = "keystone"
-ksadmin_product_id = "com.google.Chrome"
-notes = "macOS_updates channel: Google Keystone (GoogleSoftwareUpdateAgent --runMode ondemand / ksadmin --update). Not the Chrome Version History API — that feed can be ahead of Keystone rollout and made Ascendo plan a second path after sister already updated via Keystone."
+handler = "chromium_updater"
+notes = "macOS_updates channel: GoogleUpdater --wake-all, proven by updater_history.jsonl / updater.log; Google VersionHistory is the public-version truth (installed >= public => current, no wake; updater noupdate while public is newer => rollout_hold). Omaha appid is LOWERCASE com.google.chrome (the old Keystone ticket id com.google.Chrome had the wrong case). Never launches or quits the browser."
+
+[app.chromium_updater]
+appid = "com.google.chrome"
+version_history_url = "https://versionhistory.googleapis.com/v1/chrome/platforms/mac_arm64/channels/stable/versions/all/releases?filter=endtime=none"
 
 [[app]]
 slug = "gdrive"
 bundle_id = "com.google.drivefs"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Google Drive"
-handler = "keystone"
-ksadmin_product_id = "com.google.drivefs"
-notes = "macOS_updates channel: Google Keystone for Drive File Stream. Omaha probes were a second installer path."
+handler = "chromium_updater"
+notes = "GoogleUpdater (system scope) via --wake-all; proof from updater_history.jsonl (short + build version compared, Drive registers 131.0.2.0 for bundle 131.0.2)."
+
+[app.chromium_updater]
+appid = "com.google.drivefs"
 
 [[app]]
 slug = "brave"
@@ -105,8 +110,11 @@ http_timeout_s = 8
 slug = "gemini"
 bundle_id = "com.google.GeminiMacOS"  # verified on Mac.r12.home (2026-05-06; was com.google.Gemini in template)
 display_name = "Gemini"
-handler = "squirrel"
-notes = "macOS_updates channel: silent_launch (open -gjF) for Gemini Desktop. Not Omaha/Keystone — sister never uses the Google agent for Gemini."
+handler = "chromium_updater"
+notes = "GoogleUpdater --wake-all; Omaha appid com.google.geminimacos. No app launch."
+
+[app.chromium_updater]
+appid = "com.google.geminimacos"
 
 [[app]]
 slug = "lm-studio"
@@ -144,8 +152,13 @@ notes = "macv3 bundle (not the retired MAS ai.perplexity.mac, not ai.perplexity.
 slug = "comet"
 bundle_id = "ai.perplexity.comet"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Comet"
-handler = "squirrel"
-notes = "macOS_updates channel: silent_launch (open -gjF) for Comet. Not a second Omaha installer."
+handler = "chromium_updater"
+notes = "CometUpdater --wake-all (its own binary and updater.log, never GoogleUpdater); proof from updater_history.jsonl. No app launch."
+
+[app.chromium_updater]
+appid = "ai.perplexity.comet"
+updater_bin = ["~/Library/Application Support/Perplexity/CometUpdater/Current/CometUpdater.app/Contents/MacOS/CometUpdater"]
+updater_log = ["~/Library/Application Support/Perplexity/CometUpdater/updater.log"]
 
 [[app]]
 slug = "codex"

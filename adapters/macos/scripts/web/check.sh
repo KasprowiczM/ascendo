@@ -18,7 +18,7 @@ ADAPTER_CONFIG="$SCRIPT_DIR/../../config"
 . "$ADAPTER_LIB/ascendo_json.sh"
 # shellcheck source=../../lib/ascendo_web.sh
 . "$ADAPTER_LIB/ascendo_web.sh"
-for _h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed omaha; do
+for _h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed omaha chromium_updater; do
     # shellcheck source=../../lib/handlers/sparkle.sh
     . "$ADAPTER_LIB/handlers/${_h}.sh"
 done
@@ -215,6 +215,7 @@ while [ "$i" -lt "$WORK_IDX" ]; do
     LATEST=$(_web_read_probe_result "$RESULTS_DIR" "$i")
     LATEST=$(printf '%s' "$LATEST" | tr -d '[:space:]')
     CFG=$(cat "$RESULTS_DIR/${i}.cfg.json" 2>/dev/null)
+    NOTE=$(_web_read_probe_note "$RESULTS_DIR" "$i")
     # Increment i FIRST so any `continue` below doesn't infinite-loop.
     i=$((i + 1))
 
@@ -244,6 +245,13 @@ while [ "$i" -lt "$WORK_IDX" ]; do
             squirrel|keystone)
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
                 json_add_message "info" "${SLUG}: vendor_opaque (Tier-B handler — apply will trigger vendor agent)"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
+            chromium_updater)
+                # No proof of currency (no recent updater history, no public-version
+                # match): unknown, NOT current. Apply wakes the updater (no app launch).
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: vendor_opaque (no recent updater proof of currency; apply will wake the vendor updater)"
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 ;;
             builtin)
@@ -316,6 +324,7 @@ while [ "$i" -lt "$WORK_IDX" ]; do
         COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
     elif [ "$INSTALLED" = "$LATEST" ] || _should_skip_upgrade "$INSTALLED" "$LATEST"; then
         json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "up_to_date" "web" "$HANDLER"
+        [ "$HANDLER" = "chromium_updater" ] && _web_emit_probe_note "$SLUG" "$NOTE"
         COUNT_UTD=$((COUNT_UTD + 1))
     else
         json_add_item "web:${SLUG}" "$INSTALLED" "$LATEST" "planned" "web" "$HANDLER"

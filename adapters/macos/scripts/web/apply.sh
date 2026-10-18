@@ -27,7 +27,7 @@ ADAPTER_CONFIG="$SCRIPT_DIR/../../config"
 
 . "$ADAPTER_LIB/ascendo_json.sh"
 . "$ADAPTER_LIB/ascendo_web.sh"
-for _h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed omaha; do
+for _h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed omaha chromium_updater; do
     . "$ADAPTER_LIB/handlers/${_h}.sh"
 done
 
@@ -246,6 +246,7 @@ while [ "$i" -lt "$WORK_IDX" ]; do
     APP_PATH=$(cat "$RESULTS_DIR/${i}.app_path" 2>/dev/null)
     CFG=$(cat "$RESULTS_DIR/${i}.cfg.json" 2>/dev/null)
     CAND=$(_web_read_probe_result "$RESULTS_DIR" "$i")
+    NOTE=$(_web_read_probe_note "$RESULTS_DIR" "$i")
     i=$((i + 1))
 
     # Feed-backed handlers (sparkle; squirrel / docker with an [app.vendor_feed]):
@@ -298,6 +299,18 @@ while [ "$i" -lt "$WORK_IDX" ]; do
     fi
 
     case "$HANDLER" in
+        chromium_updater)
+            # A non-empty probe is the installed version = PROVEN current by the
+            # updater's history / the public version (no wake needed). An empty probe
+            # is NOT probe_unavailable: it means "no proof yet", so fall through and
+            # let the handler wake the updater.
+            if [ -n "$CAND" ] && [ "$CAND" = "$INSTALLED" ]; then
+                json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "up_to_date" "web" "$HANDLER"
+                _web_emit_probe_note "$SLUG" "$NOTE"
+                COUNT_UPTODATE=$((COUNT_UPTODATE + 1))
+                continue
+            fi
+            ;;
         sparkle|github_dmg|release_feed|docker|msupdate|omaha)
             # CAND came from parallel pass 2 above (already probed).
             # Skip apply when installed >= candidate OR candidate is a
@@ -396,9 +409,58 @@ while [ "$i" -lt "$WORK_IDX" ]; do
         docker)       docker_apply "$SLUG" "$CFG" 2> "$err_log" ;;
         release_feed) release_feed_apply "$SLUG" "$CFG" 2> "$err_log" ;;
         omaha)        omaha_apply "$SLUG" "$CFG" 2> "$err_log" ;;
+        chromium_updater) chromium_updater_apply "$SLUG" "$CFG" 2> "$err_log" ;;
         *)            false ;;
     esac
     rc=$?
+
+    # chromium_updater (Chrome / Drive / Gemini / Comet): the handler woke the vendor
+    # updater (never the app) and left its verdict in ASCENDO_WEB_OUTCOME; rc is 0.
+    # A wake failure is error_soft/skipped, a staged rollout is rollout_hold/skipped
+    # (neither is action-required nor failed); success needs a measured version change.
+    if [ "$HANDLER" = "chromium_updater" ]; then
+        _o_msg="$ASCENDO_WEB_OUTCOME_MSG"
+        case "$ASCENDO_WEB_OUTCOME" in
+            current_vendor|current_verified)
+                json_add_item "web:${SLUG}" "$INSTALLED" "$INSTALLED" "up_to_date" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: ${_o_msg} | $(ascendo_status_token "$ASCENDO_WEB_OUTCOME")" "$ASCENDO_WEB_OUTCOME"
+                COUNT_UPTODATE=$((COUNT_UPTODATE + 1))
+                ;;
+            rollout_hold)
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: ${_o_msg} | $(ascendo_status_token rollout_hold)" "rollout_hold"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
+            updated)
+                _post_installed=$(_web_installed_version "$APP_PATH")
+                if [ -n "$_post_installed" ] && [ "$_post_installed" != "$INSTALLED" ]; then
+                    json_add_item "web:${SLUG}" "$_post_installed" "$_post_installed" "success" "web" "$HANDLER"
+                    json_add_message "info" "${SLUG}: updated (${INSTALLED} -> ${_post_installed}) | $(ascendo_status_token updated)" "updated"
+                    COUNT_SUCCESS=$((COUNT_SUCCESS + 1))
+                else
+                    json_add_item "web:${SLUG}" "$INSTALLED" "" "triggered" "web" "$HANDLER"
+                    json_add_message "info" "${SLUG}: the updater reported an update but the installed version is still ${_post_installed:-unreadable} (unverified) | $(ascendo_status_token unverified)" "unverified"
+                    COUNT_TRIGGERED=$((COUNT_TRIGGERED + 1))
+                fi
+                ;;
+            unverified)
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "triggered" "web" "$HANDLER"
+                json_add_message "info" "${SLUG}: ${_o_msg} | $(ascendo_status_token unverified)" "unverified"
+                COUNT_TRIGGERED=$((COUNT_TRIGGERED + 1))
+                ;;
+            wake_failed)
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "warn" "${SLUG}: error_soft: ${_o_msg} | $(ascendo_status_token error_soft)" "error_soft"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
+            *)
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "warn" "${SLUG}: error_soft: ${_o_msg:-no verdict from the chromium updater handler} | $(ascendo_status_token error_soft)" "error_soft"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                ;;
+        esac
+        continue
+    fi
 
     # Feed-backed squirrel / docker: the handler ran the vendor-truth algorithm
     # and left its verdict in ASCENDO_WEB_OUTCOME (rc 3 = install_error falls

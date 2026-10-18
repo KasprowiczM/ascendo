@@ -76,6 +76,37 @@ class OmahaConfig(BaseModel):
     http_timeout_s: Annotated[int, Field(ge=1, le=60)] = 8
 
 
+class ChromiumUpdaterConfig(BaseModel):
+    """Chromium-style updater (GoogleUpdater / CometUpdater) driven by its own
+    ``--wake-all`` and observed through ``updater.log`` / ``updater_history.jsonl``.
+
+    * ``appid``: Omaha app id as it appears in the updater's responses/history
+      (lowercase for Chrome: ``com.google.chrome`` -- the ticket-id case matters).
+    * ``updater_bin`` / ``updater_log``: absolute paths (``~`` expanded). Unset =
+      the GoogleUpdater user + system locations (with a legacy Keystone agent
+      fallback); set them for a vendor with its own updater (Comet).
+    * ``wake_args``: arguments that make the updater check immediately.
+    * ``history_max_age_h``: how old an updater_history proof may be (env
+      ``ASCENDO_OMAHA_MAX_AGE_H``).
+    * ``wait_s``: how long to wait for the updater's response after a wake
+      (0-180; env ``ASCENDO_OMAHA_WAIT``). One shared window per run.
+    * ``version_history_url``: Google VersionHistory feed (Chrome only) used as
+      public-version truth (https only).
+    No browser/app is ever launched or quit by this handler.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    appid: Annotated[str, Field(min_length=1, max_length=128,
+                                pattern=r"^[A-Za-z0-9._\-{}]+$")]
+    updater_bin: Optional[list[str]] = None
+    updater_log: Optional[list[str]] = None
+    wake_args: Annotated[list[str], Field(min_length=1)] = Field(default_factory=lambda: ["--wake-all"])
+    history_max_age_h: Annotated[float, Field(gt=0, le=720)] = 6
+    wait_s: Annotated[int, Field(ge=0, le=180)] = 45
+    version_history_url: Optional[HttpsUrl] = None
+
+
 class MsupdateConfig(BaseModel):
     """Per-app Microsoft AutoUpdate targeting.
 
@@ -253,7 +284,7 @@ class WebApp(BaseModel):
     display_name: Annotated[str, Field(min_length=1, max_length=128)]
     handler: Literal["sparkle", "github_dmg", "keystone", "squirrel",
                      "builtin", "msupdate", "docker", "release_feed",
-                     "omaha"]
+                     "omaha", "chromium_updater"]
     # category (M5.7.6): "app" = end-user product (default; appears in SPA);
     # "infrastructure" = update engine itself (e.g. Microsoft AutoUpdate) —
     # SPA hides these from the Categories grid since they are not
@@ -295,6 +326,10 @@ class WebApp(BaseModel):
     # is also set; otherwise apply is `open -a` (Tier-B trigger).
     omaha: Optional["OmahaConfig"] = None
 
+    # Chromium-style updater (Chrome / Drive / Gemini / Comet): wake-all +
+    # updater.log / updater_history.jsonl proof (Spec C).
+    chromium_updater: Optional["ChromiumUpdaterConfig"] = None
+
     # Vendor-truth feed (v1.5.0 port). Only squirrel (opaque in-app updater)
     # and docker (CLI-plugin version is not the app version) consume it.
     vendor_feed: Optional["VendorFeedConfig"] = None
@@ -327,6 +362,8 @@ class WebApp(BaseModel):
             raise ValueError("release_feed handler requires [apps.release_feed] table")
         if h == "omaha" and self.omaha is None:
             raise ValueError("omaha handler requires [apps.omaha] table")
+        if h == "chromium_updater" and self.chromium_updater is None:
+            raise ValueError("chromium_updater handler requires [app.chromium_updater] table")
 
         # Cross-handler fields rejected (catches typos)
         if h != "sparkle" and (self.appcast_url is not None
@@ -358,6 +395,9 @@ class WebApp(BaseModel):
         if h != "omaha" and self.omaha is not None:
             raise ValueError(
                 f"omaha sub-table only valid for omaha handler; got handler={h!r}")
+        if h != "chromium_updater" and self.chromium_updater is not None:
+            raise ValueError(
+                f"chromium_updater sub-table only valid for chromium_updater handler; got handler={h!r}")
         if h not in ("squirrel", "docker") and self.vendor_feed is not None:
             raise ValueError(
                 f"vendor_feed sub-table only valid for squirrel or docker; got handler={h!r}")

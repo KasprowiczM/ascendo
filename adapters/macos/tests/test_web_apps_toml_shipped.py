@@ -38,8 +38,8 @@ def test_shipped_registry_parses() -> None:
 def test_shipped_registry_has_core_handlers() -> None:
     """Handlers that must stay represented after macOS_updates channel lock.
 
-    Omaha is not shipped: Chrome/Drive use Keystone; Gemini/Comet use
-    squirrel (silent_launch). Sparkle remains for RDM / Proton Drive /
+    Omaha is not shipped: Chrome/Drive/Gemini/Comet use chromium_updater
+    (updater --wake-all + history proof); Keystone stays valid for user overrides. Sparkle remains for RDM / Proton Drive /
     AppCleaner / ProtonVPN (brew skip still owns the last two at apply).
     """
     reg = WebRegistry.load(SHIPPED, None)
@@ -49,7 +49,7 @@ def test_shipped_registry_has_core_handlers() -> None:
         "github_dmg",
         "msupdate",
         "release_feed",
-        "keystone",
+        "chromium_updater",
         "squirrel",
         "docker",
         "builtin",
@@ -65,14 +65,21 @@ def test_shipped_registry_no_duplicate_slugs() -> None:
         f"duplicate slugs: {[s for s in slugs if slugs.count(s) > 1]}"
 
 
-def test_shipped_registry_chrome_uses_keystone() -> None:
-    """macOS_updates channel is Google Keystone, not Version History API."""
+def test_shipped_registry_chrome_uses_chromium_updater() -> None:
+    """Chrome rides GoogleUpdater (--wake-all); Version History is the public-version truth.
+
+    The Omaha appid is LOWERCASE -- the old Keystone ticket id com.google.Chrome had the
+    wrong case and never matched the updater's responses."""
     reg = WebRegistry.load(SHIPPED, None)
     chrome = reg.find("chrome")
     assert chrome is not None
-    assert chrome.handler == "keystone"
-    assert chrome.ksadmin_product_id == "com.google.Chrome"
+    assert chrome.handler == "chromium_updater"
+    assert chrome.ksadmin_product_id is None
     assert chrome.release_feed is None
+    cu = chrome.chromium_updater
+    assert cu.appid == "com.google.chrome"
+    assert str(cu.version_history_url).startswith(
+        "https://versionhistory.googleapis.com/v1/chrome/platforms/mac_arm64/")
 
 
 def test_shipped_registry_brave_uses_sparkle_arm64_appcast() -> None:
@@ -196,15 +203,15 @@ def test_sources_brew_tokens_match_canonical_cask_set() -> None:
 # macOS_updates internet_app_methods.txt → Ascendo web handler.
 # brew_cask apps are NOT updated by the web category (Homebrew owns them).
 _SISTER_WEB_HANDLERS = {
-    "chrome": "keystone",
-    "gdrive": "keystone",
+    "chrome": "chromium_updater",
+    "gdrive": "chromium_updater",
     "firefox-dev": "release_feed",
     "claude": "squirrel",
     "chatgpt": "squirrel",
     "codex": "squirrel",
     "warp": "squirrel",
-    "gemini": "squirrel",
-    "comet": "squirrel",
+    "gemini": "chromium_updater",
+    "comet": "chromium_updater",
     "antigravity": "squirrel",
     "antigravity-ide": "squirrel",
     "opencode": "squirrel",
@@ -278,12 +285,22 @@ def test_firefox_dev_downloads_official_mozilla_dmg() -> None:
     assert "firefox-devedition" in str(ff.release_feed.download_url)
 
 
-def test_chrome_and_gdrive_use_keystone_product_ids() -> None:
+def test_chromium_updater_rows_match_spec_c() -> None:
     reg = WebRegistry.load(SHIPPED, None)
-    chrome = next(a for a in reg.apps if a.slug == "chrome")
-    gdrive = next(a for a in reg.apps if a.slug == "gdrive")
-    assert chrome.ksadmin_product_id == "com.google.Chrome"
-    assert gdrive.ksadmin_product_id == "com.google.drivefs"
+    by = {a.slug: a for a in reg.apps}
+    assert by["gdrive"].chromium_updater.appid == "com.google.drivefs"
+    assert by["gemini"].chromium_updater.appid == "com.google.geminimacos"
+    assert by["gemini"].chromium_updater.updater_bin is None      # GoogleUpdater defaults
+    comet = by["comet"].chromium_updater
+    assert comet.appid == "ai.perplexity.comet"
+    assert comet.updater_bin == [
+        "~/Library/Application Support/Perplexity/CometUpdater/Current/CometUpdater.app/Contents/MacOS/CometUpdater"]
+    assert comet.updater_log == [
+        "~/Library/Application Support/Perplexity/CometUpdater/updater.log"]
+    # Only Chrome has a public-version feed.
+    assert by["gdrive"].chromium_updater.version_history_url is None
+    for slug in ("chrome", "gdrive", "gemini", "comet"):
+        assert by[slug].handler == "chromium_updater"
 
 
 def test_ledger_download_path_picks_dmg_not_index() -> None:

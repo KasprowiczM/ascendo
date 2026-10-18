@@ -15,6 +15,8 @@
 #     the version was reached, otherwise it stays `triggered` (the vendor's own
 #     updater may still be running -- unverified is not a failure).
 #   - builtin: no-op skipped (manual_verify_required).
+#   - chromium_updater (Chrome / Drive / Gemini / Comet): re-read only, no sleep;
+#     EXEMPT from "unchanged => failed" (changed => success, else triggered/unverified).
 #
 # Tier-B (feedless squirrel / keystone) classification, after the settle:
 #   version changed                         -> success   (code updated)
@@ -186,6 +188,24 @@ while IFS=$'\t' read -r ITEM_ID HANDLER PRE_VERSION TARGET ITEM_STATUS; do
             json_add_message "info" "${SLUG}: triggered_pending (installed ${POST:-unreadable}, vendor ${TARGET:-?}; not yet applied, unverified) | $(ascendo_status_token unverified)" "unverified"
             COUNT_OK=$((COUNT_OK + 1))
         fi
+        continue
+    fi
+
+    # chromium_updater (Chrome / Drive / Gemini / Comet) is EXEMPT from the
+    # "unchanged => failed" rule (Spec C/D): the vendor updater stages the update on
+    # its own schedule and an unchanged version is `unverified`, never a failure.
+    # Measured change => success; an apply `success` stays success while the app
+    # still reports a version.
+    if [ "$HANDLER" = "chromium_updater" ]; then
+        POST=$(_web_installed_version "$APP_PATH")
+        if [ -n "$POST" ] && { [ "$ITEM_STATUS" = "success" ] || [ "$POST" != "$PRE_VERSION" ]; }; then
+            json_add_item "$ITEM_ID" "$POST" "$TARGET" "success" "web" "$HANDLER"
+            json_add_message "info" "${SLUG}: updated (${PRE_VERSION:-?} -> ${POST}) | $(ascendo_status_token updated)" "updated"
+        else
+            json_add_item "$ITEM_ID" "${POST:-$PRE_VERSION}" "$TARGET" "triggered" "web" "$HANDLER"
+            json_add_message "info" "${SLUG}: unverified (version ${POST:-unreadable} unchanged; the vendor updater may still be staging the update) | $(ascendo_status_token unverified)" "unverified"
+        fi
+        COUNT_OK=$((COUNT_OK + 1))
         continue
     fi
 
