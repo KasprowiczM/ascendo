@@ -225,3 +225,17 @@ def test_verify_changed_version_is_success(ph: Phase) -> None:
     it = items(sc)["web:gdrive"]
     assert it["status"] == "success" and it["current_version"] == "125.0.0.0"
     assert "updated" in codes(sc)
+
+
+def test_check_and_apply_emit_skipped_unknown_version_for_unparseable(ph: Phase) -> None:
+    from .omaha_fakes import set_app_version
+    set_app_version(ph.gemini, "weird-build", None, "com.google.GeminiMacOS")
+    ph.history("com.google.geminimacos", "also-weird")
+    ph.updater()
+    for phase in ("check", "apply"):
+        sc = ph.phase(phase, "--filter", "gemini")
+        it = items(sc)["web:gemini"]
+        assert it["status"] == "skipped", (phase, sc)
+        assert "unknown_version" in codes(sc)
+        assert "vendor_opaque" not in msgs(sc)
+    assert ph.calls_text() == "", "no wake when the comparison is impossible"

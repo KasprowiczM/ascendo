@@ -304,6 +304,12 @@ while [ "$i" -lt "$WORK_IDX" ]; do
             # updater's history / the public version (no wake needed). An empty probe
             # is NOT probe_unavailable: it means "no proof yet", so fall through and
             # let the handler wake the updater.
+            if [ "${NOTE%%$'\t'*}" = "unknown_version" ]; then
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "warn" "${NOTE#*$'\t'}" "unknown_version"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                continue
+            fi
             if [ -n "$CAND" ] && [ "$CAND" = "$INSTALLED" ]; then
                 json_add_item "web:${SLUG}" "$INSTALLED" "$CAND" "up_to_date" "web" "$HANDLER"
                 _web_emit_probe_note "$SLUG" "$NOTE"
@@ -447,6 +453,11 @@ while [ "$i" -lt "$WORK_IDX" ]; do
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "triggered" "web" "$HANDLER"
                 json_add_message "info" "${SLUG}: ${_o_msg} | $(ascendo_status_token unverified)" "unverified"
                 COUNT_TRIGGERED=$((COUNT_TRIGGERED + 1))
+                ;;
+            unknown_version)
+                json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                json_add_message "warn" "${_o_msg}" "unknown_version"
+                COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 ;;
             wake_failed)
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"

@@ -82,7 +82,7 @@ _cu_app_path() {
 # configured updater.log proves NO_UPDATE/UPDATED for exactly the installed build
 # (short OR CFBundleVersion) within history_max_age_h. rc 1 otherwise.
 _cu_history_proof() {
-    local appid="$1" app_path="$2" cfg="$3" short build maxage files="" log dir res
+    local appid="$1" app_path="$2" cfg="$3" short build maxage files="" log dir res sub="${4:-history}"
     short=$(_web_installed_version "$app_path")
     build=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$app_path/Contents/Info.plist" 2>/dev/null || true)
     maxage=$(_cu_cfg "$cfg" history_max_age_h)
@@ -93,7 +93,7 @@ _cu_history_proof() {
         if [ -f "$dir/updater_history.jsonl" ]; then files="${files}${dir}/updater_history.jsonl"$'\n'; fi
     done < <(_cu_cfg "$cfg" updater_log)
     [ -n "$files" ] || return 1
-    res=$(printf '%s' "$files" | _cu_py history "$appid" "${maxage:-6}" "$short" "$build")
+    res=$(printf '%s' "$files" | _cu_py "$sub" "$appid" "${maxage:-6}" "$short" "$build")
     [ -n "$res" ] || return 1
     printf '%s\n' "$res"
 }
@@ -123,7 +123,7 @@ _cu_public_version() {
 #   current_verified.  rc 1 = no proof.
 _cu_prove() {
     local cfg="$1" app_path="$2" appid res hhmm inst rel
-    _CU_CODE=""; _CU_MSG=""
+    _CU_CODE=""; _CU_MSG=""; _CU_UNKNOWN=""
     appid=$(_cu_cfg "$cfg" appid)
     if res=$(_cu_history_proof "$appid" "$app_path" "$cfg"); then
         hhmm=$(printf '%s' "$res" | /usr/bin/cut -f2)
@@ -141,7 +141,15 @@ _cu_prove() {
                 _CU_MSG="installed ${inst} is current against the public Chrome ${_CU_PUB} (Google VersionHistory)"
                 return 0
                 ;;
+            unknown)
+                _CU_UNKNOWN="$(_web_unknown_version_message "${_CU_SLUG:-$appid}" "$inst" "$_CU_PUB")"
+                return 1
+                ;;
         esac
+    fi
+    # History exists for this build but its version cannot be compared with the installed one.
+    if res=$(_cu_history_proof "$appid" "$app_path" "$cfg" history-unparseable); then
+        _CU_UNKNOWN="$(_web_unknown_version_message "${_CU_SLUG:-$appid}" "$inst" "$res")"
     fi
     return 1
 }
@@ -154,12 +162,16 @@ _cu_write_note() {
 
 chromium_updater_check() {
     local slug="$1" cfg="$2" app_path inst
+    _CU_SLUG="$slug"
     app_path=$(_cu_app_path "$cfg")
     inst=$(_web_installed_version "$app_path")
     [ -n "$inst" ] || return 0
     if _cu_prove "$cfg" "$app_path"; then
         _cu_write_note
         printf '%s\n' "$inst"
+    elif [ -n "$_CU_UNKNOWN" ]; then
+        _CU_CODE="unknown_version"; _CU_MSG="$_CU_UNKNOWN"
+        _cu_write_note
     fi
     return 0
 }
@@ -264,6 +276,7 @@ _cu_wait_status() {
 
 chromium_updater_apply() {
     local slug="$1" cfg="$2" app_path inst appid cur rel vw vs elapsed=0 wait
+    _CU_SLUG="$slug"
     app_path=$(_cu_app_path "$cfg")
     inst=$(_web_installed_version "$app_path")
     if [ -z "$inst" ]; then
@@ -275,6 +288,10 @@ chromium_updater_apply() {
     # (a) already proven current: no wake at all.
     if _cu_prove "$cfg" "$app_path"; then
         _web_outcome "$_CU_CODE" "$_CU_MSG"
+        return 0
+    fi
+    if [ -n "$_CU_UNKNOWN" ]; then
+        _web_outcome unknown_version "$_CU_UNKNOWN"
         return 0
     fi
 
@@ -291,7 +308,10 @@ chromium_updater_apply() {
     # (d) evaluate.
     case "$_CU_ST" in
         noupdate)
-            if [ -n "$_CU_PUB" ] && [ "$(_web_version_cmp "$_CU_PUB" "$inst")" = "newer" ]; then
+            rel=$([ -n "$_CU_PUB" ] && _web_version_cmp "$_CU_PUB" "$inst")
+            if [ "$rel" = "unknown" ]; then
+                _web_outcome unknown_version "$(_web_unknown_version_message "${_CU_SLUG:-$appid}" "$inst" "$_CU_PUB")"
+            elif [ "$rel" = "newer" ]; then
                 _web_outcome rollout_hold "rollout_hold: ${inst} installed, ${_CU_PUB} public; the updater reports no update for this machine yet (staged rollout)"
             else
                 _web_outcome current_vendor "the updater reports no update (Omaha noupdate)"
@@ -305,6 +325,10 @@ chromium_updater_apply() {
             while :; do
                 cur=$(_web_installed_version "$app_path")
                 if [ -n "$cur" ] && [ "$cur" != "$inst" ]; then
+                    if [ "$(_web_version_cmp "$cur" "$inst")" = "unknown" ]; then
+                        _web_outcome unknown_version "$(_web_unknown_version_message "${_CU_SLUG:-$appid}" "$inst" "$cur")"
+                        return 0
+                    fi
                     _web_outcome updated "updated ${inst} -> ${cur} by the vendor updater"
                     return 0
                 fi
@@ -320,6 +344,10 @@ chromium_updater_apply() {
     # No (usable) response: history written during the wake, then the Chrome feed.
     if _cu_prove "$cfg" "$app_path"; then
         _web_outcome "$_CU_CODE" "$_CU_MSG"
+        return 0
+    fi
+    if [ -n "$_CU_UNKNOWN" ]; then
+        _web_outcome unknown_version "$_CU_UNKNOWN"
         return 0
     fi
     if [ -n "$_CU_PUB" ] && [ "$(_web_version_cmp "$_CU_PUB" "$inst")" = "newer" ]; then

@@ -443,3 +443,53 @@ def test_handler_never_launches_or_quits_anything(w: World) -> None:
     _check(w, w.cfg("gemini", "com.google.geminimacos", app, "Gemini"))
     _apply(w, w.cfg("gemini", "com.google.geminimacos", app, "Gemini"))
     assert w.forbidden_calls() == ""
+
+
+# ------------------- unparseable comparisons => skipped + unknown_version -------------------
+
+def test_check_chrome_unparseable_vs_public_notes_unknown_version(w: World) -> None:
+    app = w.app("Google Chrome", "weird-build")
+    w.vh()
+    r, note = _check(w, w.cfg("chrome", "com.google.chrome", app, "Google Chrome", vh=True))
+    assert r.stdout.strip() == "CAND="
+    code, text = note.rstrip("\n").split("\t", 1)
+    assert code == "unknown_version" and "cannot be compared" in text
+
+
+def test_check_history_version_unparseable_notes_unknown_version(w: World) -> None:
+    app = w.app("Gemini", "weird-build")
+    _write_history(w, [("com.google.geminimacos", "T1", "NO_UPDATE", "also-weird")])
+    r, note = _check(w, w.cfg("gemini", "com.google.geminimacos", app, "Gemini"))
+    assert r.stdout.strip() == "CAND=" and note.startswith("unknown_version\t")
+
+
+def test_apply_unparseable_vs_public_is_unknown_version_without_wake(w: World) -> None:
+    app = w.app("Google Chrome", "weird-build")
+    w.vh()
+    w.updater()
+    _, o = _apply(w, w.cfg("chrome", "com.google.chrome", app, "Google Chrome", vh=True))
+    assert o["RC"] == "0" and o["OUTCOME"] == "unknown_version"
+    assert w.calls_text() == ""
+
+
+def test_apply_noupdate_with_unparseable_public_is_unknown_version(w: World) -> None:
+    app = w.app("Google Chrome", "153.0.8010.53")
+    fixture = (FIXTURES / "googleupdater.log").read_text()
+    w.updater(f"cat >> '{w.user_log}' <<'EOF'\n{fixture}EOF")
+    vh = w.tmp / "vh.json"
+    vh.write_text('{"releases":[{"version":"zzz","fraction":1}]}')
+    w.env["ASCENDO_WEB_CURL_BIN"] = str(fake_curl_serving(w.tmp, vh))
+    _, o = _apply(w, w.cfg("chrome", "com.google.chrome", app, "Google Chrome", vh=True))
+    # public feed with no parseable version yields no public version at all => plain current
+    assert o["OUTCOME"] == "current_vendor"
+
+
+def test_apply_post_wake_changed_but_unparseable_version_is_unknown_version(w: World) -> None:
+    app = w.app("Google Drive", "124.0")
+    w.env["ASCENDO_OMAHA_VERIFY_WAIT"] = "2"
+    w.env["ASCENDO_OMAHA_VERIFY_STEP"] = "1"
+    plist = app / "Contents" / "Info.plist"
+    w.updater(f"cat >> '{w.user_log}' <<'EOF'\n{response_line('com.google.drivefs', 'ok')}EOF\n"
+              f"sed -i '' 's/124.0/nightly-x/' '{plist}'")
+    _, o = _apply(w, w.cfg("gdrive", "com.google.drivefs", app, "Google Drive"))
+    assert o["OUTCOME"] == "unknown_version"

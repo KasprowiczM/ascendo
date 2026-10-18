@@ -103,6 +103,59 @@ def resolve_cfg(app: dict) -> dict:
     }
 
 
+def history_unparseable(history_text: str, appid: str, installed: list[str],
+                        max_age_h: float, now: float | None = None) -> str:
+    """Version of the latest in-age history outcome for appid when it cannot be compared
+    with the installed build (event version or every installed version unparseable);
+    "" otherwise (including when there is no recent event, or it is comparable)."""
+    import json as _j
+    import time as _t
+    now = _t.time() if now is None else now
+    proc_ts: dict = {}
+    starts: dict = {}
+    best = None
+    evs = []
+    for line in history_text.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            ev = _j.loads(line)
+        except Exception:
+            continue
+        if not isinstance(ev, dict):
+            continue
+        t, b, tok = ev.get("eventType"), ev.get("bound"), ev.get("processToken")
+        if t == "UPDATER_PROCESS" and b == "START" and tok:
+            try:
+                proc_ts[tok] = int(str(ev.get("timestamp", "")))
+            except ValueError:
+                pass
+        elif t == "UPDATE" and b == "START" and tok:
+            starts[(tok, str(ev.get("eventId")))] = str(ev.get("appId", ""))
+        elif t == "UPDATE" and b == "END" and tok:
+            evs.append(ev)
+    for ev in evs:
+        tok = ev.get("processToken")
+        ts = proc_ts.get(tok)
+        if starts.get((tok, str(ev.get("eventId")))) != appid or ts is None:
+            continue
+        states = ev.get("updateStates") or []
+        final = states[-1].get("state") if states and isinstance(states[-1], dict) else ""
+        if final not in ("NO_UPDATE", "UPDATED"):
+            continue
+        if best is None or ts >= best[0]:
+            best = (ts, str(ev.get("nextVersion", "")))
+    if best is None:
+        return ""
+    age_h = (now - (best[0] / 1_000_000 - 11644473600)) / 3600.0
+    if age_h < 0 or age_h > max_age_h:
+        return ""
+    if version_key(best[1]) is None or not any(version_key(v) is not None for v in installed if v):
+        return best[1] or "?"
+    return ""
+
+
 def _read_stdin() -> str:
     try:
         return sys.stdin.read()
@@ -127,6 +180,15 @@ def main(argv: list[str]) -> int:
             res = omaha_history_status("\n".join(chunks), appid, installed, max_age)
             if res:
                 print("\t".join(res))
+        elif cmd == "history-unparseable" and len(args) >= 3:
+            chunks = []
+            for path in _read_stdin().splitlines():
+                try:
+                    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                        chunks.append(fh.read())
+                except OSError:
+                    pass
+            print(history_unparseable("\n".join(chunks), args[0], args[2:], float(args[1])))
         elif cmd == "last" and args:
             res = omaha_last_status(_read_stdin(), args[0])
             print(res if res else "")

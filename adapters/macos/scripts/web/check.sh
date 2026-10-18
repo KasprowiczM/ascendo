@@ -248,6 +248,12 @@ while [ "$i" -lt "$WORK_IDX" ]; do
                 COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
                 ;;
             chromium_updater)
+                if [ "${NOTE%%$'\t'*}" = "unknown_version" ]; then
+                    json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
+                    json_add_message "warn" "${NOTE#*$'\t'}" "unknown_version"
+                    COUNT_SKIPPED=$((COUNT_SKIPPED + 1))
+                    continue
+                fi
                 # No proof of currency (no recent updater history, no public-version
                 # match): unknown, NOT current. Apply wakes the updater (no app launch).
                 json_add_item "web:${SLUG}" "$INSTALLED" "" "skipped" "web" "$HANDLER"
