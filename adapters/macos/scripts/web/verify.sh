@@ -228,7 +228,7 @@ while IFS=$'\t' read -r ITEM_ID HANDLER PRE_VERSION TARGET ITEM_STATUS; do
     esac
 
     [ "$NEED_SETTLE" -eq 1 ] || sleep_for=0
-    [ "$sleep_for" -gt 0 ] && sleep "$sleep_for"
+    [ "$sleep_for" -gt 0 ] && _web_sleep "$sleep_for"
 
     POST=$(_web_installed_version "$APP_PATH")
 

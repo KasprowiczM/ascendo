@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `web apply` no longer lists registry apps that are not installed (silent, as
   in check/plan).
 
+## [1.1.0] — 2026-10-19 — macOS_updates parity (v1.4.2→v1.5.4)
+
+Restart-safe softwareupdate, cross-process run lock, unattended sudo gate,
+Rosetta awareness, honest scheduler, `clt` health (13 components), web status
+vocabulary, npm CLI duplicate/retention handling, OpenCode native-first. Full
+notes, env-var table and known limitations: [docs/releases/v1.1.0.md](docs/releases/v1.1.0.md).
+
 ## [1.0.1] — 2026-06-17 — in-app self-update (macOS + Windows + Ubuntu)
 
 ### Added — App self-update (macOS + Windows + Ubuntu)

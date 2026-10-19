@@ -189,9 +189,12 @@ def _verify(sb: Sandbox, run_dir: Path, *, output_dir: Path | None = None, **ext
     out = output_dir if output_dir is not None else run_dir.parent
     run_id = run_dir.name
     sleeps = sb.log / "sleep.log"
-    script(sb.bin / "sleep", f'echo "$*" >> "{sleeps}"\nexit 0\n')
+    # NOT named `sleep`: a PATH-shadowing stub would also swallow the 0.2 s ticks of
+    # ascendo_run_with_timeout's fallback loop, so its 20 s deadline "elapsed" instantly
+    # and killed the osascript stub before it ran (failed only under CPU load).
+    script(sb.bin / "sleep_stub", f'echo "$*" >> "{sleeps}"\nexit 0\n')
     base = dict(ASCENDO_WEB_REGISTRY_PATH=_registry(sb), ASCENDO_WEB_USER_REGISTRY_PATH="",
-                ASCENDO_WEB_SLEEP_BIN=sb.bin / "sleep", ASCENDO_WEB_SEEN_FILE=sb.tmp / "seen.tsv",
+                ASCENDO_WEB_SLEEP_BIN=sb.bin / "sleep_stub", ASCENDO_WEB_SEEN_FILE=sb.tmp / "seen.tsv",
                 ASCENDO_RUNS_DIR=sb.tmp / "no-runs", PYTHONPATH=f"{REPO_ROOT}/core:{ADAPTER}")
     base.update(extra)
     env = sb.env(**base)

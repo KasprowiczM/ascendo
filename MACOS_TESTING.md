@@ -430,3 +430,15 @@ Beyond v0.2.0:
 
 See `PLAN.md` for the forward roadmap and `HANDOFF.md` for the
 per-session log.
+
+## 12. 1.1.0 test notes
+
+- Put `python3` >= 3.11 first on `PATH` before running `adapters/macos/tests`.
+- Tests never run real updates/sudo/launchctl; a conftest tripwire enforces it.
+  Test seams (`ASCENDO_WEB_NOW_EPOCH`, `ASCENDO_ROSETTA_DIR`, `ASCENDO_HOST_ARCH`,
+  `ASCENDO_CLT_DIR`, `ASCENDO_LSAPPINFO_BIN`, ...) are listed in
+  [docs/releases/v1.1.0.md](docs/releases/v1.1.0.md).
+- Stubs must not be named `sleep` on `PATH`: they would swallow the 0.2 s ticks of
+  `ascendo_run_with_timeout`'s fallback loop (use `ASCENDO_WEB_SLEEP_BIN`).
+- Manual check still needed on real hardware: `sudo -n true` after a TTY-less
+  `sudo -v </dev/null` Touch ID warm.

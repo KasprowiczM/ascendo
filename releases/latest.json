@@ -1,14 +1,14 @@
 {
   "schema": "ascendo/update-manifest/v1",
   "channel": "stable",
-  "updated_at": "2026-08-26",
+  "updated_at": "2026-10-19",
   "core": {
-    "version": "1.0.4",
+    "version": "1.1.0",
     "notes_url": "https://github.com/KasprowiczM/ascendo/blob/main/CHANGELOG.md",
-    "published_at": "2026-08-26"
+    "published_at": "2026-10-19"
   },
   "shell": {
-    "version": "1.0.4",
+    "version": "1.1.0",
     "artifacts": {
       "macos_arm64": {
         "dmg_url": "https://github.com/KasprowiczM/ascendo/releases/latest/download/Ascendo-Basic-arm64.dmg",
@@ -31,17 +31,17 @@
   "channels": {
     "stable": {
       "core": {
-        "version": "1.0.4",
+        "version": "1.1.0",
         "notes_url": "https://github.com/KasprowiczM/ascendo/blob/main/CHANGELOG.md"
       },
-      "shell": { "version": "1.0.4" }
+      "shell": { "version": "1.1.0" }
     },
     "beta": {
       "core": {
-        "version": "1.0.4",
+        "version": "1.1.0",
         "notes_url": "https://github.com/KasprowiczM/ascendo/blob/main/CHANGELOG.md"
       },
-      "shell": { "version": "1.0.4" }
+      "shell": { "version": "1.1.0" }
     }
   }
 }

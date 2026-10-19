@@ -45,6 +45,14 @@ adapters/macos/scripts/internet_apps/
 Each handler reads `_apps.toml` for apps using its mechanism. New apps
 become a TOML entry instead of new bash code.
 
+## 1.1.0 notes
+
+macOS_updates v1.4.2→v1.5.4 parity: run lock, restart-safe softwareupdate,
+unattended sudo gate, Rosetta awareness, honest scheduler, `clt` health
+(13 components), web status vocabulary, npm CLI duplicate/retention, OpenCode
+native-first. Env vars and known limitations: `docs/releases/v1.1.0.md`.
+**`python3` >= 3.11 must be first on `PATH`** (system 3.9 has no `tomllib`).
+
 ## System dependencies
 
 - macOS 12+ (Monterey, Tauri minimum)

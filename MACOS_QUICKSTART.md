@@ -789,3 +789,20 @@ bash bin/validate-macos.sh
 Anything red names the failed component (CLI, manager, sidecar parse,
 dashboard endpoint, SPA asset, scheduler, AI backend) so you know
 exactly where to start.
+
+## 16 · 1.1.0 behaviour (macOS_updates parity)
+
+- **Python:** `python3` >= 3.11 must be first on `PATH` (system `/usr/bin/python3`
+  3.9 lacks `tomllib`; `brew install python`).
+- **Runs are exclusive:** a boot-aware lock (`~/.ascendo/run.lock`, override
+  `ASCENDO_RUN_LOCK_FILE`) stops two applies at once.
+- **softwareupdate** (`-R`) is applied last; a restart can end the run.
+- **Unattended** (scheduler / `ASCENDO_UNATTENDED=1`) never prompts for sudo;
+  `ASCENDO_NO_SUDO=1` refuses sudo entirely (`SUDO_UNAVAILABLE`).
+- **Rosetta:** missing Rosetta is an action-required item; `ASCENDO_INSTALL_ROSETTA=1`
+  installs it in the full profile.
+- **Opt-ins:** `ASCENDO_REMOVE_CLI_DUPLICATES`, `ASCENDO_WEB_STAGE_WAIT`,
+  `ASCENDO_MAU_SCOPED_INSTALL`, `ASCENDO_MAU_MUTATE_PREFS`, `ASCENDO_MAS_USER_RETRY`,
+  `ASCENDO_KEEP_CLI_VERSIONS`. Full table and known limitations:
+  [docs/releases/v1.1.0.md](docs/releases/v1.1.0.md). OpenCode is native-first.
+- Doctor now reports 13 components (adds `clt`).
