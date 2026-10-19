@@ -13,7 +13,7 @@ import pytest
 from ascendo.orchestrator import run_lock
 from ascendo.orchestrator.run_lock import RunLockError
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="POSIX-only lock")
+pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="run lock is macOS-only")
 
 
 def _lock(tmp_path: Path) -> Path:
@@ -179,3 +179,7 @@ def test_steal_does_not_delete_a_lock_replaced_by_another_process(tmp_path):
     with pytest.raises(RunLockError):
         run_lock._steal(path, stale_seen, "loser")
     assert "run_id=winner" in path.read_text()      # the winner's lock survived
+
+
+def test_lock_is_macos_only_other_platforms_keep_pre_1_1_0_behaviour():
+    assert run_lock._SUPPORTED == (sys.platform == "darwin")

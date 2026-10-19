@@ -99,14 +99,34 @@ def test_su_restart_labels_are_deferred_too(tmp_path):
 
 
 def test_su_hot_cache_installs_with_sudo_n_never_prompting(tmp_path):
-    """No askpass: installs use `sudo -n` (F1) -- a lapsed cache fails, never prompts."""
+    """Unattended, no askpass: installs use `sudo -n` -- a lapsed cache fails, never prompts."""
     ctx = su_env(tmp_path, "incremental-updates.txt", FAKE_SUDO_STRICT="1")
-    res, sc = _su_run(ctx, tmp_path)
+    res, sc = _su_run(ctx, tmp_path, trigger="scheduler")
     assert res.returncode == 0, res.stderr
     lines = _su_sudo(ctx)
     assert lines and all(l.startswith("-n ") for l in lines), lines
     assert {i.status.value for i in sc.items} == {"success"}
     assert all(" -R " in f" {l} " for l in lines)             # -R rule untouched
+
+
+def test_su_interactive_ppid_keyed_ticket_installs_with_plain_sudo(tmp_path):
+    """C1: a TTY-less sudo ticket is keyed on the parent pid; installs run from
+    a pipeline subshell, so an interactive run must use plain `sudo` (re-prompt
+    / Touch ID works), never `-n`."""
+    ctx = su_env(tmp_path, "incremental-updates.txt", FAKE_SUDO_PPID="1")
+    res, sc = _su_run(ctx, tmp_path)
+    assert res.returncode == 0, res.stderr
+    lines = _su_sudo(ctx)
+    assert lines and not any(l.startswith("-n ") for l in lines), lines
+    assert {i.status.value for i in sc.items} == {"success"}
+
+
+def test_su_unattended_installs_still_use_sudo_n(tmp_path):
+    ctx = su_env(tmp_path, "incremental-updates.txt", FAKE_SUDO_STRICT="1")
+    res, sc = _su_run(ctx, tmp_path, trigger="scheduler")
+    assert res.returncode == 0, res.stderr
+    lines = _su_sudo(ctx)
+    assert lines and all(l.startswith("-n ") for l in lines), lines
 
 
 def test_su_askpass_wired_cold_cache_still_installs_with_dash_a(tmp_path):
@@ -200,12 +220,33 @@ def test_mas_hot_cache_upgrade_uses_sudo_n_inside_the_timeout_wrapper(tmp_path):
     """Task-6 carry-over: sudo can never prompt (SIGTTIN stall) inside
     ascendo_run_with_timeout -- the install is `sudo -n`, and STRICT proves it."""
     fakes = mas_env(tmp_path)
-    res, sc = _mas_run(fakes, tmp_path, env_extra={
+    res, sc = _mas_run(fakes, tmp_path, trigger="scheduler", env_extra={
         "FAKE_SUDO_STRICT": "1", "ASCENDO_FORCE_TIMEOUT_FALLBACK": "1"})
     assert res.returncode == 0, res.stderr
     lines = _mas_sudo(fakes)
     assert len(lines) == 1 and lines[0].startswith("-n env MAS_NO_AUTO_INDEX=1 "), lines
     assert {i.status.value for i in sc.items} == {"success"}
+
+
+def test_mas_interactive_ppid_keyed_ticket_uses_plain_sudo(tmp_path):
+    """C1: under the timeout wrapper the parent pid differs from the warm-up's,
+    so an interactive run must not use `sudo -n`."""
+    fakes = mas_env(tmp_path)
+    res, sc = _mas_run(fakes, tmp_path, env_extra={
+        "FAKE_SUDO_PPID": "1", "ASCENDO_FORCE_TIMEOUT_FALLBACK": "1"})
+    assert res.returncode == 0, res.stderr
+    lines = _mas_sudo(fakes)
+    assert len(lines) == 1 and lines[0].startswith("env MAS_NO_AUTO_INDEX=1 "), lines
+    assert {i.status.value for i in sc.items} == {"success"}
+
+
+def test_mas_unattended_upgrade_still_uses_sudo_n(tmp_path):
+    fakes = mas_env(tmp_path)
+    res, sc = _mas_run(fakes, tmp_path, trigger="scheduler", env_extra={
+        "FAKE_SUDO_STRICT": "1", "ASCENDO_FORCE_TIMEOUT_FALLBACK": "1"})
+    assert res.returncode == 0, res.stderr
+    lines = _mas_sudo(fakes)
+    assert len(lines) == 1 and lines[0].startswith("-n env MAS_NO_AUTO_INDEX=1 "), lines
 
 
 def test_mas_scheduler_trigger_cold_cache_is_unattended_deferral(tmp_path):
@@ -335,3 +376,41 @@ def test_web_no_sudo_policy_never_calls_sudo(tmp_path):
     (item,) = sc["items"]
     assert item["status"] == "skipped", sc
     assert [l for l in sb.forbidden() if l.startswith("sudo ")] == []
+
+
+# -- web (final review I1): only a GENUINE sudo refusal becomes SUDO_UNAVAILABLE --
+
+def _vd_step_under_no_sudo(tmp_path, *, unsign_installed=False, ck="-", cs="-"):
+    """Run _web_vendor_direct_step with ASCENDO_NO_SUDO=1 against a NON-writable
+    apps dir (the situation the old `[ ! -w dir ]` heuristic mislabelled)."""
+    from .test_web_vendor_install import TEAM, Sandbox, prime  # noqa: PLC0415
+    sb = Sandbox(tmp_path)
+    old, _ = prime(sb, new_team=TEAM)
+    if unsign_installed:
+        (old / "Contents" / "_sig").unlink()
+    sb.apps.chmod(0o555)
+    try:
+        r = sb.bash(
+            f'_web_vendor_direct_step example "{old}" 1.0 2.0 https://dl.example.com/App.zip zip '
+            f'"{ck}" "{cs}" dl.example.com; echo "rc=$? outcome=${{ASCENDO_WEB_OUTCOME:-}}"',
+            ASCENDO_NO_SUDO="1", ASCENDO_SUDO_WARM_DISABLE="1")
+    finally:
+        sb.apps.chmod(0o755)
+    return r.stdout.strip().splitlines()[-1], sb
+
+
+def test_web_no_sudo_checksum_mismatch_is_not_relabelled_sudo_unavailable(tmp_path):
+    line, sb = _vd_step_under_no_sudo(tmp_path, ck="sha256hex", cs="0" * 64)
+    assert "rc=1 " in line and "sudo_unavailable" not in line, line
+    assert sb.forbidden() == []
+
+
+def test_web_no_sudo_identity_refusal_is_not_relabelled_sudo_unavailable(tmp_path):
+    line, sb = _vd_step_under_no_sudo(tmp_path, unsign_installed=True)
+    assert "rc=1 " in line and "sudo_unavailable" not in line, line
+
+
+def test_web_no_sudo_genuine_refusal_is_still_sudo_unavailable(tmp_path):
+    line, sb = _vd_step_under_no_sudo(tmp_path)
+    assert line == "rc=95 outcome=sudo_unavailable", line
+    assert not [l for l in sb.forbidden() if l.startswith("sudo ")]

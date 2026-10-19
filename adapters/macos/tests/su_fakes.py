@@ -130,7 +130,21 @@ def su_env(tmp_path: Path, fixture: str = "incremental-updates.txt", *,
         # FAKE_SUDO_COLD=1 simulates a lapsed / never-warmed timestamp cache.
         "if [ \"$1\" = '-n' ] && { [ \"$2\" = 'true' ] || [ \"$2\" = '-v' ]; }; then\n"
         "  [ -n \"${FAKE_SUDO_COLD:-}\" ] && exit 1\n"
+        # FAKE_SUDO_PPID=1: TTY-less ticket keyed on the PARENT pid (real sudo,
+        # timestamp_type=tty without a tty). The first probe "warms" it for its
+        # parent; a later `-n` call from another parent finds no ticket.
+        "  if [ -n \"${FAKE_SUDO_PPID:-}\" ]; then\n"
+        f"    t={tmp_path}/ticket.pid\n"
+        "    [ -f \"$t\" ] || echo \"$PPID\" > \"$t\"\n"
+        "    [ \"$(cat \"$t\")\" = \"$PPID\" ] || exit 1\n"
+        "  fi\n"
         "  exit 0\n"
+        "fi\n"
+        "if [ -n \"${FAKE_SUDO_PPID:-}\" ] && [ \"$1\" = '-n' ]; then\n"
+        f"  t={tmp_path}/ticket.pid\n"
+        "  if [ ! -f \"$t\" ] || [ \"$(cat \"$t\")\" != \"$PPID\" ]; then\n"
+        "    echo 'sudo: a password is required' >&2; exit 1\n"
+        "  fi\n"
         "fi\n"
         f"printf '%s\\n' \"$*\" >> {sudo_log}\n"
         # FAKE_SUDO_STRICT=1: a real sudo would PROMPT here (no -A / -n).

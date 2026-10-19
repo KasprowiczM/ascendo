@@ -13,8 +13,9 @@
 # (_ascendo_sudo_gate) defers EVERY label softly -- `skipped` + SUDO_UNAVAILABLE,
 # exit 0, no install command run -- when ASCENDO_NO_SUDO=1 (even with a hot
 # cache) or no askpass helper is wired and `sudo -n true` fails. With the gate
-# open and no askpass, installs use `sudo -n` (a lapsed cache fails, never
-# prompts). The orchestrator also runs this apply LAST, and skips it when
+# open and no askpass, UNATTENDED installs use `sudo -n` (a lapsed cache fails,
+# never prompts); interactive installs use plain `sudo` (the TTY-less ticket is
+# keyed on the parent pid, which differs inside the install pipeline). The orchestrator also runs this apply LAST, and skips it when
 # brew/mas/npm/web apply failed (SYSTEM_UPDATE_DEFERRED).
 #
 # Strategy A (sudo -A always): if no SUDO_ASKPASS helper is set, sudo -A
@@ -410,9 +411,14 @@ if ! _ascendo_sudo_gate; then
     json_save "$OUTPUT_DIR"
     exit 0
 fi
-# From here on every sudo call is non-interactive (`sudo -n` unless an askpass
-# helper is wired): a lapsed cache must fail the install, never prompt.
-export ASCENDO_SUDO_NONINTERACTIVE=1
+# UNATTENDED runs only: every sudo call is `sudo -n` (unless an askpass helper
+# is wired) so a lapsed cache fails the install instead of prompting in a
+# background process group. Interactive runs keep plain `sudo`: a TTY-less
+# sudo ticket is keyed on the PARENT pid, and these installs run from a
+# pipeline subshell / under `timeout`, so `-n` would miss the warmed ticket.
+if _ascendo_sudo_unattended; then
+    export ASCENDO_SUDO_NONINTERACTIVE=1
+fi
 
 mkdir -p "$OUTPUT_DIR/$RUN_ID" 2>/dev/null || true
 _log_path="$OUTPUT_DIR/$RUN_ID/apply__softwareupdate.log"

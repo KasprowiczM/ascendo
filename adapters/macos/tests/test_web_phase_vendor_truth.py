@@ -595,9 +595,12 @@ def run_verify(sb: Sandbox, reg: Path, run_dir: Path, **extra):
     """Run verify.sh against the apply sidecar produced by run_apply in `run_dir`."""
     out = run_dir.parent
     run_id = run_dir.name
-    stub = script(sb.bin / "sleep", f'echo "$*" >> "{sb.log}/verify_sleep.log"\nexit 0\n')
+    # verify.sh waits through `_web_sleep` -> $ASCENDO_WEB_SLEEP_BIN (a PATH `sleep`
+    # stub is never consulted: it would leave the "must not sleep" asserts blind).
+    stub = script(sb.bin / "verify_sleep_stub", f'echo "$*" >> "{sb.log}/verify_sleep.log"\nexit 0\n')
     assert stub.exists()
     env = sb.env(ASCENDO_WEB_REGISTRY_PATH=reg, ASCENDO_WEB_USER_REGISTRY_PATH="",
+                 ASCENDO_WEB_SLEEP_BIN=stub,
                  PYTHONPATH=f"{REPO_ROOT}/core:{ADAPTER}", **extra)
     res = subprocess.run(["bash", str(SCRIPTS / "verify.sh"), "--run-id", run_id, "--trigger", "cli",
                           "--profile", "full", "--output-dir", str(out)],

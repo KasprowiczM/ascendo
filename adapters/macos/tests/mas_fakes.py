@@ -106,7 +106,19 @@ _FAKE_SUDO = r'''#!/usr/bin/env bash
 # FAKE_SUDO_COLD=1 simulates a lapsed / never-warmed timestamp cache.
 if [ "$1" = '-n' ] && { [ "$2" = 'true' ] || [ "$2" = '-v' ]; }; then
   [ -n "${FAKE_SUDO_COLD:-}" ] && exit 1
+  # FAKE_SUDO_PPID=1: TTY-less ticket keyed on the PARENT pid (see su_fakes).
+  if [ -n "${FAKE_SUDO_PPID:-}" ]; then
+    t="$FAKE_MAS_STATE/ticket.pid"
+    [ -f "$t" ] || echo "$PPID" > "$t"
+    [ "$(cat "$t")" = "$PPID" ] || exit 1
+  fi
   exit 0
+fi
+if [ -n "${FAKE_SUDO_PPID:-}" ] && [ "$1" = '-n' ]; then
+  t="$FAKE_MAS_STATE/ticket.pid"
+  if [ ! -f "$t" ] || [ "$(cat "$t")" != "$PPID" ]; then
+    echo 'sudo: a password is required' >&2; exit 1
+  fi
 fi
 printf '%s\n' "$*" >> "$FAKE_MAS_STATE/sudo.log"
 # FAKE_SUDO_STRICT=1: a real sudo would PROMPT here (no -A / -n).

@@ -384,9 +384,10 @@ _ascendo_sudo_unattended() {
 #     * no askpass helper is wired AND `sudo -n true` fails (cold cache).
 #   The criterion is the cache/askpass state AFTER the warm-up, NOT "no tty":
 #   the TTY-less Touch-ID flow (`sudo -v </dev/null`, Sesja 81) leaves a hot
-#   cache and must keep working. Assumption (validated with fakes): `sudo -n`
-#   honours the timestamp the TTY-less `sudo -v </dev/null` just created for
-#   this script's children (same ppid/session ticket).
+#   cache and must keep working. NB: a TTY-less ticket is keyed on the PARENT
+#   pid, so `sudo -n` only works for direct children of the warming script;
+#   apply steps therefore use `-n` ONLY in UNATTENDED runs (interactive installs
+#   use plain `sudo`, which can re-prompt / Touch ID without a tty).
 ASCENDO_SUDO_GATE_CODE=""
 ASCENDO_SUDO_GATE_TEXT=""
 _ascendo_sudo_gate() {

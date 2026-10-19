@@ -108,6 +108,11 @@ _vd_try() {
         # Root work is switched off (policy / unattended run): remember that the
         # privilege step was refused so the caller reports a soft deferral.
         _VD_SUDO_REFUSED=1
+        # _vd_try often runs inside $(...) where the variable is lost: also leave
+        # a marker in the caller-owned file so the refusal survives the subshell.
+        if [ -n "${_VD_REFUSE_FILE:-}" ]; then
+            printf '1' >> "$_VD_REFUSE_FILE" 2>/dev/null || true
+        fi
         return 1
     fi
     if command -v _ascendo_sudo >/dev/null 2>&1; then
@@ -117,6 +122,7 @@ _vd_try() {
     return 1
 }
 _VD_SUDO_REFUSED=0
+_VD_REFUSE_FILE=""
 
 _vd_rm_rf() {
     local p

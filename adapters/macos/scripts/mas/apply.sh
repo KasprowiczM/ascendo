@@ -204,8 +204,14 @@ if ! _ascendo_sudo_gate; then
     done
     exit 0
 fi
-# From here on every sudo call is non-interactive (see _ascendo_sudo_prefix).
-export ASCENDO_SUDO_NONINTERACTIVE=1
+# UNATTENDED runs only: every sudo call is `sudo -n` (unless an askpass helper
+# is wired) so a lapsed cache fails the install instead of prompting in a
+# background process group. Interactive runs keep plain `sudo`: a TTY-less
+# sudo ticket is keyed on the PARENT pid, and these installs run from a
+# pipeline subshell / under `timeout`, so `-n` would miss the warmed ticket.
+if _ascendo_sudo_unattended; then
+    export ASCENDO_SUDO_NONINTERACTIVE=1
+fi
 
 # Total count for live-stream progress accounting.
 TOTAL_ITEMS=0

@@ -42,7 +42,7 @@ def test_clt_missing(tmp_path, monkeypatch):
 def test_clt_stale(tmp_path, monkeypatch):
     _setup(tmp_path, monkeypatch, pkg_version="26.1.0.0.1", os_version="27.0")
     s = MacOSAdapter()._clt_status()
-    assert s.startswith("degraded:") and "stale" in s and "softwareupdate --install -a" in s
+    assert s.startswith("degraded:") and "stale" in s and "xcode-select --install" in s and "install -a" not in s
 
 
 def test_clt_orphan_without_receipt(tmp_path, monkeypatch):

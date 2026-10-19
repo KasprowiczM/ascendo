@@ -337,7 +337,8 @@ class MacOSAdapter(IAdapter):
         os_major = _run("sw_vers", "/usr/bin/sw_vers", "-productVersion").strip().split(".", 1)[0]
         if os_major.isdigit() and int(clt_major) < int(os_major):
             return (f"degraded: Command Line Tools stale (CLT {version} < macOS {os_major}) - "
-                    "run: softwareupdate --install -a, or xcode-select --install")
+                    "run: xcode-select --install, or install the specific "
+                    "'Command Line Tools for Xcode-...' label from softwareupdate --list")
         return f"ok: Command Line Tools {version}"
 
     def _web_status(self) -> str:

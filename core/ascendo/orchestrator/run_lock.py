@@ -9,9 +9,10 @@ Port of macOS_updates ``lib/python/run_lock.py`` with Ascendo differences:
 * re-entrancy is keyed on ``(pid, run_id)``, not the pid alone -- dashboard
   worker threads share one pid (in-process overlap is already refused by the
   run registry);
-* liveness is probed with ``os.kill(pid, 0)`` which is only safe on POSIX
-  (on Windows it would *terminate* the process), so the feature is a no-op on
-  ``win32`` -- Windows and Ubuntu behaviour is unchanged;
+* the lock is a macOS-adapter feature: it is active on ``darwin`` ONLY and a
+  no-op everywhere else (Windows and Ubuntu keep their pre-1.1.0 behaviour of
+  no lock). Liveness is probed with ``os.kill(pid, 0)``, which is only safe on
+  POSIX (on Windows it would *terminate* the process);
 * a lock is STALE (stolen) when its owner is dead, when it was written before
   the machine booted (a lock left behind by the very reboot a deferred
   ``softwareupdate -R`` can trigger, whose pid may have been reused), or when
@@ -40,7 +41,7 @@ from pathlib import Path
 LOCK_ENV_VAR = "ASCENDO_RUN_LOCK_FILE"
 LOCK_FILENAME = "run.lock"
 STALE_AFTER_SECONDS = 6 * 3600
-_SUPPORTED = sys.platform != "win32"
+_SUPPORTED = sys.platform == "darwin"
 
 
 class RunLockError(RuntimeError):
@@ -218,7 +219,7 @@ def _steal(path: Path, seen: dict, run_id: str) -> None:
     """Replace a stale lock. Serialised by an flock guard; the owner is
     re-read inside the guard so a lock another process just (re)created is
     never deleted."""
-    import fcntl  # noqa: PLC0415 -- POSIX only; the whole feature is gated on win32
+    import fcntl  # noqa: PLC0415 -- POSIX only; the whole feature is gated on darwin
 
     guard = path.with_name(path.name + ".guard")
     fd = os.open(str(guard), os.O_CREAT | os.O_WRONLY, 0o600)

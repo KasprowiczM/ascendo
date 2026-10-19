@@ -734,13 +734,20 @@ _web_open_hidden() {
 # caller can choose its own fallback.
 _web_vendor_direct_step() {
     local slug="$1" app="$2" inst="$3" R="$4" url="$5" art="$6" ck="$7" cs="$8" host="$9"
-    local vrc=0 post rel
+    local vrc=0 post rel refused=0
     _VD_SUDO_REFUSED=0
+    # The refusal is recorded by _vd_try, which may run inside $(...) (a variable
+    # would be lost): hand it a marker file that survives subshells.
+    _VD_REFUSE_FILE="$(/usr/bin/mktemp "${TMPDIR:-/tmp}/ascendo_vd_refused.XXXXXX" 2>/dev/null)" || _VD_REFUSE_FILE=""
     _web_vendor_install "$slug" "$url" "$art" "$ck" "$cs" "$host" "$R" "$app" || vrc=$?
-    # _vd_try may run inside $(...) (the flag is then lost), so a root-switched-off
-    # run whose install location is not user-writable counts as refused too.
-    if [ "$vrc" -ne 0 ] && [ "$vrc" -ne 4 ] && [ "${ASCENDO_NO_SUDO:-0}" = "1" ] \
-       && { [ "${_VD_SUDO_REFUSED:-0}" = "1" ] || [ ! -w "$(dirname "$app")" ]; }; then
+    if [ "${_VD_SUDO_REFUSED:-0}" = "1" ] || { [ -n "$_VD_REFUSE_FILE" ] && [ -s "$_VD_REFUSE_FILE" ]; }; then
+        refused=1
+    fi
+    [ -n "$_VD_REFUSE_FILE" ] && rm -f "$_VD_REFUSE_FILE"
+    _VD_REFUSE_FILE=""
+    # Only a genuine privilege refusal is a soft deferral; every other failure
+    # (checksum / identity / download rc) stays a failure, NO_SUDO or not.
+    if [ "$vrc" -ne 0 ] && [ "$vrc" -ne 4 ] && [ "${ASCENDO_NO_SUDO:-0}" = "1" ] && [ "$refused" = "1" ]; then
         _web_outcome sudo_unavailable "the install needs administrator rights and root work is switched off (ASCENDO_NO_SUDO); installed ${inst}, vendor ${R}"
         return 95
     fi
