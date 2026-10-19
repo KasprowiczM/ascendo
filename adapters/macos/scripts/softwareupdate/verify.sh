@@ -99,7 +99,7 @@ fi
 
 # -- extract apply items to verify: status success OR triggered ---------------
 # (`triggered` = restart label staged with -R; it completes after the reboot.)
-APPLY_SUCCESS_IDS="$(jq -r '.items[]? | select(.status=="success" or .status=="triggered") | .id' "$APPLY_SIDECAR" 2>/dev/null)"
+APPLY_SUCCESS_IDS="$(jq -r '.items[]? | select(.status=="success" or .status=="triggered") | .id | select(startswith("rosetta:") | not)' "$APPLY_SIDECAR" 2>/dev/null)"
 
 if [ -z "$APPLY_SUCCESS_IDS" ]; then
     json_add_message "info" "No successful or triggered apply items found in apply__softwareupdate.json; nothing to verify."

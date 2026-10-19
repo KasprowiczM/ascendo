@@ -462,3 +462,36 @@ def test_report_outside_section_matches_aliases_on_up_to_date_side(run_dir: Path
     md = _outside_run(run_dir, check_id="web:google-chrome", apply_id="web:chrome",
                       apply_status=ItemStatus.UP_TO_DATE)
     assert "## Updated outside Ascendo (1)" in md
+
+
+# ── Check-phase allowlisted tokens (Task 17 fix, Ruling 49) ─────────────────
+
+
+def _rosetta_check(run_dir: Path, token_reason: str = "rosetta_missing"):
+    started = datetime(2026, 5, 8, 22, 47, tzinfo=timezone.utc)
+    _write(run_dir, _build_sidecar(
+        phase=Phase.CHECK, category=SourceType.WEB, started=started,
+        items=[_build_item(item_id="web:oldapp", category=SourceType.WEB,
+                           status=ItemStatus.UP_TO_DATE, current="1.0", target="1.0")],
+        messages=[Message(level=MessageLevel.WARN, text=(
+            "oldapp: Rosetta is not installed - this Intel-only app will not launch | "
+            f"ASCENDO-ACTION-REQUIRED reason={token_reason} cur=1.0 cand=?"))]))
+    _write(run_dir, _build_sidecar(
+        phase=Phase.APPLY, category=SourceType.WEB, started=started,
+        items=[_build_item(item_id="web:other", category=SourceType.WEB,
+                           status=ItemStatus.UP_TO_DATE, current="2.0", target="2.0")]))
+
+
+def test_check_rosetta_missing_reaches_collector_and_report(run_dir: Path) -> None:
+    from ascendo.orchestrator.report import collect_action_required
+    _rosetta_check(run_dir)
+    acts = collect_action_required(run_dir)
+    assert [(a.category, a.slug, a.reason) for a in acts] == [("web", "oldapp", "rosetta_missing")]
+    md = generate_apply_report(run_dir)
+    assert "Action required" in md and "Rosetta" in md
+
+
+def test_check_tokens_outside_allowlist_are_ignored(run_dir: Path) -> None:
+    from ascendo.orchestrator.report import collect_action_required
+    _rosetta_check(run_dir, token_reason="self_update")
+    assert collect_action_required(run_dir) == []

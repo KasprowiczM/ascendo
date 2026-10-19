@@ -302,6 +302,16 @@ class MacOSAdapter(IAdapter):
         """
         clt_dir = Path(os.environ.get("ASCENDO_CLT_DIR") or "/Library/Developer/CommandLineTools")
         if not clt_dir.is_dir():
+            sel = ""
+            try:
+                exe = shutil.which("xcode-select") or "/usr/bin/xcode-select"
+                res = subprocess.run([exe, "-p"], capture_output=True, text=True,
+                                     timeout=10, check=False)
+                sel = res.stdout.strip() if res.returncode == 0 else ""
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            if ".app/Contents/Developer" in sel:
+                return f"ok: Xcode selected ({sel}); Command Line Tools not required"
             return "unavailable: Command Line Tools missing - run: xcode-select --install"
 
         def _run(name: str, fallback: str, *args: str) -> str:

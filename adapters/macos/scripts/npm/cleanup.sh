@@ -67,14 +67,19 @@ else
     if [ -x "$HOME/.local/bin/agy" ] && "$HOME/.local/bin/agy" --version </dev/null >/dev/null 2>&1; then
         _agy_ok=1
     fi
-    _pruned="$(PYTHONPATH="$ADAPTER_LIB${PYTHONPATH:+:$PYTHONPATH}" python3 - "$HOME" "$_agy_ok" <<'PY' 2>/dev/null
+    _prune_err="$(mktemp 2>/dev/null || echo /dev/null)"
+    _pruned="$(PYTHONPATH="$ADAPTER_LIB${PYTHONPATH:+:$PYTHONPATH}" python3 - "$HOME" "$_agy_ok" <<'PY' 2>"$_prune_err"
 import sys
 from cli_retention import prune_all
 for name, count, mb in prune_all(sys.argv[1], is_agy_working=sys.argv[2] == "1"):
     if count > 0:
         print(f"{count}|{name}|{mb}")
 PY
-)" || _pruned=""
+)" || {
+        json_add_message "warn" "CLI version pruning failed: $(tail -n 3 "$_prune_err" 2>/dev/null | tr '\n' ' ' | cut -c1-300)"
+        _pruned=""
+    }
+    [ "$_prune_err" = "/dev/null" ] || rm -f "$_prune_err"
     if [ -n "$_pruned" ]; then
         while IFS='|' read -r _cnt _name _mb; do
             [ -n "$_cnt" ] || continue

@@ -56,6 +56,25 @@ def test_bootstrap_failure_is_an_error(tmp_path):
     calls = log.read_text()
     assert "launchctl load -w" in calls          # legacy fallback was attempted
     assert "launchctl enable" not in calls
+    # A failed install leaves nothing behind: no plist, no schedules JSON.
+    assert not (tmp_path / "home/Library/LaunchAgents/dev.ascendo.nightly.plist").exists()
+    assert not (tmp_path / "home/Library/Application Support/Ascendo/schedules/nightly.json").exists()
+
+
+def test_list_after_failed_install_shows_nothing(tmp_path):
+    bindir, _ = _fakes(tmp_path, bootstrap_rc=5, print_rc=113, load_rc=1)
+    r, _ = _install(tmp_path, bindir)
+    assert r.returncode == 30
+    out = tmp_path / "list.json"
+    env = dict(os.environ)
+    env["ASCENDO_HOME_OVERRIDE"] = str(tmp_path / "home")
+    env["PATH"] = f"{bindir}{os.pathsep}{env['PATH']}"
+    r2 = subprocess.run(["bash", str(SCRIPT), "--action", "list", "--output-path", str(out)],
+                        capture_output=True, text=True, env=env)
+    assert r2.returncode == 0, r2.stderr
+    data = json.loads(out.read_text())
+    items = data if isinstance(data, list) else data.get("schedules", data.get("items", []))
+    assert not [i for i in items if "nightly" in json.dumps(i)]
 
 
 def test_failed_bootstrap_rc_ignored_when_job_is_loaded(tmp_path):

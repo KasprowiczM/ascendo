@@ -7,8 +7,14 @@
 #   ascendo_rosetta_installed          rc 0 when Rosetta 2 is present
 #       ASCENDO_ROSETTA_PRESENT=1|0    test seam (skips the real probes)
 #       ASCENDO_ROSETTA_DIR            override of /Library/Apple/usr/share/rosetta
-#   ascendo_app_architecture <app>     prints universal|arm64|x86_64-only|unknown
-#   ascendo_is_intel_only <app>        rc 0 when the bundle is x86_64-only
+#   ascendo_app_architecture <app> [sp_arch_kind]
+#                                      prints universal|arm64|x86_64-only|unknown.
+#                                      THE one Intel-only detector (lipo on the
+#                                      bundle executable). system_profiler's
+#                                      arch_kind (arch_i64|arch_arm|arch_arm_i64)
+#                                      is consulted only as a fallback when lipo
+#                                      is unavailable or cannot decide.
+#   ascendo_is_intel_only <app> [sp_arch_kind]   rc 0 when the bundle is x86_64-only
 #   ascendo_rosetta_needed <app>       rc 0 when Intel-only AND Apple silicon AND no Rosetta
 #       ASCENDO_HOST_ARCH              test seam for `uname -m`
 
@@ -22,7 +28,21 @@ ascendo_rosetta_installed() {
 }
 
 ascendo_app_architecture() {
+    local _r
+    _r="$(_ascendo_lipo_architecture "$1")"
+    if [ "$_r" = "unknown" ]; then
+        case "${2:-}" in
+            arch_i64)      _r="x86_64-only" ;;
+            arch_arm)      _r="arm64" ;;
+            arch_arm_i64)  _r="universal" ;;
+        esac
+    fi
+    echo "$_r"
+}
+
+_ascendo_lipo_architecture() {
     local _app="$1" _exe_name="" _exe="" _f _archs=""
+    command -v lipo >/dev/null 2>&1 || { echo "unknown"; return 0; }
     [ -d "$_app" ] || { echo "unknown"; return 0; }
     if [ -f "$_app/Contents/Info.plist" ]; then
         _exe_name="$(defaults read "$_app/Contents/Info" CFBundleExecutable 2>/dev/null || true)"
@@ -45,7 +65,7 @@ ascendo_app_architecture() {
 }
 
 ascendo_is_intel_only() {
-    [ "$(ascendo_app_architecture "$1")" = "x86_64-only" ]
+    [ "$(ascendo_app_architecture "$1" "${2:-}")" = "x86_64-only" ]
 }
 
 ascendo_rosetta_needed() {

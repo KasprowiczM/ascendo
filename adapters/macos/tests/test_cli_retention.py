@@ -138,7 +138,7 @@ def _cleanup(tmp_path, *extra, env_extra=None):
     npm.write_text("#!/bin/sh\n[ \"$1\" = --version ] && echo 11.0.0\nexit 0\n")
     npm.chmod(0o755)
     py = os.popen("command -v python3").read().strip()
-    (fb / "python3").symlink_to(py) if not (fb / "python3").exists() else None
+    (fb / "python3").symlink_to(py) if not (fb / "python3").exists() and not (fb / "python3").is_symlink() else None
     env = {k: v for k, v in os.environ.items()
            if not k.startswith(("ASCENDO_", "MAC_UPDATE_", "BUN_INSTALL"))}
     env.update({"HOME": str(home), "PATH": f"{fb}:/usr/bin:/bin:/usr/sbin:/sbin",
@@ -189,3 +189,18 @@ def test_cleanup_keep_env_alias(tmp_path):
     root = _seed_codex(tmp_path / "home")
     _cleanup(tmp_path, env_extra={"MAC_UPDATE_KEEP_CLI_VERSIONS": "1"})
     assert len(list(root.iterdir())) == 3
+
+
+def test_cleanup_surfaces_helper_failure_as_warning(tmp_path):
+    _seed_codex(tmp_path / "home")
+    # python3 wrapper that fails only for the retention helper script.
+    fb = tmp_path / "fbin"
+    fb.mkdir(exist_ok=True)
+    real = os.popen("command -v python3").read().strip()
+    w = fb / "python3"
+    w.write_text(f"#!/bin/bash\nif [ \"$1\" = - ]; then s=$(cat); case \"$s\" in *cli_retention*) echo boom-import >&2; exit 1;; esac; printf '%s' \"$s\" | exec {real} \"$@\"; fi\nexec {real} \"$@\"\n")
+    w.chmod(0o755)
+    _, r, sc = _cleanup(tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert any(m["level"] == "warn" and "CLI version pruning failed" in m["text"]
+               and "boom-import" in m["text"] for m in sc["messages"])

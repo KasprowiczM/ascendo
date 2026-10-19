@@ -518,8 +518,14 @@ def _slug_from_token_message(text: str) -> str:
     return head.strip() or "?"
 
 
+# Reasons a CHECK-phase token may raise on its own (nothing in apply/verify can
+# know them: e.g. an Intel-only app that cannot launch without Rosetta).
+_CHECK_ACTION_REASONS = frozenset({"rosetta_missing"})
+
+
 def _action_items(
     apply_sidecars: list[Sidecar], verify_sidecars: list[Sidecar] | None = None,
+    check_sidecars: list[Sidecar] | None = None,
 ) -> list[ActionItem]:
     """Every item the user must act on, deduped by (category, slug).
 
@@ -596,6 +602,20 @@ def _action_items(
             by_key[(category, slug)] = _make_action(
                 category, slug, m.group(1), m.group(2), m.group(3))
 
+    # Pass 4 -- narrow allowlist of CHECK-phase tokens; never overrides the
+    # precise apply/verify rows (dedupe by (category, slug)).
+    for sc in check_sidecars or []:
+        category = sc.category.value
+        for text in _token_messages(sc):
+            m = ACTION_RE.search(text)
+            if not m or m.group(1) not in _CHECK_ACTION_REASONS:
+                continue
+            slug = _slug_from_token_message(text)
+            if (category, slug) in by_key:
+                continue
+            by_key[(category, slug)] = _make_action(
+                category, slug, m.group(1), m.group(2), m.group(3))
+
     return sorted(by_key.values(), key=lambda a: (a.name.lower(), a.category))
 
 
@@ -613,6 +633,7 @@ def collect_action_required(run_dir: Path) -> list[ActionItem]:
             return []
         apply_sidecars: list[Sidecar] = []
         verify_sidecars: list[Sidecar] = []
+        check_sidecars: list[Sidecar] = []
         for path in list_run_sidecars(run_dir):
             try:
                 sc = read_sidecar(path)
@@ -622,7 +643,9 @@ def collect_action_required(run_dir: Path) -> list[ActionItem]:
                 apply_sidecars.append(sc)
             elif sc.phase is Phase.VERIFY:
                 verify_sidecars.append(sc)
-        return _action_items(apply_sidecars, verify_sidecars)
+            elif sc.phase is Phase.CHECK:
+                check_sidecars.append(sc)
+        return _action_items(apply_sidecars, verify_sidecars, check_sidecars)
     except Exception:  # noqa: BLE001
         _log.exception("collect_action_required failed for %s", run_dir)
         return []
@@ -747,7 +770,7 @@ def _generate_apply_report_unsafe(
     n_failed = sum(len(b.failed) for b in buckets.values())
 
     # The consolidated "you must act on these" list (any category).
-    action_items = _action_items(apply_sidecars, verify_sidecars)
+    action_items = _action_items(apply_sidecars, verify_sidecars, check_sidecars)
     action_keys = {(a.category, a.slug) for a in action_items}
     # Manufacturer warnings (stale vendor feed) and soft system deferrals are
     # warnings: counted, listed by name, never "failed" or "pending". A

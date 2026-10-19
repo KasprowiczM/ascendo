@@ -179,7 +179,7 @@ ROS_STATUS=""; ROS_TEXT=""; ROS_LEVEL="info"; ROS_CODE=""
 _rosetta_step() {
     [ "${ASCENDO_INSTALL_ROSETTA:-0}" = "1" ] || return 0
     [ "${ASCENDO_HOST_ARCH:-$HOST_ARCH}" = "arm64" ] || return 0
-    case "$PROFILE_NAME" in safe|quick) return 0 ;; esac
+    [ "$PROFILE_NAME" = "full" ] || return 0
     [ "${ASCENDO_SAFE_MODE:-}" = "true" ] && return 0
     ascendo_rosetta_installed && return 0
     if [ "$DRY_RUN" -eq 1 ]; then

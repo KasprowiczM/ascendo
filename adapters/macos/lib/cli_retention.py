@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import re
 import shutil
-from typing import List, Optional, Set, Tuple
 
 
 CODEX_RELEASE_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+-[a-z0-9_]+-apple-darwin$")
@@ -13,10 +12,10 @@ CURSOR_AGENT_VERSION_RE = re.compile(r"^[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9a-f]+$"
 AGY_OLD_RE = re.compile(r"^agy\.[0-9]+\.old$")
 
 
-def _protected_version_dirs(root_real: str, link_paths: List[str]) -> Optional[Set[str]]:
+def _protected_version_dirs(root_real: str, link_paths: list[str]) -> set[str] | None:
     """Top-level version dirs under root that any link resolves into.
     Returns None when a link exists but resolves outside root (caller must then prune nothing)."""
-    protected: Set[str] = set()
+    protected: set[str] = set()
     for p in link_paths:
         if not (os.path.exists(p) or os.path.islink(p)):
             continue
@@ -45,7 +44,7 @@ def get_dir_size(path: str) -> int:
     return total
 
 
-def prune_codex(home: str) -> Tuple[int, int]:
+def prune_codex(home: str) -> tuple[int, int]:
     """Prune old Codex releases.
 
     Root: $HOME/.codex/packages/standalone/releases
@@ -64,7 +63,7 @@ def prune_codex(home: str) -> Tuple[int, int]:
     if protected is None:
         return 0, 0
 
-    candidates: List[Tuple[float, str, str]] = []
+    candidates: list[tuple[float, str, str]] = []
     try:
         entries = os.listdir(root)
     except OSError:
@@ -86,7 +85,7 @@ def prune_codex(home: str) -> Tuple[int, int]:
             mtime = 0.0
         candidates.append((mtime, full_path, cand_real))
 
-    non_protected: List[Tuple[float, str, str]] = [
+    non_protected: list[tuple[float, str, str]] = [
         c for c in candidates if c[2] not in protected
     ]
     # Sort newest first by mtime
@@ -113,7 +112,7 @@ def prune_codex(home: str) -> Tuple[int, int]:
     return pruned_count, freed_bytes
 
 
-def prune_cursor_agent(home: str) -> Tuple[int, int]:
+def prune_cursor_agent(home: str) -> tuple[int, int]:
     """Prune old cursor-agent versions.
 
     Root: $HOME/.local/share/cursor-agent/versions
@@ -135,7 +134,7 @@ def prune_cursor_agent(home: str) -> Tuple[int, int]:
     if protected is None:
         return 0, 0
 
-    candidates: List[Tuple[float, str, str]] = []
+    candidates: list[tuple[float, str, str]] = []
     try:
         entries = os.listdir(root)
     except OSError:
@@ -156,7 +155,7 @@ def prune_cursor_agent(home: str) -> Tuple[int, int]:
             mtime = 0.0
         candidates.append((mtime, full_path, cand_real))
 
-    non_protected: List[Tuple[float, str, str]] = [
+    non_protected: list[tuple[float, str, str]] = [
         c for c in candidates if c[2] not in protected
     ]
     non_protected.sort(key=lambda c: c[0], reverse=True)
@@ -181,7 +180,7 @@ def prune_cursor_agent(home: str) -> Tuple[int, int]:
     return pruned_count, freed_bytes
 
 
-def prune_agy(home: str, is_working: bool) -> Tuple[int, int]:
+def prune_agy(home: str, is_working: bool) -> tuple[int, int]:
     """Prune agy.<digits>.old files in $HOME/.local/bin if agy is working.
 
     Returns (pruned_count, freed_bytes).
@@ -221,9 +220,9 @@ def bytes_to_mb(b: int) -> int:
     return max(0, round(b / (1024 * 1024)))
 
 
-def prune_all(home: str, is_agy_working: bool = True) -> List[Tuple[str, int, int]]:
+def prune_all(home: str, is_agy_working: bool = True) -> list[tuple[str, int, int]]:
     """Prune all vendor CLIs and return list of (name, count, freed_mb)."""
-    results: List[Tuple[str, int, int]] = []
+    results: list[tuple[str, int, int]] = []
 
     c_cnt, c_bytes = prune_codex(home)
     if c_cnt > 0:

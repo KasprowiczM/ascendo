@@ -390,6 +390,9 @@ PY_EOF
             if ! launchctl print "gui/${UID_VAL}/${LABEL}" >/dev/null 2>&1; then
                 launchctl load -w "$PLIST" >/dev/null 2>&1 || true
                 if ! launchctl print "gui/${UID_VAL}/${LABEL}" >/dev/null 2>&1; then
+                    # Not loaded => not installed: leave no plist/sidecar behind
+                    # (`list` would otherwise report it installed + enabled).
+                    rm -f "$PLIST" "$SIDECAR"
                     emit_error "launchd could not load ${LABEL}"
                     exit 30
                 fi

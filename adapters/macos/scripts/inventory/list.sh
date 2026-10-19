@@ -305,7 +305,7 @@ printf '%s' "$SP_OUT" | jq -r --arg dirs "$APP_DIRS" '
     fi
 
     # Intel-only app on Apple silicon without Rosetta cannot launch.
-    if [ "$app_arch" = "arch_i64" ] && [ "$HOST_ARCH" = "arm64" ] && ! rosetta_present; then
+    if [ "$HOST_ARCH" = "arm64" ] && ascendo_is_intel_only "$app_path" "$app_arch" && ! rosetta_present; then
         json_add_message "warn" "${app_name}: Intel-only app and Rosetta is not installed - it will not launch" "INTEL_ONLY"
     fi
 

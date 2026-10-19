@@ -193,3 +193,38 @@ def test_rosetta_install_honours_no_sudo(tmp_path):
     assert it and it[0]["status"] == "skipped"
     assert any("SUDO_UNAVAILABLE" in (m.get("code") or "") or "SUDO_UNAVAILABLE" in m["text"]
                for m in sc["messages"])
+
+
+def test_rosetta_not_installed_for_non_full_profile_name(tmp_path):
+    ctx, r, sc = _su(tmp_path, profile="default")
+    assert ctx["installs"]() == []
+    assert not any(i["id"] == "rosetta:install" for i in sc["items"])
+
+
+def test_verify_skips_rosetta_pseudo_label(tmp_path):
+    verify = ADAPTER_ROOT / "scripts" / "softwareupdate" / "verify.sh"
+    ctx = su_env(tmp_path, "no-updates.txt")
+    out = tmp_path / "out"
+    rid = str(uuid.uuid4())
+    (out / rid).mkdir(parents=True)
+    (out / rid / "apply__softwareupdate.json").write_text(json.dumps({"items": [
+        {"id": "rosetta:install", "status": "success"}]}))
+    r = subprocess.run(["bash", str(verify), "--run-id", rid, "--trigger", "cli", "--profile", "full",
+                        "--output-dir", str(out)], capture_output=True, text=True, env=ctx["env"])
+    assert r.returncode == 0, r.stderr
+    sc = json.loads((out / rid / "verify__softwareupdate.json").read_text())
+    assert not any("rosetta" in i["id"] for i in sc["items"])
+
+
+def test_arch_single_detector_lipo_wins_sp_is_fallback(tmp_path):
+    app = _bundle(tmp_path)
+    # lipo says universal: system_profiler's arch_i64 must NOT make it Intel-only.
+    r = _sh(tmp_path, f'ascendo_is_intel_only "{app}" arch_i64; echo $?', archs="x86_64 arm64")
+    assert r.stdout.strip() == "1"
+    # lipo cannot decide (no executable): fall back to system_profiler's arch_kind.
+    bare = tmp_path / "Bare.app"
+    bare.mkdir()
+    r = _sh(tmp_path, f'ascendo_app_architecture "{bare}" arch_i64')
+    assert r.stdout.strip() == "x86_64-only"
+    r = _sh(tmp_path, f'ascendo_app_architecture "{bare}"')
+    assert r.stdout.strip() == "unknown"
