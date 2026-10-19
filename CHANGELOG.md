@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — unattended web installs never prompt; sidecar `.lock` leftovers
+
+- Scheduled / `ASCENDO_UNATTENDED=1` web installs now use `sudo -n` for their
+  root fallback (same as mas/softwareupdate since 1.1.0). A refused
+  non-interactive sudo (a TTY-less ticket is keyed on the parent pid) is a soft
+  `SUDO_UNAVAILABLE_UNATTENDED` deferral, not a failure. Interactive runs keep
+  plain `sudo`.
+- POSIX sidecar writes no longer leave `<sidecar>.lock` behind (writers unlink
+  the lock while holding it, with an inode re-check on acquire; readers never
+  create one). `ascendo doctor` only reports locks still held after 5 minutes,
+  and `ascendo doctor --prune-locks` removes old unheld leftovers. Windows
+  locking is unchanged.
+
 ### Changed — macOS inventory scan cleanup + drift-free reconcile (parity Task 15)
 
 - Inventory (`inventory/list.sh`) and web discovery list only real top-level

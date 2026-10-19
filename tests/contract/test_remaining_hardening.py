@@ -213,14 +213,24 @@ class TestP12StaleLock:
         run_dir = tmp_path / "runs" / "test-run"
         run_dir.mkdir(parents=True)
 
-        # Create a fake lock file
+        # Create a lock file that a (stuck) writer still holds
         lock = run_dir / "apply__brew.json.lock"
         lock.touch()
         # Set mtime to 1 hour ago
         old_time = os.path.getmtime(str(lock)) - 3600
         os.utime(str(lock), (old_time, old_time))
 
-        stale = detect_stale_locks(run_dir, max_age_seconds=60)
+        fd = os.open(str(lock), os.O_RDWR)
+        try:
+            if os.name == "posix":
+                import fcntl  # noqa: PLC0415
+
+                # POSIX: only a HELD old lock is stale (an unheld one is a
+                # harmless leftover -- see test_sidecar_lock_lifecycle.py)
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            stale = detect_stale_locks(run_dir, max_age_seconds=60)
+        finally:
+            os.close(fd)
         assert len(stale) == 1
         assert stale[0] == lock
 

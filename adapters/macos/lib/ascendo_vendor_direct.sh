@@ -116,8 +116,19 @@ _vd_try() {
         return 1
     fi
     if command -v _ascendo_sudo >/dev/null 2>&1; then
-        _ascendo_sudo "$@" 2>/dev/null
-        return $?
+        local _rc=0
+        _ascendo_sudo "$@" 2>/dev/null || _rc=$?
+        # Unattended `sudo -n` refused (no ticket for this parent pid): that is a
+        # privilege refusal, not an install failure -- record it like NO_SUDO.
+        if [ "$_rc" -ne 0 ] && [ "${ASCENDO_SUDO_NONINTERACTIVE:-0}" = "1" ] \
+           && { [ -z "${SUDO_ASKPASS:-}" ] || [ ! -x "${SUDO_ASKPASS}" ]; } \
+           && ! sudo -n true </dev/null >/dev/null 2>&1; then
+            _VD_SUDO_REFUSED=1
+            if [ -n "${_VD_REFUSE_FILE:-}" ]; then
+                printf '1' >> "$_VD_REFUSE_FILE" 2>/dev/null || true
+            fi
+        fi
+        return $_rc
     fi
     return 1
 }

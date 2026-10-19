@@ -106,6 +106,14 @@ fi
 if [ "$DRY_RUN" = "false" ] && [ -z "${ASCENDO_SUDO_WARM_DISABLE:-}" ]; then
     _ascendo_sudo_warm 2>/dev/null || true
 fi
+# Unattended run: root fallbacks must never prompt (nobody can answer). With a
+# hot cache use `sudo -n`; a TTY-less ticket is keyed on the parent pid, so a
+# `-n` from deep inside an install may still be refused -- _vd_try reports that
+# as a soft SUDO_UNAVAILABLE_UNATTENDED deferral. Interactive runs keep plain
+# sudo (re-prompt / Touch ID without a tty), same as mas/softwareupdate.
+if _ascendo_sudo_unattended; then
+    export ASCENDO_SUDO_NONINTERACTIVE=1
+fi
 
 # Report-only sweep: a previous run killed mid-swap can leave a staging or
 # rollback-backup directory next to the apps. Never delete another run's

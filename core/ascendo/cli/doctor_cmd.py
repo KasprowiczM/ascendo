@@ -18,7 +18,15 @@ _log = logging.getLogger("ascendo")
 
 
 @app.command()
-def doctor(verbose: bool = typer.Option(False, "--verbose", "-v")) -> None:
+def doctor(
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+    prune_locks: bool = typer.Option(
+        False,
+        "--prune-locks",
+        help="Remove leftover sidecar .lock files that no process holds "
+        "(older than 5 minutes). Held locks are never touched.",
+    ),
+) -> None:
     """Adapter self-test."""
     _setup_logging(verbose)
     registry = AdapterRegistry()
@@ -29,7 +37,7 @@ def doctor(verbose: bool = typer.Option(False, "--verbose", "-v")) -> None:
         typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(3) from None
     typer.echo(f"adapter: {adapter.name} ({adapter.display_name}) tier={adapter.tier}")
-    from ..orchestrator.sidecar_io import detect_stale_locks
+    from ..orchestrator.sidecar_io import detect_stale_locks, prune_stale_locks
 
     typer.echo(f"capabilities: {adapter.capabilities}")
     health = adapter.health_check()
@@ -37,13 +45,19 @@ def doctor(verbose: bool = typer.Option(False, "--verbose", "-v")) -> None:
     # P12: detect stale sidecar locks (mtime/PID)
     runs_dir = _default_runs_dir()
     stale_locks = []
+    if prune_locks and runs_dir.is_dir():
+        pruned = 0
+        for run_sub_dir in runs_dir.iterdir():
+            if run_sub_dir.is_dir():
+                pruned += len(prune_stale_locks(run_sub_dir))
+        typer.echo(f"pruned {pruned} leftover sidecar .lock file(s) under {runs_dir}")
     if runs_dir.is_dir():
         for run_sub_dir in runs_dir.iterdir():
             if run_sub_dir.is_dir():
                 stale_locks.extend(detect_stale_locks(run_sub_dir))
 
     if stale_locks:
-        health["Orchestrator"] = f"degraded (found {len(stale_locks)} stale sidecar .lock files)"
+        health["Orchestrator"] = f"degraded ({len(stale_locks)} sidecar .lock file(s) still held after 5 minutes)"
 
     bad = 0
     for component, status in sorted(health.items()):
@@ -55,11 +69,12 @@ def doctor(verbose: bool = typer.Option(False, "--verbose", "-v")) -> None:
 
     if stale_locks:
         typer.secho(
-            "\nWarning: Stale sidecar locks detected. These may prevent future sidecar writes.",
-            fg=typer.colors.YELLOW
+            "\nWarning: these sidecar locks are still HELD after 5 minutes -- a writer "
+            "may be stuck. Check for a hung `ascendo` process before deleting anything:",
+            fg=typer.colors.YELLOW,
         )
         for lock in stale_locks:
-            typer.echo(f"  rm {lock}")
+            typer.echo(f"  {lock}")
 
     raise typer.Exit(0 if bad == 0 else 1)
 

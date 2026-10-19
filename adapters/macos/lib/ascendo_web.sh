@@ -747,8 +747,12 @@ _web_vendor_direct_step() {
     _VD_REFUSE_FILE=""
     # Only a genuine privilege refusal is a soft deferral; every other failure
     # (checksum / identity / download rc) stays a failure, NO_SUDO or not.
-    if [ "$vrc" -ne 0 ] && [ "$vrc" -ne 4 ] && [ "${ASCENDO_NO_SUDO:-0}" = "1" ] && [ "$refused" = "1" ]; then
-        _web_outcome sudo_unavailable "the install needs administrator rights and root work is switched off (ASCENDO_NO_SUDO); installed ${inst}, vendor ${R}"
+    if [ "$vrc" -ne 0 ] && [ "$vrc" -ne 4 ] && [ "$refused" = "1" ]; then
+        if [ "${ASCENDO_NO_SUDO:-0}" = "1" ]; then
+            _web_outcome sudo_unavailable "the install needs administrator rights and root work is switched off (ASCENDO_NO_SUDO); installed ${inst}, vendor ${R}"
+        else
+            _web_outcome sudo_unavailable "the install needs administrator rights and non-interactive sudo was refused (unattended run); installed ${inst}, vendor ${R}"
+        fi
         return 95
     fi
     case "$vrc" in

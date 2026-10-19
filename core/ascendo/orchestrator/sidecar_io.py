@@ -73,6 +73,7 @@ __all__ = [
     "SidecarWriteError",
     "NON_SIDECAR_JSON",
     "detect_stale_locks",
+    "prune_stale_locks",
     "list_run_sidecars",
     "read_run",
     "read_sidecar",
@@ -316,6 +317,13 @@ def _locked(path: Path, *, exclusive: bool) -> Iterator[None]:
             directory missing, permission denied, etc.).
     """
     lock_path = _lock_path_for(path)
+
+    if os.name == "posix":
+        yield from _locked_posix(lock_path, exclusive=exclusive)
+        return
+
+    # Windows (and anything non-POSIX): unchanged behaviour -- a persistent
+    # sibling lock file (an open file cannot be unlinked there).
     # Ensure parent dir exists so writers can create the lock file
     # before the data file. Readers should never get here without an
     # existing parent (caller would have hit FileNotFoundError already).
@@ -328,9 +336,7 @@ def _locked(path: Path, *, exclusive: bool) -> Iterator[None]:
         raise SidecarIOError(f"could not open lock file {lock_path}: {exc}") from exc
 
     try:
-        if os.name == "posix":
-            _flock_posix(fd, exclusive=exclusive)
-        elif os.name == "nt":
+        if os.name == "nt":
             _flock_windows(fd, exclusive=exclusive)
         else:  # pragma: no cover — defensive
             raise SidecarIOError(f"unsupported OS for locking: {os.name}")
@@ -338,15 +344,76 @@ def _locked(path: Path, *, exclusive: bool) -> Iterator[None]:
         try:
             yield
         finally:
-            if os.name == "nt":
-                _funlock_windows(fd)
-            # POSIX flock is auto-released on close(); no explicit
-            # unlock needed.
+            _funlock_windows(fd)
     finally:
         try:
             os.close(fd)
         except OSError:
             pass
+
+
+# Attempts to win a lock whose inode was replaced under us (another writer
+# unlinked it while we waited on the old inode). Each lost round means another
+# holder finished, so the budget only bounds pathological churn.
+_LOCK_INODE_RETRIES = 64
+
+
+def _locked_posix(lock_path: Path, *, exclusive: bool) -> Iterator[None]:
+    """POSIX lock lifecycle that leaves no ``.lock`` file behind.
+
+    * Writers create the lock file, flock it, then verify that the path still
+      names the inode they locked (a previous holder may have unlinked it while
+      we waited; then we retry on the fresh file). On release the writer
+      unlinks the file while STILL holding the lock, so no leftover remains and
+      a waiter on the old inode notices the mismatch and retries.
+    * Readers never create a lock file: data files are replaced atomically
+      (``os.replace``), so with no lock file present there is no writer in the
+      middle of a write; when one exists they take a shared lock on it.
+    """
+    if exclusive:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+    for _ in range(_LOCK_INODE_RETRIES):
+        flags = os.O_RDWR | (os.O_CREAT if exclusive else 0)
+        try:
+            fd = os.open(str(lock_path), flags, 0o644)
+        except FileNotFoundError:
+            if exclusive:
+                continue  # parent vanished mid-call; retry creates it again
+            yield  # no writer active: read without a lock
+            return
+        except OSError as exc:
+            raise SidecarIOError(f"could not open lock file {lock_path}: {exc}") from exc
+        try:
+            _flock_posix(fd, exclusive=exclusive)
+            try:
+                same = os.fstat(fd).st_ino == os.stat(str(lock_path)).st_ino
+            except FileNotFoundError:
+                same = False
+            if not same:
+                if not exclusive and not lock_path.exists():
+                    yield  # the writer finished and removed it: read lock-free
+                    return
+                continue  # we locked a stale (unlinked) inode -- try again
+            try:
+                yield
+            finally:
+                if exclusive:
+                    try:
+                        os.unlink(str(lock_path))
+                    except FileNotFoundError:
+                        pass
+                    except OSError:
+                        _LOG.debug("could not remove lock file %s", lock_path)
+            return
+        finally:
+            try:
+                os.close(fd)  # releases the flock
+            except OSError:
+                pass
+    raise SidecarLockError(
+        f"could not acquire a stable {'exclusive' if exclusive else 'shared'} "
+        f"lock on {lock_path} after {_LOCK_INODE_RETRIES} attempts"
+    )
 
 
 # ── Atomic write ──────────────────────────────────────────────────────
@@ -773,8 +840,87 @@ def detect_stale_locks(
             age = now - entry.stat().st_mtime
         except OSError:
             continue
-        if age > max_age_seconds:
-            stale.append(entry)
+        if age <= max_age_seconds:
+            continue
+        # POSIX: an old lock file nobody holds is a harmless leftover (pre-1.1.1
+        # writers never removed theirs; see prune_stale_locks), not a stuck
+        # writer. Only a lock that is still HELD past the threshold matters.
+        if os.name == "posix" and not _posix_lock_is_held(entry):
+            continue
+        stale.append(entry)
 
     stale.sort(key=lambda p: p.name)
     return stale
+
+
+def _posix_lock_is_held(lock: Path) -> bool:
+    """True when another process/fd holds a flock on ``lock`` right now."""
+    try:
+        fd = os.open(str(lock), os.O_RDWR)
+    except OSError:
+        return False
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return True
+        return False
+    finally:
+        os.close(fd)
+
+
+def prune_stale_locks(run_dir: Path, *, max_age_seconds: int = 300) -> list[Path]:
+    """Remove leftover ``.lock`` files in ``run_dir`` that nobody holds.
+
+    Safe: on POSIX a file is only removed after we acquired its flock
+    non-blockingly and confirmed the path still names that inode (so an active
+    writer is never disturbed). Files younger than ``max_age_seconds`` are left
+    alone. On Windows a lock still open by a process cannot be removed, so a
+    plain ``unlink`` attempt is equally safe.
+
+    Returns:
+        Sorted list of removed lock paths.
+    """
+    if not run_dir.is_dir():
+        return []
+
+    import time as _time
+
+    now = _time.time()
+    removed: list[Path] = []
+    for entry in run_dir.iterdir():
+        if not entry.name.endswith(".lock") or not entry.is_file():
+            continue
+        try:
+            if now - entry.stat().st_mtime <= max_age_seconds:
+                continue
+        except OSError:
+            continue
+        if os.name != "posix":
+            try:
+                entry.unlink()
+                removed.append(entry)
+            except OSError:
+                pass
+            continue
+        try:
+            fd = os.open(str(entry), os.O_RDWR)
+        except OSError:
+            continue
+        try:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                continue  # held by a live writer/reader
+            try:
+                if os.fstat(fd).st_ino != os.stat(str(entry)).st_ino:
+                    continue
+                os.unlink(str(entry))
+                removed.append(entry)
+            except OSError:
+                pass
+        finally:
+            os.close(fd)
+
+    removed.sort(key=lambda p: p.name)
+    return removed

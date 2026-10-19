@@ -326,12 +326,13 @@ def test_sudo_prefix_is_dash_n_only_after_the_gate_opted_in(tmp_path):
 
 # -- web (I1): root paths honour ASCENDO_NO_SUDO ---------------------------------
 
-def _web_unattended(tmp_path, *, trigger, env_extra=None):
+def _web_unattended(tmp_path, *, trigger, env_extra=None, sudo_body=None):
     import json
 
     from .test_web_phase_vendor_truth import (  # noqa: PLC0415
         CLAUDE_BODY, SCRIPTS, Sandbox, prime_claude, registry, stub_open, stub_sleep,
     )
+    from .test_web_vendor_install import script  # noqa: PLC0415
     sb = Sandbox(tmp_path)
     prime_claude(sb)
     stub_open(sb)
@@ -341,6 +342,8 @@ def _web_unattended(tmp_path, *, trigger, env_extra=None):
     feeds.mkdir()
     (feeds / "vt.feed").write_text(CLAUDE_BODY)
     # fake sudo from the Sandbox: logs to forbidden.log and exits 1 (a COLD cache)
+    if sudo_body is not None:
+        script(sb.bin / "sudo", f'echo "sudo $*" >> "{sb.log}/forbidden.log"\n' + sudo_body)
     sb.apps.chmod(0o555)          # plain install fails -> the root fallback is reached
     out = sb.tmp / "out"
     env = sb.env(ASCENDO_WEB_REGISTRY_PATH=reg, ASCENDO_WEB_USER_REGISTRY_PATH="",
@@ -376,6 +379,46 @@ def test_web_no_sudo_policy_never_calls_sudo(tmp_path):
     (item,) = sc["items"]
     assert item["status"] == "skipped", sc
     assert [l for l in sb.forbidden() if l.startswith("sudo ")] == []
+
+
+# Hot cache, but the TTY-less ticket is keyed on the PARENT pid (verified on a
+# real Mac): `sudo -n -v` / `sudo -n true` from the script itself succeed, while
+# a `sudo -n <cmd>` from deeper in the install ($(...) subshells) has no ticket.
+# A plain `sudo <cmd>` would PROMPT -- in an unattended run nobody can answer.
+_PPID_KEYED_SUDO = (
+    'T="$(dirname "$0")/../logs/ticket.ppid"\n'
+    'if [ "$1 $2" = "-n -v" ]; then echo "$PPID" > "$T"; exit 0; fi\n'
+    'if [ "$1" = "-n" ]; then\n'
+    '  if [ -f "$T" ] && [ "$(cat "$T")" = "$PPID" ] && [ "$2" = "true" ]; then exit 0; fi\n'
+    '  echo "sudo: a password is required" >&2; exit 1\n'
+    'fi\n'
+    'echo "PROMPTED" >> "$(dirname "$0")/../logs/prompted.log"\n'
+    'exit 1\n'
+)
+
+
+def test_web_scheduler_hot_cache_root_install_never_prompts(tmp_path):
+    res, sc, sb = _web_unattended(tmp_path, trigger="scheduler", sudo_body=_PPID_KEYED_SUDO)
+    assert res.returncode == 0, res.stderr
+    installs = [l for l in sb.forbidden()
+                if l.startswith("sudo ") and l not in ("sudo -n -v", "sudo -n true")]
+    assert installs, "the root fallback must be reached in this sandbox"
+    assert all(l.startswith("sudo -n ") for l in installs), installs
+    assert not (sb.log / "prompted.log").exists()
+    (item,) = sc["items"]
+    # a refused non-interactive sudo is a soft unattended deferral, not a failure
+    assert item["status"] == "skipped", sc
+    assert any(m.get("code") == "SUDO_UNAVAILABLE_UNATTENDED" for m in sc["messages"]), sc["messages"]
+
+
+def test_web_interactive_root_install_uses_plain_sudo(tmp_path):
+    res, sc, sb = _web_unattended(tmp_path, trigger="cli", sudo_body=_PPID_KEYED_SUDO)
+    assert res.returncode == 0, res.stderr
+    installs = [l for l in sb.forbidden()
+                if l.startswith("sudo ") and l not in ("sudo -n -v", "sudo -n true")]
+    assert installs, "the root fallback must be reached in this sandbox"
+    # interactive: plain sudo (can re-prompt / Touch ID without a tty), never -n
+    assert not [l for l in installs if l.startswith("sudo -n ")], installs
 
 
 # -- web (final review I1): only a GENUINE sudo refusal becomes SUDO_UNAVAILABLE --
