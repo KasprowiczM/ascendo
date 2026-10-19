@@ -150,7 +150,7 @@ in the platform quickstarts below.
 
 | Platform | Status | Quickstart |
 |----------|--------|------------|
-| macOS (Apple Silicon + Intel) | ✅ feature-complete (v1.0-beta) — 12 health components, 6 package managers, full web category coverage (AI-maintained), Time Machine snapshots, launchd scheduler, Touch ID-first sudo, cross-source dedup with explicit consent | [MACOS_QUICKSTART.md](MACOS_QUICKSTART.md) |
+| macOS (Apple Silicon + Intel) | ✅ feature-complete (v1.0-beta) — 13 health components, 6 package managers, full web category coverage (AI-maintained), Time Machine snapshots, launchd scheduler, Touch ID-first sudo, cross-source dedup with explicit consent | [MACOS_QUICKSTART.md](MACOS_QUICKSTART.md) |
 | Windows 11 / 10 (build 17763+) | 🟢 functional (v1.0-beta) — winget + msstore + ARP + PSWindowsUpdate + npm + pip + curated web (Tier-A silent install) + Dell DCU plugin + VSS + Task Scheduler + UAC; dedup uninstall executor gated behind explicit consent | [WINDOWS_QUICKSTART.md](WINDOWS_QUICKSTART.md) |
 | Ubuntu 22.04+ / Debian 12+ | 🟢 functional (v1.0-beta) — apt + snap + brew + npm + pip + flatpak + web; systemd scheduler + timeshift snapshots + sudo-askpass elevation all wired; legacy bash adapters bridged into the Python orchestrator (159 adapter tests green) | [LINUX_QUICKSTART.md](LINUX_QUICKSTART.md) |
 

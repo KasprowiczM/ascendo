@@ -233,7 +233,7 @@ Then in a browser:
 - **`http://127.0.0.1:8765/docs`** — interactive Swagger UI with all
   REST endpoints
 - **`http://127.0.0.1:8765/version`** — `{"ascendo": "0.0.7", "adapter": "macos", "adapter_tier": 1}`
-- **`http://127.0.0.1:8765/health`** — `{"status": "ok", "adapter": "macos", "components": {...10 keys...}}`
+- **`http://127.0.0.1:8765/health`** — `{"status": "ok", "adapter": "macos", "components": {...13 keys...}}`
 
 **Drive a run from the browser** — in the Categories tab:
 
