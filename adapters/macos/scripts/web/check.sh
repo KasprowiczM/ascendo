@@ -18,6 +18,8 @@ ADAPTER_CONFIG="$SCRIPT_DIR/../../config"
 . "$ADAPTER_LIB/ascendo_json.sh"
 # shellcheck source=../../lib/ascendo_web.sh
 . "$ADAPTER_LIB/ascendo_web.sh"
+# shellcheck source=../../lib/ascendo_arch.sh
+. "$ADAPTER_LIB/ascendo_arch.sh"
 for _h in sparkle github_dmg keystone squirrel builtin msupdate docker release_feed omaha chromium_updater; do
     # shellcheck source=../../lib/handlers/sparkle.sh
     . "$ADAPTER_LIB/handlers/${_h}.sh"
@@ -185,6 +187,10 @@ print(json.dumps(out))
     printf '%s' "$HANDLER" > "$RESULTS_DIR/${WORK_IDX}.handler"
     printf '%s' "$INSTALLED" > "$RESULTS_DIR/${WORK_IDX}.installed"
     printf '%s' "$SLUG" > "$RESULTS_DIR/${WORK_IDX}.slug"
+    # Spec F: remember Intel-only bundles (pass 3 emits the Rosetta note).
+    if [ -n "$APP_PATH" ] && ascendo_is_intel_only "$APP_PATH"; then
+        printf 'x86_64-only' > "$RESULTS_DIR/${WORK_IDX}.arch"
+    fi
     printf '%d\n' "$WORK_IDX" >> "$INDICES_FILE"
     WORK_IDX=$((WORK_IDX + 1))
 done < "$_DISC_TMP"
@@ -217,6 +223,15 @@ while [ "$i" -lt "$WORK_IDX" ]; do
     LATEST=$(printf '%s' "$LATEST" | tr -d '[:space:]')
     CFG=$(cat "$RESULTS_DIR/${i}.cfg.json" 2>/dev/null)
     NOTE=$(_web_read_probe_note "$RESULTS_DIR" "$i")
+    # Spec F: Intel-only app (informational) + extra action-required line when
+    # Rosetta is missing (it will not launch at all). The version flow below is
+    # unchanged -- architecture never affects the update classification.
+    if [ -f "$RESULTS_DIR/${i}.arch" ]; then
+        json_add_message "info" "${SLUG}: Intel-only (x86_64); needs Rosetta; not supported after macOS 27" "INTEL_ONLY"
+        if [ "${ASCENDO_HOST_ARCH:-$(uname -m 2>/dev/null)}" = "arm64" ] && ! ascendo_rosetta_installed; then
+            json_add_message "warn" "${SLUG}: Rosetta is not installed - this Intel-only app will not launch | $(ascendo_action_required_token rosetta_missing "${INSTALLED:-?}" "?")" "rosetta_missing"
+        fi
+    fi
     # Increment i FIRST so any `continue` below doesn't infinite-loop.
     i=$((i + 1))
 

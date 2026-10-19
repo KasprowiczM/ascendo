@@ -19,6 +19,9 @@ The report has these sections, in order:
    ``from → to`` versions
 7. ``Already up-to-date`` — counts per category whose ``check`` sidecar
    succeeded (no per-app list — would bloat the report)
+   ``Updated outside Ascendo`` — items ``check`` offered (planned) that a vendor
+   updater / the App Store updated before ``apply`` ran (apply found them
+   ``up_to_date``); shown right after the up-to-date counts
 8. ``Trigger-only updates`` — Tier-B vendor agents (Keystone, Squirrel,
    builtin) that queued an async update
 9. ``Deferred`` — apps that were skipped because they were running, or
@@ -184,6 +187,11 @@ _REASON_TEXT = {
     "ipad_pending": (
         "iPad app with a pending update — open the App Store → Updates and "
         "update it there (mas cannot)."
+    ),
+    "rosetta_missing": (
+        "An Intel-only app needs Rosetta, which is not installed — run "
+        "`softwareupdate --install-rosetta` in Terminal (or set "
+        "ASCENDO_INSTALL_ROSETTA=1 for a full-profile run)."
     ),
     "xcode_license": (
         "The Xcode license has not been accepted — run "
@@ -974,6 +982,19 @@ def _generate_apply_report_unsafe(
             lines.append(f"- {label}: {count} {_pluralize('package', count)}")
         lines.append("")
 
+    # ── Updated outside Ascendo ──────────────────────────────────────────
+    outside = _updated_outside(check_sidecars, apply_sidecars)
+    if outside:
+        lines.append(f"## Updated outside Ascendo ({len(outside)})")
+        lines.append("")
+        lines.append(
+            "A vendor updater or the App Store updated these between check and "
+            "apply — Ascendo did not touch them."
+        )
+        for cat, name, cur, tgt in outside:
+            lines.append(f"- {name} ({_category_label(cat)}): {cur} → {tgt}")
+        lines.append("")
+
     # ── Trigger-only updates ─────────────────────────────────────────────
     if n_triggered > 0:
         lines.append(
@@ -1061,6 +1082,63 @@ def _generate_apply_report_unsafe(
 
 
 # ── Internals ────────────────────────────────────────────────────────────────
+
+
+# ── Updated outside Ascendo (Spec 9, sidecar-only) ───────────────────────────
+
+# Alias groups (macOS_updates run_summary APP_ALIASES): one app, many names.
+_APP_ALIAS_GROUPS = (
+    ("google chrome", "chrome"), ("microsoft word", "word"),
+    ("microsoft excel", "excel"), ("microsoft powerpoint", "powerpoint"),
+    ("microsoft outlook", "outlook"), ("microsoft onenote", "onenote"),
+    ("zoom.us", "zoom"), ("visual studio code", "vs code", "vscode"),
+    ("brave browser", "brave"), ("docker", "docker desktop"),
+    ("chatgpt", "codex"), ("comet", "comet (perplexity browser)"),
+)
+
+
+def _app_key(name: str) -> str:
+    """normalize_app_key + alias group: lower-case, strip ``.app``/prefix, _-/- -> space."""
+    n = name.strip().lower()
+    if ":" in n:
+        n = n.split(":", 1)[1]
+    if n.endswith(".app"):
+        n = n[:-4]
+    n = " ".join(n.replace("_", " ").replace("-", " ").split())
+    for group in _APP_ALIAS_GROUPS:
+        norm = {" ".join(g.replace("-", " ").split()) for g in group}
+        if n in norm:
+            return sorted(norm)[0]
+    return n
+
+
+def _updated_outside(
+    check_sidecars: list[Sidecar], apply_sidecars: list[Sidecar],
+) -> list[tuple[str, str, str, str]]:
+    """(category, display name, from, to) for items check offered that apply found current.
+
+    Skipped when the same app (alias-deduped) was upgraded/triggered by Ascendo
+    in this run, so a name is never counted twice.
+    """
+    offered: dict[tuple[str, str], Item] = {}
+    for sc in check_sidecars:
+        for it in sc.items:
+            if it.status is ItemStatus.PLANNED and it.current_version and it.target_version:
+                offered[(sc.category.value, _app_key(it.id))] = it
+    ours: set[tuple[str, str]] = set()
+    already: dict[tuple[str, str], Item] = {}
+    for sc in apply_sidecars:
+        for it in sc.items:
+            key = (sc.category.value, _app_key(it.id))
+            if it.status in (ItemStatus.SUCCESS, ItemStatus.TRIGGERED):
+                ours.add(key)
+            elif it.status is ItemStatus.UP_TO_DATE:
+                already[key] = it
+    out: list[tuple[str, str, str, str]] = []
+    for key, chk in offered.items():
+        if key in already and key not in ours:
+            out.append((key[0], _display_name(chk), chk.current_version or "", chk.target_version or ""))
+    return sorted(out)
 
 
 def _classify_item(item: Item, bucket: _CategoryBuckets) -> None:

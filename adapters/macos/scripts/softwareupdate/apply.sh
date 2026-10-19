@@ -75,6 +75,8 @@ ADAPTER_LIB="$SCRIPT_DIR/../../lib"
 . "$ADAPTER_LIB/ascendo_json.sh"
 # shellcheck source=../../lib/ascendo_softwareupdate.sh
 . "$ADAPTER_LIB/ascendo_softwareupdate.sh"
+# shellcheck source=../../lib/ascendo_arch.sh
+. "$ADAPTER_LIB/ascendo_arch.sh"
 
 # -- arg parsing ---------------------------------------------------------------
 RUN_ID=""
@@ -167,6 +169,42 @@ _sudo_softwareupdate() {
     _ascendo_sudo "$SU_BIN" "$@"
 }
 
+
+# Rosetta (Task 17, Spec F): `softwareupdate --install-rosetta --agree-to-license`
+# runs ONLY with ASCENDO_INSTALL_ROSETTA=1 (explicit opt-in = the licence consent),
+# only under the full profile (never safe/quick/ASCENDO_SAFE_MODE), only on Apple
+# silicon without Rosetta, and only behind the same sudo gate as every other root
+# step. Success needs a post-install measurement (Rosetta now present).
+ROS_STATUS=""; ROS_TEXT=""; ROS_LEVEL="info"; ROS_CODE=""
+_rosetta_step() {
+    [ "${ASCENDO_INSTALL_ROSETTA:-0}" = "1" ] || return 0
+    [ "${ASCENDO_HOST_ARCH:-$HOST_ARCH}" = "arm64" ] || return 0
+    case "$PROFILE_NAME" in safe|quick) return 0 ;; esac
+    [ "${ASCENDO_SAFE_MODE:-}" = "true" ] && return 0
+    ascendo_rosetta_installed && return 0
+    if [ "$DRY_RUN" -eq 1 ]; then
+        ROS_STATUS="planned"; ROS_TEXT="rosetta:install: dry-run: Rosetta would be installed"
+        json_add_item "rosetta:install" "" "" "planned" "softwareupdate"
+        json_add_message "info" "$ROS_TEXT"
+        return 0
+    fi
+    _ascendo_sudo_warm || true
+    if ! _ascendo_sudo_gate; then
+        ROS_STATUS="skipped"; ROS_LEVEL="warn"; ROS_CODE="$ASCENDO_SUDO_GATE_CODE"
+        ROS_TEXT="rosetta:install: skipped -- ${ASCENDO_SUDO_GATE_TEXT} (${ASCENDO_SUDO_GATE_CODE})"
+    else
+        ASCENDO_SUDO_NONINTERACTIVE=1 _ascendo_sudo "$SU_BIN" --install-rosetta --agree-to-license </dev/null >/dev/null 2>&1
+        if ascendo_rosetta_installed; then
+            ROS_STATUS="success"; ROS_TEXT="rosetta:install: Rosetta installed (ASCENDO_INSTALL_ROSETTA=1)"
+        else
+            ROS_STATUS="failed"; ROS_LEVEL="error"
+            ROS_TEXT="rosetta:install: softwareupdate --install-rosetta did not result in Rosetta being present"
+        fi
+    fi
+    json_add_item "rosetta:install" "" "" "$ROS_STATUS" "softwareupdate"
+    json_add_message "$ROS_LEVEL" "$ROS_TEXT" "$ROS_CODE"
+}
+_rosetta_step
 
 # -- discover pending updates via softwareupdate -l --include-config-data ------
 # (C locale + bounded: see ascendo_softwareupdate.sh). A failed/timed-out probe
@@ -302,6 +340,11 @@ _su_flush() {
               "softwareupdate" "$SU_VER" \
               "$HOST_NAME" "$HOST_OS" "$HOST_OS_VERSION" "$HOST_ARCH" \
               "$HOST_USER" "$HOST_IS_ELEVATED"
+    # The Rosetta step ran before the state lists existed: re-emit its outcome.
+    if [ -n "$ROS_STATUS" ]; then
+        json_add_item "rosetta:install" "" "" "$ROS_STATUS" "softwareupdate"
+        json_add_message "$ROS_LEVEL" "$ROS_TEXT" "$ROS_CODE"
+    fi
     if [ -n "$RES" ]; then
         while IFS="$US" read -r _l _c _t _s; do
             json_add_item "$_l" "$_c" "$_t" "$_s" "softwareupdate"

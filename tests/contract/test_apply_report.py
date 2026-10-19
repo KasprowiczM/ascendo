@@ -420,3 +420,45 @@ def test_runs_report_endpoint_404_for_unknown_run(tmp_path: Path) -> None:
     client = _make_test_client(tmp_path)
     r = client.get(f"/runs/{uuid4()}/report")
     assert r.status_code == 404
+
+
+# ── Updated outside Ascendo (Task 17, Spec 9 sidecar-only) ───────────────────
+
+
+def _outside_run(run_dir: Path, *, check_id, apply_id, apply_status, apply_cur="2.0", apply_tgt="2.0"):
+    started = datetime(2026, 5, 8, 22, 47, tzinfo=timezone.utc)
+    _write(run_dir, _build_sidecar(
+        phase=Phase.CHECK, category=SourceType.WEB, started=started,
+        items=[_build_item(item_id=check_id, category=SourceType.WEB,
+                           status=ItemStatus.PLANNED, current="1.0", target="2.0")]))
+    _write(run_dir, _build_sidecar(
+        phase=Phase.APPLY, category=SourceType.WEB, started=started,
+        items=[_build_item(item_id=apply_id, category=SourceType.WEB, status=apply_status,
+                           current=apply_cur, target=apply_tgt)]))
+    return generate_apply_report(run_dir)
+
+
+def test_report_lists_app_updated_outside_ascendo(run_dir: Path) -> None:
+    md = _outside_run(run_dir, check_id="web:slack", apply_id="web:slack",
+                      apply_status=ItemStatus.UP_TO_DATE)
+    assert "## Updated outside Ascendo (1)" in md
+    assert "Slack" in md and "1.0 → 2.0" in md
+
+
+def test_report_outside_section_absent_when_ascendo_upgraded_it(run_dir: Path) -> None:
+    md = _outside_run(run_dir, check_id="web:slack", apply_id="web:slack",
+                      apply_status=ItemStatus.SUCCESS)
+    assert "Updated outside Ascendo" not in md
+
+
+def test_report_outside_section_alias_of_our_upgrade_is_not_outside(run_dir: Path) -> None:
+    # check offered "web:google-chrome"; Ascendo upgraded the alias "web:chrome".
+    md = _outside_run(run_dir, check_id="web:google-chrome", apply_id="web:chrome",
+                      apply_status=ItemStatus.SUCCESS)
+    assert "Updated outside Ascendo" not in md
+
+
+def test_report_outside_section_matches_aliases_on_up_to_date_side(run_dir: Path) -> None:
+    md = _outside_run(run_dir, check_id="web:google-chrome", apply_id="web:chrome",
+                      apply_status=ItemStatus.UP_TO_DATE)
+    assert "## Updated outside Ascendo (1)" in md

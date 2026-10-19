@@ -64,7 +64,8 @@ def _isolate_mau_state(tmp_path_factory, monkeypatch):
 
 
 TRIPWIRE_TOOLS = ("brew", "mas", "msupdate", "softwareupdate", "osascript", "open",
-                  "mdfind", "docker", "GoogleUpdater", "CometUpdater", "sudo")
+                  "mdfind", "docker", "GoogleUpdater", "CometUpdater", "sudo",
+                  "launchctl", "xattr")
 
 
 @pytest.fixture(autouse=True)

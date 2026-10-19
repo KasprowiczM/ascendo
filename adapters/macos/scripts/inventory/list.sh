@@ -122,6 +122,7 @@ fi
 # resolution above because that file defaults MAS_BIN when unset/empty.
 # shellcheck source=../../lib/ascendo_appstore_ios.sh
 . "$ADAPTER_LIB/ascendo_appstore_ios.sh"
+. "$ADAPTER_LIB/ascendo_arch.sh"
 
 # -- scope: app dirs + exclusions ---------------------------------------------
 APP_DIRS_EXPLICIT=0
@@ -154,14 +155,7 @@ is_excluded() {
     return 1
 }
 
-rosetta_present() {
-    case "${ASCENDO_ROSETTA_PRESENT:-}" in
-        1) return 0 ;;
-        0) return 1 ;;
-    esac
-    pgrep -q oahd 2>/dev/null && return 0
-    [ -d /Library/Apple/usr/share/rosetta ]
-}
+rosetta_present() { ascendo_rosetta_installed; }
 
 # -- tool info -----------------------------------------------------------------
 SP_VERSION="$("$SP_BIN" --version 2>/dev/null | head -1 || echo unknown)"

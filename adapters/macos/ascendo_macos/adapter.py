@@ -272,9 +272,9 @@ class MacOSAdapter(IAdapter):
     def health_check(self) -> dict[str, str]:
         """Adapter self-test. Returns component→status_string for ``ascendo doctor``.
 
-        Components checked (12 total):
+        Components checked (13 total):
             brew, jq, mas, system_profiler, softwareupdate, tmutil,
-            launchctl, pip, web, bash, ascendo_lib, ascendo_scripts
+            launchctl, pip, web, clt, bash, ascendo_lib, ascendo_scripts
         """
         out: dict[str, str] = {}
         out["brew"] = self._brew_status()
@@ -286,10 +286,49 @@ class MacOSAdapter(IAdapter):
         out["launchctl"] = self._launchctl_status()  # M5.5
         out["pip"] = self._pip_status()
         out["web"] = self._web_status()  # M5.6
+        out["clt"] = self._clt_status()  # Task 17 (brew.md row 11)
         out["bash"] = self._bash_status()
         out["ascendo_lib"] = self._lib_status()
         out["ascendo_scripts"] = self._scripts_status()
         return out
+
+    def _clt_status(self) -> str:
+        """Command Line Tools diagnostic (read-only; port of mac_update_clt_status).
+
+        ok | missing | stale | orphan, as ONE health line. Homebrew builds against
+        the CLT, so a CLT older than the running macOS major (or an orphaned
+        directory with no receipt) is the usual cause of confusing brew failures.
+        ``ASCENDO_CLT_DIR`` overrides /Library/Developer/CommandLineTools (tests).
+        """
+        clt_dir = Path(os.environ.get("ASCENDO_CLT_DIR") or "/Library/Developer/CommandLineTools")
+        if not clt_dir.is_dir():
+            return "unavailable: Command Line Tools missing - run: xcode-select --install"
+
+        def _run(name: str, fallback: str, *args: str) -> str:
+            exe = shutil.which(name) or fallback
+            try:
+                res = subprocess.run([exe, *args], capture_output=True, text=True,
+                                     timeout=10, check=False)
+            except (OSError, subprocess.TimeoutExpired):
+                return ""
+            return res.stdout if res.returncode == 0 else ""
+
+        info = _run("pkgutil", "/usr/sbin/pkgutil",
+                    "--pkg-info=com.apple.pkg.CLTools_Executables")
+        version = ""
+        for line in info.splitlines():
+            if line.startswith("version:"):
+                version = line.split(":", 1)[1].strip()
+                break
+        clt_major = version.split(".", 1)[0]
+        if not info.strip() or not clt_major.isdigit():
+            return ("degraded: Command Line Tools orphaned (no receipt) - "
+                    "run: sudo rm -rf /Library/Developer/CommandLineTools && xcode-select --install")
+        os_major = _run("sw_vers", "/usr/bin/sw_vers", "-productVersion").strip().split(".", 1)[0]
+        if os_major.isdigit() and int(clt_major) < int(os_major):
+            return (f"degraded: Command Line Tools stale (CLT {version} < macOS {os_major}) - "
+                    "run: softwareupdate --install -a, or xcode-select --install")
+        return f"ok: Command Line Tools {version}"
 
     def _web_status(self) -> str:
         """Validate the web_apps.toml registry is parseable + count active apps."""

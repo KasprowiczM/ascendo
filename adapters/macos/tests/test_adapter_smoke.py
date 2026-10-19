@@ -322,24 +322,28 @@ def test_health_check_has_ten_components():
     """Legacy alias, kept for callers. The actual count is 12 since M5.6
     (web added). Asserts the count via the dedicated 12-component test below.
     """
-    test_health_check_has_twelve_components()
+    test_health_check_has_thirteen_components()
 
 
 def test_health_check_has_eleven_components():
     """Legacy alias for the pre-M5.6 count. The actual count is 12 since
     M5.6 (web added). Asserts via the 12-component test below."""
-    test_health_check_has_twelve_components()
+    test_health_check_has_thirteen_components()
 
 
 def test_health_check_has_twelve_components():
-    """M5.6 raises the macOS health-check component count from 11 to 12
-    (web added)."""
+    """Legacy alias; the count is 13 since Task 17 (clt added)."""
+    test_health_check_has_thirteen_components()
+
+
+def test_health_check_has_thirteen_components():
+    """M5.6 raised the count to 12 (web); Task 17 adds ``clt`` (13)."""
     a = MacOSAdapter()
     components = a.health_check()
-    assert len(components) == 12
+    assert len(components) == 13
     expected = {
         "brew", "jq", "mas", "system_profiler", "softwareupdate",
-        "tmutil", "launchctl", "pip", "web",
+        "tmutil", "launchctl", "pip", "web", "clt",
         "bash", "ascendo_lib", "ascendo_scripts",
     }
     assert set(components.keys()) == expected

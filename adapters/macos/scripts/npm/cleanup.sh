@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# adapters/macos/scripts/npm/cleanup.sh -- prune npm cache
+# adapters/macos/scripts/npm/cleanup.sh -- prune npm cache + old vendor CLI versions
+#
+# Version retention (Task 17, Spec P7): keeps the ACTIVE version plus ONE newest
+# previous for Codex releases and cursor-agent versions, and removes agy.<n>.old
+# (only when `agy --version` runs). Symlinks are canonicalised; a link that
+# resolves outside its root aborts pruning for that vendor. Cleanup phase only;
+# never on --dry-run. Opt out: ASCENDO_KEEP_CLI_VERSIONS=1 (or the upstream alias
+# MAC_UPDATE_KEEP_CLI_VERSIONS=1). Logic: lib/cli_retention.py.
 set -o pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ADAPTER_LIB="$SCRIPT_DIR/../../lib"
@@ -36,8 +43,12 @@ json_init "cleanup" "npm" "$RUN_ID" "$TRIGGER" "$PROFILE_NAME" \
           "$HOST_USER" "$HOST_IS_ELEVATED"
 trap 'json_save_on_exit "$OUTPUT_DIR"' EXIT
 
+_keep_versions=0
+{ [ "${ASCENDO_KEEP_CLI_VERSIONS:-0}" = "1" ] || [ "${MAC_UPDATE_KEEP_CLI_VERSIONS:-0}" = "1" ]; } && _keep_versions=1
+
 if [ "$DRY_RUN" = "true" ]; then
     json_add_item "npm:cache:clean" "" "" "planned" "npm" "cache"
+    [ "$_keep_versions" -eq 1 ] || json_add_item "prune:cli-versions" "" "" "planned" "npm" "prune"
     exit 0
 fi
 
@@ -46,6 +57,31 @@ if [ -n "$NPM_BIN" ] && [ -x "$NPM_BIN" ]; then
     json_add_item "npm:cache:clean" "" "" "success" "npm" "cache"
 else
     json_add_message "info" "npm not installed; cache cleanup skipped"
+fi
+
+# -- vendor CLI version retention (Spec P7) -------------------------------------
+if [ "$_keep_versions" -eq 1 ]; then
+    json_add_message "info" "CLI version pruning disabled (ASCENDO_KEEP_CLI_VERSIONS=1)"
+else
+    _agy_ok=0
+    if [ -x "$HOME/.local/bin/agy" ] && "$HOME/.local/bin/agy" --version </dev/null >/dev/null 2>&1; then
+        _agy_ok=1
+    fi
+    _pruned="$(PYTHONPATH="$ADAPTER_LIB${PYTHONPATH:+:$PYTHONPATH}" python3 - "$HOME" "$_agy_ok" <<'PY' 2>/dev/null
+import sys
+from cli_retention import prune_all
+for name, count, mb in prune_all(sys.argv[1], is_agy_working=sys.argv[2] == "1"):
+    if count > 0:
+        print(f"{count}|{name}|{mb}")
+PY
+)" || _pruned=""
+    if [ -n "$_pruned" ]; then
+        while IFS='|' read -r _cnt _name _mb; do
+            [ -n "$_cnt" ] || continue
+            json_add_item "prune:${_name}" "" "" "success" "npm" "prune"
+            json_add_message "info" "Removed ${_cnt} old ${_name} versions (freed ${_mb} MB)"
+        done <<< "$_pruned"
+    fi
 fi
 
 exit 0

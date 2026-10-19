@@ -376,10 +376,25 @@ p.write_text(json.dumps({
 }, indent=2))
 PY_EOF
 
+        # A quarantined plist (e.g. copied through a browser/AirDrop path) makes
+        # launchd refuse it; strip the flag before loading (best effort).
+        xattr -d com.apple.quarantine "$PLIST" >/dev/null 2>&1 || true
+
         # bootout any prior load (silent on "no such service") then bootstrap.
         launchctl bootout "gui/${UID_VAL}/${LABEL}" >/dev/null 2>&1 || true
         if [ "$ENABLED" = "true" ]; then
+            # Honesty: a schedule that launchd did not load must not be reported
+            # as installed. Verify with `launchctl print`; fall back to the legacy
+            # `load -w`; a second failure is a hard error (exit 30).
             launchctl bootstrap "gui/${UID_VAL}" "$PLIST" >/dev/null 2>&1 || true
+            if ! launchctl print "gui/${UID_VAL}/${LABEL}" >/dev/null 2>&1; then
+                launchctl load -w "$PLIST" >/dev/null 2>&1 || true
+                if ! launchctl print "gui/${UID_VAL}/${LABEL}" >/dev/null 2>&1; then
+                    emit_error "launchd could not load ${LABEL}"
+                    exit 30
+                fi
+            fi
+            launchctl enable "gui/${UID_VAL}/${LABEL}" >/dev/null 2>&1 || true
         fi
         emit_json '{"ok": true}'
         exit 0
