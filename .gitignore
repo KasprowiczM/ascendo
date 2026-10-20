@@ -17,6 +17,7 @@ logs/
 *.log
 !**/example.log
 !**/sample.log
+!adapters/macos/tests/fixtures/**/*.log
 **/Logs/
 dev_sync_logs/
 
