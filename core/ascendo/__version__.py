@@ -13,7 +13,7 @@ Versioning: SemVer 2.0.0 / PEP 440 (Python betas use the `bN` suffix)
 - 1.0.4 — lock web apps to macOS_updates channels
 - 1.1.0 — port macOS_updates v1.4.2→v1.5.4 parity
 - 1.1.1 — CI repair + macOS_updates v1.5.5 parity
-- 1.5.5 — numer wyrównany z macOS_updates v1.5.5 (bez zmian łamiących)
+- 1.5.5 — version aligned with macOS_updates v1.5.5 (no breaking changes)
 """
 
 __version__ = "1.5.5"

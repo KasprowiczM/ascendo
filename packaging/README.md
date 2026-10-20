@@ -75,7 +75,7 @@ bash bin/build-dmg.sh
 ```
 
 Produces `dist/Ascendo-<version>-<arch>.dmg` (e.g.
-`dist/Ascendo-0.0.7-arm64.dmg`). Prints SHA256 and runs `hdiutil verify`
+`dist/Ascendo-1.5.5-arm64.dmg`). Prints SHA256 and runs `hdiutil verify`
 on the final artefact.
 
 ### Smart features
@@ -129,8 +129,8 @@ pwsh -File bin\build-installer.ps1
 Produces both artifacts at the repo root:
 
 ```
-dist/Ascendo-0.0.7-x64.msi          # WiX-built MSI (managed/scriptable installs)
-dist/Ascendo-0.0.7-x64-setup.exe    # NSIS interactive installer
+dist/Ascendo-1.5.5-x64.msi          # WiX-built MSI (managed/scriptable installs)
+dist/Ascendo-1.5.5-x64-setup.exe    # NSIS interactive installer
 ```
 
 The script also prints SHA256 of each artifact at the end. Run from any
@@ -191,7 +191,7 @@ The build does NOT sign anything by default. Two options:
 ```powershell
 # Option A — Authenticode (manual)
 $ts = "http://timestamp.digicert.com"
-foreach ($a in @("dist\Ascendo-0.0.7-x64.msi", "dist\Ascendo-0.0.7-x64-setup.exe")) {
+foreach ($a in @("dist\Ascendo-1.5.5-x64.msi", "dist\Ascendo-1.5.5-x64-setup.exe")) {
     signtool sign /fd sha256 /tr $ts /td sha256 /a $a
     signtool verify /pa /v $a
 }
@@ -206,7 +206,7 @@ Option B (recommended for CI): Azure Trusted Signing. See
 setx ASCENDO_INSTALL_AS_SERVICE 1   # opt into AscendoDashboard service
 setx ASCENDO_EDITION basic           # or 'dev'
 setx ASCENDO_PROFILE full            # or 'cli'/'web'/'desktop'
-Ascendo-0.0.7-x64-setup.exe /S       # silent install honors all of above
+Ascendo-1.5.5-x64-setup.exe /S       # silent install honors all of above
 ```
 
 ---
@@ -298,7 +298,7 @@ Until that workflow lands, bump the formula manually:
 
 ```bash
 # In the homebrew-tap repo:
-sha256=$(curl -sL https://github.com/KasprowiczM/ascendo/archive/refs/tags/v0.0.7.tar.gz | shasum -a 256 | cut -d' ' -f1)
+sha256=$(curl -sL https://github.com/KasprowiczM/ascendo/archive/refs/tags/v1.5.5.tar.gz | shasum -a 256 | cut -d' ' -f1)
 # Edit Formula/ascendo.rb's url and sha256 fields, commit, push.
 brew install KasprowiczM/tap/ascendo
 ```

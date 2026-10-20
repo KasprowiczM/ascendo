@@ -8,7 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Local lockstep verification script (`bin/check-version-lockstep.sh`)**: Added a bash script (macOS/Linux compatible, Bash 3.2+) that compares `core/ascendo/__version__.py` with sibling `../macOS_updates/VERSION` when present, printing both versions and returning exit code 0 on parity, 1 on mismatch, and 0 with a skipped notification when the sibling directory is absent. Documented in `DEV_GUIDE.md` and covered by contract tests in `tests/contract/test_version_lockstep.py`.
+
 ### Changed
+- **Packaging documentation artifact version examples**: Replaced legacy `0.0.7` version strings with `1.5.5` in artifact examples, scripts, and tarball URLs across `packaging/README.md`.
+- **Version docstring localization**: Replaced Polish docstring entry in `core/ascendo/__version__.py` with English format matching the rest of the file.
+
 ### Fixed
 ### Security
 
