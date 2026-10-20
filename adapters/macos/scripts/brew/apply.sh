@@ -29,6 +29,7 @@
 #   30 apply-fail-unknown (one or more items failed, or brew precondition)
 # =============================================================================
 set -o pipefail
+shopt -s checkhash
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ADAPTER_LIB="$SCRIPT_DIR/../../lib"
@@ -292,6 +293,7 @@ _apply_one() {
     local _brew_exit=0
     brew upgrade "$_brew_flag" "$_id" 2>&1 | _stream_tee >/dev/null
     _brew_exit="${PIPESTATUS[0]:-0}"
+    hash -r 2>/dev/null || true
 
     if [ "$_brew_exit" -eq 0 ]; then
         # Resolve the version actually installed post-upgrade.

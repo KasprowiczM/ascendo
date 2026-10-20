@@ -36,6 +36,7 @@ if ! command -v python3 >/dev/null 2>&1; then
     echo "ascendo_json.sh: python3 is required" >&2
     return 1 2>/dev/null || exit 1
 fi
+shopt -s checkhash 2>/dev/null || true
 if [ ! -f "$_ASCENDO_JSON_EMIT" ]; then
     echo "ascendo_json.sh: missing helper $_ASCENDO_JSON_EMIT" >&2
     return 1 2>/dev/null || exit 1

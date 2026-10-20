@@ -23,6 +23,7 @@
 # Bash 3.2 compatible.
 # =============================================================================
 set -o pipefail
+shopt -s checkhash
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ADAPTER_LIB="$SCRIPT_DIR/../../lib"
@@ -182,6 +183,7 @@ apply_pip() {
             | tee "$_tmp_log" | _stream_tee >/dev/null
     fi
     local _rc="${PIPESTATUS[0]:-1}"
+    hash -r 2>/dev/null || true
     if [ "$_rc" -ne 0 ]; then
         json_add_item "$_display" "" "" "failed" "pip" "pip"
         # Last ~12 lines, trimmed to 1500 chars total (Pydantic Message has

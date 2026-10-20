@@ -4,6 +4,7 @@
 # npm/bun beyond what check produces). Symlink-style delegation; we
 # duplicate the body so the sidecar's `phase` field reads `plan`.
 set -o pipefail
+shopt -s checkhash
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ADAPTER_LIB="$SCRIPT_DIR/../../lib"
 . "$ADAPTER_LIB/ascendo_json.sh"

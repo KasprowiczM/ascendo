@@ -10,6 +10,7 @@
 #   - feed-backed squirrel/docker -> planned only when the vendor feed is newer
 # =============================================================================
 set -o pipefail
+shopt -s checkhash
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ADAPTER_LIB="$SCRIPT_DIR/../../lib"

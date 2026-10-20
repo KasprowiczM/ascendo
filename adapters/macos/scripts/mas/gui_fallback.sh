@@ -21,6 +21,7 @@
 #   4  bad usage
 # =============================================================================
 set -o pipefail
+shopt -s checkhash
 
 CHECK_ONLY=0
 QUIET=0

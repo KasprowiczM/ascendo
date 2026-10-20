@@ -16,6 +16,7 @@
 #   2  bad usage (missing required args / unknown flag)
 # =============================================================================
 set -o pipefail
+shopt -s checkhash
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ADAPTER_LIB="$SCRIPT_DIR/../../lib"

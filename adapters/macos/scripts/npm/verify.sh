@@ -3,6 +3,7 @@
 # Re-runs the same logic as check.sh; if any expected CLI is still missing
 # or still outdated, status=failed for that item.
 set -o pipefail
+shopt -s checkhash
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ADAPTER_LIB="$SCRIPT_DIR/../../lib"
 . "$ADAPTER_LIB/ascendo_json.sh"

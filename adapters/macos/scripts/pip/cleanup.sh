@@ -3,6 +3,7 @@
 # Idempotent — `pip cache purge` is safe to re-run; never fails the run.
 # Bash 3.2 compatible.
 set -o pipefail
+shopt -s checkhash
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ADAPTER_LIB="$SCRIPT_DIR/../../lib"
 . "$ADAPTER_LIB/ascendo_json.sh"

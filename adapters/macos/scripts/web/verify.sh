@@ -38,6 +38,7 @@
 # When no apply sidecar exists in the run dir, emit empty verify (no-op).
 # =============================================================================
 set -o pipefail
+shopt -s checkhash
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ADAPTER_LIB="$SCRIPT_DIR/../../lib"
