@@ -217,33 +217,33 @@ def test_spa_stub_get_endpoints_return_200(client: TestClient, path: str) -> Non
 
 
 @pytest.mark.parametrize(
-    ("path", "method", "json_body"),
+    ("path", "method", "json_body", "expected_status"),
     [
-        ("/apps/add", "POST", {"package": "x", "category": "winget"}),
-        ("/apps/remove", "POST", {"package": "x", "category": "winget"}),
-        ("/git/fetch", "POST", None),
-        ("/git/pull", "POST", None),
-        ("/git/push", "POST", None),
-        ("/health/run", "POST", None),
-        ("/hosts/upsert", "POST", {}),
-        ("/hosts/delete", "POST", {}),
-        ("/inventory/refresh", "POST", None),
-        ("/onboarding/complete", "POST", {}),
-        ("/profiles/import", "POST", {}),
-        ("/runs/active/stop", "POST", None),
+        ("/apps/add", "POST", {"package": "x", "category": "winget"}, 501),
+        ("/apps/remove", "POST", {"package": "x", "category": "winget"}, 501),
+        ("/git/fetch", "POST", None, 501),
+        ("/git/pull", "POST", None, 501),
+        ("/git/push", "POST", None, 501),
+        ("/health/run", "POST", None, 200),
+        ("/hosts/upsert", "POST", {}, 501),
+        ("/hosts/delete", "POST", {}, 501),
+        ("/inventory/refresh", "POST", None, 200),
+        ("/onboarding/complete", "POST", {}, 200),
+        ("/profiles/import", "POST", {}, 501),
+        ("/runs/active/stop", "POST", None, 200),
         # /scheduler/* graduated from stubs to real scheduler_real.py
         # routes (Sesja 67) with required Pydantic bodies — they are no
         # longer stub-mutation endpoints and are covered by the
         # scheduler_real contract tests instead.
-        ("/suggestions/apply", "POST", {}),
-        ("/suggestions/dismiss", "POST", {}),
-        ("/suggestions/test", "POST", {}),
-        ("/sudo/auth", "POST", {"password": "x"}),
-        ("/sync/export", "POST", None),
-        ("/sync/provider", "POST", {}),
-        ("/sync/provider/test", "POST", {}),
-        ("/system/reboot", "POST", None),
-        ("/settings", "PUT", {}),
+        ("/suggestions/apply", "POST", {}, 501),
+        ("/suggestions/dismiss", "POST", {}, 501),
+        ("/suggestions/test", "POST", {}, 501),
+        ("/sudo/auth", "POST", {"password": "x"}, 200),
+        ("/sync/export", "POST", None, 501),
+        ("/sync/provider", "POST", {}, 501),
+        ("/sync/provider/test", "POST", {}, 501),
+        ("/system/reboot", "POST", None, 501),
+        ("/settings", "PUT", {}, 501),
     ],
 )
 def test_spa_stub_mutation_endpoints(
@@ -251,13 +251,12 @@ def test_spa_stub_mutation_endpoints(
     path: str,
     method: str,
     json_body: dict | None,
+    expected_status: int,
 ) -> None:
     r = client.request(method, path, json=json_body)
-    # Stubs either return 200 {"ok": ...} or 501 {"implemented": false} for
-    # features not yet ported to core.
-    assert r.status_code in (200, 501), f"{method} {path}: {r.status_code} {r.text[:100]}"
+    assert r.status_code == expected_status, f"{method} {path}: expected {expected_status}, got {r.status_code} {r.text[:100]}"
     body = r.json()
-    if r.status_code == 200:
+    if expected_status == 200:
         assert body.get("ok") is not None  # every active mutation stub returns {"ok": ...}
     else:
         assert body.get("implemented") is False

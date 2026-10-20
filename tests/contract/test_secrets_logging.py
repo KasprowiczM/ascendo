@@ -46,17 +46,26 @@ def client(tmp_path: Path) -> TestClient:
 
 
 def test_elevation_auth_password_not_logged(
-    client: TestClient,
+    tmp_path: Path,
     log_capture: _LogCapture,
 ) -> None:
     """POST /elevation/auth with a password must not expose it in logs."""
+    from .test_dashboard_elevation import _FakeAdapterWithElevation
+
+    app = create_app(adapter=_FakeAdapterWithElevation(), runs_dir=tmp_path)
+    client = TestClient(app)
+
+    # Verify log_capture is active and receiving records
+    logging.getLogger("ascendo").info("elevation auth test starting")
+
     resp = client.post(
         "/elevation/auth",
         json={"password": "SuperSecretP@ss123"},
     )
-    assert resp.status_code in (401, 429, 503)
+    assert resp.status_code == 401
 
     combined = "\n".join(log_capture.records)
+    assert "elevation auth test starting" in combined
     assert "SuperSecretP@ss123" not in combined
 
 
