@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse, Response
+from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     from ...interfaces.adapter import IAdapter
@@ -582,8 +583,13 @@ async def sudo_status_stub(request: Request) -> dict[str, Any]:
     }
 
 
+class SudoAuthRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    password: str = Field(..., min_length=1)
+
+
 @router.post("/sudo/auth")
-async def sudo_auth_stub(request: Request) -> dict[str, Any]:
+async def sudo_auth_stub(body: SudoAuthRequest, request: Request) -> dict[str, Any]:
     """Forward password to the real IElevation backend when available;
     otherwise no-op (Windows / Linux without askpass)."""
     adapter = getattr(request.app.state, "adapter", None)
@@ -595,10 +601,7 @@ async def sudo_auth_stub(request: Request) -> dict[str, Any]:
         elev = None
     if elev is None or not callable(getattr(elev, "register_password", None)):
         return {"ok": True, "cached": True, "stub": True}
-    body = await request.json()
-    password = body.get("password") if isinstance(body, dict) else None
-    if not password:
-        raise HTTPException(status_code=400, detail="password required")
+    password = body.password
     try:
         elev.register_password(password)
     except Exception as exc:  # noqa: BLE001
@@ -608,8 +611,6 @@ async def sudo_auth_stub(request: Request) -> dict[str, Any]:
     finally:
         # P3/P6: best-effort password memory sanitization
         password = ""
-        if isinstance(body, dict) and "password" in body:
-            body["password"] = ""
         del body
     return {"ok": True, "cached": True}
 

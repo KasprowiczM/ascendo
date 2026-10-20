@@ -97,3 +97,35 @@ def test_ai_config_api_key_not_logged(
 
     combined = "\n".join(log_capture.records)
     assert "sk-proj-test12345abcdef" not in combined
+
+
+@pytest.mark.parametrize(
+    ("path", "payload", "secret"),
+    [
+        # /elevation/auth
+        ("/elevation/auth", {"password": ["SuperSecretP@ss123"]}, "SuperSecretP@ss123"),
+        ("/elevation/auth", {"password": 987654}, "987654"),
+        ("/elevation/auth", {"password": {"val": "SuperSecretP@ss123"}}, "SuperSecretP@ss123"),
+        # /sudo/auth
+        ("/sudo/auth", {"password": ["AnotherSecret456!"]}, "AnotherSecret456!"),
+        ("/sudo/auth", {"password": 123456}, "123456"),
+        ("/sudo/auth", {"password": {"val": "AnotherSecret456!"}}, "AnotherSecret456!"),
+        # /ai/config
+        ("/ai/config", {"provider": "openai", "api_key": ["sk-proj-test12345abcdef"]}, "sk-proj-test12345abcdef"),
+        ("/ai/config", {"api_key": 99999}, "99999"),
+        ("/ai/config", {"api_key": {"val": "sk-secret"}}, "sk-secret"),
+        # /ai/test-connection
+        ("/ai/test-connection", {"provider": "openai", "api_key": ["sk-proj-test12345abcdef"]}, "sk-proj-test12345abcdef"),
+        ("/ai/test-connection", {"provider": "openai", "api_key": 99999}, "99999"),
+    ],
+)
+def test_validation_error_does_not_leak_secret_in_response(
+    client: TestClient,
+    path: str,
+    payload: dict,
+    secret: str,
+) -> None:
+    resp = client.post(path, json=payload)
+    assert resp.status_code == 422
+    assert secret not in resp.text
+

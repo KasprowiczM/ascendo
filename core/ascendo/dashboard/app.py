@@ -16,9 +16,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .inventory_db import InventoryDB
@@ -280,6 +281,22 @@ def create_app(
         version=_get_version(),
         lifespan=lifespan,
     )
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_exception_handler(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        sanitized = []
+        for err in exc.errors():
+            sanitized.append({
+                "type": err.get("type"),
+                "loc": err.get("loc"),
+                "msg": err.get("msg"),
+            })
+        return JSONResponse(
+            status_code=getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", 422),
+            content={"detail": sanitized},
+        )
 
     # Pre-injection (tests) -- set state before lifespan runs.
     if adapter is not None:
