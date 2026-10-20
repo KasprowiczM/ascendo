@@ -7,18 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Test honesty**: `tests/contract/test_dashboard_spa.py` now asserts explicit status codes per endpoint (200 for implemented stubs, 501 for unported ones) instead of loose `in (200, 501)`.
+- **Test honesty**: `tests/contract/test_secrets_logging.py` no longer accepts 429 or 503; verifies active log capture and full elevation auth code path.
+- **Hermetic test**: `adapters/macos/tests/test_npm_gate_opencode.py::test_preferred_path_brew_dirs_seam` isolates `BUN_INSTALL` so host bun installations do not leak into the test seam.
+- **CI warning filter**: Added `UserWarning` filter for Starlette testclient `httpx2` deprecation warning on newer Starlette versions.
+
 ## [1.1.1] — 2026-10-20 — CI repair + macOS_updates v1.5.5 parity
 
 ### Fixed — CI green on main
 
 - Tracked `googleupdater.log` fixture via `.gitignore` negation so 5
-  vendor_feeds/chromium_updater tests no longer fail on fresh clones.
+  vendor_feeds/chromium_updater tests no longer fail on fresh clones (`9a532b8`).
 - Made `test_pin_mutation_happens_in_real_apply` hermetic (tmp HOME);
-  CI runner no longer reads the real MAU plist.
+  CI runner no longer reads the real MAU plist (`e152209`).
 - Moved shared test builders to `tests/contract/_report_fixtures.py`;
-  cross-test-file `ImportError` on CI is fixed.
+  cross-test-file `ImportError` on CI is fixed (`10675e5`).
 - Eliminated false positives in the CI "Check no secrets" step
-  (`token=` keyword-arg pattern, npm test-fixture `_auth=` pattern).
+  (`token=` keyword-arg pattern, npm test-fixture `_auth=` pattern) (`604588d`).
+- Resolved contract test suite failures: SPA stubs return 501 for unported features,
+  autouse fixture resets elevation rate-limiter list (`2ad0fcc`), skipped macOS-only
+  run-lock contract tests on Linux runners (`79cdb29`), and filtered anyio deprecation
+  warning (`8c7e673`). All 745 contract tests pass cleanly.
 
 ### Fixed — macOS_updates v1.5.5 parity
 
