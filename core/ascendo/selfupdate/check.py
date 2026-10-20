@@ -29,7 +29,8 @@ def _shell_artifact(shell_block: dict, info: InstallInfo) -> dict | None:
     key = f"{info.os}_{info.arch}"
     art = artifacts.get(key)
     if isinstance(art, dict):
-        return {"platform": key, **art}
+        if any(art.get(k) for k in ("dmg_url", "msi_url", "appimage_url", "url")):
+            return {"platform": key, **art}
     return None
 
 
@@ -80,17 +81,26 @@ def check_for_updates(install: InstallInfo | None = None) -> dict:
 
     if latest_core:
         report["core_update_available"] = _version.is_newer(latest_core, current_core)
+
+    artifact = _shell_artifact(shell_block, info)
+    report["shell_artifact"] = artifact
+
     if latest_shell and info.shell_version:
-        report["shell_update_available"] = _version.is_newer(latest_shell, info.shell_version)
+        # A native desktop shell update is only actionable if a downloadable artifact
+        # exists for this OS/arch.
+        if artifact and _version.is_newer(latest_shell, info.shell_version):
+            report["shell_update_available"] = True
 
     # Can we upgrade the core in-app? Only for a git checkout with an
-    # updater script present, on a supported OS.
+    # updater script present, on a supported OS, AND ONLY IF core needs updating.
+    # If only the native desktop shell changed, updater scripts cannot upgrade
+    # a running compiled .app/.exe bundle; that requires downloading/rebuilding.
     report["can_self_update"] = bool(
-        info.method == "git"
+        report["core_update_available"]
+        and info.method == "git"
         and info.updater
         and info.os in {"macos", "linux", "windows"}
     )
-    report["shell_artifact"] = _shell_artifact(shell_block, info)
     report["update_available"] = bool(
         report["core_update_available"] or report["shell_update_available"]
     )

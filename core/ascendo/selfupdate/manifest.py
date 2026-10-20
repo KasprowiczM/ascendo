@@ -64,6 +64,12 @@ def select_channel(manifest: dict, chan: str | None = None) -> dict:
     if chan in channels and isinstance(channels[chan], dict):
         block = {**channels[chan]}
         block.setdefault("channel", chan)
+        chan_shell = block.get("shell")
+        top_shell = manifest.get("shell")
+        if isinstance(chan_shell, dict) and isinstance(top_shell, dict):
+            if "artifacts" not in chan_shell and "artifacts" in top_shell:
+                chan_shell = {**chan_shell, "artifacts": top_shell["artifacts"]}
+                block["shell"] = chan_shell
         return block
     return {
         "channel": manifest.get("channel", chan),

@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Version docstring localization**: Replaced Polish docstring entry in `core/ascendo/__version__.py` with English format matching the rest of the file.
 
 ### Fixed
+- **Self-update drift and false-positive loop**: Fixed an issue where `can_self_update` reported `True` when only the native desktop shell had a newer version declared in the manifest, triggering an in-app `update.sh` run that updated `core` but could not upgrade the compiled Tauri `.app` bundle, leading to an infinite "update available" prompt after reload. `can_self_update` now strictly requires `core_update_available`, `shell_update_available` requires an actionable download artifact to be present for the host platform, and `releases/latest.json` is updated to 1.5.5 with empty shell artifacts.
+- **About card update version display**: Fixed the About-tab update text in `app/frontend/app.js` which previously displayed `current_core → latest_core` regardless of whether the update was for `core` or `shell`, preventing false downgrade indicators like `1.5.5 → 1.1.0`.
 ### Security
 
 ## [1.5.5] — 2026-10-20 — version alignment with macOS_updates + security fixes

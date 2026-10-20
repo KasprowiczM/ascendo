@@ -7786,9 +7786,15 @@ window.ui = ui;
       return;
     }
     if (report.update_available) {
+      const fromVer = report.core_update_available
+        ? (report.current_core || "")
+        : (report.current_shell || "");
+      const toVer = report.core_update_available
+        ? (report.latest_core || "")
+        : (report.latest_shell || "");
       box.textContent =
         t("updates.available", "Update available:") + " " +
-        (report.current_core || "") + " → " + (report.latest_core || report.latest_shell || "") +
+        fromVer + " → " + toVer +
         (report.channel ? "  (" + report.channel + ")" : "");
       if (installBtn) {
         installBtn.classList.remove("hidden");
