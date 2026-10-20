@@ -207,7 +207,6 @@ _SISTER_WEB_HANDLERS = {
     "gdrive": "chromium_updater",
     "firefox-dev": "release_feed",
     "claude": "squirrel",
-    "chatgpt": "squirrel",
     "codex": "squirrel",
     "warp": "squirrel",
     "gemini": "chromium_updater",
@@ -330,7 +329,7 @@ def test_teams_notes_document_msupdate_cannot_install() -> None:
 def test_retired_slugs_stay_gone() -> None:
     reg = WebRegistry.load(SHIPPED, None)
     slugs = {a.slug for a in reg.apps}
-    for slug in ("chatgpt-atlas", "opera", "macwhisper", "notion", "notion-calendar"):
+    for slug in ("chatgpt-atlas", "chatgpt", "opera", "macwhisper", "notion", "notion-calendar"):
         assert slug not in slugs
 
 
@@ -428,7 +427,8 @@ def test_only_the_spec_a_and_task_11_slugs_carry_a_vendor_feed() -> None:
     reg = WebRegistry.load(SHIPPED, None)
     carriers = {a.slug for a in reg.apps if a.vendor_feed is not None}
     assert carriers == set(_VENDOR_FEED_ROWS)
-    assert reg.find("chatgpt").vendor_feed is None  # com.openai.chat is a different bundle
+    # com.openai.chat (chatgpt) removed in 1.1.1 — bundle no longer exists;
+    # com.openai.codex (codex) carries the Sparkle feed for /Applications/ChatGPT.app.
 
 
 # upstream v1.5.4 config/vendor_direct_first.txt: Cursor, OpenCode, ChatGPT / Codex,

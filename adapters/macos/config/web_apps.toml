@@ -72,13 +72,6 @@ artifact = "zip"
 allowed_host = "downloads.claude.ai"
 
 [[app]]
-slug = "chatgpt"
-bundle_id = "com.openai.chat"  # verified on Mac.r12.home (2026-05-06)
-display_name = "ChatGPT"
-handler = "squirrel"
-notes = "macOS_updates channel: silent_launch (open -gjF) for ChatGPT Desktop."
-
-[[app]]
 slug = "warp"
 bundle_id = "dev.warp.Warp-Stable"  # verified on Mac.r12.home (2026-05-06)
 display_name = "Warp"
