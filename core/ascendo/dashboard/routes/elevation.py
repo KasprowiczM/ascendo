@@ -143,6 +143,7 @@ async def post_auth(body: AuthRequest, request: Request) -> OkResponse:
         503: adapter absent or has no IElevation.
     """
     now = time.monotonic()
+    _log.info("elevation auth attempt received")
     _auth_attempts[:] = [t for t in _auth_attempts if now - t < _AUTH_RATE_LIMIT_WINDOW]
     if len(_auth_attempts) >= _AUTH_RATE_LIMIT_MAX:
         raise HTTPException(
@@ -153,17 +154,30 @@ async def post_auth(body: AuthRequest, request: Request) -> OkResponse:
 
     elev = _elevation_or_503(request)
 
+    raw_password = body.password
     try:
-        ok, msg = elev.register_password(body.password)
+        try:
+            ok, msg = elev.register_password(raw_password)
+        except Exception as exc:
+            _log.warning("elevation backend error: %s", type(exc).__name__)
+            raise HTTPException(
+                status_code=500,
+                detail="elevation backend error",
+            ) from None
+
+        if not ok:
+            _log.warning("elevation auth rejected by backend")
+            safe_msg = msg[:300] if msg else "authentication failed"
+            if raw_password and raw_password in safe_msg:
+                safe_msg = safe_msg.replace(raw_password, "***")
+            raise HTTPException(status_code=401, detail=safe_msg)
+
+        _log.info("elevation auth succeeded")
+        return OkResponse(ok=True)
     finally:
         body.password = ""
+        raw_password = ""
         del body
-
-    if not ok:
-        safe_msg = msg[:300] if msg else "authentication failed"
-        raise HTTPException(status_code=401, detail=safe_msg)
-
-    return OkResponse(ok=True)
 
 
 @router.post("/invalidate", response_model=OkResponse)

@@ -30,11 +30,15 @@ class _LogCapture(logging.Handler):
 def log_capture() -> _LogCapture:
     cap = _LogCapture()
     cap.setLevel(logging.DEBUG)
-    root = logging.getLogger("ascendo")
+    root = logging.getLogger()
+    prev_level = root.level
     root.addHandler(cap)
     root.setLevel(logging.DEBUG)
-    yield cap
-    root.removeHandler(cap)
+    try:
+        yield cap
+    finally:
+        root.removeHandler(cap)
+        root.setLevel(prev_level)
 
 
 @pytest.fixture
@@ -49,24 +53,120 @@ def test_elevation_auth_password_not_logged(
     tmp_path: Path,
     log_capture: _LogCapture,
 ) -> None:
-    """POST /elevation/auth with a password must not expose it in logs."""
+    """POST /elevation/auth with a password must not expose it in logs or response."""
     from .test_dashboard_elevation import _FakeAdapterWithElevation
 
     app = create_app(adapter=_FakeAdapterWithElevation(), runs_dir=tmp_path)
     client = TestClient(app)
 
-    # Verify log_capture is active and receiving records
-    logging.getLogger("ascendo").info("elevation auth test starting")
+    secret = "SuperSecretP@ss123"
+    resp = client.post(
+        "/elevation/auth",
+        json={"password": secret},
+    )
+    assert resp.status_code == 401
+    assert secret not in resp.text
+
+    assert len(log_capture.records) > 0
+    combined = "\n".join(log_capture.records)
+    assert "elevation auth attempt received" in combined
+    assert "elevation auth rejected by backend" in combined
+    assert secret not in combined
+
+
+def test_elevation_auth_success_does_not_leak_password(
+    tmp_path: Path,
+    log_capture: _LogCapture,
+) -> None:
+    """POST /elevation/auth on success must log success and not leak password."""
+    from .test_dashboard_elevation import _FakeAdapterWithElevation
+
+    app = create_app(adapter=_FakeAdapterWithElevation(), runs_dir=tmp_path)
+    client = TestClient(app)
 
     resp = client.post(
         "/elevation/auth",
-        json={"password": "SuperSecretP@ss123"},
+        json={"password": "correct"},
+    )
+    assert resp.status_code == 200
+    assert "correct" not in resp.text
+
+    assert len(log_capture.records) > 0
+    combined = "\n".join(log_capture.records)
+    assert "elevation auth attempt received" in combined
+    assert "elevation auth succeeded" in combined
+    assert "correct" not in combined
+
+
+def test_elevation_auth_backend_exception_does_not_leak_password(
+    tmp_path: Path,
+    log_capture: _LogCapture,
+) -> None:
+    """Backend raising an exception containing password must not leak secret to logs or response."""
+    from .test_dashboard_elevation import _FakeAdapterWithElevation, _FakeElevation
+
+    secret = "SuperSecretP@ss123"
+
+    class _RaisingElevation(_FakeElevation):
+        def register_password(
+            self, password: str, *, verify: bool = True, timeout: int = 15
+        ) -> tuple[bool, str]:
+            raise RuntimeError(f"elevation failure with secret {password}")
+
+    class _RaisingAdapter(_FakeAdapterWithElevation):
+        def __init__(self) -> None:
+            self._elev = _RaisingElevation()
+
+    app = create_app(adapter=_RaisingAdapter(), runs_dir=tmp_path)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    resp = client.post(
+        "/elevation/auth",
+        json={"password": secret},
+    )
+    assert resp.status_code == 500
+    assert secret not in resp.text
+
+    assert len(log_capture.records) > 0
+    combined = "\n".join(log_capture.records)
+    assert secret not in combined
+    assert "elevation backend error: RuntimeError" in combined
+
+
+def test_elevation_auth_backend_rejection_message_sanitizes_password(
+    tmp_path: Path,
+    log_capture: _LogCapture,
+) -> None:
+    """Backend returning password in failure message must have password sanitized."""
+    from .test_dashboard_elevation import _FakeAdapterWithElevation, _FakeElevation
+
+    secret = "SuperSecretP@ss123"
+
+    class _LeakingElevation(_FakeElevation):
+        def register_password(
+            self, password: str, *, verify: bool = True, timeout: int = 15
+        ) -> tuple[bool, str]:
+            return False, f"auth error: password {password} rejected"
+
+    class _LeakingAdapter(_FakeAdapterWithElevation):
+        def __init__(self) -> None:
+            self._elev = _LeakingElevation()
+
+    app = create_app(adapter=_LeakingAdapter(), runs_dir=tmp_path)
+    client = TestClient(app)
+
+    resp = client.post(
+        "/elevation/auth",
+        json={"password": secret},
     )
     assert resp.status_code == 401
+    assert secret not in resp.text
+    assert "***" in resp.text
 
+    assert len(log_capture.records) > 0
     combined = "\n".join(log_capture.records)
-    assert "elevation auth test starting" in combined
-    assert "SuperSecretP@ss123" not in combined
+    assert secret not in combined
+    assert "elevation auth rejected by backend" in combined
 
 
 def test_sudo_auth_stub_password_not_logged(
