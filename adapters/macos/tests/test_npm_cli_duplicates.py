@@ -86,7 +86,7 @@ case "$1" in
   */cli_duplicates.py)
     if [ "$2" = "${{FAKE_DUP_PY_FAIL:-}}" ]; then
       echo "ImportError: boom" >&2
-      echo "credential=abc123dummy" >&2
+      echo "_auth=abc123secret" >&2
       exit 1
     fi ;;
 esac

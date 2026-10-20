@@ -12,6 +12,8 @@ import textwrap
 import time
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent))
 from test_web_phase_check_plan import (  # noqa: E402
     _make_fake_app, _read_sidecar, _run_phase,
@@ -344,16 +346,19 @@ def test_scoped_install_never_for_teams(tmp_path: Path) -> None:
 
 # ---- Fix round 1 ------------------------------------------------------------
 def _teams_phase(tmp: Path, pin: str):
-    _make_fake_app(tmp, "Microsoft Teams", "25306.805.4102.7211", bundle_id="com.microsoft.teams2")
+    fake_app = _make_fake_app(tmp, "Microsoft Teams", "25306.805.4102.7211", bundle_id="com.microsoft.teams2")
     prefs = _prefs(tmp / "p.plist", {"OptionalUpdatesDeferrals":
                                      {"DeferralVersions": {"TEAMS21": pin}}})
     fake = _fake_msupdate(tmp / "bin", f"cat <<'EOF'\n{LIST_NONE}EOF\n")
     reg = tmp / "registry.toml"
     reg.write_text('schema = "ascendo-web-apps/v2"\n[[app]]\nslug = "ms-teams"\n'
                    'bundle_id = "com.microsoft.teams2"\ndisplay_name = "Microsoft Teams"\n'
+                   f'app_path = "{fake_app}"\n'
                    'handler = "msupdate"\n[app.msupdate]\napp_id = "TEAMS21"\n')
+    fake_home = tmp / "home"
+    fake_home.mkdir(parents=True, exist_ok=True)
     env = {"PATH": f"{fake}:{os.environ['PATH']}", "ASCENDO_MAU_PREFS_FILE": str(prefs),
-           "ASCENDO_MAU_MUTATE_PREFS": "1"}
+           "ASCENDO_MAU_MUTATE_PREFS": "1", "HOME": str(fake_home)}
     return reg, prefs, env
 
 
@@ -368,8 +373,12 @@ def test_pin_mutation_never_in_check_plan_or_dry_run_apply(tmp_path: Path) -> No
         assert not list(out.rglob("*pre-pin-release*")), phase
 
 
-def test_pin_mutation_happens_in_real_apply(tmp_path: Path) -> None:
+def test_pin_mutation_happens_in_real_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_home = tmp_path / "home"
+    fake_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("HOME", str(fake_home))
     reg, prefs, env = _teams_phase(tmp_path, "25000.100")
+    env["HOME"] = str(fake_home)
     out = tmp_path / "out"
     r, rid = _run_phase("apply", reg, out, env_extra=env)
     assert r.returncode == 0, r.stderr
