@@ -106,10 +106,10 @@ def test_check_only_run_has_no_deferred_apply(host, run, tmp_path):   # noqa: F8
 
 # ── run lock ───────────────────────────────────────────────────────────────
 
-posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX-only lock")
+darwin_only = pytest.mark.skipif(sys.platform != "darwin", reason="run lock is macOS-only")
 
 
-@posix_only
+@darwin_only
 def test_apply_refused_while_another_process_holds_the_lock(host, run, tmp_path, monkeypatch):   # noqa: F811
     import subprocess
     holder = subprocess.Popen(["sleep", "30"])
@@ -130,7 +130,7 @@ def test_apply_refused_while_another_process_holds_the_lock(host, run, tmp_path,
         holder.wait()
 
 
-@posix_only
+@darwin_only
 def test_lock_released_after_run(host, run, tmp_path, monkeypatch):   # noqa: F811
     lock = tmp_path / "x.lock"
     monkeypatch.setenv("ASCENDO_RUN_LOCK_FILE", str(lock))

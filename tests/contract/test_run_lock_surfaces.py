@@ -13,7 +13,7 @@ from ascendo.dashboard import create_app
 
 from .test_dashboard_async import _FakeAdapter
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="POSIX-only lock")
+pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="run lock is macOS-only")
 
 
 @pytest.fixture
