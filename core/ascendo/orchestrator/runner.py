@@ -425,7 +425,10 @@ def _run_phases_inner(
                 run=run, host=host, sidecars=list(sidecars),
                 skipped_managers=skipped, aborted_after_phase=aborted,
             )
-            _finalize(interim, cancelled=False)
+            try:
+                _finalize(interim, cancelled=False)
+            except Exception:  # noqa: BLE001 - bookkeeping must not block the run
+                _log.exception("interim _finalize raised for run %s", run.id)
             if pre_final_apply is not None:
                 try:
                     pre_final_apply()
@@ -537,7 +540,7 @@ def _write_run_meta(
         (run_dir / RUN_META_FILENAME).write_text(
             json.dumps(payload, indent=2) + "\n", encoding="utf-8",
         )
-    except OSError:
+    except Exception:
         _log.exception("could not write %s", run_dir / RUN_META_FILENAME)
 
 

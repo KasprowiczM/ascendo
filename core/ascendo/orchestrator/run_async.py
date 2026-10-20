@@ -34,6 +34,7 @@ failures are rare (typically OSError on disk full).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import threading
@@ -48,7 +49,7 @@ from uuid import UUID
 
 from ..models.run import Phase, PhaseStatus, RunInfo
 from .report import _SOFT_DEFERRAL_CODES
-from .runner import RunReport, run_phases
+from .runner import RUN_META_FILENAME, RunReport, run_phases
 
 # Convention: per-run streaming log, written to by bash apply scripts via
 # `_stream_tee` (see adapters/<os>/scripts/<source>/apply.sh). The SSE
@@ -877,6 +878,13 @@ async def start_run_async(
             state.error = f"{type(exc).__name__}: {exc}"
             state.terminal_state = "failed"
             state.status = RunStatus.FAILED
+            try:
+                (run_dir / RUN_META_FILENAME).write_text(
+                    json.dumps({"status": "failed", "error": state.error}, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+            except Exception:  # noqa: BLE001
+                _log.exception("could not write failed %s", run_dir / RUN_META_FILENAME)
         finally:
             # I3 (review): stamp finished_at BEFORE the post-run inventory /
             # history flush so the SSE `done` event — which fires the moment
