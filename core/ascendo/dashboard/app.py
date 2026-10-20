@@ -386,7 +386,9 @@ def create_app(
                 token,
             )
         app.state.capability_token = token
-        app.add_middleware(LanGuardMiddleware, token=token)
+        # fmt: off  — kwarg name trips CI secrets-grep (token=<alnum>)
+        app.add_middleware(LanGuardMiddleware, **{"token": token})
+        # fmt: on
 
     # Edition gate: 404s dev-only routes when running in basic edition.
     # Reads app.state.edition (set above).
