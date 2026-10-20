@@ -21,7 +21,7 @@ from ascendo.orchestrator.report import (
     generate_apply_report,
 )
 
-from .test_apply_report import _build_item, _build_sidecar, _write, run_dir  # noqa: F401
+from ._report_fixtures import _build_item, _build_sidecar, _write, run_dir  # noqa: F401
 
 STARTED = datetime(2026, 10, 17, 10, 0, tzinfo=timezone.utc)
 WEB = SourceType.WEB
@@ -285,8 +285,7 @@ def test_run_status_helpers_treat_sudo_unavailable_as_warning_and_cancel_as_not(
     from ascendo.orchestrator.run_async import _report_has_warnings
     from ascendo.orchestrator.runner import RunReport
 
-    from .test_apply_report import _host, _run
-    from .test_run_async_lifecycle import _make_sidecar
+    from ._report_fixtures import _host, _make_sidecar, _run
 
     run, host = _run(), _host()
     quiet = _make_sidecar(run, host, phase=Phase.APPLY, messages=[

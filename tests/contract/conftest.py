@@ -10,10 +10,19 @@ from __future__ import annotations
 import copy
 import json
 import uuid
+import warnings
 from pathlib import Path
 from typing import Any
 
 import pytest
+
+def pytest_configure(config):
+    # starlette==1.0.0 uses anyio.abc.BlockingPortal which was deprecated in anyio 4.4+.
+    # CI pins starlette==1.0.0 without pinning anyio, triggering DeprecationWarning under filterwarnings="error".
+    config.addinivalue_line(
+        "filterwarnings",
+        "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+    )
 
 # Resolve the fixtures directory once. Both the JSON disk fixtures and
 # the inline dicts share this conftest.

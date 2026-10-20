@@ -22,7 +22,7 @@ from ascendo.orchestrator.report import (
     generate_apply_report,
 )
 
-from .test_apply_report import _build_item, _build_sidecar, _write, run_dir  # noqa: F401
+from ._report_fixtures import _build_item, _build_sidecar, _write, run_dir  # noqa: F401
 
 STARTED = datetime(2026, 9, 29, 10, 0, tzinfo=timezone.utc)
 OK_CLAIM = "All updates applied successfully"

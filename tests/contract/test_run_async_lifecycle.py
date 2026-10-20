@@ -52,38 +52,7 @@ def _skipped_item(pkg: str = "fake-pkg") -> dict:
     }
 
 
-def _make_sidecar(
-    run: RunInfo,
-    host: HostInfo,
-    *,
-    phase: Phase = Phase.CHECK,
-    summary: Summary | None = None,
-    needs_reboot: bool = False,
-    messages: list[Message] | None = None,
-    items: list[dict] | None = None,
-) -> Sidecar:
-    now = datetime.now(timezone.utc)
-    item_list = items or []
-    # Keep summary.total consistent with len(items) when the caller doesn't
-    # supply an explicit summary (the Sidecar model enforces total==len(items)).
-    sm = summary if summary is not None else Summary(total=len(item_list), exit_code=0)
-    return Sidecar.model_validate(
-        {
-            "schema": SidecarSchema.V1_ASCENDO.value,
-            "run": run.model_dump(mode="json"),
-            "host": host.model_dump(mode="json"),
-            "tool": ToolInfo(name="winget", version="1.0").model_dump(mode="json"),
-            "phase": phase.value,
-            "category": "winget",
-            "started_at": now.isoformat(),
-            "finished_at": now.isoformat(),
-            "status": PhaseStatus.SUCCESS.value,
-            "items": item_list,
-            "summary": sm.model_dump(),
-            "needs_reboot": needs_reboot,
-            "messages": [m.model_dump() for m in (messages or [])],
-        }
-    )
+from ._report_fixtures import _make_sidecar
 
 
 class _CleanMgr(IPackageManager):
