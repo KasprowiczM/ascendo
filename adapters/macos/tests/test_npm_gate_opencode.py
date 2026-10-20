@@ -679,10 +679,12 @@ def test_preferred_path_brew_dirs_seam(tmp_path: Path) -> None:
     d = tmp_path / "brewbin"
     d.mkdir()
     res = _bash("ascendo_npm_preferred_path", HOME=str(tmp_path / "h"),
-                MAC_UPDATE_TOOLCHAIN_HOME=str(tmp_path / "tc"), ASCENDO_NPM_BREW_DIRS=str(d))
+                MAC_UPDATE_TOOLCHAIN_HOME=str(tmp_path / "tc"), ASCENDO_NPM_BREW_DIRS=str(d),
+                BUN_INSTALL=str(tmp_path / "nobun"))
     assert res.stdout == str(d)
     res = _bash("ascendo_npm_preferred_path", HOME=str(tmp_path / "h"),
-                MAC_UPDATE_TOOLCHAIN_HOME=str(tmp_path / "tc"), ASCENDO_NPM_BREW_DIRS="")
+                MAC_UPDATE_TOOLCHAIN_HOME=str(tmp_path / "tc"), ASCENDO_NPM_BREW_DIRS="",
+                BUN_INSTALL=str(tmp_path / "nobun"))
     assert res.stdout == ""
 
 
