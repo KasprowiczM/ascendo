@@ -1,6 +1,6 @@
 [package]
 name = "ascendo-desktop"
-version = "1.1.1"
+version = "1.5.5"
 description = "Ascendo - Unified Updates desktop shell"
 authors = ["Ascendo"]
 license = "MIT"
