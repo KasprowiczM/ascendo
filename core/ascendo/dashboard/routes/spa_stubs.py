@@ -603,13 +603,24 @@ async def sudo_auth_stub(body: SudoAuthRequest, request: Request) -> dict[str, A
         return {"ok": True, "cached": True, "stub": True}
     password = body.password
     try:
-        elev.register_password(password)
-    except Exception as exc:  # noqa: BLE001
-        # Wrong password / probe failure → 401. The real /elevation/auth
-        # handler does the same; we mirror it here for the legacy SPA path.
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+        try:
+            ok, msg = elev.register_password(password)
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("sudo auth backend error: %s", type(exc).__name__)
+            raise HTTPException(
+                status_code=500,
+                detail="elevation backend error",
+            ) from None
+
+        if not ok:
+            _log.warning("sudo auth rejected by backend")
+            safe_msg = msg[:300] if msg else "authentication failed"
+            if password and password in safe_msg:
+                safe_msg = safe_msg.replace(password, "***")
+            raise HTTPException(status_code=401, detail=safe_msg)
     finally:
         # P3/P6: best-effort password memory sanitization
+        body.password = ""
         password = ""
         del body
     return {"ok": True, "cached": True}
