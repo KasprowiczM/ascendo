@@ -398,6 +398,96 @@ def test_verify_reports_app_still_running_when_quit_does_not_take(sb):
     assert sc["items"][0]["status"] == "triggered"        # item status untouched
 
 
+def test_verify_quit_is_resent_while_app_keeps_running(sb):
+    make_app(sb.apps, ver="1.0")
+    rd = sb.tmp / "out" / "q_resend"
+    _apply_sidecar(rd)
+    _track_file(rd, BID)
+    poll_file = sb.tmp / "polls.txt"
+    poll_file.write_text("0")
+    script(sb.bin / "lsappinfo", f'''
+case "$1" in
+  list)
+    cnt=$(cat "{poll_file}")
+    cnt=$((cnt + 1))
+    echo "$cnt" > "{poll_file}"
+    if [ "$cnt" -le 4 ]; then
+      echo 'bundleID="{BID}"'
+    else
+      echo 'bundleID="com.apple.finder"'
+    fi
+    ;;
+  find) echo 'ASN:0x0-0x1234-"Example":' ;;
+  front) echo 'ASN:0x0-0x9999:' ;;
+esac
+exit 0
+''')
+    script(sb.bin / "osascript", f'''
+echo "osascript $*" >> "{sb.log}/osascript.log"
+exit 0
+''')
+    res, sc, _ = _verify(sb, rd, ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE="0", ASCENDO_WEB_QUIT_WAIT="20",
+                         ASCENDO_WEB_QUIT_RESEND="2")
+    log = sb.read_log("osascript.log")
+    assert len(log) > 1, f"Expected >1 quit calls, got {log}"
+    assert res.returncode == 0, res.stderr
+    assert "launched_app_quit" in _codes(sc)
+
+
+def test_verify_app_that_never_exits_gets_repeated_quits_no_kill(sb):
+    make_app(sb.apps, ver="1.0")
+    rd = sb.tmp / "out" / "q_never"
+    _apply_sidecar(rd)
+    _track_file(rd, BID)
+    _tracking_tools(sb, running="true", front=False, osa_flips=False)
+    res, sc, _ = _verify(sb, rd, ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE="0",
+                         ASCENDO_WEB_QUIT_WAIT="10", ASCENDO_WEB_QUIT_RESEND="4")
+    log = sb.read_log("osascript.log")
+    assert len(log) > 1, f"Expected multiple quit calls, got {log}"
+    assert "app_still_running" in _codes(sc)
+    assert sb.forbidden() == [], "No kill/killall/pkill commands should be called"
+
+
+def test_quit_resend_env_clamping(sb):
+    # Direct helper verification: 0->1, 999->60, empty->10
+    assert _bash('. "' + str(LIB) + '/ascendo_web.sh"; ASCENDO_WEB_QUIT_RESEND=0 _web_quit_resend') == "1"
+    assert _bash('. "' + str(LIB) + '/ascendo_web.sh"; ASCENDO_WEB_QUIT_RESEND=999 _web_quit_resend') == "60"
+    assert _bash('. "' + str(LIB) + '/ascendo_web.sh"; unset ASCENDO_WEB_QUIT_RESEND; _web_quit_resend') == "10"
+    assert _bash('. "' + str(LIB) + '/ascendo_web.sh"; ASCENDO_WEB_QUIT_RESEND="" _web_quit_resend') == "10"
+
+    # Behavioral verification in verify loop:
+    make_app(sb.apps, ver="1.0")
+    _tracking_tools(sb, running="true", front=False, osa_flips=False)
+
+    # 1) empty -> default 10: with wait=10, 2 quit calls (t=0, t=10)
+    rd1 = sb.tmp / "out" / "c_empty"
+    _apply_sidecar(rd1)
+    _track_file(rd1, BID)
+    _verify(sb, rd1, ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE="0", ASCENDO_WEB_QUIT_WAIT="10",
+            ASCENDO_WEB_QUIT_RESEND="")
+    assert len(sb.read_log("osascript.log")) == 2
+
+    (sb.log / "osascript.log").unlink(missing_ok=True)
+
+    # 2) 0 -> clamp to 1: with wait=10, resends every 2s tick (6 quit calls)
+    rd2 = sb.tmp / "out" / "c_zero"
+    _apply_sidecar(rd2)
+    _track_file(rd2, BID)
+    _verify(sb, rd2, ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE="0", ASCENDO_WEB_QUIT_WAIT="10",
+            ASCENDO_WEB_QUIT_RESEND="0")
+    assert len(sb.read_log("osascript.log")) == 6
+
+    (sb.log / "osascript.log").unlink(missing_ok=True)
+
+    # 3) 999 -> clamp to 60: with wait=10, never resends within 10s (1 quit call)
+    rd3 = sb.tmp / "out" / "c_999"
+    _apply_sidecar(rd3)
+    _track_file(rd3, BID)
+    _verify(sb, rd3, ASCENDO_WEB_VERIFY_SLEEP_OVERRIDE="0", ASCENDO_WEB_QUIT_WAIT="10",
+            ASCENDO_WEB_QUIT_RESEND="999")
+    assert len(sb.read_log("osascript.log")) == 1
+
+
 def test_verify_finds_the_track_file_in_the_canonical_runs_dir(sb):
     make_app(sb.apps, ver="1.0")
     runs = sb.tmp / "runs"

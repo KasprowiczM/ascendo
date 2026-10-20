@@ -449,23 +449,36 @@ _web_is_frontmost() {
 }
 
 # _web_quit_gracefully <bundle_id>
-# Ask the app to quit (AppleScript `quit`, never a signal) and wait for it to
-# be explicitly gone: rc 0 = not running (already, or after the request),
-# rc 1 = still running / state unknown when ASCENDO_WEB_QUIT_WAIT (default 60,
-# clamp 0-300) seconds are up. Only ever called for an app recorded in the run's
-# toolkit_launched.txt.
+# Ask the app to quit (AppleScript `quit`, never a signal) and wait.
+# Re-sends quit every ASCENDO_WEB_QUIT_RESEND (default 10, clamp 1-60) seconds
+# while the app is still running. Returns 0 if app exits, 1 if still running
+# after ASCENDO_WEB_QUIT_WAIT (default 60, clamp 0-300) seconds.
+# Only ever called for apps recorded in toolkit_launched.txt. Never force-kills.
 _web_quit_gracefully() {
-    local bid="$1" wait elapsed=0
+    local bid="$1" wait resend elapsed=0 since_quit=0
     case "$bid" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
     [ "$(ascendo_app_running_state "$bid")" = "true" ] || return 0
-    ascendo_run_with_timeout 20 osascript -e "tell application id \"$bid\" to quit" >/dev/null 2>&1
+
     wait="$(_web_bounded_int "${ASCENDO_WEB_QUIT_WAIT:-60}" 60 300)"
-    while :; do
+    resend="$(_web_bounded_int "${ASCENDO_WEB_QUIT_RESEND:-10}" 10 60)"
+    [ "$resend" -lt 1 ] && resend=1
+
+    ascendo_run_with_timeout 20 osascript -e "tell application id \"$bid\" to quit" >/dev/null 2>&1
+
+    while [ "$elapsed" -lt "$wait" ]; do
         [ "$(ascendo_app_running_state "$bid")" = "false" ] && return 0
-        [ "$elapsed" -ge "$wait" ] && return 1
         _web_sleep 2
         elapsed=$((elapsed + 2))
+        since_quit=$((since_quit + 2))
+        if [ "$since_quit" -ge "$resend" ]; then
+            since_quit=0
+            if [ "$(ascendo_app_running_state "$bid")" = "true" ]; then
+                ascendo_run_with_timeout 20 osascript -e "tell application id \"$bid\" to quit" >/dev/null 2>&1
+            fi
+        fi
     done
+    # Final observation: the app may have exited during the last interval.
+    [ "$(ascendo_app_running_state "$bid")" = "false" ]
 }
 
 # ============================================================
@@ -674,6 +687,16 @@ _web_bounded_int() {
 # 0-600; anything that is not a plain non-negative integer -> 90.
 _web_stage_wait() {
     _web_bounded_int "${ASCENDO_WEB_STAGE_WAIT:-90}" 90 600
+}
+
+# _web_quit_resend
+# Quit re-send interval in seconds: ASCENDO_WEB_QUIT_RESEND, default 10, clamped
+# to 1-60; anything that is not a plain non-negative integer -> 10.
+_web_quit_resend() {
+    local resend
+    resend="$(_web_bounded_int "${ASCENDO_WEB_QUIT_RESEND:-10}" 10 60)"
+    [ "$resend" -lt 1 ] && resend=1
+    printf '%s' "$resend"
 }
 
 # _web_sleep <seconds>  -- ASCENDO_WEB_SLEEP_BIN is the test seam (no real waits).
