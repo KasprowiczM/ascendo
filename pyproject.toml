@@ -234,7 +234,6 @@ filterwarnings = [
     "ignore::DeprecationWarning:pydantic.*",
     "ignore::pytest.PytestUnraisableExceptionWarning",
     "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
-    "ignore::starlette.exceptions.StarletteDeprecationWarning",
 ]
 
 # ── coverage ─────────────────────────────────────────────────────────────────
