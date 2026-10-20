@@ -7,10 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+### Changed
+### Fixed
 ### Security
-- Custom `RequestValidationError` handler in `core/ascendo/dashboard/app.py` stripping raw `input` from 422 responses globally to prevent reflection of passwords/secrets.
-- Added `SudoAuthRequest` Pydantic model to `POST /sudo/auth` in `core/ascendo/dashboard/routes/spa_stubs.py`.
-- Hardened `POST /elevation/auth` in `core/ascendo/dashboard/routes/elevation.py` with structured logging, safe exception handling (returning 500 without leaking passwords in tracebacks), and password sanitization in rejection messages.
+
+## [1.5.5] — 2026-10-20 — version alignment with macOS_updates + security fixes
+
+### Security
+- **422 validation error password strip**: Custom `RequestValidationError` handler globally in dashboard (`core/ascendo/dashboard/app.py`) stripping raw `input` from 422 responses to prevent reflection of passwords or secrets.
+- **Elevation auth sanitization and safe exception handling**: Hardened `POST /elevation/auth` in `core/ascendo/dashboard/routes/elevation.py` with structured logging, safe exception handling (returning HTTP 500 without leaking passwords in tracebacks), and password sanitization in rejection messages.
+- **Sudo auth verification and leak protection**: Fixed `POST /sudo/auth` in `core/ascendo/dashboard/routes/spa_stubs.py` to use `SudoAuthRequest` Pydantic model, verify the outcome of `register_password` (returning HTTP 401 on incorrect password), and prevent password disclosure in error messages or logs.
+
+### Changed
+- **Version alignment to 1.5.5 in lockstep with macOS_updates**: Realigned core and desktop Tauri release version from 1.1.1 to 1.5.5 in lockstep with `macOS_updates` v1.5.5.
 
 ### Fixed
 - **Test honesty**: `tests/contract/test_dashboard_spa.py` now asserts explicit status codes per endpoint (200 for implemented stubs, 501 for unported ones) instead of loose `in (200, 501)`.
@@ -19,7 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI warning filter**: Added `UserWarning` filter for Starlette testclient `httpx2` deprecation warning on newer Starlette versions.
 
 ### Documentation
-- Reconciled `docs/releases/v1.1.1.md` Known Limitations with actual test results (28 passed in `test_sudo_gate.py`) and added post-release addendum.
+- Created `docs/releases/v1.5.5.md` detailing the version alignment jump, security fixes, and known limitations.
+- Reconciled `docs/releases/v1.1.1.md` Known Limitations with actual test results (28 passed in `test_sudo_gate.py`) and documented permanent lockstep versioning policy in `DEV_GUIDE.md`.
 
 ## [1.1.1] — 2026-10-20 — CI repair + macOS_updates v1.5.5 parity
 

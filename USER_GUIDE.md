@@ -10,6 +10,7 @@ should read [DEV_GUIDE.md](DEV_GUIDE.md) instead.
 > Windows 11 / 10 — feature-complete
 > Ubuntu 22.04+ / Debian 12+ — stable, parity in progress
 >
+> **Current Version:** v1.5.5 (aligned with `macOS_updates` v1.5.5).
 > See [docs/PLATFORM_STATUS.md](docs/PLATFORM_STATUS.md) for the
 > per-feature matrix.
 

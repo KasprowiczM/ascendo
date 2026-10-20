@@ -1,5 +1,34 @@
 # Ascendo — Release Notes
 
+## v1.5.5 — 2026-10-20 (Version Alignment with macOS_updates + Security Hardening)
+
+Sesja 89. Re-aligns versioning directly to **v1.5.5** in lockstep with `macOS_updates` v1.5.5, along with critical security protections against credential leakage, elevation/sudo hardening, and test honesty guarantees.
+
+### Highlights
+
+- **Lockstep version alignment:** Ascendo release numbers now track `macOS_updates` release numbers 1:1. Releases 1.2 through 1.5.4 are skipped intentionally; no breaking API or CLI changes.
+- **Credential leakage prevention:**
+  - Globally intercepted `RequestValidationError` (HTTP 422) in dashboard to strip raw input payload, preventing secret reflection.
+  - Sanitized rejection messages and error handling on `POST /elevation/auth` (no stack traces leaking passwords in HTTP 500).
+  - Hardened `POST /sudo/auth` in `spa_stubs.py`: verified `register_password` returns HTTP 401 on incorrect credentials, protecting against password reflection.
+- **Hermetic tests & honesty:**
+  - `test_secrets_logging.py` asserts against real application logs at DEBUG level.
+  - `test_npm_gate_opencode.py` isolates `BUN_INSTALL` from host bun binaries.
+  - Strict assertions restored across all SPA contract tests (200 for implemented stubs, 501 for unported).
+- **macOS Parity (from 1.1.1 / 1.1.0):**
+  - Stale `python3` binary hash recovery (`shopt -s checkhash` + `hash -r` across 34 scripts).
+  - Graceful quit retry mechanism via `ASCENDO_WEB_QUIT_RESEND`.
+  - Non-failing `app_still_running` verification warnings.
+  - Comprehensive release documentation in [docs/releases/v1.5.5.md](docs/releases/v1.5.5.md).
+
+## v1.1.1 — 2026-10-20 (CI Repair + macOS_updates v1.5.5 Parity)
+
+Sesja 88. Green CI on main, fixture tracking, hermetic tests, and full macOS_updates v1.5.5 shell parity. See [docs/releases/v1.1.1.md](docs/releases/v1.1.1.md).
+
+## v1.1.0 — 2026-10-19 (macOS_updates v1.4.2→v1.5.4 Parity)
+
+Sesja 87. Restart-safe softwareupdate, run lock, unattended sudo gate, Rosetta awareness, honest scheduler, and web status vocabulary. See [docs/releases/v1.1.0.md](docs/releases/v1.1.0.md).
+
 ## v0.6.0-rc1 — 2026-05-09 (Edition split + GUI-PATH fixes)
 
 Sesja 51-53. Three sessions of work shipped together: a `basic` /

@@ -11,7 +11,7 @@ work via the `ID_LIKE=ubuntu` ancestor match.
 > (Fedora/RHEL/`dnf`, Arch/`pacman`, …) are coming in a later release and are
 > not supported in v1.
 
-> **As of v0.6.1, Ubuntu adapter is at full feature-parity with macOS.**
+> **As of v1.5.5, Ubuntu adapter is at full feature-parity with macOS.**
 > All 5 IAdapter capabilities declared (`PACKAGE_MANAGEMENT |
 > INVENTORY | SNAPSHOTS | SCHEDULING | ELEVATION`), 8 IPackageManager
 > implementations (apt / snap / brew / npm / pip / flatpak / drivers /

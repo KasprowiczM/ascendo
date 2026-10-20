@@ -379,6 +379,14 @@ Tag-name format: `v<major>.<minor>.<patch>` for stable, `v<x>.<y>.<z>-<phase>`
 for development (`-alpha`, `-beta`, `-rc`). Pre-release tags don't
 trigger the publish workflow; only `v<x>.<y>.<z>` does.
 
+### Versioning Policy (Lockstep with macOS_updates)
+
+Ascendo adheres to a **lockstep versioning policy** with the companion `macOS_updates` project:
+
+- **Shared version numbers:** Subsequent releases of `macOS_updates` and Ascendo proceed in lockstep with a shared version number (e.g. Ascendo 1.5.5 aligns with macOS_updates 1.5.5). When parity updates are ported, Ascendo's release number matches the `macOS_updates` version with which it maintains functional parity (which may involve deliberate version skips like 1.1.1 → 1.5.5).
+- **Ascendo-exclusive fixes:** Fixes or improvements exclusive to Ascendo (such as Windows or Ubuntu adapter hotfixes, dashboard security patches, or CLI fixes) receive either the version number of the next planned shared release or a SemVer patch with an agreed prefix/number.
+- **Lockstep bumps across monorepo surfaces:** When bumping the version, synchronize all primary surfaces: `core/ascendo/__version__.py`, root `pyproject.toml`, and the desktop Tauri app (`ui/desktop-tauri/package.json`, `Cargo.toml`, `tauri.conf.json`). OS adapter packages in `adapters/*/pyproject.toml` track their own interface SemVer (e.g. `0.0.7`) unless the cross-platform adapter contract changes.
+
 ---
 
 ## 10. The dev-sync workflow rules

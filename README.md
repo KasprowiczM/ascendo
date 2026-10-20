@@ -8,7 +8,7 @@ Cross-platform unified-updates orchestrator. macOS · Windows · Ubuntu/Debian. 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Made for: Windows | Linux | macOS](https://img.shields.io/badge/OS-Windows%20%7C%20Linux%20%7C%20macOS-blue)](docs/PLATFORM_STATUS.md)
-[![Version: v1.1.0](https://img.shields.io/badge/version-v1.1.0-blue)](CHANGELOG.md)
+[![Version: v1.5.5](https://img.shields.io/badge/version-v1.5.5-blue)](CHANGELOG.md)
 [![Tests: 1600+ green](https://img.shields.io/badge/tests-1600%2B%20green-brightgreen)](CHANGELOG.md)
 [![CI: 6/6 green](https://img.shields.io/badge/CI-6%2F6%20green-brightgreen)](.github/workflows/validate.yml)
 
@@ -144,9 +144,9 @@ in the platform quickstarts below.
 
 ## Platforms
 
-> **v1.1.0 (`1.1.0`).** macOS adapter parity with macOS_updates v1.4.2→v1.5.4:
+> **v1.5.5 (`1.5.5`).** macOS adapter parity with macOS_updates v1.5.5 + security hardening:
 > restart-safe softwareupdate, run lock, unattended sudo gate, Rosetta awareness,
-> honest scheduler, web status vocabulary. Notes: [docs/releases/v1.1.0.md](docs/releases/v1.1.0.md).
+> honest scheduler, web status vocabulary, 422 secret protection, elevation auth sanitization. Notes: [docs/releases/v1.5.5.md](docs/releases/v1.5.5.md).
 
 | Platform | Status | Quickstart |
 |----------|--------|------------|

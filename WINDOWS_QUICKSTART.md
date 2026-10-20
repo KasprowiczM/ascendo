@@ -4,6 +4,9 @@ One-screen guide: install → open the desktop app → scan installed apps →
 update Windows / Store apps / winget apps. Tested on Dell Precision 5520,
 Windows 11 Pro 26200, PowerShell 7.6.1, winget 1.28+, Python 3.14.
 
+> **Current status (v1.5.5):** Functional parity across winget, Microsoft Store,
+> Add/Remove Programs, Windows Update, npm, pip, and curated web apps.
+
 For deep-dive (CI flow, all flags, every endpoint) see
 [`WINDOWS_TESTING.md`](WINDOWS_TESTING.md).
 
