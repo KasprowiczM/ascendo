@@ -24,6 +24,16 @@ def pytest_configure(config):
         "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
     )
 
+
+@pytest.fixture(autouse=True)
+def _reset_elevation_rate_limit() -> None:
+    """Clear in-memory auth attempts so test suites don't trip 429 across tests."""
+    try:
+        from ascendo.dashboard.routes.elevation import _auth_attempts
+        _auth_attempts.clear()
+    except ImportError:
+        pass
+
 # Resolve the fixtures directory once. Both the JSON disk fixtures and
 # the inline dicts share this conftest.
 _FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "sidecars"

@@ -253,9 +253,14 @@ def test_spa_stub_mutation_endpoints(
     json_body: dict | None,
 ) -> None:
     r = client.request(method, path, json=json_body)
-    assert r.status_code == 200, f"{method} {path}: {r.status_code} {r.text[:100]}"
+    # Stubs either return 200 {"ok": ...} or 501 {"implemented": false} for
+    # features not yet ported to core.
+    assert r.status_code in (200, 501), f"{method} {path}: {r.status_code} {r.text[:100]}"
     body = r.json()
-    assert body.get("ok") is not None  # every mutation stub returns {"ok": ...}
+    if r.status_code == 200:
+        assert body.get("ok") is not None  # every active mutation stub returns {"ok": ...}
+    else:
+        assert body.get("implemented") is False
 
 
 def test_spa_stub_inventory_category_path(client: TestClient) -> None:

@@ -54,7 +54,7 @@ def test_elevation_auth_password_not_logged(
         "/elevation/auth",
         json={"password": "SuperSecretP@ss123"},
     )
-    assert resp.status_code in (401, 503)
+    assert resp.status_code in (401, 429, 503)
 
     combined = "\n".join(log_capture.records)
     assert "SuperSecretP@ss123" not in combined
