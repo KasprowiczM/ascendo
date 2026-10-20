@@ -7,36 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed — unattended web installs never prompt; sidecar `.lock` leftovers
+## [1.1.1] — 2026-10-20 — CI repair + macOS_updates v1.5.5 parity
 
-- Scheduled / `ASCENDO_UNATTENDED=1` web installs now use `sudo -n` for their
-  root fallback (same as mas/softwareupdate since 1.1.0). A refused
-  non-interactive sudo (a TTY-less ticket is keyed on the parent pid) is a soft
-  `SUDO_UNAVAILABLE_UNATTENDED` deferral, not a failure. Interactive runs keep
-  plain `sudo`.
-- POSIX sidecar writes no longer leave `<sidecar>.lock` behind (writers unlink
-  the lock while holding it, with an inode re-check on acquire; readers never
-  create one). `ascendo doctor` only reports locks still held after 5 minutes,
-  and `ascendo doctor --prune-locks` removes old unheld leftovers. Windows
-  locking is unchanged.
+### Fixed — CI green on main
 
-### Changed — macOS inventory scan cleanup + drift-free reconcile (parity Task 15)
+- Tracked `googleupdater.log` fixture via `.gitignore` negation so 5
+  vendor_feeds/chromium_updater tests no longer fail on fresh clones.
+- Made `test_pin_mutation_happens_in_real_apply` hermetic (tmp HOME);
+  CI runner no longer reads the real MAU plist.
+- Moved shared test builders to `tests/contract/_report_fixtures.py`;
+  cross-test-file `ImportError` on CI is fixed.
+- Eliminated false positives in the CI "Check no secrets" step
+  (`token=` keyword-arg pattern, npm test-fixture `_auth=` pattern).
 
-- Inventory (`inventory/list.sh`) and web discovery list only real top-level
-  apps of `ASCENDO_APP_DIRS` / `ASCENDO_WEB_APPS_ROOT` (colon lists; default
-  `/Applications:$HOME/Applications` [+ `/System/Applications` for inventory]).
-  Nested helpers, updater/installer dirs, Ascendo itself and anything in
-  `adapters/macos/config/inventory_exclusions.txt` are no longer listed.
-- iPad / iOS-on-Mac apps (`ios_app_store` or `Wrapper/iTunesMetadata.plist`) are
-  filed under `mas`, never `web`; Intel-only apps without Rosetta get an
-  `INTEL_ONLY` warning; a failed `system_profiler` no longer yields a bogus
-  `inventory:system-profiler-error` package.
-- The post-run inventory flush reconciles `brew/mas/npm/pip/web` (macOS adapter
-  opt-in) after a full, trusted, non-empty check: gone packages leave the DB;
-  failed/partial/empty/filtered scans never delete. `mas` identity is the
-  display name (numeric apply/verify ids map back via `mas-id:<id>`).
-- `web apply` no longer lists registry apps that are not installed (silent, as
-  in check/plan).
+### Fixed — macOS_updates v1.5.5 parity
+
+- **Stale `python3` hash after `brew upgrade`** (`shopt -s checkhash` +
+  `hash -r`): all 34 phase scripts and `ascendo_json.sh` now re-search
+  `PATH` when a hashed binary vanishes mid-run. Without this, a
+  `brew upgrade python@3.x` that drops the unversioned link caused
+  `ManagerError` → softwareupdate deferred (F1).
+- **Graceful quit re-send** (`ASCENDO_WEB_QUIT_RESEND`, default 10,
+  clamp 1–60): `_web_quit_gracefully` re-sends the AppleScript `quit`
+  every N seconds while the app is still running. Covers vendor updaters
+  that relaunch the app after the first quit. Never force-kills (F5).
+- **Honest `app_still_running` headline**: verify warnings with code
+  `app_still_running` now change the headline to "N app(s) Ascendo
+  launched did not quit — quit it/them yourself" and are listed under
+  Run notes; never counted as failed (F6).
+- **Interim `_finalize` hardening**: a report-generation crash during
+  the interim write no longer blocks the deferred softwareupdate apply.
+  `_write_run_meta` catches all exceptions. Worker crash in `run_async`
+  now writes a minimal `run_meta.json {status: failed}` (F2/F4).
+- Removed dead `com.openai.chat` (chatgpt) web entry — bundle no longer
+  exists; `/Applications/ChatGPT.app` uses `com.openai.codex` (codex)
+  which already has the Sparkle vendor_feed.
+
+### Added
+
+- New env: `ASCENDO_WEB_QUIT_RESEND` (default `10`, clamp 1–60) — seconds
+  between re-sends of the graceful quit request in web verify.
+
+Full notes: [docs/releases/v1.1.1.md](docs/releases/v1.1.1.md).
 
 ## [1.1.0] — 2026-10-19 — macOS_updates parity (v1.4.2→v1.5.4)
 
