@@ -21,7 +21,7 @@ from ascendo.orchestrator.report import (
     generate_apply_report,
 )
 
-from ._report_fixtures import _build_item, _build_sidecar, _write, run_dir  # noqa: F401
+from ._report_fixtures import _build_item, _build_sidecar, _host, _write, run_dir  # noqa: F401
 
 STARTED = datetime(2026, 10, 17, 10, 0, tzinfo=timezone.utc)
 WEB = SourceType.WEB
@@ -313,3 +313,54 @@ def test_restart_deferral_of_a_system_step_is_a_soft_deferral(run_dir):
     _sc(run_dir, Phase.APPLY, SourceType.SOFTWAREUPDATE, [su], messages=[
         _info("macOS 99.1: needs a restart - " + _tok("needs_restart", "99.0", "99.1"))])
     assert "1 system step deferred" in generate_apply_report(run_dir)
+
+
+def test_app_still_running_prevents_everything_already_current(run_dir):  # noqa: F811
+    """B3: app_still_running verify warning must change the headline."""
+    # All items up-to-date
+    _sc(run_dir, Phase.APPLY, WEB, [_web("com.example.app", ItemStatus.UP_TO_DATE)])
+    # Add verify sidecar with app_still_running warning
+    _sc(
+        run_dir,
+        Phase.VERIFY,
+        WEB,
+        [_web("com.example.app", ItemStatus.UP_TO_DATE)],
+        messages=[
+            Message(
+                level=MessageLevel.WARN,
+                code="app_still_running",
+                text="com.example.app: still running after a quit request",
+            )
+        ],
+    )
+    md = generate_apply_report(run_dir, host=_host())
+    assert md is not None
+    assert "everything was already current" not in md.lower()
+    assert "did not quit" in md.lower()
+    assert "com.example.app" in md
+    # Must NOT be counted as failed
+    assert "Failed (0" in md or "failed" not in md.lower().split("run notes")[0]
+
+
+def test_app_still_running_combined_with_upgrades(run_dir):  # noqa: F811
+    """B3: app_still_running combined with upgrades."""
+    _sc(run_dir, Phase.APPLY, WEB, [_web("warp", ItemStatus.SUCCESS, cur="0.8", target="0.9")])
+    _sc(
+        run_dir,
+        Phase.VERIFY,
+        WEB,
+        [_web("warp", ItemStatus.SUCCESS, cur="0.9", target="0.9")],
+        messages=[
+            Message(
+                level=MessageLevel.WARN,
+                code="app_still_running",
+                text="warp: still running after a quit request",
+            )
+        ],
+    )
+    md = generate_apply_report(run_dir, host=_host())
+    assert md is not None
+    assert "updates applied, but 1 app ascendo launched did not quit — quit it yourself" in md.lower()
+    assert "warp" in md
+    assert "Failed (0" in md or "failed" not in md.lower().split("run notes")[0]
+

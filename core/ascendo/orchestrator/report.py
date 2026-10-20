@@ -507,6 +507,26 @@ def _soft_deferrals(apply_sidecars: list[Sidecar]) -> list[tuple[str, Item]]:
             if _is_soft_deferral(sc, it)]
 
 
+def _still_running_warnings(verify_sidecars: list[Sidecar]) -> list[str]:
+    """Collect app slugs from verify messages with code == 'app_still_running'."""
+    slugs: list[str] = []
+    for sc in verify_sidecars:
+        for m in sc.messages:
+            if m.code == "app_still_running":
+                text = (m.text or "").strip()
+                slug = text.split(":", 1)[0].strip() if ":" in text else text
+                if slug and slug not in slugs:
+                    slugs.append(slug)
+        for it in sc.items:
+            for m in it.messages:
+                if m.code == "app_still_running":
+                    text = (m.text or "").strip()
+                    slug = text.split(":", 1)[0].strip() if ":" in text else (it.id.split(":", 1)[-1] or text)
+                    if slug and slug not in slugs:
+                        slugs.append(slug)
+    return sorted(slugs)
+
+
 def _slug_from_token_message(text: str) -> str:
     """Item id of a token message: text before the first ``": "`` of the
     part preceding the token (falls back to the first ``:``)."""
@@ -785,6 +805,7 @@ def _generate_apply_report_unsafe(
     # Honesty (Spec 1): problems from EVERY phase sidecar + unknown state.
     problems, warnings = _collect_problems(sidecars)
     still_pending = _collect_still_pending(verify_sidecars)
+    still_running = _still_running_warnings(verify_sidecars)
     unverified = _unverified_categories(
         apply_sidecars, verify_sidecars, run_meta,
     )
@@ -820,6 +841,14 @@ def _generate_apply_report_unsafe(
             if n_upgraded > 0 else
             f"Nothing to update — but {len(warnings)} "
             f"{_pluralize('cleanup step', len(warnings))} reported problems."
+        )
+    elif still_running:
+        pronoun = "it" if len(still_running) == 1 else "them"
+        count_str = f"{len(still_running)} {_pluralize('app', len(still_running))}"
+        lead = "Updates applied, but " if n_upgraded > 0 else ""
+        result_label = (
+            f"{lead}{count_str} Ascendo launched did not quit — "
+            f"quit {pronoun} yourself."
         )
     elif mfr_warnings or soft_deferrals:
         bits: list[str] = []
@@ -1086,6 +1115,10 @@ def _generate_apply_report_unsafe(
 
     # ── Run notes (from run_meta.json) ───────────────────────────────────
     notes = _run_notes(run_meta)
+    for slug in still_running:
+        notes.append(
+            f"{slug}: still running after a quit request (Ascendo launched it); quit it yourself"
+        )
     if notes:
         lines.append("## Run notes")
         lines.append("")
