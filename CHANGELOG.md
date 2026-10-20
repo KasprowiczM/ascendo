@@ -7,11 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Custom `RequestValidationError` handler in `core/ascendo/dashboard/app.py` stripping raw `input` from 422 responses globally to prevent reflection of passwords/secrets.
+- Added `SudoAuthRequest` Pydantic model to `POST /sudo/auth` in `core/ascendo/dashboard/routes/spa_stubs.py`.
+- Hardened `POST /elevation/auth` in `core/ascendo/dashboard/routes/elevation.py` with structured logging, safe exception handling (returning 500 without leaking passwords in tracebacks), and password sanitization in rejection messages.
+
 ### Fixed
 - **Test honesty**: `tests/contract/test_dashboard_spa.py` now asserts explicit status codes per endpoint (200 for implemented stubs, 501 for unported ones) instead of loose `in (200, 501)`.
-- **Test honesty**: `tests/contract/test_secrets_logging.py` no longer accepts 429 or 503; verifies active log capture and full elevation auth code path.
+- **Test honesty**: `tests/contract/test_secrets_logging.py` captures root logger at DEBUG level, asserts on real application logs, and tests backend error handling (no longer accepts loose 429 or 503).
 - **Hermetic test**: `adapters/macos/tests/test_npm_gate_opencode.py::test_preferred_path_brew_dirs_seam` isolates `BUN_INSTALL` so host bun installations do not leak into the test seam.
 - **CI warning filter**: Added `UserWarning` filter for Starlette testclient `httpx2` deprecation warning on newer Starlette versions.
+
+### Documentation
+- Reconciled `docs/releases/v1.1.1.md` Known Limitations with actual test results (28 passed in `test_sudo_gate.py`) and added post-release addendum.
 
 ## [1.1.1] — 2026-10-20 — CI repair + macOS_updates v1.5.5 parity
 

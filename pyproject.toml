@@ -72,6 +72,7 @@ dev = [
     "tomli-w>=1.0",
     "build>=1.2",
     "twine>=5.0",
+    "httpx2>=0.1.0",
 ]
 docs = [
     "mkdocs>=1.6",
@@ -234,6 +235,11 @@ filterwarnings = [
     "ignore::DeprecationWarning:pydantic.*",
     "ignore::pytest.PytestUnraisableExceptionWarning",
     "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+    # In CI (starlette==1.0.0), the warning does not occur and StarletteDeprecationWarning
+    # does not exist (cannot be imported without breaking pytest on CI with exit code 4).
+    # On local machines with Starlette >=1.9, StarletteDeprecationWarning subclasses UserWarning.
+    # Filtering by UserWarning allows both Starlette 1.0.0 (CI) and 1.9.0 (local) to pass
+    # without warnings-as-errors collection failures.
     "ignore:.*Using .*httpx.* with .*starlette.testclient.*:UserWarning",
 ]
 
