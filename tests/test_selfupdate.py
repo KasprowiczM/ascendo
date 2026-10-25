@@ -157,3 +157,29 @@ def test_both_updates_available(monkeypatch):
     assert rep["shell_update_available"] is True
     assert rep["update_available"] is True
     assert rep["can_self_update"] is True  # Core can be self-updated
+
+
+def test_select_channel_inherits_top_level_shell_artifacts():
+    import copy
+
+    manifest = {
+        "shell": {"version": "2.0.0", "artifacts": {"dmg_url": "https://x/a.dmg"}},
+        "channels": {"stable": {"shell": {"version": "2.0.0"}}},
+    }
+    original = copy.deepcopy(manifest)
+    result = check_mod._manifest.select_channel(manifest, "stable")
+    assert result["shell"]["artifacts"] == {"dmg_url": "https://x/a.dmg"}
+    assert manifest == original  # input not mutated
+
+
+def test_select_channel_keeps_own_shell_artifacts():
+    manifest = {
+        "shell": {"version": "2.0.0", "artifacts": {"dmg_url": "https://x/top.dmg"}},
+        "channels": {
+            "stable": {
+                "shell": {"version": "2.0.1", "artifacts": {"dmg_url": "https://x/chan.dmg"}}
+            }
+        },
+    }
+    result = check_mod._manifest.select_channel(manifest, "stable")
+    assert result["shell"]["artifacts"] == {"dmg_url": "https://x/chan.dmg"}
